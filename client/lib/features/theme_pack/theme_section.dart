@@ -16,6 +16,7 @@ import 'launcher_icon_service.dart';
 import 'theme_appearance_exporter.dart';
 import 'theme_import_screen.dart';
 import 'theme_layout_decoration_screen.dart';
+import 'theme_workshop_screen.dart';
 
 class ThemeSection extends StatefulWidget {
   const ThemeSection({
@@ -203,6 +204,18 @@ class _ThemeSectionState extends State<ThemeSection> {
               spacing: 8,
               runSpacing: 8,
               children: [
+                _actionButton(
+                  context: context,
+                  icon: Icons.construction_outlined,
+                  label: '主题工坊',
+                  onPressed: _busy
+                      ? null
+                      : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const ThemeWorkshopScreen(),
+                            ),
+                          ),
+                ),
                 _actionButton(
                   context: context,
                   icon: Icons.palette_outlined,

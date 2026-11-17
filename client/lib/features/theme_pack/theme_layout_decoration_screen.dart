@@ -8,6 +8,7 @@ import '../../providers/theme_provider.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/app_dialog.dart';
 import '../../widgets/campus/campus_header.dart';
 import 'theme_manifest.dart';
 import 'theme_presentation.dart';
@@ -465,6 +466,119 @@ class _ThemeHeaderDecorationEditorState
     _emit(_bg, next);
   }
 
+  void _moveSticker(int index, int delta) {
+    final next = _stickers;
+    final target = index + delta;
+    if (index < 0 ||
+        index >= next.length ||
+        target < 0 ||
+        target >= next.length) {
+      return;
+    }
+    final moved = next.removeAt(index);
+    next.insert(target, moved);
+    setState(() => _selectedSticker = target);
+    _emit(_bg, next);
+  }
+
+  Future<void> _replaceStickerImage(int index) async {
+    final picked = await widget.onPickSticker();
+    if (picked == null || !mounted) return;
+    _updateSticker(index, {'image': picked});
+  }
+
+  void _resetSingleSticker(int index) {
+    _updateSticker(index, {
+      'x': 0.5,
+      'y': 0.5,
+      'width': 0.2,
+      'rotation': 0.0,
+    });
+  }
+
+  Future<void> _promptNumericStickerEdit(int index) async {
+    final current = _stickers[index];
+    final xCtrl = TextEditingController(
+      text: ((current['x'] as num?)?.toDouble() ?? 0.5).toStringAsFixed(2),
+    );
+    final yCtrl = TextEditingController(
+      text: ((current['y'] as num?)?.toDouble() ?? 0.5).toStringAsFixed(2),
+    );
+    final wCtrl = TextEditingController(
+      text: ((current['width'] as num?)?.toDouble() ?? 0.2).toStringAsFixed(2),
+    );
+    final rCtrl = TextEditingController(
+      text: ((current['rotation'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(0),
+    );
+    final saved = await showAppDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AppAlertDialog(
+        title: Text('贴纸 ${index + 1} 精确数值'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: xCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'X 坐标 (0.00 - 1.00)'),
+              ),
+              TextField(
+                controller: yCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Y 坐标 (0.00 - 1.00)'),
+              ),
+              TextField(
+                controller: wCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration:
+                    const InputDecoration(labelText: '宽度比例 (0.08 - 0.40)'),
+              ),
+              TextField(
+                controller: rCtrl,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: true,
+                ),
+                decoration:
+                    const InputDecoration(labelText: '旋转角度 (-180 - 180)'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    final nextX = double.tryParse(xCtrl.text.trim());
+    final nextY = double.tryParse(yCtrl.text.trim());
+    final nextW = double.tryParse(wCtrl.text.trim());
+    final nextR = double.tryParse(rCtrl.text.trim());
+    xCtrl.dispose();
+    yCtrl.dispose();
+    wCtrl.dispose();
+    rCtrl.dispose();
+    if (saved != true || !mounted) return;
+    _updateSticker(index, {
+      if (nextX != null && nextX.isFinite) 'x': nextX.clamp(0.0, 1.0),
+      if (nextY != null && nextY.isFinite) 'y': nextY.clamp(0.0, 1.0),
+      if (nextW != null && nextW.isFinite) 'width': nextW.clamp(0.08, 0.40),
+      if (nextR != null && nextR.isFinite)
+        'rotation': nextR.clamp(-180.0, 180.0),
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final bg = _bg;
@@ -556,6 +670,41 @@ class _ThemeHeaderDecorationEditorState
                   selected: i == activeIndex,
                   onSelected: (_) => setState(() => _selectedSticker = i),
                 ),
+            ],
+          ),
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              TextButton.icon(
+                onPressed: activeIndex > 0
+                    ? () => _moveSticker(activeIndex, -1)
+                    : null,
+                icon: const Icon(Icons.vertical_align_bottom, size: 16),
+                label: const Text('下移一层'),
+              ),
+              TextButton.icon(
+                onPressed: activeIndex < stickers.length - 1
+                    ? () => _moveSticker(activeIndex, 1)
+                    : null,
+                icon: const Icon(Icons.vertical_align_top, size: 16),
+                label: const Text('上移一层'),
+              ),
+              TextButton.icon(
+                onPressed: () => _replaceStickerImage(activeIndex),
+                icon: const Icon(Icons.swap_horiz, size: 16),
+                label: const Text('替换贴纸'),
+              ),
+              TextButton.icon(
+                onPressed: () => _promptNumericStickerEdit(activeIndex),
+                icon: const Icon(Icons.pin_outlined, size: 16),
+                label: const Text('数值输入'),
+              ),
+              TextButton.icon(
+                onPressed: () => _resetSingleSticker(activeIndex),
+                icon: const Icon(Icons.restart_alt, size: 16),
+                label: const Text('重置此贴纸'),
+              ),
               TextButton.icon(
                 onPressed: () => _removeSticker(activeIndex),
                 icon: const Icon(Icons.close, size: 16),

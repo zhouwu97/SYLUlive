@@ -61,6 +61,7 @@ dependencies:
   image: 4.9.2
   tflite_flutter: ^0.12.1
   archive: 4.2.0
+  material_color_utilities: any
 
 dev_dependencies:
   flutter_test:

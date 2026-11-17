@@ -288,7 +288,7 @@ class MarketPostCard extends StatelessWidget {
   }
 
   Widget _buildUserLine(BuildContext context, bool isDark) {
-    final authUser = context.watch<AuthProvider>().user;
+    final authUser = context.watch<AuthProvider?>()?.user;
     final isMyPost = authUser != null && post.author?.id == authUser.id;
     final displayAvatar =
         isMyPost ? authUser.avatar : (post.author?.avatar ?? '');
@@ -742,7 +742,7 @@ class MarketPostCard extends StatelessWidget {
   }
 
   Widget _buildGridUserInfo(BuildContext context, bool isDark) {
-    final authUser = context.watch<AuthProvider>().user;
+    final authUser = context.watch<AuthProvider?>()?.user;
     final isMyPost = authUser != null && post.author?.id == authUser.id;
     final displayAvatar =
         isMyPost ? authUser.avatar : (post.author?.avatar ?? '');

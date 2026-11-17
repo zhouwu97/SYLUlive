@@ -151,7 +151,7 @@ class _PostCardState extends State<PostCard>
     final isDesktop = screenWidth > 600;
 
     // 优先使用当前登录用户的最新资料
-    final authUser = context.watch<AuthProvider>().user;
+    final authUser = context.watch<AuthProvider?>()?.user;
     final isMyPost = authUser != null && post.author?.id == authUser.id;
     final displayAvatar =
         isMyPost ? authUser.avatar : (post.author?.avatar ?? '');
@@ -507,7 +507,7 @@ class _PostCardState extends State<PostCard>
     required _WaterPostLabels labels,
     required Color secondary,
   }) {
-    final isMine = context.read<AuthProvider>().user?.id == post.authorId;
+    final isMine = context.read<AuthProvider?>()?.user?.id == post.authorId;
     final sectionLabel = labels.sectionLabel;
     return Row(
       children: [
@@ -820,8 +820,8 @@ class _PostCardState extends State<PostCard>
 
   _WaterPostLabels _waterLabels(BuildContext context, Post post) {
     if (post.boardId != 1) return const _WaterPostLabels();
-    final provider = context.watch<WaterSectionProvider>();
-    final section = provider.getBySlug(post.postType);
+    final provider = context.watch<WaterSectionProvider?>();
+    final section = provider?.getBySlug(post.postType);
     final sectionLabel = section?.title ?? waterCategoryLabelOf(post.postType);
     final tag = _findTag(section, post.waterTagId);
     return _WaterPostLabels(

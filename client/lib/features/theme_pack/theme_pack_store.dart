@@ -180,13 +180,72 @@ class ThemePackStore {
     }
   }
 
-  Future<void> clearStaging() async {
+  Future<InstalledTheme?> findInstalledVersion(String id, int version) async {
+    final root = await directory;
+    final folder = Directory(path.join(root.path, 'installed', id, '$version'));
+    final manifestFile = File(path.join(folder.path, 'manifest.json'));
+    if (!await manifestFile.exists()) return null;
+    final manifest = ThemeManifest.fromStored(
+      jsonDecode(await manifestFile.readAsString()) as Map<String, dynamic>,
+    );
+    return InstalledTheme(
+      manifest,
+      folder.path,
+      DateTime.now().toUtc().toIso8601String(),
+    );
+  }
+
+  Future<String> stageTrial(PreparedThemePack pack) async {
+    final root = await directory;
+    final stagingRoot = await Directory(path.join(root.path, '.staging'))
+        .create(recursive: true);
+    final staging = await stagingRoot.createTemp('trial-');
+    try {
+      for (final entry in pack.contents.entries) {
+        final file = File(path.join(staging.path, entry.key));
+        await file.parent.create(recursive: true);
+        await file.writeAsBytes(entry.value, flush: true);
+      }
+      return staging.path;
+    } catch (_) {
+      await _removeManaged(root, staging);
+      rethrow;
+    }
+  }
+
+  Future<void> removeStagingDirectory(String? stagingPath) async {
+    if (stagingPath == null || stagingPath.isEmpty) return;
+    final root = await directory;
+    final stagingRoot = path.normalize(path.join(root.path, '.staging'));
+    final target = path.normalize(stagingPath);
+    if (!path.isWithin(stagingRoot, target)) return;
+    await _removeManaged(root, Directory(target));
+  }
+
+  Future<void> clearStaging({String? keepIncomingPath}) async {
     final root = await directory;
     final staging = Directory(path.join(root.path, '.staging'));
-    if (!await staging.exists()) return;
-    await for (final item in staging.list(followLinks: false)) {
-      await _removeManaged(root, item);
+    if (await staging.exists()) {
+      await for (final item in staging.list(followLinks: false)) {
+        await _removeManaged(root, item);
+      }
     }
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final incoming = Directory(path.join(tempDir.path, 'incoming-theme'));
+      if (await incoming.exists()) {
+        final normalizedKeep = keepIncomingPath == null
+            ? null
+            : path.normalize(path.absolute(keepIncomingPath));
+        await for (final item in incoming.list(followLinks: false)) {
+          final current = path.normalize(path.absolute(item.path));
+          if (normalizedKeep != null && current == normalizedKeep) continue;
+          if (await item.exists()) {
+            await item.delete(recursive: item is Directory);
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> removeLegacyWallpaper(String source) async {

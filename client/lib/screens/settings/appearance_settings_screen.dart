@@ -20,6 +20,7 @@ import 'bottom_navigation_settings_screen.dart';
 import 'frosted_glass_settings_screen.dart';
 import '../../widgets/app_card.dart';
 import '../../features/theme_pack/theme_section.dart';
+import '../../features/theme_pack/themed_wallpaper_layer.dart';
 
 /// 界面设置二级页
 class AppearanceSettingsScreen extends StatefulWidget {
@@ -107,7 +108,12 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
             bgPath == themeProvider.landscapeBackgroundImage);
 
     Widget backgroundWidget;
-    if (bgPath != null &&
+    if (themeProvider.usesThemeWallpapers &&
+        themeProvider.themeWallpaper != null) {
+      backgroundWidget = ThemedWallpaperLayer(
+        settings: themeProvider.themeWallpaper,
+      );
+    } else if (bgPath != null &&
         bgPath.isNotEmpty &&
         !themeProvider.isCleanBackgroundMode) {
       final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);

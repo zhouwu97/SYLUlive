@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../providers/theme_provider.dart';
 import '../../widgets/app_dialog.dart';
+import 'theme_appearance_exporter.dart';
 import 'theme_import_screen.dart';
 import 'theme_pack_store.dart';
 
@@ -77,23 +79,50 @@ class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
     }
   }
 
-  Future<void> _share(InstalledTheme theme) async {
+  Future<void> _share(InstalledTheme theme, {bool saveToFile = false}) async {
     final store = context.read<ThemeProvider>().themePacks;
     final box = context.findRenderObject() as RenderBox?;
     final origin =
         box == null ? null : box.localToGlobal(Offset.zero) & box.size;
+    final fileName =
+        '${ThemeAppearanceExporter.sanitizeFileName(theme.manifest.name, fallback: theme.manifest.id)}.sltheme';
     setState(() => _busy = true);
     try {
       final bytes = await store.export(theme);
       if (!mounted) return;
-      await Share.shareXFiles([
-        XFile.fromData(bytes,
-            name: '${theme.manifest.id}.sltheme', mimeType: 'application/zip')
-      ], fileNameOverrides: [
-        '${theme.manifest.id}.sltheme'
-      ], sharePositionOrigin: origin);
+      if (saveToFile) {
+        final savedPath = await FilePicker.platform.saveFile(
+          dialogTitle: '保存主题文件',
+          fileName: fileName,
+          bytes: bytes,
+        );
+        if (savedPath != null && savedPath.isNotEmpty) {
+          final target = File(savedPath);
+          if (!await target.exists() || await target.length() == 0) {
+            await target.parent.create(recursive: true);
+            await target.writeAsBytes(bytes, flush: true);
+          }
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('已保存 $fileName')),
+            );
+          }
+        }
+      } else {
+        await Share.shareXFiles([
+          XFile.fromData(
+            bytes,
+            name: fileName,
+            mimeType: 'application/vnd.sylulive.theme+zip',
+          )
+        ], fileNameOverrides: [
+          fileName
+        ], sharePositionOrigin: origin);
+      }
     } catch (_) {
-      if (mounted) setState(() => _error = '分享失败，请重试。');
+      if (mounted) {
+        setState(() => _error = saveToFile ? '保存失败，请重试。' : '分享失败，请重试。');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -169,6 +198,12 @@ class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
                                                       ? null
                                                       : () => _remove(theme),
                                                   child: const Text('删除')),
+                                              TextButton(
+                                                  onPressed: _busy
+                                                      ? null
+                                                      : () => _share(theme,
+                                                          saveToFile: true),
+                                                  child: const Text('保存')),
                                               TextButton(
                                                   onPressed: _busy
                                                       ? null

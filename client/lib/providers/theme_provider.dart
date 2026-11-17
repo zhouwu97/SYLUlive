@@ -1,6 +1,7 @@
 import 'dart:async' show unawaited;
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:path/path.dart' as path;
@@ -9,9 +10,11 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/root_page_state_service.dart';
 import 'package:shenliyuan/theme/app_text_scaler.dart';
 import '../features/theme_pack/theme_appearance.dart';
+import '../features/theme_pack/theme_appearance_exporter.dart';
 import '../features/theme_pack/theme_manifest.dart';
 import '../features/theme_pack/theme_pack_codec.dart';
 import '../features/theme_pack/theme_pack_store.dart';
+import '../features/theme_pack/theme_trial_banner.dart';
 import '../utils/app_navigator.dart';
 
 enum AppBackgroundMode {
@@ -196,12 +199,32 @@ const Color kCleanWarmBackgroundLight = Color(0xFFFFFAF4);
 const Color kCleanWarmCardBorderLight = Color(0xFFE2EFEA);
 const Color kCleanWarmBackgroundDark = Color(0xFF111315);
 
+class ThemeTrialSession {
+  const ThemeTrialSession({
+    required this.manifest,
+    required this.groups,
+    required this.appearance,
+    this.installed,
+    this.pack,
+    this.stagingDirectory,
+  });
+
+  final ThemeManifest manifest;
+  final Set<ThemeGroup> groups;
+  final ThemeAppearance appearance;
+  final InstalledTheme? installed;
+  final PreparedThemePack? pack;
+  final String? stagingDirectory;
+}
+
 class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   static const appearanceKey = 'theme_appearance_v1';
   static const previousAppearanceKey = 'theme_previous_v1';
   final ThemePackStore themePacks;
   ThemeAppearance _appearance = const ThemeAppearance.empty();
   ThemeAppearance? _previousAppearance;
+  ThemeTrialSession? _trial;
+  int _trialGeneration = 0;
   bool _appearanceLoaded = false;
   bool _themeFilesInitialized = false;
   bool _disposed = false;
@@ -810,7 +833,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       });
 
   Future<void> _clearWallpaperOverride(AppPreferencesStore prefs) async {
-    if (_wallpaperGroup != null &&
+    if (_appearance.group(ThemeGroup.wallpapers) != null &&
         !await _writeCurrentAppearance(
             prefs, _appearance.without(ThemeGroup.wallpapers))) {
       throw const FileSystemException('主题壁纸偏好未能保存');
@@ -829,7 +852,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       if (!await prefs.setDouble(_backgroundBlurKey, value)) {
         throw const FileSystemException('背景模糊未能保存');
       }
-      if (_wallpaperGroup != null &&
+      if (_appearance.group(ThemeGroup.wallpapers) != null &&
           !await _writeCurrentAppearance(
               prefs, _appearance.patchWallpaperBlur(brightness, tab, value))) {
         throw const FileSystemException('主题背景模糊未能保存');
@@ -955,7 +978,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<bool> _saveManualNavigation(AppPreferencesStore prefs) async {
-    if (_navigationGroup == null) return true;
+    if (_appearance.group(ThemeGroup.navigation) == null) return true;
     return _writeCurrentAppearance(prefs, _appearance.resetNavigationStyle());
   }
 
@@ -1128,15 +1151,30 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<bool> _saveManualMaterial(AppPreferencesStore prefs, Brightness mode,
       Map<String, dynamic> patch) async {
-    if (_materialGroup == null) return true;
+    if (_appearance.group(ThemeGroup.material) == null) return true;
     return _writeCurrentAppearance(
         prefs, _appearance.patchMaterial(mode, patch));
   }
 
-  ThemeAppearance get appearance => _appearance;
+  ThemeAppearance get appearance => _trial?.appearance ?? _appearance;
+  ThemeAppearance get persistedAppearance => _appearance;
+  ThemeTrialSession? get trial => _trial;
+  bool get isInTrial => _trial != null;
   bool get hasPreviousAppearance => _previousAppearance != null;
-  bool get hasThemeColors => _appearance.group(ThemeGroup.colors) != null;
+  bool get hasThemeColors => appearance.group(ThemeGroup.colors) != null;
   String? get themeStorageWarning => _themeStorageWarning;
+  String get currentAppearanceSummary {
+    if (_trial != null) {
+      return '试用中：${_trial!.manifest.name} · v${_trial!.manifest.version}';
+    }
+    final manualSummary = shouldShowCustomBackground ? '自定义背景外观' : '默认外观';
+    return _appearance.summaryLabel(manualSummary: manualSummary);
+  }
+
+  String get suggestedExportName =>
+      _appearance.singleThemeName ??
+      ( _appearance.activeGroupSources.isNotEmpty ? '我的混搭外观' : '当前外观');
+
   Brightness get effectiveBrightness => _followSystem
       ? WidgetsBinding.instance.platformDispatcher.platformBrightness
       : _isDarkMode
@@ -1145,15 +1183,15 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   String get _appearanceMode =>
       effectiveBrightness == Brightness.dark ? 'dark' : 'light';
   Map<String, dynamic>? get _materialGroup =>
-      _appearance.group(ThemeGroup.material);
+      appearance.group(ThemeGroup.material);
   Map<String, dynamic>? get _activeMaterial =>
       _materialGroup?[_appearanceMode] as Map<String, dynamic>?;
   Map<String, dynamic>? get _wallpaperGroup =>
-      _appearance.group(ThemeGroup.wallpapers);
+      appearance.group(ThemeGroup.wallpapers);
   Map<String, dynamic>? get _legacyWallpaper =>
       _wallpaperGroup?['legacy'] as Map<String, dynamic>?;
   Map<String, dynamic>? get _navigationGroup =>
-      _appearance.group(ThemeGroup.navigation);
+      appearance.group(ThemeGroup.navigation);
   Map<String, dynamic>? get _navigationMotion =>
       _navigationGroup?['motion'] as Map<String, dynamic>?;
   bool get usesThemeWallpapers =>
@@ -1178,7 +1216,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   ThemeData buildAppTheme(Brightness brightness) =>
-      _appearance.buildTheme(brightness);
+      appearance.buildTheme(brightness);
 
   void _readThemePreferences(AppPreferencesStore prefs) {
     if (_appearanceLoaded) return;
@@ -1220,46 +1258,203 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     super.dispose();
   }
 
-  ThemeAppearance _snapshotAppearance() => ThemeAppearance({
-        ..._appearance.data,
-        if (_wallpaperGroup == null)
-          'wallpapers': {
-            'source': null,
-            'legacy': {
-              'mode': _backgroundMode.name,
-              'portrait': _backgroundImage,
-              'landscape': _landscapeBackgroundImage,
-              'portraitFill': _backgroundFillScreen,
-              'landscapeFill': _landscapeBackgroundFillScreen,
-              'blur': _backgroundBlur,
-            }
-          },
-        if (_materialGroup == null)
-          'material': {
-            'source': null,
-            'legacy': true,
-            for (final mode in ['light', 'dark'])
-              mode: {
-                'componentOpacity': _componentOpacity,
-                'frostedGlass': {
-                  'enabled': _frostedGlass,
-                  'strength': _frostedGlassStrength
-                },
-              }
-          },
-        'navigation': {
+  ThemeAppearance _snapshotAppearance() {
+    final persistedWallpapers = _appearance.group(ThemeGroup.wallpapers);
+    final persistedMaterial = _appearance.group(ThemeGroup.material);
+    final persistedNav = _appearance.group(ThemeGroup.navigation);
+    final persistedMotion = persistedNav?['motion'] as Map<String, dynamic>?;
+    final persistedNavStyle = persistedNav?['style'] != null
+        ? persistedNav!['style'] as String
+        : (_bottomNavPerformanceMode == BottomNavPerformanceMode.off
+                ? BottomNavStyle.floating
+                : _bottomNavStyle)
+            .storageValue;
+    return ThemeAppearance({
+      ..._appearance.data,
+      if (persistedWallpapers == null)
+        'wallpapers': {
           'source': null,
-          ...?_navigationGroup,
-          'style': bottomNavStyle.storageValue,
-          'icons': _navigationGroup?['icons'] ?? <String, dynamic>{},
-          'iconTint': _navigationGroup?['iconTint'] ?? 'template',
-          'motion': {
-            'intensity': bottomNavAnimationIntensity,
-            'performanceMode': bottomNavPerformanceMode.storageValue,
-            'clearMaterial': bottomNavClearMaterial
-          },
+          'legacy': {
+            'mode': _backgroundMode.name,
+            'portrait': _backgroundImage,
+            'landscape': _landscapeBackgroundImage,
+            'portraitFill': _backgroundFillScreen,
+            'landscapeFill': _landscapeBackgroundFillScreen,
+            'blur': _backgroundBlur,
+          }
         },
-      });
+      if (persistedMaterial == null)
+        'material': {
+          'source': null,
+          'legacy': true,
+          for (final mode in ['light', 'dark'])
+            mode: {
+              'componentOpacity': _componentOpacity,
+              'frostedGlass': {
+                'enabled': _frostedGlass,
+                'strength': _frostedGlassStrength
+              },
+            }
+        },
+      'navigation': {
+        'source': null,
+        ...?persistedNav,
+        'style': persistedNavStyle,
+        'icons': persistedNav?['icons'] ?? <String, dynamic>{},
+        'iconTint': persistedNav?['iconTint'] ?? 'template',
+        'motion': {
+          'intensity': (persistedMotion?['intensity'] as num?)?.toDouble() ??
+              _bottomNavAnimationIntensity,
+          'performanceMode':
+              (persistedMotion?['performanceMode'] as String?) ??
+                  _bottomNavPerformanceMode.storageValue,
+          'clearMaterial': (persistedMotion?['clearMaterial'] as bool?) ??
+              _bottomNavClearMaterial,
+        },
+      },
+    });
+  }
+
+  /// 开启全局试用会话：仅在内存与临时暂存目录生效，不写任何偏好存储，进程退出自然恢复。
+  Future<void> startTrial({
+    InstalledTheme? installed,
+    PreparedThemePack? pack,
+    required Set<ThemeGroup> groups,
+  }) async {
+    assert(installed != null || pack != null);
+    final manifest = installed?.manifest ?? pack!.manifest;
+    final selected = Set<ThemeGroup>.of(groups)
+        .intersection(ThemeGroup.applicable)
+        .intersection(manifest.groups);
+    if (selected.isEmpty) return;
+    final generation = ++_trialGeneration;
+    final previousStaging = _trial?.stagingDirectory;
+    String? stagingDirectory;
+    String directory;
+    if (installed != null) {
+      directory = installed.directory;
+    } else {
+      stagingDirectory = await themePacks.stageTrial(pack!);
+      if (_disposed || generation != _trialGeneration) {
+        await themePacks.removeStagingDirectory(stagingDirectory);
+        return;
+      }
+      directory = stagingDirectory;
+    }
+    _trial = ThemeTrialSession(
+      manifest: manifest,
+      groups: selected,
+      appearance: _appearance.apply(manifest, selected, directory),
+      installed: installed,
+      pack: pack,
+      stagingDirectory: stagingDirectory,
+    );
+    if (!_disposed) notifyListeners();
+    if (previousStaging != null && previousStaging != stagingDirectory) {
+      await themePacks.removeStagingDirectory(previousStaging);
+    }
+  }
+
+  Future<void> endTrial() async {
+    _trialGeneration++;
+    final previous = _trial;
+    if (previous == null) return;
+    _trial = null;
+    if (!_disposed) notifyListeners();
+    if (previous.stagingDirectory != null) {
+      await themePacks.removeStagingDirectory(previous.stagingDirectory);
+    }
+  }
+
+  Future<void> applyTrial() {
+    final active = _trial;
+    if (active == null) return Future<void>.value();
+    _trialGeneration++;
+    return _queueAppearanceOperation((prefs) async {
+      if (!_isLoaded) {
+        _applyStoredPreferences(prefs);
+        _isLoaded = true;
+      }
+      await _initializeThemeFiles(prefs);
+      InstalledTheme target;
+      if (active.installed != null) {
+        target = active.installed!;
+      } else {
+        final existing = await themePacks.findInstalledVersion(
+          active.manifest.id,
+          active.manifest.version,
+        );
+        target = existing ?? await themePacks.install(active.pack!);
+      }
+      await _commitAppearance(
+        prefs,
+        _appearance.apply(target.manifest, active.groups, target.directory),
+        _snapshotAppearance(),
+      );
+      _trial = null;
+      if (!_disposed) notifyListeners();
+      if (active.stagingDirectory != null) {
+        await themePacks.removeStagingDirectory(active.stagingDirectory);
+      }
+      await _cleanupThemeFiles();
+    });
+  }
+
+  Future<Uint8List> exportCurrentAppearance({
+    String? customName,
+    String? authorName,
+    String? appVersion,
+  }) async {
+    final effective = _appearance;
+    final hasThemeWalls = effective.group(ThemeGroup.wallpapers) != null &&
+        effective.group(ThemeGroup.wallpapers)!['legacy'] == null;
+    RawWallpaperInput? manualPortrait;
+    RawWallpaperInput? manualLandscape;
+    if (!hasThemeWalls && _backgroundMode == AppBackgroundMode.custom) {
+      manualPortrait = await ThemeAppearanceExporter.readWallpaperSource(
+        _backgroundImage,
+        fillScreen: _backgroundFillScreen,
+        blur: _backgroundBlur,
+        isBundledAsset: isBundledAssetBackground,
+        isLocalFile: isLocalFileBackground,
+        resolveBundledAssetPath: resolveBundledAssetPath,
+      );
+      manualLandscape = await ThemeAppearanceExporter.readWallpaperSource(
+        _landscapeBackgroundImage,
+        fillScreen: _landscapeBackgroundFillScreen,
+        blur: _backgroundBlur,
+        isBundledAsset: isBundledAssetBackground,
+        isLocalFile: isLocalFileBackground,
+        resolveBundledAssetPath: resolveBundledAssetPath,
+      );
+    }
+    final persistedMat = effective.group(ThemeGroup.material);
+    final hasExplicitMaterial =
+        persistedMat != null && persistedMat['legacy'] != true;
+    final shouldExportManualMat = !hasExplicitMaterial &&
+        (manualPortrait != null ||
+            manualLandscape != null ||
+            _frostedGlass ||
+            _componentOpacity < 1.0);
+    final persistedNavStyle =
+        (_bottomNavPerformanceMode == BottomNavPerformanceMode.off
+                ? BottomNavStyle.floating
+                : _bottomNavStyle)
+            .storageValue;
+    return ThemeAppearanceExporter.export(
+      appearance: effective,
+      name: customName ?? suggestedExportName,
+      author: authorName ?? '本机导出',
+      appVersion: appVersion ?? '1.0.0',
+      bottomNavStyle: persistedNavStyle,
+      shouldExportManualMaterial: shouldExportManualMat,
+      manualComponentOpacity: _componentOpacity,
+      manualFrostedGlass: _frostedGlass,
+      manualFrostedStrength: _frostedGlassStrength,
+      manualPortraitWallpaper: manualPortrait,
+      manualLandscapeWallpaper: manualLandscape,
+    );
+  }
 
   Future<List<InstalledTheme>> installedThemes() =>
       _queueAppearanceOperation((prefs) async {
@@ -1283,10 +1478,16 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         _isLoaded = true;
       }
       await _initializeThemeFiles(prefs);
+      final oldTrialStaging = _trial?.stagingDirectory;
+      _trialGeneration++;
+      _trial = null;
       await _commitAppearance(
           prefs,
           _appearance.apply(theme.manifest, selected, theme.directory),
           _snapshotAppearance());
+      if (oldTrialStaging != null) {
+        await themePacks.removeStagingDirectory(oldTrialStaging);
+      }
       await _cleanupThemeFiles();
     });
   }
@@ -1295,14 +1496,26 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       _queueAppearanceOperation((prefs) async {
         final previous = _previousAppearance;
         if (previous == null) return;
+        final oldTrialStaging = _trial?.stagingDirectory;
+        _trialGeneration++;
+        _trial = null;
         await _commitAppearance(prefs, previous, _snapshotAppearance());
+        if (oldTrialStaging != null) {
+          await themePacks.removeStagingDirectory(oldTrialStaging);
+        }
         await _cleanupThemeFiles();
       });
 
   Future<void> restoreManualAppearance() =>
       _queueAppearanceOperation((prefs) async {
+        final oldTrialStaging = _trial?.stagingDirectory;
+        _trialGeneration++;
+        _trial = null;
         await _commitAppearance(
             prefs, const ThemeAppearance.empty(), _snapshotAppearance());
+        if (oldTrialStaging != null) {
+          await themePacks.removeStagingDirectory(oldTrialStaging);
+        }
         await _cleanupThemeFiles();
       });
 
@@ -1357,6 +1570,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Iterable<String> get _protectedThemePaths => [
         ..._appearance.paths,
         ...?_previousAppearance?.paths,
+        ...?_trial?.appearance.paths,
         if (_backgroundImage != null) _backgroundImage!,
         if (_landscapeBackgroundImage != null) _landscapeBackgroundImage!,
       ];
@@ -1369,7 +1583,8 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
           retainedPaths: _protectedThemePaths,
           retainedVersions: [
             ..._appearance.versions,
-            ...?_previousAppearance?.versions
+            ...?_previousAppearance?.versions,
+            ...?_trial?.appearance.versions,
           ]);
       final retained = _protectedThemePaths.map(path.normalize).toSet();
       for (final old in legacyCandidates) {
@@ -1401,7 +1616,9 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _initializeThemeFiles(AppPreferencesStore prefs) async {
     if (_themeFilesInitialized) return;
-    await themePacks.clearStaging();
+    await themePacks.clearStaging(
+      keepIncomingPath: ThemeIncomingCoordinator.instance.current?.filePath,
+    );
     for (final pair in [
       (_backgroundImageKey, _backgroundImage),
       (_landscapeBackgroundImageKey, _landscapeBackgroundImage)

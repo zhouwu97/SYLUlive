@@ -41,6 +41,7 @@ import 'admin_members_screen.dart';
 import 'notifications_screen.dart';
 import 'likes_received_screen.dart';
 import 'settings_screen.dart';
+import 'settings/appearance_settings_screen.dart';
 import 'feedback/feedback_center_screen.dart';
 import 'feedback/feedback_create_screen.dart';
 import 'admin/admin_feedback_screen.dart';
@@ -1352,6 +1353,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
     bool isDark,
   ) {
     final items = [
+      _buildSettingsRow(
+        child: _buildSettingsTile(
+          icon: Icons.palette_outlined,
+          iconColor: AppThemeTokens.of(context).primary,
+          title: '个性主题',
+          subtitle: themeProvider.currentAppearanceSummary,
+          isDark: isDark,
+          onTap: () {
+            _openProfilePage(
+              MaterialPageRoute(
+                builder: (_) => const AppearanceSettingsScreen(),
+              ),
+            );
+          },
+        ),
+      ),
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.settings,

@@ -659,6 +659,9 @@ class FakeThemeProvider extends Fake
 
   @override
   bool get frostedGlass => false;
+
+  @override
+  ThemeTrialSession? get trial => null;
 }
 
 Widget _postDetailTestApp(

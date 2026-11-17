@@ -4,7 +4,7 @@ import UIKit
 class SceneDelegate: FlutterSceneDelegate {
   override func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
     guard let url = URLContexts.first?.url else { return }
-    (UIApplication.shared.delegate as? AppDelegate)?.receiveDeepLink(url.absoluteString)
+    (UIApplication.shared.delegate as? AppDelegate)?.handleIncomingURL(url)
   }
 
   override func scene(
@@ -14,7 +14,7 @@ class SceneDelegate: FlutterSceneDelegate {
   ) {
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     if let url = connectionOptions.urlContexts.first?.url {
-      (UIApplication.shared.delegate as? AppDelegate)?.receiveDeepLink(url.absoluteString)
+      (UIApplication.shared.delegate as? AppDelegate)?.handleIncomingURL(url)
     }
   }
 }

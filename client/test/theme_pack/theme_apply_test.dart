@@ -21,6 +21,7 @@ import 'package:shenliyuan/features/theme_pack/theme_manifest.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_codec.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_store.dart';
 import 'package:shenliyuan/features/theme_pack/theme_section.dart';
+import 'package:shenliyuan/features/theme_pack/theme_trial_banner.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/theme/app_palette.dart';
@@ -53,7 +54,7 @@ class _LoadingStore extends ThemePackStore {
   final pending = Completer<List<InstalledTheme>>();
   bool failed = true;
   @override
-  Future<void> clearStaging() async {}
+  Future<void> clearStaging({String? keepIncomingPath}) async {}
   @override
   Future<List<InstalledTheme>> list() async {
     final themes = await pending.future;
@@ -595,4 +596,338 @@ void main() {
           () => Future<void>.delayed(const Duration(milliseconds: 50)));
     });
   }
+
+  test('全局试用会话不写偏好、重启自动结束，applyTrial 保存试用前快照', () async {
+    final prefs = await AppPreferencesStore.getInstance();
+    await provider.setBackgroundImage('before_trial.jpg');
+    final uninstalled = _pack(suffix: '3', color: '#D84315', wallpaper: true);
+    await provider.startTrial(
+      pack: uninstalled,
+      groups: {ThemeGroup.colors, ThemeGroup.wallpapers},
+    );
+    expect(provider.isInTrial, isTrue);
+    expect(
+      provider.buildAppTheme(Brightness.light).colorScheme.primary,
+      const Color(0xffd84315),
+    );
+    expect(provider.usesThemeWallpapers, isTrue);
+    expect(prefs.getString(ThemeProvider.appearanceKey), isNull);
+    expect(prefs.getString(ThemeProvider.previousAppearanceKey), isNull);
+
+    // 模拟进程被杀重启：偏好未写入，新实例回到原外观
+    final restarted = ThemeProvider(themePackStore: store);
+    await restarted.installedThemes();
+    expect(restarted.isInTrial, isFalse);
+    expect(restarted.hasThemeColors, isFalse);
+    expect(restarted.backgroundImage, 'before_trial.jpg');
+    restarted.dispose();
+
+    // 重新开始试用并结束：恢复原外观且暂存目录清理
+    await provider.startTrial(
+      pack: uninstalled,
+      groups: {ThemeGroup.colors, ThemeGroup.wallpapers},
+    );
+    final stagingDir = provider.trial!.stagingDirectory!;
+    expect(await Directory(stagingDir).exists(), isTrue);
+    await provider.endTrial();
+    expect(provider.isInTrial, isFalse);
+    expect(provider.hasThemeColors, isFalse);
+    expect(provider.backgroundImage, 'before_trial.jpg');
+    expect(await Directory(stagingDir).exists(), isFalse);
+
+    // 再次试用并应用：持久化写入且可撤销回试用前外观
+    await provider.startTrial(
+      pack: uninstalled,
+      groups: {ThemeGroup.colors, ThemeGroup.wallpapers},
+    );
+    await provider.applyTrial();
+    expect(provider.isInTrial, isFalse);
+    expect(provider.hasThemeColors, isTrue);
+    expect(prefs.getString(ThemeProvider.appearanceKey), isNotNull);
+    await provider.restorePreviousAppearance();
+    expect(provider.hasThemeColors, isFalse);
+    expect(provider.backgroundImage, 'before_trial.jpg');
+  });
+
+  test('导出当前混搭外观包含最终生效参数与资源，并可在新环境重新导入', () async {
+    final a = await provider.installTheme(
+      _pack(suffix: '4', color: '#1E88E5', material: true),
+    );
+    final b = await provider.installTheme(
+      _pack(suffix: '5', color: '#43A047', wallpaper: true, navigation: true),
+    );
+    await provider.applyInstalledTheme(
+      a,
+      {ThemeGroup.colors, ThemeGroup.shape, ThemeGroup.material},
+    );
+    await provider.applyInstalledTheme(
+      b,
+      {ThemeGroup.wallpapers, ThemeGroup.navigation},
+    );
+    await provider.setThemeMode(ThemeMode.light);
+    await provider.setComponentOpacity(.86);
+    expect(provider.currentAppearanceSummary, contains('混搭外观'));
+
+    final exportedBytes = await provider.exportCurrentAppearance(
+      customName: '海盐混搭',
+      authorName: '测试导出者',
+      appVersion: '1.7.12',
+    );
+    final redecoded = await ThemePackCodec.decode(
+      exportedBytes,
+      appVersion: '9.0.0',
+    );
+    expect(redecoded.manifest.id, isNot(a.manifest.id));
+    expect(redecoded.manifest.id, isNot(b.manifest.id));
+    expect(redecoded.manifest.name, '海盐混搭');
+
+    final targetDir = Directory(path.join(temp.path, 'reimport-themes'));
+    final targetStore = ThemePackStore(directory: targetDir);
+    AppPreferencesStore.setCustomInstance(MemoryPreferencesStore());
+    final cleanProvider =
+        ThemeProvider(loadOnStart: false, themePackStore: targetStore);
+    await cleanProvider.loadThemeForTesting();
+    final reinstalled = await cleanProvider.installTheme(redecoded);
+    await cleanProvider.applyInstalledTheme(reinstalled, ThemeGroup.applicable);
+    await cleanProvider.setThemeMode(ThemeMode.light);
+    expect(
+      cleanProvider.buildAppTheme(Brightness.light).colorScheme.primary,
+      const Color(0xff1e88e5),
+    );
+    expect(
+      cleanProvider.buildAppTheme(Brightness.light).extension<AppShape>()!.preset,
+      AppShapePreset.rounded,
+    );
+    expect(cleanProvider.effectiveComponentOpacity, .86);
+    expect(cleanProvider.usesThemeWallpapers, isTrue);
+    expect(
+      cleanProvider.appearance.group(ThemeGroup.navigation)!['icons']['home'],
+      isNotNull,
+    );
+    cleanProvider.dispose();
+  });
+
+  testWidgets('全局试用横条跨页面常驻，支持结束与应用', (tester) async {
+    final installed = await tester.runAsync(
+      () => provider.installTheme(_pack(suffix: '6', color: '#8E24AA')),
+    );
+    final tabNotifier = ValueNotifier<int>(0);
+    addTearDown(tabNotifier.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: provider,
+        child: Builder(
+          builder: (context) {
+            final tp = context.watch<ThemeProvider>();
+            return MaterialApp(
+              theme: tp.buildAppTheme(Brightness.light),
+              builder: (_, child) => ThemeTrialBannerHost(child: child!),
+              home: ValueListenableBuilder<int>(
+                valueListenable: tabNotifier,
+                builder: (_, tab, __) => Scaffold(
+                  appBar: AppBar(title: Text('页签 $tab')),
+                  body: Center(
+                    child: Builder(
+                      builder: (ctx) => FilledButton(
+                        onPressed: () => Navigator.of(ctx).push(
+                          MaterialPageRoute<bool>(
+                            builder: (_) =>
+                                ThemeImportScreen(installed: installed),
+                          ),
+                        ),
+                        child: const Text('去预览'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('去预览'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('试用'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('theme-trial-banner')), findsOneWidget);
+    expect(find.textContaining('试用中 · 《测试主题》'), findsOneWidget);
+    expect(find.text('页签 0'), findsOneWidget);
+
+    // 切换页签后试用横条仍常驻
+    tabNotifier.value = 3;
+    await tester.pumpAndSettle();
+    expect(find.text('页签 3'), findsOneWidget);
+    expect(find.byKey(const ValueKey('theme-trial-banner')), findsOneWidget);
+
+    // 点结束恢复原外观
+    await tester.tap(find.text('结束'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('theme-trial-banner')), findsNothing);
+    expect(provider.hasThemeColors, isFalse);
+
+    // 再次开启试用并点应用
+    await tester.tap(find.text('去预览'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('试用'));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.text('应用'));
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    });
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('theme-trial-banner')), findsNothing);
+    expect(provider.hasThemeColors, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('系统文件关联冷热启动、超限与权限错误、新文件覆盖旧读取并自动清理临时副本', (tester) async {
+    final incomingDir = Directory(path.join(temp.path, 'incoming-theme'));
+    final fileA = File(path.join(incomingDir.path, 'first.sltheme'));
+    final fileB = File(path.join(incomingDir.path, 'second.sltheme'));
+    await tester.runAsync(() async {
+      await incomingDir.create(recursive: true);
+      await fileA.writeAsBytes(
+        themeArchive(themeFixture()..['name'] = '旧文件主题'),
+      );
+      await fileB.writeAsBytes(
+        themeArchive(themeFixture()..['name'] = '新热启动主题'),
+      );
+    });
+
+    // 超限错误状态
+    final tooLargeReq = ThemeIncomingCoordinator.instance.accept(
+      eventId: 'evt-large',
+      errorCode: 'theme_too_large',
+    );
+    await tester.pumpWidget(
+      host(
+        ThemeImportScreen(
+          key: const ValueKey('too-large-screen'),
+          incomingRequest: tooLargeReq,
+          appVersion: '9.0.0',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('theme_too_large'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+
+    // 权限拒绝状态
+    final deniedReq = ThemeIncomingCoordinator.instance.accept(
+      eventId: 'evt-denied',
+      errorCode: 'permission_denied',
+    );
+    await tester.pumpWidget(
+      host(
+        ThemeImportScreen(
+          key: const ValueKey('denied-screen'),
+          incomingRequest: deniedReq,
+          appVersion: '9.0.0',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('检查文件访问权限'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+
+    // 冷启动打开 fileA，随后热启动立刻切入 fileB：旧文件被清理且最终展示新文件
+    await tester.runAsync(() async {
+      final reqA = ThemeIncomingCoordinator.instance.accept(
+        eventId: 'evt-a',
+        filePath: fileA.path,
+      );
+      await tester.pumpWidget(
+        host(
+          ThemeImportScreen(
+            key: const ValueKey('incoming-screen'),
+            incomingRequest: reqA,
+            appVersion: '9.0.0',
+          ),
+        ),
+      );
+      ThemeIncomingCoordinator.instance.accept(
+        eventId: 'evt-b',
+        filePath: fileB.path,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('新热启动主题'), findsOneWidget);
+    expect(find.text('旧文件主题'), findsNothing);
+    expect(await tester.runAsync(fileA.exists), isFalse);
+    expect(await tester.runAsync(fileB.exists), isFalse);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('ThemeSection 导出当前外观保存文件与壁纸槽位淡入切换及减少动态效果兼容', (tester) async {
+    final savedPath = path.join(temp.path, 'exported-mixed.sltheme');
+    await tester.runAsync(() async {
+      final installed =
+          await provider.installTheme(_pack(suffix: '7', wallpaper: true));
+      await provider.applyInstalledTheme(
+        installed,
+        {ThemeGroup.colors, ThemeGroup.wallpapers},
+      );
+    });
+
+    await tester.pumpWidget(
+      host(
+        Scaffold(
+          body: SingleChildScrollView(
+            child: ThemeSection(
+              saveExportFile: (_, __) async => savedPath,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('当前外观'), findsOneWidget);
+    expect(find.textContaining('测试主题 v1'), findsOneWidget);
+
+    await tester.runAsync(() async {
+      await tester.tap(find.text('导出当前外观'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.text('保存到文件'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 400));
+      for (var i = 0;
+          i < 60 && !await File(savedPath).exists();
+          i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(await tester.runAsync(() => File(savedPath).exists()), isTrue);
+
+    // 验证壁纸槽位切换 AnimatedSwitcher 与 disableAnimations
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: host(
+          const Scaffold(body: CustomBackgroundLayer(canvasSize: Size(360, 800))),
+        ),
+      ),
+    );
+    await settleEmojiQAImages(
+      tester,
+      tester.element(find.byType(CustomBackgroundLayer)),
+      tester.widgetList<Image>(find.byType(Image)).map((image) => image.image),
+    );
+    await tester.pump();
+    final switcher =
+        tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher));
+    expect(switcher.duration, Duration.zero);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 60)));
+  });
 }

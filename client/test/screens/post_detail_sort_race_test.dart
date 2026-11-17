@@ -152,6 +152,9 @@ class RaceThemeProvider extends Fake
 
   @override
   bool get frostedGlass => false;
+
+  @override
+  ThemeTrialSession? get trial => null;
 }
 
 Widget buildRaceApp(SortRaceDio dio) {

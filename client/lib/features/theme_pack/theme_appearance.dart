@@ -40,7 +40,11 @@ class ThemeAppearance {
 
   ThemeAppearance apply(
       ThemeManifest manifest, Set<ThemeGroup> selected, String directory) {
-    final source = {'themeId': manifest.id, 'version': manifest.version};
+    final source = {
+      'themeId': manifest.id,
+      'version': manifest.version,
+      'name': manifest.name,
+    };
     final assetPaths = manifest.assets.map((asset) => asset.path).toSet();
     dynamic resolve(dynamic value) {
       if (value is String && assetPaths.contains(value)) {
@@ -219,5 +223,50 @@ class ThemeAppearance {
         yield (source['themeId'] as String, source['version'] as int);
       }
     }
+  }
+
+  List<(ThemeGroup, String)> get activeGroupSources {
+    final items = <(ThemeGroup, String)>[];
+    for (final item in ThemeGroup.values) {
+      final entry = group(item);
+      if (entry == null) continue;
+      if (entry['legacy'] != null) continue;
+      final source = entry['source'] as Map?;
+      if (source != null) {
+        final title = (source['name'] as String?)?.trim();
+        final label = (title != null && title.isNotEmpty)
+            ? '$title v${source['version']}'
+            : '${source['themeId']} v${source['version']}';
+        items.add((item, label));
+      } else {
+        items.add((item, '手动调整'));
+      }
+    }
+    return items;
+  }
+
+  String? get singleThemeName {
+    final sources = <String>{};
+    for (final entry in data.values) {
+      if (entry is! Map || entry['legacy'] != null) continue;
+      final source = entry['source'] as Map?;
+      if (source == null) return null;
+      final name = (source['name'] as String?)?.trim();
+      if (name == null || name.isEmpty) return null;
+      sources.add(name);
+    }
+    return sources.length == 1 ? sources.single : null;
+  }
+
+  String summaryLabel({String? manualSummary}) {
+    final items = activeGroupSources;
+    if (items.isEmpty) return manualSummary ?? '默认外观';
+    final uniqueSources = items.map((e) => e.$2).toSet();
+    if (uniqueSources.length == 1 && uniqueSources.single != '手动调整') {
+      final labels = items.map((e) => e.$1.label).join('、');
+      return '${uniqueSources.single} · $labels';
+    }
+    final detail = items.map((e) => '${e.$1.label}（${e.$2}）').join(' · ');
+    return '混搭外观 · $detail';
   }
 }

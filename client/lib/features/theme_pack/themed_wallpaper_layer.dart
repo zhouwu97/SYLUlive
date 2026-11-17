@@ -15,38 +15,60 @@ class ThemedWallpaperLayer extends StatelessWidget {
   Widget build(BuildContext context) {
     final config = settings;
     final background = AppThemeTokens.of(context).background;
-    if (config == null) return ColoredBox(color: background);
-    final landscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
-    final file = (landscape ? config['landscape'] : null) ?? config['portrait'];
-    final adjustment = config['adjustments'] as Map?;
-    final contrast = (adjustment?['contrast'] as num? ?? 100) / 100;
-    final saturation = (adjustment?['saturation'] as num? ?? 100) / 100;
-    final offset = (adjustment?['brightness'] as num? ?? 0) * 2.55 +
-        127.5 * (1 - contrast);
-    final inverse = 1 - saturation;
-    final r = .2126 * inverse * contrast;
-    final g = .7152 * inverse * contrast;
-    final b = .0722 * inverse * contrast;
-    Widget image = Image(
-      key: ValueKey(file),
-      image: imageProvider ??
-          ResizeImage(FileImage(File(file as String)),
-              width: 2160,
-              height: 2160,
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final duration =
+        disableAnimations ? Duration.zero : const Duration(milliseconds: 200);
+    Widget content;
+    if (config == null) {
+      content = ColoredBox(
+        key: ValueKey(('solid', background)),
+        color: background,
+      );
+    } else {
+      final landscape =
+          MediaQuery.orientationOf(context) == Orientation.landscape;
+      final file =
+          (landscape ? config['landscape'] : null) ?? config['portrait'];
+      final adjustment = config['adjustments'] as Map?;
+      final brightness = (adjustment?['brightness'] as num? ?? 0).toDouble();
+      final contrast = (adjustment?['contrast'] as num? ?? 100) / 100;
+      final saturation = (adjustment?['saturation'] as num? ?? 100) / 100;
+      final offset = brightness * 2.55 + 127.5 * (1 - contrast);
+      final inverse = 1 - saturation;
+      final r = .2126 * inverse * contrast;
+      final g = .7152 * inverse * contrast;
+      final b = .0722 * inverse * contrast;
+      final physicalWidth =
+          (MediaQuery.sizeOf(context).width *
+                  MediaQuery.devicePixelRatioOf(context))
+              .round()
+              .clamp(100, 4096);
+      final fit = config['fit'] == 'contain' ? BoxFit.contain : BoxFit.cover;
+      final focalX = (config['focalX'] as num).toDouble();
+      final focalY = (config['focalY'] as num).toDouble();
+      final blur = (config['blur'] as num).toDouble();
+      final scrim = (config['scrim'] as num).toDouble();
+      Widget image = Image(
+        key: ValueKey(file),
+        image: imageProvider ??
+            ResizeImage(
+              FileImage(File(file as String)),
+              width: physicalWidth,
               policy: ResizeImagePolicy.fit,
-              allowUpscaling: false),
-      fit: config['fit'] == 'contain' ? BoxFit.contain : BoxFit.cover,
-      alignment: Alignment((config['focalX'] as num).toDouble() * 2 - 1,
-          (config['focalY'] as num).toDouble() * 2 - 1),
-      errorBuilder: (_, __, ___) => Center(
+              allowUpscaling: false,
+            ),
+        fit: fit,
+        gaplessPlayback: true,
+        alignment: Alignment(focalX * 2 - 1, focalY * 2 - 1),
+        errorBuilder: (_, __, ___) => Center(
           child: Semantics(
-        label: '主题壁纸无法读取，请重新导入主题',
-        child: const Icon(Icons.broken_image_outlined),
-      )),
-    );
-    if (adjustment != null) {
-      image = ColorFiltered(
+            label: '主题壁纸无法读取，请重新导入主题',
+            child: const Icon(Icons.broken_image_outlined),
+          ),
+        ),
+      );
+      if (adjustment != null) {
+        image = ColorFiltered(
           colorFilter: ColorFilter.matrix([
             r + saturation * contrast,
             g,
@@ -69,24 +91,40 @@ class ThemedWallpaperLayer extends StatelessWidget {
             1,
             0,
           ]),
-          child: image);
-    }
-    final blur = (config['blur'] as num).toDouble();
-    if (blur > 0) {
-      image = ImageFiltered(
+          child: image,
+        );
+      }
+      if (blur > 0) {
+        image = ImageFiltered(
           imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-          child: image);
+          child: image,
+        );
+      }
+      content = ClipRect(
+        key: ValueKey((
+          file,
+          fit,
+          focalX,
+          focalY,
+          blur,
+          scrim,
+          brightness,
+          contrast,
+          saturation,
+        )),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ColoredBox(color: background, child: image),
+            if (scrim > 0)
+              ColoredBox(color: background.withValues(alpha: scrim)),
+          ],
+        ),
+      );
     }
-    final scrim = (config['scrim'] as num).toDouble();
-    return ClipRect(
-        child: Stack(fit: StackFit.expand, children: [
-      ColoredBox(color: background, child: image),
-      if (scrim > 0)
-        ColoredBox(
-            color: (Theme.of(context).brightness == Brightness.dark
-                    ? Colors.black
-                    : Colors.white)
-                .withValues(alpha: scrim)),
-    ]));
+    return AnimatedSwitcher(
+      duration: duration,
+      child: content,
+    );
   }
 }

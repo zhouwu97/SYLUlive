@@ -12,6 +12,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.icu.text.BreakIterator
 import androidx.core.content.FileProvider
@@ -22,7 +23,11 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodCall
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.util.Locale
+import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
 class MainActivity : FlutterActivity() {
     private var liquidGlassGravity: LiquidGlassGravityBridge? = null
@@ -54,11 +59,17 @@ class MainActivity : FlutterActivity() {
         const val EXTRA_PRIVATE_MESSAGE_JSON =
             "private_message_json"
 
+        private const val EXTRA_THEME_INTENT_HANDLED =
+            "com.example.shenliyuan.THEME_INTENT_HANDLED"
+        private const val MAX_THEME_PACKAGE_BYTES = 48L * 1024L * 1024L
+
         private val activityInstanceLock = Any()
         private var liveActivityCount = 0
+        private val themeImportExecutor = Executors.newSingleThreadExecutor()
+        private val themeImportGeneration = AtomicLong(0)
     }
 
-    private var pendingDeepLink: String? = null
+    private var pendingDeepLink: Any? = null
     
     private var notificationOpenChannel: MethodChannel? = null
 
@@ -647,8 +658,16 @@ class MainActivity : FlutterActivity() {
                 }
                 "ackPendingDeepLink" -> {
                     val link = call.argument<String>("link")
-                    if (link != null && pendingDeepLink == link) {
-                        pendingDeepLink = null
+                    val current = pendingDeepLink
+                    if (link != null) {
+                        val matched = when (current) {
+                            is String -> current == link
+                            is Map<*, *> -> current["id"]?.toString() == link
+                            else -> false
+                        }
+                        if (matched) {
+                            pendingDeepLink = null
+                        }
                     }
                     result.success(true)
                 }
@@ -1080,6 +1099,13 @@ class MainActivity : FlutterActivity() {
             // 二维码参数（会话与一次性公钥）由 Dart 层严格校验后才使用。
             pendingDeepLink = data.toString()
             return true
+        } else if (isThemeFileIntent(intent)) {
+            if (intent?.getBooleanExtra(EXTRA_THEME_INTENT_HANDLED, false) == true) {
+                return false
+            }
+            intent?.putExtra(EXTRA_THEME_INTENT_HANDLED, true)
+            enqueueIncomingThemeFile(intent?.data)
+            return false
         } else if (intent?.action == "com.example.shenliyuan.ACTION_WIDGET_EXAM") {
             val examName = intent.getStringExtra("exam_name") ?: ""
             val examDate = intent.getStringExtra("exam_date") ?: ""
@@ -1098,6 +1124,143 @@ class MainActivity : FlutterActivity() {
         if (data == null) return false
         return (data.scheme == "sylulive" && data.host == "academic-transfer") ||
             (data.scheme == "https" && data.host == "sylulive.online" && data.path == "/web/app-scan")
+    }
+
+    private fun isThemeFileIntent(intent: Intent?): Boolean {
+        if (intent?.action != Intent.ACTION_VIEW) return false
+        val data = intent.data ?: return false
+        val scheme = data.scheme?.lowercase(Locale.ROOT) ?: return false
+        if (scheme != "content" && scheme != "file") return false
+        val mime = intent.type?.lowercase(Locale.ROOT)
+        if (mime == "application/vnd.sylulive.theme+zip") return true
+        if (data.path?.lowercase(Locale.ROOT)?.endsWith(".sltheme") == true) return true
+        if (data.lastPathSegment?.lowercase(Locale.ROOT)?.endsWith(".sltheme") == true) return true
+        if (scheme == "content") {
+            try {
+                contentResolver.query(
+                    data,
+                    arrayOf(OpenableColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0) {
+                            val name = cursor.getString(idx)?.lowercase(Locale.ROOT)
+                            if (name?.endsWith(".sltheme") == true) return true
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return false
+    }
+
+    private fun enqueueIncomingThemeFile(uri: Uri?) {
+        val generation = themeImportGeneration.incrementAndGet()
+        val eventId = "theme-${UUID.randomUUID()}"
+        if (uri == null) {
+            deliverIncomingThemeResult(generation, eventId, null, "read_failed")
+            return
+        }
+        val appContext = applicationContext
+        themeImportExecutor.execute {
+            if (themeImportGeneration.get() != generation) return@execute
+            val incomingDir = File(appContext.cacheDir, "incoming-theme")
+            incomingDir.mkdirs()
+            incomingDir.listFiles()?.forEach { stale ->
+                try {
+                    stale.delete()
+                } catch (_: Exception) {
+                }
+            }
+            val dest = File(incomingDir, "$eventId.sltheme")
+            try {
+                if (uri.scheme.equals("file", ignoreCase = true)) {
+                    val rawPath = uri.path ?: throw IllegalArgumentException("missing path")
+                    val canonicalSource = File(rawPath).canonicalFile
+                    val privateDataRoot = File(appContext.applicationInfo.dataDir).canonicalFile
+                    val canonicalCache = appContext.cacheDir.canonicalFile
+                    if (canonicalSource.path.startsWith(privateDataRoot.path + File.separator) &&
+                        !canonicalSource.path.startsWith(canonicalCache.path + File.separator)
+                    ) {
+                        deliverIncomingThemeResult(generation, eventId, null, "permission_denied")
+                        return@execute
+                    }
+                }
+                val input = appContext.contentResolver.openInputStream(uri)
+                    ?: throw java.io.FileNotFoundException("null stream")
+                var total = 0L
+                input.use { stream ->
+                    FileOutputStream(dest).use { out ->
+                        val buffer = ByteArray(16 * 1024)
+                        while (true) {
+                            if (themeImportGeneration.get() != generation) {
+                                out.close()
+                                dest.delete()
+                                return@execute
+                            }
+                            val read = stream.read(buffer)
+                            if (read < 0) break
+                            total += read
+                            if (total > MAX_THEME_PACKAGE_BYTES) {
+                                out.close()
+                                dest.delete()
+                                deliverIncomingThemeResult(
+                                    generation,
+                                    eventId,
+                                    null,
+                                    "theme_too_large",
+                                )
+                                return@execute
+                            }
+                            out.write(buffer, 0, read)
+                        }
+                        out.flush()
+                    }
+                }
+                if (themeImportGeneration.get() != generation) {
+                    dest.delete()
+                    return@execute
+                }
+                deliverIncomingThemeResult(generation, eventId, dest.absolutePath, null)
+            } catch (_: SecurityException) {
+                dest.delete()
+                deliverIncomingThemeResult(generation, eventId, null, "permission_denied")
+            } catch (_: Exception) {
+                dest.delete()
+                deliverIncomingThemeResult(generation, eventId, null, "read_failed")
+            }
+        }
+    }
+
+    private fun deliverIncomingThemeResult(
+        generation: Long,
+        eventId: String,
+        copiedPath: String?,
+        errorCode: String?,
+    ) {
+        keepAliveHandler.post {
+            if (isDestroyed || themeImportGeneration.get() != generation) {
+                if (copiedPath != null) {
+                    try {
+                        File(copiedPath).delete()
+                    } catch (_: Exception) {
+                    }
+                }
+                return@post
+            }
+            val payload = mutableMapOf<String, Any?>(
+                "type" to "theme_file",
+                "id" to eventId,
+            )
+            if (copiedPath != null) payload["path"] = copiedPath
+            if (errorCode != null) payload["error"] = errorCode
+            pendingDeepLink = payload
+            dispatchPendingDeepLink()
+        }
     }
 
     /** 仅转发受清单约束且携带正整数编号的组队链接。 */

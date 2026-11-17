@@ -212,10 +212,11 @@ Finder _detail() => find.byKey(const ValueKey('profile-detail-pane'));
 Finder _entry(String text) =>
     find.descendant(of: _master(), matching: find.text(text)).first;
 Future<void> _tapEntry(WidgetTester tester, String text) async {
-  final target = text == '设置'
-      ? find.byKey(const ValueKey('profile-entry-设置'))
+  final bottomEntry = text == '设置' || text == '个性主题';
+  final target = bottomEntry
+      ? find.byKey(ValueKey('profile-entry-$text'))
       : _entry(text);
-  if (text == '设置') {
+  if (bottomEntry) {
     await tester.scrollUntilVisible(target, 240,
         scrollable: find
             .descendant(of: _master(), matching: find.byType(Scrollable))
@@ -534,6 +535,9 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.byType(SettingsScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _tapEntry(tester, '个性主题');
+    expect(find.byType(AppearanceSettingsScreen), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

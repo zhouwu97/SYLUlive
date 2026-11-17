@@ -57,6 +57,8 @@ class _SearchTheme extends ChangeNotifier implements ThemeProvider {
   double get componentOpacity => 1;
   @override
   double get effectiveComponentOpacity => 1;
+  @override
+  ThemeTrialSession? get trial => null;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

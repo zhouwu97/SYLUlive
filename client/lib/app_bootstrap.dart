@@ -104,6 +104,8 @@ import 'widgets/global_background_wrapper.dart';
 import 'widgets/app_scroll_behavior.dart';
 import 'widgets/startup_recovery_screen.dart';
 import 'widgets/required_legal_consent_dialog.dart';
+import 'features/theme_pack/theme_import_screen.dart';
+import 'features/theme_pack/theme_trial_banner.dart';
 import 'platform/contracts/preferences_store.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
@@ -1666,6 +1668,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   static const _channel = MethodChannel('shenliyuan/deeplink');
   AuthProvider? _authProvider;
   String? _pendingTeamDeepLink;
+  Map<String, dynamic>? _pendingThemeFilePayload;
   bool _retryScheduled = false;
   bool _consumingDeepLink = false;
 
@@ -1689,8 +1692,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     // 监听原生端主动推送的深度链接（瞬间响应，避免打断动画）
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onDeepLink') {
-        final uri = call.arguments as String?;
-        await _consumeDeepLink(uri);
+        await _consumeDeepLinkPayload(call.arguments);
       }
     });
   }
@@ -1713,25 +1715,38 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   }
 
   void _retryPendingTeamDeepLink() {
-    if (!mounted || _pendingTeamDeepLink == null) return;
+    if (!mounted ||
+        (_pendingTeamDeepLink == null && _pendingThemeFilePayload == null)) {
+      return;
+    }
     _schedulePendingTeamDeepLinkRetry();
   }
 
   void _schedulePendingTeamDeepLinkRetry() {
-    if (_retryScheduled || _pendingTeamDeepLink == null || !mounted) return;
+    if (_retryScheduled ||
+        (_pendingTeamDeepLink == null && _pendingThemeFilePayload == null) ||
+        !mounted) {
+      return;
+    }
     _retryScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _retryScheduled = false;
+      if (!mounted) return;
+      final pendingTheme = _pendingThemeFilePayload;
+      if (pendingTheme != null) {
+        await _consumeDeepLinkPayload(pendingTheme);
+      }
       final pending = _pendingTeamDeepLink;
-      if (!mounted || pending == null) return;
-      await _consumeDeepLink(pending);
+      if (mounted && pending != null) {
+        await _consumeDeepLink(pending);
+      }
     });
   }
 
   Future<void> _checkDeepLink() async {
     try {
-      final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
-      await _consumeDeepLink(uri);
+      final payload = await _channel.invokeMethod<Object?>('getPendingDeepLink');
+      await _consumeDeepLinkPayload(payload);
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
       DiagnosticLogService.instance.record(
@@ -1745,6 +1760,59 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         operation: 'read',
         result: 'failure',
       );
+    }
+  }
+
+  Future<void> _consumeDeepLinkPayload(Object? payload) async {
+    if (payload == null || !mounted) return;
+    if (payload is String) {
+      await _consumeDeepLink(payload);
+      return;
+    }
+    if (payload is Map) {
+      final map = payload.map((key, value) => MapEntry('$key', value));
+      if (map['type'] == 'theme_file') {
+        await _consumeThemeFilePayload(map);
+      }
+    }
+  }
+
+  Future<void> _consumeThemeFilePayload(Map<String, dynamic> map) async {
+    if (!mounted || _consumingDeepLink) return;
+    _consumingDeepLink = true;
+    try {
+      final navigator = appNavigatorKey.currentState;
+      if (navigator == null) {
+        _pendingThemeFilePayload = map;
+        _schedulePendingTeamDeepLinkRetry();
+        return;
+      }
+      if (_pendingThemeFilePayload?['id'] == map['id']) {
+        _pendingThemeFilePayload = null;
+      }
+      final eventId =
+          (map['id'] as String?) ?? '${DateTime.now().microsecondsSinceEpoch}';
+      final request = ThemeIncomingCoordinator.instance.accept(
+        eventId: eventId,
+        filePath: map['path'] as String?,
+        errorCode: map['error'] as String?,
+      );
+      if (!ThemeImportScreen.isIncomingRouteActive) {
+        unawaited(
+          navigator.push(
+            MaterialPageRoute<bool>(
+              builder: (_) => ThemeImportScreen(incomingRequest: request),
+            ),
+          ),
+        );
+      }
+      try {
+        await _channel.invokeMethod<void>('ackPendingDeepLink', {'link': eventId});
+      } catch (error) {
+        debugPrint('主题文件深链确认失败: $error');
+      }
+    } finally {
+      _consumingDeepLink = false;
     }
   }
 
@@ -1999,7 +2067,9 @@ class _AppContent extends StatelessWidget {
           data: mediaQuery.copyWith(textScaler: appTextScaler),
           child: AppUpdateGate(
             navigatorKey: appNavigatorKey,
-            child: child ?? const SizedBox.shrink(),
+            child: ThemeTrialBannerHost(
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
       },

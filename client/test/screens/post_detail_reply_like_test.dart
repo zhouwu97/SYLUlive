@@ -225,6 +225,9 @@ class LikeTestThemeProvider extends Fake
 
   @override
   bool get frostedGlass => false;
+
+  @override
+  ThemeTrialSession? get trial => null;
 }
 
 Map<String, dynamic> replyJson(int id, {int likeCount = 12, bool isLiked = false}) {

@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
@@ -13,20 +14,26 @@ import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/features/theme_pack/admin_theme_review_screen.dart';
 import 'package:shenliyuan/features/theme_pack/installed_themes_screen.dart';
+import 'package:shenliyuan/features/theme_pack/theme_appearance.dart';
+import 'package:shenliyuan/features/theme_pack/theme_contrast.dart';
 import 'package:shenliyuan/features/theme_pack/theme_manifest.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_codec.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_store.dart';
+import 'package:shenliyuan/features/theme_pack/theme_resolver.dart';
 import 'package:shenliyuan/features/theme_pack/theme_store_repository.dart';
 import 'package:shenliyuan/features/theme_pack/theme_store_screen.dart';
 import 'package:shenliyuan/features/theme_pack/theme_submission_screen.dart';
 import 'package:shenliyuan/features/theme_pack/theme_trial_banner.dart';
+import 'package:shenliyuan/features/theme_pack/theme_workshop_samples.dart';
 import 'package:shenliyuan/features/theme_pack/theme_workshop_screen.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/services/publish_session_scope.dart';
+import 'package:shenliyuan/theme/app_palette.dart';
 
+import '../helpers/emoji_flow_qa.dart' show settleEmojiQAImages;
 import '../helpers/load_test_fonts.dart';
 
 class _TestAuth extends AuthProvider {
@@ -354,6 +361,9 @@ void main() {
   setUpAll(() async {
     defaultTestHttpOverrides = HttpOverrides.current;
     await loadTestFonts();
+    await (FontLoader('Roboto')
+          ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf')))
+        .load();
     await (FontLoader('MaterialIcons')
           ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf')))
         .load();
@@ -1358,6 +1368,1109 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await _settleIo(tester, cycles: 4);
     PaintingBinding.instance.imageCache.clear();
+  });
+
+  testWidgets('P5 首批五套官方主题：工坊对比度全绿、双管理员隔离上架与官方区顺序核验',
+      (tester) async {
+    HttpOverrides.global = null;
+    _GoLoopbackServer? server;
+    Directory? artDir;
+    try {
+      final exportReport =
+          Platform.environment['EXPORT_OFFICIAL_THEMES_REPORT'] == '1';
+      late List<_OfficialThemeSpec> specs;
+      final normalizedPacks = <String, PreparedThemePack>{};
+      final catalogRecords = <String, ThemeCatalogItem>{};
+
+      await tester.runAsync(() async {
+        artDir = await Directory.systemTemp.createTemp('sltheme-p5-art-');
+        specs = await _buildFiveOfficialThemes(artDir!);
+        for (final spec in specs) {
+          expect(
+            spec.state.checkAllContrast(),
+            isEmpty,
+            reason: '${spec.state.name} 工坊对比度必须全绿',
+          );
+          final decoded =
+              await ThemePackCodec.decode(spec.bytes, appVersion: '1.7.12');
+          expect(
+            ThemeContrast.check(decoded.manifest),
+            isEmpty,
+            reason: '${spec.state.name} manifest 对比度必须全绿',
+          );
+        }
+
+        server = await _GoLoopbackServer.start();
+        final repoAdmin1 = ThemeStoreRepository(server!.clientFor('admin1'));
+        final repoAdmin2 = ThemeStoreRepository(server!.clientFor('admin2'));
+        final repoPublic = ThemeStoreRepository(server!.clientFor('user1'));
+        const scopeAdmin1 =
+            PublishSessionScope(accountId: 3, accountSessionEpoch: 1);
+        const scopeAdmin2 =
+            PublishSessionScope(accountId: 4, accountSessionEpoch: 1);
+
+        for (var i = 0; i < specs.length; i++) {
+          final spec = specs[i];
+          final submitted = await repoAdmin1.submit(
+            packageBytes: spec.bytes,
+            idempotencyKey: 'p5-official-sub-${i + 1}-${spec.slug}',
+            session: scopeAdmin1,
+            source: 'official',
+            name: spec.state.name,
+            description: spec.state.description,
+            tags: spec.state.tags,
+            license: spec.state.license,
+          );
+          expect(submitted.source, 'official');
+          expect(submitted.status, 'pending');
+
+          if (i == 0) {
+            // 管理员本人不得自审
+            await expectLater(
+              repoAdmin1.adminReview(
+                submitted.id,
+                approve: true,
+                session: scopeAdmin1,
+              ),
+              throwsA(
+                isA<ThemeStoreApiException>()
+                    .having((e) => e.code, 'code', 'theme_forbidden'),
+              ),
+            );
+          }
+
+          final approved = await repoAdmin2.adminReview(
+            submitted.id,
+            approve: true,
+            session: scopeAdmin2,
+          );
+          expect(approved.status, 'approved');
+          expect(approved.source, 'official');
+          await Future<void>.delayed(const Duration(milliseconds: 15));
+        }
+
+        final officialPage = await repoPublic.listCatalog(sort: 'official');
+        expect(
+          officialPage.items.map((e) => e.name).toList(),
+          ['沈理青', '墨夜', '海盐蓝', '樱粉', '纸感'],
+        );
+        for (final item in officialPage.items) {
+          expect(item.isOfficial, isTrue);
+        }
+
+        if (exportReport) {
+          final p5ArtifactDir = Directory(
+            p.normalize(
+              p.join(Directory.current.path, '..', 'artifacts', 'theme-p5', 'packages'),
+            ),
+          );
+          await p5ArtifactDir.create(recursive: true);
+
+          for (var i = 0; i < officialPage.items.length; i++) {
+            final item = officialPage.items[i];
+            final slug = specs[i].slug;
+            catalogRecords[slug] = item;
+            final resp = await repoPublic.dio.getUri<List<int>>(
+              Uri.parse(repoPublic.resolveUrl(item.packageUrl)),
+              options: Options(responseType: ResponseType.bytes),
+            );
+            final normBytes = Uint8List.fromList(resp.data!);
+            expect(
+              sha256.convert(normBytes).toString(),
+              item.packageSha256,
+            );
+            await File(p.join(p5ArtifactDir.path, '$slug.sltheme'))
+                .writeAsBytes(normBytes, flush: true);
+            normalizedPacks[slug] = await ThemePackCodec.decodeStorePackage(
+              normBytes,
+              appVersion: '1.7.12',
+            );
+          }
+        }
+      });
+
+      // 挂载商城页面验证“官方主题”横向架显示首批五套
+      final dioUser = server!.clientFor('user1');
+      final authUser = _TestAuth(dioUser, id: 1, role: 'user');
+      final repoUser = ThemeStoreRepository(dioUser);
+      await tester.pumpWidget(
+        _wrapWithProviders(
+          auth: authUser,
+          themeProvider: themeProvider,
+          home: ThemeStoreScreen(repository: repoUser, appVersion: '1.7.12'),
+        ),
+      );
+      await _settleIo(tester, cycles: 10);
+      expect(find.text('官方主题'), findsOneWidget);
+      expect(find.text('沈理青'), findsWidgets);
+      expect(find.text('墨夜'), findsWidgets);
+
+      if (exportReport) {
+        await _exportOfficialThemesReportAndScreenshots(
+          tester: tester,
+          specs: specs,
+          normalizedPacks: normalizedPacks,
+          catalogRecords: catalogRecords,
+        );
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    } finally {
+      await tester.runAsync(() async {
+        await server?.stop();
+        if (artDir != null && await artDir!.exists()) {
+          await artDir!.delete(recursive: true);
+        }
+      });
+    }
+  });
+}
+
+class _OfficialThemeSpec {
+  const _OfficialThemeSpec({
+    required this.slug,
+    required this.state,
+    required this.bytes,
+    required this.designSummary,
+    required this.assetNote,
+    this.defaultDeltas = const [],
+  });
+
+  final String slug;
+  final ThemeWorkshopStateData state;
+  final Uint8List bytes;
+  final String designSummary;
+  final String assetNote;
+  final List<String> defaultDeltas;
+}
+
+Future<List<_OfficialThemeSpec>> _buildFiveOfficialThemes(
+  Directory artDir,
+) async {
+  WorkshopVariantDraft buildSeededVariant({
+    required String seedHex,
+    required String schemeVariant,
+    required Brightness brightness,
+    Map<String, String> overrides = const {},
+    List<String>? customCourses,
+  }) {
+    final seed = ThemeContrast.parseColor(seedHex);
+    final variantEnum = ThemeResolver.parseSchemeVariant(schemeVariant);
+    final baseTokens = ThemeResolver.deriveTokens(
+      seedColor: seed,
+      brightness: brightness,
+      schemeVariant: variantEnum,
+      overrides: overrides,
+    );
+    final courses = customCourses ??
+        ThemeResolver.generateCoursePalette(
+          seedColor: seed,
+          brightness: brightness,
+          background: ThemeContrast.parseColor(baseTokens['background']!),
+          courseCardText:
+              ThemeContrast.parseColor(baseTokens['courseCardText']!),
+        );
+    final fixed = ThemeResolver.autoFixVariant(
+      brightness: brightness,
+      tokens: baseTokens,
+      coursePalette: courses,
+    );
+    return WorkshopVariantDraft(
+      seedColor: seedHex.toUpperCase(),
+      schemeVariant: schemeVariant,
+      overrides: {
+        ...overrides.map((k, v) => MapEntry(k, v.toUpperCase())),
+        ...fixed.changedOverrides,
+      },
+      coursePalette: fixed.coursePalette,
+    );
+  }
+
+  // 生成两套原创几何渐变页头背景与透明几何贴纸（CC0-1.0，项目自制，不含任何文字/水印/第三方素材）
+  Future<String> writeGradientBg(
+    String fileName,
+    (int, int, int) topRgb,
+    (int, int, int) bottomRgb,
+    (int, int, int) accentRgb,
+  ) async {
+    final canvas = img.Image(width: 720, height: 320);
+    for (var y = 0; y < canvas.height; y++) {
+      final t = y / (canvas.height - 1);
+      final r = (topRgb.$1 + (bottomRgb.$1 - topRgb.$1) * t).round();
+      final g = (topRgb.$2 + (bottomRgb.$2 - topRgb.$2) * t).round();
+      final b = (topRgb.$3 + (bottomRgb.$3 - topRgb.$3) * t).round();
+      for (var x = 0; x < canvas.width; x++) {
+        canvas.setPixelRgb(x, y, r, g, b);
+      }
+    }
+    img.fillCircle(
+      canvas,
+      x: 590,
+      y: 78,
+      radius: 110,
+      color: img.ColorRgba8(accentRgb.$1, accentRgb.$2, accentRgb.$3, 46),
+    );
+    img.fillCircle(
+      canvas,
+      x: 130,
+      y: 260,
+      radius: 135,
+      color: img.ColorRgba8(accentRgb.$1, accentRgb.$2, accentRgb.$3, 34),
+    );
+    final outPath = p.join(artDir.path, fileName);
+    await File(outPath).writeAsBytes(img.encodePng(canvas));
+    return outPath;
+  }
+
+  Future<String> writeGeometricSticker(
+    String fileName,
+    (int, int, int, int) fillRgba,
+    (int, int, int, int) ringRgba,
+    bool diamond,
+  ) async {
+    final s = img.Image(width: 128, height: 128, numChannels: 4);
+    if (diamond) {
+      img.fillPolygon(
+        s,
+        vertices: [
+          img.Point(64, 12),
+          img.Point(116, 64),
+          img.Point(64, 116),
+          img.Point(12, 64),
+        ],
+        color: img.ColorRgba8(
+          fillRgba.$1,
+          fillRgba.$2,
+          fillRgba.$3,
+          fillRgba.$4,
+        ),
+      );
+      img.drawCircle(
+        s,
+        x: 64,
+        y: 64,
+        radius: 26,
+        color: img.ColorRgba8(
+          ringRgba.$1,
+          ringRgba.$2,
+          ringRgba.$3,
+          ringRgba.$4,
+        ),
+      );
+    } else {
+      img.fillCircle(
+        s,
+        x: 64,
+        y: 64,
+        radius: 46,
+        color: img.ColorRgba8(
+          fillRgba.$1,
+          fillRgba.$2,
+          fillRgba.$3,
+          fillRgba.$4,
+        ),
+      );
+      img.fillCircle(
+        s,
+        x: 48,
+        y: 48,
+        radius: 16,
+        color: img.ColorRgba8(
+          ringRgba.$1,
+          ringRgba.$2,
+          ringRgba.$3,
+          ringRgba.$4,
+        ),
+      );
+    }
+    final outPath = p.join(artDir.path, fileName);
+    await File(outPath).writeAsBytes(img.encodePng(s));
+    return outPath;
+  }
+
+  // 1. 沈理青（以内置默认值为基础，不走推导；亮色 textSecondary 改为 #6E757C，其余对比度不足项按 HCT 同色相最小步进补齐并逐项记录）
+  final shenliBase =
+      ThemeWorkshopStateData.fromAppearance(const ThemeAppearance.empty());
+  final defaultLightMap = AppPalette.defaults(Brightness.light).toJson();
+  final defaultDarkMap = AppPalette.defaults(Brightness.dark).toJson();
+  const defaultCourses = ['#448AFF', '#00C853', '#9C27B0', '#FF5252', '#FF9800'];
+
+  final shenliLightTarget = <String, String>{
+    ...defaultLightMap,
+    'textSecondary': '#6E757C',
+  };
+  final shenliLightFixed = ThemeResolver.autoFixVariant(
+    brightness: Brightness.light,
+    tokens: shenliLightTarget,
+    coursePalette: defaultCourses,
+  );
+  final shenliDarkFixed = ThemeResolver.autoFixVariant(
+    brightness: Brightness.dark,
+    tokens: defaultDarkMap,
+    coursePalette: defaultCourses,
+  );
+
+  final shenliDerivedLight = ThemeResolver.deriveTokens(
+    seedColor: ThemeContrast.parseColor('#147C72'),
+    brightness: Brightness.light,
+  );
+  final shenliDerivedDark = ThemeResolver.deriveTokens(
+    seedColor: ThemeContrast.parseColor('#7ED6C5'),
+    brightness: Brightness.dark,
+  );
+  final shenliFinalLightTokens = {
+    ...shenliLightTarget,
+    ...shenliLightFixed.changedOverrides,
+  };
+  final shenliFinalDarkTokens = {
+    ...defaultDarkMap,
+    ...shenliDarkFixed.changedOverrides,
+  };
+
+  final shenliDeltas = <String>[];
+  for (final k in defaultLightMap.keys) {
+    final before = defaultLightMap[k]!.toUpperCase();
+    final after = shenliFinalLightTokens[k]!.toUpperCase();
+    if (before != after) {
+      shenliDeltas.add('light.tokens.$k: $before → $after');
+    }
+  }
+  for (final k in defaultDarkMap.keys) {
+    final before = defaultDarkMap[k]!.toUpperCase();
+    final after = shenliFinalDarkTokens[k]!.toUpperCase();
+    if (before != after) {
+      shenliDeltas.add('dark.tokens.$k: $before → $after');
+    }
+  }
+  for (var i = 0; i < defaultCourses.length; i++) {
+    if (shenliLightFixed.coursePalette[i] != defaultCourses[i]) {
+      shenliDeltas.add(
+        'light.coursePalette[$i]: ${defaultCourses[i]} → ${shenliLightFixed.coursePalette[i]}',
+      );
+    }
+    if (shenliDarkFixed.coursePalette[i] != defaultCourses[i]) {
+      shenliDeltas.add(
+        'dark.coursePalette[$i]: ${defaultCourses[i]} → ${shenliDarkFixed.coursePalette[i]}',
+      );
+    }
+  }
+
+  shenliBase
+    ..name = '沈理青'
+    ..author = '沈理校园官方'
+    ..description = '沿用沈理校园默认青绿视觉与标准布局，提升次要文字与标签可读性。'
+    ..tags = ['简约', '校园', '明暗自适应']
+    ..license = 'CC-BY-4.0'
+    ..shape = 'standard'
+    ..builtinLauncherIcon = 'default'
+    ..light = WorkshopVariantDraft(
+      seedColor: '#147C72',
+      schemeVariant: 'tonalSpot',
+      overrides: {
+        for (final e in shenliFinalLightTokens.entries)
+          if (shenliDerivedLight[e.key] != e.value.toUpperCase())
+            e.key: e.value.toUpperCase(),
+      },
+      coursePalette: shenliLightFixed.coursePalette,
+    )
+    ..dark = WorkshopVariantDraft(
+      seedColor: '#7ED6C5',
+      schemeVariant: 'tonalSpot',
+      overrides: {
+        for (final e in shenliFinalDarkTokens.entries)
+          if (shenliDerivedDark[e.key] != e.value.toUpperCase())
+            e.key: e.value.toUpperCase(),
+      },
+      coursePalette: shenliDarkFixed.coursePalette,
+    );
+
+  // 2. 墨夜（种子 #5B7C8A，neutral，暗色纯黑 OLED 底面 + compact 页头 + 细描边无阴影）
+  final moyeState = ThemeWorkshopStateData(
+    draftId: ThemeWorkshopStateData.newUuid(),
+    themeId: ThemeWorkshopStateData.newUuid(),
+    name: '墨夜',
+    author: '沈理校园官方',
+    description: '中性岩灰浅色与纯黑高对比深色配对，校园与个人页采用紧凑页头。',
+    tags: ['深色', '简约', '高对比'],
+    license: 'CC-BY-4.0',
+    shape: 'standard',
+    light: buildSeededVariant(
+      seedHex: '#5B7C8A',
+      schemeVariant: 'neutral',
+      brightness: Brightness.light,
+    )..cardStyle = {'borderWidth': 1.0, 'shadow': 'none'},
+    dark: buildSeededVariant(
+      seedHex: '#5B7C8A',
+      schemeVariant: 'neutral',
+      brightness: Brightness.dark,
+      overrides: const {
+        'background': '#000000',
+        'card': '#0E1113',
+        'navBackground': '#0A0C0D',
+      },
+    )..cardStyle = {'borderWidth': 1.0, 'shadow': 'none'},
+    layout: {
+      'campus': {
+        'preset': 'compact',
+        'alignment': 'start',
+        'imageHeight': 140.0,
+        'imageWidth': 1.0,
+      },
+      'me': {
+        'preset': 'compact',
+        'alignment': 'start',
+        'imageHeight': 140.0,
+        'imageWidth': 1.0,
+      },
+    },
+  );
+
+  // 3. 海盐蓝（种子 #2F7FD8，tonalSpot，亮色底 #F5F9FF，8 色蓝绿课表，immersive 页头 + 原创海盐几何背景与贴纸）
+  final seaLightBg = await writeGradientBg(
+    'sea_light_bg.png',
+    (216, 236, 255),
+    (236, 248, 252),
+    (47, 127, 216),
+  );
+  final seaDarkBg = await writeGradientBg(
+    'sea_dark_bg.png',
+    (18, 42, 72),
+    (14, 30, 48),
+    (112, 186, 255),
+  );
+  final seaBubble1 = await writeGeometricSticker(
+    'sea_bubble_1.png',
+    (47, 127, 216, 150),
+    (255, 255, 255, 190),
+    false,
+  );
+  final seaBubble2 = await writeGeometricSticker(
+    'sea_bubble_2.png',
+    (26, 166, 156, 145),
+    (230, 252, 250, 180),
+    true,
+  );
+  const seaEightLightRaw = [
+    '#2F7FD8',
+    '#1E9BB8',
+    '#1AA69C',
+    '#2E8BC0',
+    '#3B6FD8',
+    '#26A682',
+    '#4B8CE8',
+    '#1888A8',
+  ];
+  const seaEightDarkRaw = [
+    '#1D5696',
+    '#15687D',
+    '#146E66',
+    '#1E5E85',
+    '#284B94',
+    '#196E55',
+    '#2B5AA1',
+    '#125B70',
+  ];
+  final seaLight = buildSeededVariant(
+    seedHex: '#2F7FD8',
+    schemeVariant: 'tonalSpot',
+    brightness: Brightness.light,
+    overrides: const {'background': '#F5F9FF'},
+    customCourses: seaEightLightRaw,
+  )
+    ..cardStyle = {'borderWidth': 1.0, 'shadow': 'soft'}
+    ..decorations['home'] = {
+      'background': {
+        'image': seaLightBg,
+        'fit': 'cover',
+        'focalX': 0.5,
+        'focalY': 0.5,
+        'blur': 0.0,
+        'scrim': 0.08,
+        'adjustments': {
+          'brightness': 6.0,
+          'contrast': 106.0,
+          'saturation': 108.0,
+        },
+      },
+      'stickers': [
+        {'image': seaBubble1, 'x': 0.84, 'y': 0.34, 'width': 0.16, 'rotation': 8.0},
+        {'image': seaBubble2, 'x': 0.14, 'y': 0.72, 'width': 0.13, 'rotation': -14.0},
+      ],
+    }
+    ..decorations['me'] = {
+      'background': {
+        'image': seaLightBg,
+        'fit': 'cover',
+        'focalX': 0.5,
+        'focalY': 0.5,
+        'blur': 0.0,
+        'scrim': 0.1,
+        'adjustments': {
+          'brightness': 4.0,
+          'contrast': 104.0,
+          'saturation': 106.0,
+        },
+      },
+      'stickers': [
+        {'image': seaBubble1, 'x': 0.86, 'y': 0.30, 'width': 0.15, 'rotation': -6.0},
+      ],
+    };
+  final seaDark = buildSeededVariant(
+    seedHex: '#2F7FD8',
+    schemeVariant: 'tonalSpot',
+    brightness: Brightness.dark,
+    customCourses: seaEightDarkRaw,
+  )
+    ..cardStyle = {'borderWidth': 1.0, 'shadow': 'soft'}
+    ..decorations['home'] = {
+      'background': {
+        'image': seaDarkBg,
+        'fit': 'cover',
+        'focalX': 0.5,
+        'focalY': 0.5,
+        'blur': 0.0,
+        'scrim': 0.14,
+        'adjustments': {
+          'brightness': -6.0,
+          'contrast': 108.0,
+          'saturation': 96.0,
+        },
+      },
+      'stickers': [
+        {'image': seaBubble1, 'x': 0.84, 'y': 0.34, 'width': 0.16, 'rotation': 8.0},
+        {'image': seaBubble2, 'x': 0.14, 'y': 0.72, 'width': 0.13, 'rotation': -14.0},
+      ],
+    }
+    ..decorations['me'] = {
+      'background': {
+        'image': seaDarkBg,
+        'fit': 'cover',
+        'focalX': 0.5,
+        'focalY': 0.5,
+        'blur': 0.0,
+        'scrim': 0.16,
+      },
+      'stickers': [
+        {'image': seaBubble1, 'x': 0.86, 'y': 0.30, 'width': 0.15, 'rotation': -6.0},
+      ],
+    };
+  final haiyanState = ThemeWorkshopStateData(
+    draftId: ThemeWorkshopStateData.newUuid(),
+    themeId: ThemeWorkshopStateData.newUuid(),
+    name: '海盐蓝',
+    author: '沈理校园官方',
+    description: '通透海盐蓝白配色与 8 色蓝绿课表，首页与个人页配备沉浸式几何海浪装饰区。',
+    tags: ['清新', '浅色', '明暗自适应'],
+    license: 'CC-BY-4.0',
+    shape: 'standard',
+    light: seaLight,
+    dark: seaDark,
+    layout: {
+      'home': {
+        'preset': 'immersive',
+        'alignment': 'start',
+        'imageHeight': 152.0,
+        'imageWidth': 1.0,
+      },
+      'me': {
+        'preset': 'immersive',
+        'alignment': 'center',
+        'imageHeight': 148.0,
+        'imageWidth': 0.94,
+      },
+    },
+  );
+
+  // 4. 樱粉（种子 #C9617E，tonalSpot，亮色底 #FFF7F8，rounded 圆角 + 个人页 immersive 几何花瓣贴纸）
+  final sakuraLightBg = await writeGradientBg(
+    'sakura_light_bg.png',
+    (255, 228, 236),
+    (255, 245, 247),
+    (201, 97, 126),
+  );
+  final sakuraDarkBg = await writeGradientBg(
+    'sakura_dark_bg.png',
+    (62, 28, 40),
+    (36, 18, 26),
+    (235, 146, 172),
+  );
+  final sakuraPetal = await writeGeometricSticker(
+    'sakura_petal.png',
+    (216, 112, 142, 155),
+    (255, 240, 245, 195),
+    true,
+  );
+  final yingfenLight = buildSeededVariant(
+    seedHex: '#C9617E',
+    schemeVariant: 'tonalSpot',
+    brightness: Brightness.light,
+    overrides: const {'background': '#FFF7F8'},
+  )
+    ..cardStyle = {'borderWidth': 0.5, 'shadow': 'soft'}
+    ..decorations['me'] = {
+      'background': {
+        'image': sakuraLightBg,
+        'fit': 'cover',
+        'focalX': 0.5,
+        'focalY': 0.5,
+        'scrim': 0.08,
+      },
+      'stickers': [
+        {'image': sakuraPetal, 'x': 0.85, 'y': 0.28, 'width': 0.15, 'rotation': 18.0},
+        {'image': sakuraPetal, 'x': 0.16, 'y': 0.68, 'width': 0.12, 'rotation': -22.0},
+      ],
+    };
+  final yingfenDark = buildSeededVariant(
+    seedHex: '#C9617E',
+    schemeVariant: 'tonalSpot',
+    brightness: Brightness.dark,
+  )
+    ..cardStyle = {'borderWidth': 0.5, 'shadow': 'soft'}
+    ..decorations['me'] = {
+      'background': {
+        'image': sakuraDarkBg,
+        'fit': 'cover',
+        'focalX': 0.5,
+        'focalY': 0.5,
+        'scrim': 0.14,
+      },
+      'stickers': [
+        {'image': sakuraPetal, 'x': 0.85, 'y': 0.28, 'width': 0.15, 'rotation': 18.0},
+        {'image': sakuraPetal, 'x': 0.16, 'y': 0.68, 'width': 0.12, 'rotation': -22.0},
+      ],
+    };
+  final yingfenState = ThemeWorkshopStateData(
+    draftId: ThemeWorkshopStateData.newUuid(),
+    themeId: ThemeWorkshopStateData.newUuid(),
+    name: '樱粉',
+    author: '沈理校园官方',
+    description: '柔和樱粉大圆角卡片与个人页几何花瓣装饰，兼顾深浅双模式清晰对比。',
+    tags: ['可爱', '清新', '浅色'],
+    license: 'CC-BY-4.0',
+    shape: 'rounded',
+    light: yingfenLight,
+    dark: yingfenDark,
+    layout: {
+      'campus': {
+        'preset': 'compact',
+        'alignment': 'start',
+        'imageHeight': 136.0,
+        'imageWidth': 1.0,
+      },
+      'me': {
+        'preset': 'immersive',
+        'alignment': 'center',
+        'imageHeight': 148.0,
+        'imageWidth': 0.94,
+      },
+    },
+  );
+
+  // 5. 纸感（种子 #3E6B4F，fidelity，亮色底 #F6F0E2 / 卡片 #FBF7EE，compact 圆角与紧凑页头，无阴影细线卡片）
+  final zhiganState = ThemeWorkshopStateData(
+    draftId: ThemeWorkshopStateData.newUuid(),
+    themeId: ThemeWorkshopStateData.newUuid(),
+    name: '纸感',
+    author: '沈理校园官方',
+    description: '温润米白纸张底面配松石墨绿强调色，紧凑圆角与细描边带来安静阅读质感。',
+    tags: ['复古', '简约', '浅色'],
+    license: 'CC-BY-4.0',
+    shape: 'compact',
+    light: buildSeededVariant(
+      seedHex: '#3E6B4F',
+      schemeVariant: 'fidelity',
+      brightness: Brightness.light,
+      overrides: const {
+        'background': '#F6F0E2',
+        'card': '#FBF7EE',
+      },
+    )..cardStyle = {'borderWidth': 1.0, 'shadow': 'none'},
+    dark: buildSeededVariant(
+      seedHex: '#3E6B4F',
+      schemeVariant: 'fidelity',
+      brightness: Brightness.dark,
+    )..cardStyle = {'borderWidth': 1.0, 'shadow': 'none'},
+    layout: {
+      'home': {
+        'preset': 'compact',
+        'alignment': 'start',
+        'imageHeight': 136.0,
+        'imageWidth': 1.0,
+      },
+      'me': {
+        'preset': 'compact',
+        'alignment': 'start',
+        'imageHeight': 136.0,
+        'imageWidth': 1.0,
+      },
+    },
+  );
+
+  final entries = [
+    (
+      '01-shenli-qing',
+      shenliBase,
+      '基于内置默认值，保留全部标准页头布局与内置 `default` 桌面图标，修正浅色次要文字与对比度临界项。',
+      '无外部图片/字体资源；使用内置思源黑体与 `ic_launcher_main` (`default`)。',
+      shenliDeltas,
+    ),
+    (
+      '02-mo-ye',
+      moyeState,
+      '种子 `#5B7C8A` (`neutral`)，暗色纯黑 `#000000` 底面与 `#0E1113` 卡片，`campus`/`me` 采用 `compact` 页头与 1dp 无阴影描边。',
+      '无外部图片/字体；内置备选桌面图标 `night` 1024×1024 源图待维护者提供后补入安装包，当前按细则第 9 节省略 `launcherIcon`。',
+      const <String>[],
+    ),
+    (
+      '03-haiyan-lan',
+      haiyanState,
+      '种子 `#2F7FD8` (`tonalSpot`)，亮色底 `#F5F9FF` 与 8 色蓝绿课表，`home`/`me` 采用 `immersive` 页头、矩阵调色与柔和卡片阴影。',
+      '页头渐变背景与透明几何气泡贴纸由项目程序化原创生成（`CC0-1.0`）；备选图标 `sea` 源图待维护者提供。',
+      const <String>[],
+    ),
+    (
+      '04-ying-fen',
+      yingfenState,
+      '种子 `#C9617E` (`tonalSpot`)，亮色底 `#FFF7F8`，`rounded` 圆角档位，`campus` 采用 `compact`、`me` 采用 `immersive` 页头与几何花瓣贴纸。',
+      '页头渐变背景与透明几何花瓣贴纸由项目程序化原创生成（`CC0-1.0`）；备选图标 `sakura` 源图待维护者提供。',
+      const <String>[],
+    ),
+    (
+      '05-zhi-gan',
+      zhiganState,
+      '种子 `#3E6B4F` (`fidelity`)，亮色底 `#F6F0E2`、卡片 `#FBF7EE`，`compact` 圆角与 `home`/`me` 紧凑页头、1dp 纸感细边框无阴影。',
+      '霞鹜文楷（`LXGW WenKai`，`OFL-1.1`）GB2312+ASCII 双字重子集字体文件及 `paper` 图标源图未随离线仓库提供，当前不塞入伪造字体或占位图，沿用内置正文回退链。',
+      const <String>[],
+    ),
+  ];
+
+  final out = <_OfficialThemeSpec>[];
+  for (final e in entries) {
+    final bytes = await e.$2.exportPack(appVersion: '1.7.12');
+    out.add(
+      _OfficialThemeSpec(
+        slug: e.$1,
+        state: e.$2,
+        bytes: bytes,
+        designSummary: e.$3,
+        assetNote: e.$4,
+        defaultDeltas: e.$5,
+      ),
+    );
+  }
+  return out;
+}
+
+Future<void> _exportOfficialThemesReportAndScreenshots({
+  required WidgetTester tester,
+  required List<_OfficialThemeSpec> specs,
+  required Map<String, PreparedThemePack> normalizedPacks,
+  required Map<String, ThemeCatalogItem> catalogRecords,
+}) async {
+  tester.view.physicalSize = const Size(1120, 960);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+
+  final reportRoot = Directory(
+    p.normalize(
+      p.join(
+        Directory.current.path,
+        '..',
+        'docs',
+        'reports',
+        '2026-11-18-official-themes',
+      ),
+    ),
+  );
+  await tester.runAsync(() => reportRoot.create(recursive: true));
+
+  Future<Uint8List> captureStage({
+    required ThemeAppearance appearance,
+    required Brightness brightness,
+    required WorkshopSamplePage page,
+    required Map<String, Uint8List> contents,
+  }) async {
+    final boundaryKey = GlobalKey();
+    ImageProvider<Object>? resolveMem(String rawPath) {
+      final clean = rawPath.startsWith('/') ? rawPath.substring(1) : rawPath;
+      final data = contents[clean] ?? contents[rawPath];
+      return data == null ? null : MemoryImage(data);
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(fontFamily: 'NotoSansCJKsc'),
+        home: Scaffold(
+          body: Center(
+            child: DefaultTextStyle.merge(
+              style: const TextStyle(fontFamily: 'NotoSansCJKsc'),
+              child: RepaintBoundary(
+                key: boundaryKey,
+                child: SizedBox(
+                  width: 390,
+                  height: 844,
+                  child: ThemeWorkshopSampleStage(
+                    appearance: appearance,
+                    brightness: brightness,
+                    assetResolver: resolveMem,
+                    page: page,
+                    sampleState: WorkshopSampleState.normal,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final ctx = boundaryKey.currentContext!;
+    final images = tester
+        .widgetList<Image>(find.byType(Image))
+        .map((image) => image.image)
+        .toList();
+    if (images.isNotEmpty) {
+      await settleEmojiQAImages(tester, ctx, images);
+    }
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 30));
+
+    late Uint8List pngBytes;
+    await tester.runAsync(() async {
+      final boundary =
+          boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 1.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      pngBytes = byteData!.buffer.asUint8List();
+    });
+    return pngBytes;
+  }
+
+  // 1. 导出沈理青 vs 内置默认外观亮色首页单独对比图
+  final shenliPack = normalizedPacks['01-shenli-qing']!;
+  final shenliAppearance = const ThemeAppearance.empty().apply(
+    shenliPack.manifest,
+    ThemeGroup.applicable.intersection(shenliPack.manifest.groups),
+    '',
+  );
+  final compKey = GlobalKey();
+  await tester.pumpWidget(
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(fontFamily: 'NotoSansCJKsc'),
+      home: Scaffold(
+        backgroundColor: const Color(0xFFF0F2F5),
+        body: Center(
+          child: DefaultTextStyle.merge(
+            style: const TextStyle(fontFamily: 'NotoSansCJKsc'),
+            child: RepaintBoundary(
+              key: compKey,
+            child: Container(
+              color: const Color(0xFFF0F2F5),
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '内置默认亮色 (textSecondary #747B82 = 4.29:1)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        width: 360,
+                        height: 780,
+                        child: ThemeWorkshopSampleStage(
+                          appearance: const ThemeAppearance.empty(),
+                          brightness: Brightness.light,
+                          assetResolver: (_) => null,
+                          page: WorkshopSamplePage.home,
+                          sampleState: WorkshopSampleState.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 16),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '官方主题「沈理青」亮色 (textSecondary #6E757C = 4.67:1)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        width: 360,
+                        height: 780,
+                        child: ThemeWorkshopSampleStage(
+                          appearance: shenliAppearance,
+                          brightness: Brightness.light,
+                          assetResolver: (_) => null,
+                          page: WorkshopSamplePage.home,
+                          sampleState: WorkshopSampleState.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+    ),
+  );
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.runAsync(() async {
+    final shenliDir = Directory(p.join(reportRoot.path, '01-shenli-qing'));
+    await shenliDir.create(recursive: true);
+    final boundary =
+        compKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    final imgObj = await boundary.toImage(pixelRatio: 1.0);
+    final bd = await imgObj.toByteData(format: ui.ImageByteFormat.png);
+    imgObj.dispose();
+    await File(
+      p.join(shenliDir.path, 'comparison-default-vs-shenli-qing-light.png'),
+    ).writeAsBytes(bd!.buffer.asUint8List(), flush: true);
+  });
+
+  // 2. 导出全部 5 套官方主题 × 9 个首批页面 × 明暗两套 = 90 张截图
+  const pageSlugs = <WorkshopSamplePage, String>{
+    WorkshopSamplePage.home: '01-home',
+    WorkshopSamplePage.market: '02-market',
+    WorkshopSamplePage.schedule: '03-schedule',
+    WorkshopSamplePage.campus: '04-campus',
+    WorkshopSamplePage.me: '05-me',
+    WorkshopSamplePage.userHome: '06-user-home',
+    WorkshopSamplePage.settings: '07-settings',
+    WorkshopSamplePage.ai: '08-ai',
+    WorkshopSamplePage.toolbox: '09-toolbox',
+  };
+
+  for (final spec in specs) {
+    final pack = normalizedPacks[spec.slug]!;
+    final appearance = const ThemeAppearance.empty().apply(
+      pack.manifest,
+      ThemeGroup.applicable.intersection(pack.manifest.groups),
+      '',
+    );
+    final themeDir = Directory(p.join(reportRoot.path, spec.slug));
+    await tester.runAsync(() => themeDir.create(recursive: true));
+
+    for (final brightness in [Brightness.light, Brightness.dark]) {
+      final modePrefix = brightness == Brightness.dark ? 'dark' : 'light';
+      for (final page in WorkshopSamplePage.values) {
+        final png = await captureStage(
+          appearance: appearance,
+          brightness: brightness,
+          page: page,
+          contents: pack.contents,
+        );
+        final outFile = File(
+          p.join(themeDir.path, '$modePrefix-${pageSlugs[page]}.png'),
+        );
+        await tester.runAsync(() => outFile.writeAsBytes(png, flush: true));
+      }
+    }
+  }
+
+  // 3. 写入制作记录与素材许可台账 README.md
+  final shenliSpec = specs.first;
+  final md = StringBuffer()
+    ..writeln('# P5 首批官方主题制作记录、许可台账与九页明暗归档')
+    ..writeln()
+    ..writeln('生成日期：2026-11-18')
+    ..writeln('验证环境：隔离回环 Go 服务端 + Flutter 共享组件渲染舞台（390×844）')
+    ..writeln()
+    ..writeln('## 1. 已完成首批五套官方主题总览')
+    ..writeln()
+    ..writeln('五套官方主题共用现有单套 Flutter 组件体系，对比度检查全部为 0 告警，并已在隔离环境中通过维护者管理员账号（`source=official`）投稿、第二名管理员账号审核上架，`GET /api/themes?sort=official` 严格按下列顺序返回：')
+    ..writeln()
+    ..writeln('| 顺序 | 名称 | 目录 | 种子色 / 方案 | 圆角 | 页头模板与卡片样式 | 规范包大小 | 规范包 SHA-256 |')
+    ..writeln('| --- | --- | --- | --- | --- | --- | --- | --- |');
+  for (var i = 0; i < specs.length; i++) {
+    final s = specs[i];
+    final rec = catalogRecords[s.slug]!;
+    final layoutDesc = s.state.layout.isEmpty
+        ? '全部默认 `standard`'
+        : s.state.layout.entries
+            .map((e) => '${e.key}:`${e.value['preset']}`')
+            .join('、');
+    final csDesc = s.state.light.cardStyle == null
+        ? '默认卡片描边/阴影'
+        : '描边 `${s.state.light.cardStyle!['borderWidth']}dp` / 阴影 `${s.state.light.cardStyle!['shadow']}`';
+    md.writeln(
+      '| ${i + 1} | **${s.state.name}** | `${s.slug}/` | `${s.state.light.seedColor}` / `${s.state.light.schemeVariant}` | `${s.state.shape}` | $layoutDesc；$csDesc | ${rec.packageSize} B | `${rec.packageSha256}` |',
+    );
+  }
+
+  md
+    ..writeln()
+    ..writeln('## 2. 「沈理青」与内置默认外观的有意视觉差异单列验收')
+    ..writeln()
+    ..writeln('按制作细则第 9 节与契约第 3 节，「沈理青」不走种子色推导，直接以内置默认 `AppPalette.defaults` 为基础制作，保持全部默认标准布局。为满足商城上架的 WCAG 2.1 对比度门禁（正文与标签 ≥ 4.5:1），对内置默认值做了以下同色相最小色调步进修正：')
+    ..writeln();
+  for (final d in shenliSpec.defaultDeltas) {
+    md.writeln('- `$d`');
+  }
+  md
+    ..writeln()
+    ..writeln('- 并排对比图：`01-shenli-qing/comparison-default-vs-shenli-qing-light.png`（左为内置默认亮色 `#747B82` = 4.29:1，右为官方主题「沈理青」亮色 `#6E757C` = 4.67:1）。')
+    ..writeln()
+    ..writeln('## 3. 素材来源与许可证台账')
+    ..writeln()
+    ..writeln('| 主题 | 主题包协议 | 包含资源文件 | 来源与版权说明 |')
+    ..writeln('| --- | --- | --- | --- |');
+  for (final s in specs) {
+    final pack = normalizedPacks[s.slug]!;
+    final assetList =
+        pack.manifest.assets.map((a) => '`${a.path}`').toSet().join('、');
+    md.writeln(
+      '| ${s.state.name} | `${s.state.license}` | $assetList | ${s.assetNote} |',
+    );
+  }
+
+  md
+    ..writeln()
+    ..writeln('## 4. 缺少的维护者素材与未记为完成项说明')
+    ..writeln()
+    ..writeln('以下项目因外部或维护者专属素材尚未提供，严格遵守“不拿重复占位图或未授权素材冒充完成”的规则单列说明：')
+    ..writeln()
+    ..writeln('1. **第六套官方主题「校园四季」（未制作、不计入已完成）**：需维护者提供 4 张拥有完整授权的沈阳理工大学校园实景照片（全局、首页、课表、我各一张）及全套 `template` 线性导航图标源图，待照片合入后再行制作。')
+    ..writeln('2. **「纸感」外部霞鹜文楷字体文件（待补入新版本）**：离线工作区未附带 `LXGW WenKai`（`OFL-1.1`）TTF/OTF 源文件，当前 v1 包未嵌入伪造字体文件，正文回退使用内置 `NotoSansCJKsc`；待维护者提供子集化常规体与粗体文件后发布「纸感」v2。')
+    ..writeln('3. **5 套非默认内置备选桌面图标源图（`night` / `sea` / `sakura` / `paper` / `campus`）**：需维护者提供 1024×1024 前景、背景色与中间 66% 单色透明剪影三件套源图随客户端发版打包；源图到位前仅「沈理青」声明 `launcherIcon.builtin = "default"`，其余 4 套按制作细则第 9 节省略 `launcherIcon`。')
+    ..writeln('4. **生产环境上架**：本次仅在隔离回环服务端完成双管理员投稿与审核验证；正式生产环境投稿与审核须由维护者授权后使用真实管理员账号执行。')
+    ..writeln()
+    ..writeln('## 5. 九个首批页面明暗两套截图索引（共 90 张 + 1 张默认对比图）')
+    ..writeln();
+  for (final s in specs) {
+    md
+      ..writeln('### ${s.state.name}（`${s.slug}`）')
+      ..writeln('- 设计与参数摘要：${s.designSummary}')
+      ..writeln('- 亮色九页：`light-01-home.png`、`light-02-market.png`、`light-03-schedule.png`、`light-04-campus.png`、`light-05-me.png`、`light-06-user-home.png`、`light-07-settings.png`、`light-08-ai.png`、`light-09-toolbox.png`')
+      ..writeln('- 暗色九页：`dark-01-home.png`、`dark-02-market.png`、`dark-03-schedule.png`、`dark-04-campus.png`、`dark-05-me.png`、`dark-06-user-home.png`、`dark-07-settings.png`、`dark-08-ai.png`、`dark-09-toolbox.png`')
+      ..writeln();
+  }
+
+  await tester.runAsync(() async {
+    await File(p.join(reportRoot.path, 'README.md'))
+        .writeAsString(md.toString(), flush: true);
   });
 }
 

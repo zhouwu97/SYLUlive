@@ -1014,7 +1014,8 @@ class _AdminThemeReviewDetailScreenState
                         ThemeWorkshopWidgetPreviewPanel(
                           appearance: const ThemeAppearance.empty().apply(
                             storedManifest,
-                            ThemeGroup.applicable,
+                            ThemeGroup.applicable
+                                .intersection(storedManifest.groups),
                             '',
                           ),
                         ),

@@ -47,6 +47,8 @@ import "./component-finish.css";
 import { LoadingBar, PageLoading } from "./loading-bar";
 import { AppearanceButton, applyAppearance, readAppearance } from "./appearance";
 import { mountCollapsedTooltips, mountSlidingIndicator, revealTheme } from "./desktop-motion";
+import { useMobileThemeRuntime } from "./mobile-theme";
+import { MobileThemeBackdrop, MobileThemesPage, ThemeLandingPage } from "./mobile-theme-pages";
 const Admin = lazy(() => import('./admin').then(module => ({default: module.Admin})));
 const Competition = lazy(() => import('./competition').then(module => ({default: module.Competition})));
 const CanteenPage = lazy(() => import('./canteen-page').then(module => ({default: module.CanteenPage})));
@@ -166,9 +168,13 @@ const zoneOf = (active: string) => zones[active] || "home";
 function Shell() {
   const [menu, setMenu] = useState(false);
   const [navigationMotion, setNavigationMotion] = useState(true);
-  const [dark, setDark] = useState(
-    () => localStorage.getItem("sylulive-theme") === "dark",
-  );
+  const [dark, setDark] = useState(() => {
+    try {
+      return localStorage.getItem("sylulive-theme") === "dark";
+    } catch {
+      return false;
+    }
+  });
   const ui = useUI(),
     auth = useAuth(),
     location = useLocation(),
@@ -186,6 +192,7 @@ function Shell() {
   const section = originPath ? originPathname.split("/")[1] || "dashboard" : active;
   const feedSearch = originPath ? originSearch : location.search.slice(1);
   const mobile = useMobile();
+  const mobileTheme = useMobileThemeRuntime(dark, location.pathname);
   const standaloneProfile = active === "profile" && !mobile;
   // 管理中心在桌面端是独立工作台：用自己的分组导航替换社区侧栏；手机端仍对照 App 保留原导航。
   const adminConsole = active === "admin" && !mobile;
@@ -194,7 +201,11 @@ function Shell() {
   const messageUnread = useApi(auth.user ? '/api/messages/unread_count' : null);
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
-    localStorage.setItem("sylulive-theme", dark ? "dark" : "light");
+    try {
+      localStorage.setItem("sylulive-theme", dark ? "dark" : "light");
+    } catch {
+      // 存储受限时保留当前会话明暗状态
+    }
   }, [dark]);
   useEffect(() => {
     setMenu(false);
@@ -265,7 +276,8 @@ function Shell() {
     </NavLink>
   ); };
   return (
-    <div data-mobile-page={active} data-zone={zoneOf(section)} className={`app-shell social-shell ${composing ? 'compose-shell' : ''} ${section === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${adminConsole ? "admin-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
+    <div data-mobile-page={active} data-has-mobile-wallpaper={mobile && mobileTheme.wallpaper ? "1" : undefined} data-zone={zoneOf(section)} className={`app-shell social-shell ${composing ? 'compose-shell' : ''} ${section === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${adminConsole ? "admin-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
+      {mobile && <MobileThemeBackdrop />}
       <a className="skip-link" href="#mainContent">
         跳到主要内容
       </a>
@@ -460,6 +472,8 @@ function Shell() {
                   <Route path="/connected-apps" element={<ConnectedApps />} />
                   <Route path="/connected-apps/actions/:id" element={<ConnectedAction />} />
                   <Route path="/admin" element={<Admin />} />
+                  <Route path="/themes" element={<MobileThemesPage />} />
+                  <Route path="/theme/:id" element={<ThemeLandingPage />} />
                   <Route path="/app-scan" element={<AppScanLanding />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes></Suspense></RouteBoundary>

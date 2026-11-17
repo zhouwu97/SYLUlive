@@ -74,6 +74,43 @@
   --ease-in-out: cubic-bezier(.65, 0, .35, 1);
   --dur-micro: 120ms;
   --dur-short: 220ms;
+  /* 主题包契约第 3 节语义 Token（亮色默认值；仅 ≤600px 移动布局消费，桌面布局不读取）。 */
+  --theme-primary: #147c72;
+  --theme-on-primary: #ffffff;
+  --theme-primary-container: #eaf6f3;
+  --theme-on-primary-container: #0f635b;
+  --theme-background: #fffaf4;
+  --theme-surface: #ffffff;
+  --theme-surface-elevated: #ffffff;
+  --theme-surface-muted: #f2f3f1;
+  --theme-card: #ffffff;
+  --theme-card-border: #e2efea;
+  --theme-text-primary: #1f2328;
+  --theme-text-secondary: #747b82;
+  --theme-text-tertiary: #9aa1a1;
+  --theme-text-disabled: #b8bdba;
+  --theme-divider: #e8eee9;
+  --theme-outline: #e2efea;
+  --theme-input-fill: #f2f3f1;
+  --theme-input-fill-focused: #eff4f1;
+  --theme-search-fill: #f1f2f0;
+  --theme-tag-background: #eef2f0;
+  --theme-tag-text: #147c72;
+  --theme-nav-background: #edf0f59e;
+  --theme-nav-selected: #1765da;
+  --theme-nav-unselected: #4b525e;
+  --theme-app-bar-background: #f4fbf8;
+  --theme-app-bar-foreground: #161d1c;
+  --theme-bubble-incoming: #f0f1ef;
+  --theme-bubble-incoming-text: #1f2328;
+  --theme-bubble-outgoing: #76c4ff;
+  --theme-bubble-outgoing-text: #1f2328;
+  --theme-feed-section-surface: #e8f5f1;
+  --theme-feed-featured-surface: #fff3e0;
+  --theme-feed-featured-text: #d97706;
+  --theme-course-card-text: #1f2328;
+  --theme-timetable-grid: #0000000d;
+  --theme-timetable-today: #00000000;
 }
 [data-theme="dark"] {
   --icon-blue: #9bbaff;
@@ -101,6 +138,43 @@
   --color-price: #eda387;
   --color-error: oklch(77% .12 25);
   --color-success: oklch(77% .1 155);
+  /* 主题包契约第 3 节语义 Token（暗色默认值）。 */
+  --theme-primary: #7ed6c5;
+  --theme-on-primary: #0f2622;
+  --theme-primary-container: #162b28;
+  --theme-on-primary-container: #7ed6c5;
+  --theme-background: #111315;
+  --theme-surface: #1a1d1f;
+  --theme-surface-elevated: #232729;
+  --theme-surface-muted: #24282a;
+  --theme-card: #1a1d1f;
+  --theme-card-border: #303638;
+  --theme-text-primary: #f2f4f3;
+  --theme-text-secondary: #a7afab;
+  --theme-text-tertiary: #8e9894;
+  --theme-text-disabled: #5a615d;
+  --theme-divider: #252a2c;
+  --theme-outline: #303638;
+  --theme-input-fill: #24282a;
+  --theme-input-fill-focused: #2b3033;
+  --theme-search-fill: #24282a;
+  --theme-tag-background: #282d30;
+  --theme-tag-text: #90d5c7;
+  --theme-nav-background: #252a32b8;
+  --theme-nav-selected: #84baff;
+  --theme-nav-unselected: #d1d5db;
+  --theme-app-bar-background: #0e1513;
+  --theme-app-bar-foreground: #dde4e1;
+  --theme-bubble-incoming: #262a2c;
+  --theme-bubble-incoming-text: #f2f4f3;
+  --theme-bubble-outgoing: #80c4fc;
+  --theme-bubble-outgoing-text: #111315;
+  --theme-feed-section-surface: #162b28;
+  --theme-feed-featured-surface: #3a2a18;
+  --theme-feed-featured-text: #f2b15a;
+  --theme-course-card-text: #ffffff;
+  --theme-timetable-grid: #ffffff33;
+  --theme-timetable-today: #00000000;
 }
 /* 桌面 Web 设计令牌（2026-11 桌面重构稿，预览稿为本地文件、不入库）。
    只在 601px 以上生效：手机 Web 对照 Android App，由 mobile-app.css 独立维护，

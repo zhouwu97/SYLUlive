@@ -407,6 +407,11 @@ func TestThemePackRoutesPermissionsCatalogVersionedDownloadAndRemoval(t *testing
 	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, fmt.Sprintf("/api/themes/%s/versions/1/package", wFam), 0, nil, nil).Code)
 	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, fmt.Sprintf("/api/themes/%s/versions/2/package", wFam), 0, nil, nil).Code)
 	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, "/api/themes/"+wFam, 0, nil, nil).Code)
+
+	redir := f.req(http.MethodGet, "/theme/"+wFam, 0, nil, nil)
+	require.Equal(t, http.StatusFound, redir.Code)
+	require.Equal(t, "/web/theme/"+wFam, redir.Header().Get("Location"))
+	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, "/theme/not-a-uuid", 0, nil, nil).Code)
 }
 
 func TestThemeLoopbackHarness(t *testing.T) {

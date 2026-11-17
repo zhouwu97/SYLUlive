@@ -31,7 +31,7 @@ function MobileProfile() {
   const view = params.get('view') || '';
   const posts = useApi(auth.user ? `/api/user/${auth.user.id}/posts?page=1&limit=1` : null);
   if (auth.loading) return <div className="loading-state" role="status">正在加载个人资料…</div>;
-  if (!auth.user) return <div className="mobile-profile"><h1>我</h1><section className="mobile-profile-guest"><span className="mobile-profile-avatar"><ServerAvatar name="同学" /></span><h2>欢迎来到沈理校园</h2><p>登录后记录校园日常，管理发布与收藏。</p><button className="btn primary" onClick={auth.login}>登录</button></section><Link className="mobile-service-row" to="/feedback"><Icon name="feedback" /><b>我的工单</b><span aria-hidden="true">›</span></Link></div>;
+  if (!auth.user) return <div className="mobile-profile"><h1>我</h1><section className="mobile-profile-guest"><span className="mobile-profile-avatar"><ServerAvatar name="同学" /></span><h2>欢迎来到沈理校园</h2><p>登录后记录校园日常，管理发布与收藏。</p><button className="btn primary" onClick={auth.login}>登录</button></section><Link className="mobile-service-row" to="/themes"><Icon name="palette" /><b>外观与主题</b><span aria-hidden="true">›</span></Link><Link className="mobile-service-row" to="/feedback"><Icon name="feedback" /><b>我的工单</b><span aria-hidden="true">›</span></Link></div>;
   const user = auth.user;
   if (profileTabs.some(([value]) => value === view)) return <div className="mobile-profile-content"><header className="mobile-page-heading"><button className="mobile-icon-button" aria-label="返回我的主页" onClick={() => setParams({})}><Icon name="arrow" /></button><h1>{profileTabs.find(([value]) => value === view)?.[1]}</h1></header><MyContent key={`${user.id}:${view}`} tab={view} userId={user.id}/></div>;
   type Item = { icon: string; label: string; description: string; to?: string; action?: () => void };
@@ -51,6 +51,7 @@ function MobileProfile() {
       { icon: 'toolbox', label: '工具箱', description: '常用校园工具', to: '/toolbox' },
     ] },
     { title: '设置与帮助', items: [
+      { icon: 'palette', label: '外观与主题', description: '浏览并应用主题配色、壁纸与字体', to: '/themes' },
       { icon: 'bell', label: '通知', description: '互动回复与系统消息', to: '/notifications' },
       { icon: 'profile', label: 'QQ 账号绑定', description: '绑定自己的账号，授权签到与查询', to: '/connected-apps' },
       { icon: 'ai', label: '社区机器人', description: '管理独立机器人的自动浏览与发言', to: '/connected-apps?purpose=bot' },

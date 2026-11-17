@@ -14,7 +14,14 @@ return {
     name: 'local-test-environment',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (new URL(req.url || '/', 'http://localhost').pathname !== '/web/__test-environment') return next();
+        const parsed = new URL(req.url || '/', 'http://localhost');
+        if (/^\/theme\/[a-fA-F0-9-]{36}$/.test(parsed.pathname)) {
+          res.statusCode = 302;
+          res.setHeader('Location', `/web${parsed.pathname}${parsed.search}`);
+          res.end();
+          return;
+        }
+        if (parsed.pathname !== '/web/__test-environment') return next();
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Cache-Control', 'no-store');
         // 仅报告能否进行本机测试，不向浏览器暴露上游配置或任何凭据。

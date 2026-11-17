@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"shenliyuan/internal/handlers"
 	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -38,6 +40,14 @@ func registerThemePackRoutes(r *gin.Engine, db *gorm.DB, uploadDir, jwtSecret st
 	themes.HEAD("/:familyId/versions/:version/preview/:mode", h.ServePublicPreview)
 
 	r.GET("/api/users/:id/themes", h.ListUserThemes)
+	r.GET("/theme/:id", func(c *gin.Context) {
+		parsed, err := uuid.Parse(c.Param("id"))
+		if err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		c.Redirect(http.StatusFound, "/web/theme/"+parsed.String())
+	})
 
 	admin := r.Group("/api/admin/themes", middleware.AuthMiddleware(db, jwtSecret), middleware.AdminMiddleware())
 	admin.GET("", h.AdminList)

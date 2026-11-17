@@ -115,8 +115,11 @@ class ThemeCardStyleSpec {
     final override = ThemePresentationOverride.maybeOf(context);
     final brightness = override?.brightnessOverride ?? Theme.of(context).brightness;
     final mode = brightness == Brightness.dark ? 'dark' : 'light';
+    final provider = context.watch<ThemeProvider?>();
     final appearance = override?.appearance ??
-        context.watch<ThemeProvider?>()?.appearance;
+        (provider?.canCustomizeCardMaterial == true
+            ? provider!.appearance
+            : null);
     final materialGroup = appearance?.group(ThemeGroup.material);
     if (materialGroup == null || materialGroup['legacy'] == true) return null;
     final modeMat = materialGroup[mode] as Map?;

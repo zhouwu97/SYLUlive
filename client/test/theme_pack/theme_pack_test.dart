@@ -8,6 +8,7 @@ import 'package:image/image.dart' as image;
 import 'package:shenliyuan/features/theme_pack/theme_contrast.dart';
 import 'package:shenliyuan/features/theme_pack/theme_manifest.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_codec.dart';
+import 'package:shenliyuan/features/theme_pack/themed_wallpaper_layer.dart';
 import 'package:shenliyuan/theme/app_palette.dart';
 
 Map<String, dynamic> themeFixture(
@@ -236,7 +237,58 @@ void main() {
         {'brightness': -20.0, 'contrast': 120.0, 'saturation': 80.0});
     expect(pack.contents.keys,
         containsAll(['decorations/header.png', 'decorations/sticker.png']));
-    expect(pack.manifest.groups.contains(ThemeGroup.material), isFalse);
+    expect(
+        pack.manifest.groups,
+        containsAll([
+          ThemeGroup.material,
+          ThemeGroup.layout,
+          ThemeGroup.decoration,
+        ]));
+  });
+
+  test('图片颜色矩阵：中性参数为单位矩阵，非中性严格按亮度→对比度→饱和度顺序计算', () {
+    final identity = ThemedWallpaperLayer.buildColorMatrix();
+    expect(identity, <double>[
+      1, 0, 0, 0, 0,
+      0, 1, 0, 0, 0,
+      0, 0, 1, 0, 0,
+      0, 0, 0, 1, 0,
+    ]);
+    expect(
+      ThemedWallpaperLayer.isNeutralAdjustments(
+        const {'brightness': 0, 'contrast': 100, 'saturation': 100},
+      ),
+      isTrue,
+    );
+
+    final matrix = ThemedWallpaperLayer.buildColorMatrix(
+      brightness: 20,
+      contrast: 150,
+      saturation: 50,
+    );
+    (double, double, double) applyMatrix(double r, double g, double b) => (
+          (matrix[0] * r + matrix[1] * g + matrix[2] * b + matrix[4])
+              .clamp(0.0, 255.0),
+          (matrix[5] * r + matrix[6] * g + matrix[7] * b + matrix[9])
+              .clamp(0.0, 255.0),
+          (matrix[10] * r + matrix[11] * g + matrix[12] * b + matrix[14])
+              .clamp(0.0, 255.0),
+        );
+
+    // 按契约 2.9 逐步归一化计算：亮度(+0.2) → 对比度(*1.5 around 0.5) → 饱和度(*0.5)
+    double stepContrast(double u) => (u + 0.2 - 0.5) * 1.5 + 0.5;
+    final r2 = stepContrast(100 / 255.0);
+    final g2 = stepContrast(140 / 255.0);
+    final b2 = stepContrast(180 / 255.0);
+    final luma = 0.2126 * r2 + 0.7152 * g2 + 0.0722 * b2;
+    final expectedR = (luma + (r2 - luma) * 0.5) * 255.0;
+    final expectedG = (luma + (g2 - luma) * 0.5) * 255.0;
+    final expectedB = (luma + (b2 - luma) * 0.5) * 255.0;
+
+    final (actualR, actualG, actualB) = applyMatrix(100, 140, 180);
+    expect(actualR, closeTo(expectedR, 0.01));
+    expect(actualG, closeTo(expectedG, 0.01));
+    expect(actualB, closeTo(expectedB, 0.01));
   });
   test('中央目录计数错误、损坏 JSON 和未配对导航图标不能导入', () async {
     final raw = themeArchive(themeFixture());

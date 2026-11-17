@@ -15,6 +15,7 @@ import 'installed_themes_screen.dart';
 import 'launcher_icon_service.dart';
 import 'theme_appearance_exporter.dart';
 import 'theme_import_screen.dart';
+import 'theme_layout_decoration_screen.dart';
 
 class ThemeSection extends StatefulWidget {
   const ThemeSection({
@@ -236,6 +237,19 @@ class _ThemeSectionState extends State<ThemeSection> {
                             MaterialPageRoute<void>(
                               builder: (_) =>
                                   const LauncherIconSettingsScreen(),
+                            ),
+                          ),
+                ),
+                _actionButton(
+                  context: context,
+                  icon: Icons.dashboard_customize_outlined,
+                  label: '布局与装饰',
+                  onPressed: _busy
+                      ? null
+                      : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  const ThemeLayoutDecorationScreen(),
                             ),
                           ),
                 ),

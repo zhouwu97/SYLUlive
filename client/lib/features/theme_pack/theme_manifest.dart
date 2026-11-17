@@ -26,6 +26,8 @@ enum ThemeGroup {
     font,
     widgets,
     launcherIcon,
+    layout,
+    decoration,
   };
 }
 
@@ -87,18 +89,25 @@ class ThemeManifest {
         if (['light', 'dark']
             .any((key) => (data[key] as Map).containsKey('wallpapers')))
           ThemeGroup.wallpapers,
-        if ([
-          'light',
-          'dark'
-        ].any((key) => (data[key] as Map).keys.any((field) =>
-            ['componentOpacity', 'frostedGlass'].contains(field))))
+        if (['light', 'dark'].any((key) {
+          final v = data[key] as Map;
+          if (v.containsKey('componentOpacity') ||
+              v.containsKey('frostedGlass')) {
+            return true;
+          }
+          final cs = v['cardStyle'] as Map?;
+          return cs != null && cs.isNotEmpty;
+        }))
           ThemeGroup.material,
         if (data.containsKey('bottomNav')) ThemeGroup.navigation,
         if (data.containsKey('font')) ThemeGroup.font,
         if (data.containsKey('launcherIcon')) ThemeGroup.launcherIcon,
-        if (data.containsKey('layout')) ThemeGroup.layout,
-        if (['light', 'dark']
-            .any((key) => (data[key] as Map).containsKey('decorations')))
+        if (data.containsKey('layout') && (data['layout'] as Map).isNotEmpty)
+          ThemeGroup.layout,
+        if (['light', 'dark'].any((key) {
+          final decos = (data[key] as Map)['decorations'] as Map?;
+          return decos != null && decos.values.any((v) => v != null);
+        }))
           ThemeGroup.decoration,
       };
 

@@ -176,65 +176,105 @@ abstract final class ThemePackCodec {
       }
     }
     for (final item in references.entries) {
-      ui.ImmutableBuffer? buffer;
-      ui.ImageDescriptor? descriptor;
-      ui.Codec? codec;
-      ui.Image? image;
-      try {
-        final bytes = pack.contents[item.key]!;
-        final png = bytes.length >= 8 &&
-            bytes[0] == 137 &&
-            bytes[1] == 80 &&
-            bytes[2] == 78 &&
-            bytes[3] == 71;
-        final jpeg = bytes.length >= 3 &&
-            bytes[0] == 255 &&
-            bytes[1] == 216 &&
-            bytes[2] == 255;
-        final webp = bytes.length >= 12 &&
-            ascii.decode(bytes.sublist(0, 4), allowInvalid: true) == 'RIFF' &&
-            ascii.decode(bytes.sublist(8, 12), allowInvalid: true) == 'WEBP';
-        if (!(item.key.endsWith('.png') && png ||
-            item.key.endsWith('.jpg') && jpeg ||
-            item.key.endsWith('.webp') && webp)) {
-          throw const FormatException('图片格式与后缀不符');
-        }
-        buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-        descriptor = await ui.ImageDescriptor.encoded(buffer);
-        final w = descriptor.width;
-        final h = descriptor.height;
-        for (final kind in item.value) {
-          final valid = switch (kind) {
-            ThemeAssetKind.preview => w == 1080 && h == 2340,
-            ThemeAssetKind.icon => !jpeg && w == h && w >= 48 && w <= 256,
-            ThemeAssetKind.launcher => !jpeg && w == h && w >= 432 && w <= 1024,
-            ThemeAssetKind.wallpaper => w <= 4096 && h <= 4096,
-            ThemeAssetKind.header => w <= 2048 && h <= 2048,
-            ThemeAssetKind.sticker => !jpeg && w <= 1024 && h <= 1024,
-            ThemeAssetKind.font => true,
-          };
-          if (!valid) throw const FormatException('图片尺寸不合规');
-        }
-        codec = await descriptor.instantiateCodec();
-        if (codec.frameCount != 1) throw const FormatException('仅支持静态图片');
-        image = (await codec.getNextFrame()).image;
-        if (item.value.contains(ThemeAssetKind.launcher)) {
-          final rgba =
-              await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-          for (var i = 3; i < rgba!.lengthInBytes; i += 4) {
-            if (rgba.getUint8(i) != 255) {
-              throw const FormatException('桌面图标必须不透明');
-            }
+      await _validateImageBytes(
+        pack.contents[item.key]!,
+        item.key,
+        item.value,
+        checkExtensionMatch: true,
+      );
+    }
+  }
+
+  /// 本机选择图片（壁纸、页头背景、贴纸、图标）的信任边界校验。
+  static Future<void> validateLocalImageFile(
+    String filePath,
+    ThemeAssetKind kind,
+  ) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw ThemePackError('theme_asset_missing', filePath);
+    }
+    final limit = _assetLimit(kind);
+    final length = await file.length();
+    if (length == 0 || length > limit) {
+      throw ThemePackError('theme_image_invalid', filePath);
+    }
+    final bytes = await file.readAsBytes();
+    await _validateImageBytes(
+      bytes,
+      filePath,
+      {kind},
+      checkExtensionMatch: false,
+    );
+  }
+
+  static Future<void> _validateImageBytes(
+    Uint8List bytes,
+    String field,
+    Set<ThemeAssetKind> kinds, {
+    required bool checkExtensionMatch,
+  }) async {
+    ui.ImmutableBuffer? buffer;
+    ui.ImageDescriptor? descriptor;
+    ui.Codec? codec;
+    ui.Image? image;
+    try {
+      final png = bytes.length >= 8 &&
+          bytes[0] == 137 &&
+          bytes[1] == 80 &&
+          bytes[2] == 78 &&
+          bytes[3] == 71;
+      final jpeg = bytes.length >= 3 &&
+          bytes[0] == 255 &&
+          bytes[1] == 216 &&
+          bytes[2] == 255;
+      final webp = bytes.length >= 12 &&
+          ascii.decode(bytes.sublist(0, 4), allowInvalid: true) == 'RIFF' &&
+          ascii.decode(bytes.sublist(8, 12), allowInvalid: true) == 'WEBP';
+      if (!png && !jpeg && !webp) {
+        throw const FormatException('不支持的图片格式');
+      }
+      if (checkExtensionMatch &&
+          !(field.endsWith('.png') && png ||
+              field.endsWith('.jpg') && jpeg ||
+              field.endsWith('.webp') && webp)) {
+        throw const FormatException('图片格式与后缀不符');
+      }
+      buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      final w = descriptor.width;
+      final h = descriptor.height;
+      for (final kind in kinds) {
+        final valid = switch (kind) {
+          ThemeAssetKind.preview => w == 1080 && h == 2340,
+          ThemeAssetKind.icon => !jpeg && w == h && w >= 48 && w <= 256,
+          ThemeAssetKind.launcher => !jpeg && w == h && w >= 432 && w <= 1024,
+          ThemeAssetKind.wallpaper => w <= 4096 && h <= 4096,
+          ThemeAssetKind.header => w <= 2048 && h <= 2048,
+          ThemeAssetKind.sticker => !jpeg && w <= 1024 && h <= 1024,
+          ThemeAssetKind.font => true,
+        };
+        if (!valid) throw const FormatException('图片尺寸不合规');
+      }
+      codec = await descriptor.instantiateCodec();
+      if (codec.frameCount != 1) throw const FormatException('仅支持静态图片');
+      image = (await codec.getNextFrame()).image;
+      if (kinds.contains(ThemeAssetKind.launcher)) {
+        final rgba =
+            await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+        for (var i = 3; i < rgba!.lengthInBytes; i += 4) {
+          if (rgba.getUint8(i) != 255) {
+            throw const FormatException('桌面图标必须不透明');
           }
         }
-      } catch (_) {
-        throw ThemePackError('theme_image_invalid', item.key);
-      } finally {
-        image?.dispose();
-        codec?.dispose();
-        descriptor?.dispose();
-        buffer?.dispose();
       }
+    } catch (_) {
+      throw ThemePackError('theme_image_invalid', field);
+    } finally {
+      image?.dispose();
+      codec?.dispose();
+      descriptor?.dispose();
+      buffer?.dispose();
     }
   }
 

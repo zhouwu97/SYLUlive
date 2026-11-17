@@ -19,6 +19,7 @@ import 'widgets/background_picker_sheet.dart';
 import 'bottom_navigation_settings_screen.dart';
 import 'frosted_glass_settings_screen.dart';
 import '../../widgets/app_card.dart';
+import '../../features/theme_pack/theme_layout_decoration_screen.dart';
 import '../../features/theme_pack/theme_section.dart';
 import '../../features/theme_pack/themed_wallpaper_layer.dart';
 
@@ -491,6 +492,22 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const BottomNavigationSettingsScreen(),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        SettingsSection(
+          title: '布局与页头装饰',
+          children: [
+            SettingsTile(
+              icon: Icons.dashboard_customize_outlined,
+              title: '页头模板、贴纸与卡片样式',
+              subtitle: '调整首页、校园、我的页头模板、背景贴纸及内容卡片描边与阴影',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ThemeLayoutDecorationScreen(),
                 ),
               ),
             ),

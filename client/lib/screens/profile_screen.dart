@@ -1,4 +1,6 @@
 import '../widgets/app_page_background.dart';
+import '../features/theme_pack/theme_presentation.dart';
+import '../theme/app_palette.dart';
 import '../theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
@@ -369,205 +371,381 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildHeader(user, AuthProvider authProvider, bool isDark) {
     final hasSession =
         authProvider.isLoggedIn || authProvider.hasRecoverableSession;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // 左侧：头像
-          GestureDetector(
-            onTap: () {
-              if (hasSession) {
-                _showAvatarOptions(context, authProvider);
-              } else {
-                Navigator.pushNamed(context, '/login');
-              }
-            },
-            child: Container(
-              width: 76,
-              height: 76,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 10,
-                    spreadRadius: 2,
-                  ),
-                ],
+    final edu = context.watch<EduProvider>();
+    final collegeMajor = '${edu.college} ${edu.major}'.trim();
+    final tokens = AppThemeTokens.of(context);
+    final shape = AppShape.of(context);
+
+    Widget buildAvatar({double dimension = 76, double radius = 36}) {
+      return GestureDetector(
+        onTap: () {
+          if (hasSession) {
+            _showAvatarOptions(context, authProvider);
+          } else {
+            Navigator.pushNamed(context, '/login');
+          }
+        },
+        child: Container(
+          width: dimension,
+          height: dimension,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 10,
+                spreadRadius: 2,
               ),
-              child: user?.avatar.isNotEmpty == true
-                  ? ClipOval(
-                      child: GestureDetector(
-                        onLongPress: user?.avatar.isNotEmpty == true
-                            ? () => _showAvatarPreview(
-                                  context,
-                                  ApiConstants.fullUrl(user!.avatar),
-                                )
-                            : null,
-                        child: CachedAvatar(
-                          imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
-                          radius: 36,
-                          fallbackText: user?.nickname,
-                        ),
-                      ),
-                    )
-                  : _buildAvatarPlaceholder(user),
-            ),
+            ],
           ),
+          child: user?.avatar.isNotEmpty == true
+              ? ClipOval(
+                  child: GestureDetector(
+                    onLongPress: user?.avatar.isNotEmpty == true
+                        ? () => _showAvatarPreview(
+                              context,
+                              ApiConstants.fullUrl(user!.avatar),
+                            )
+                        : null,
+                    child: CachedAvatar(
+                      imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
+                      radius: radius,
+                      fallbackText: user?.nickname,
+                    ),
+                  ),
+                )
+              : _buildAvatarPlaceholder(user),
+        ),
+      );
+    }
 
-          const SizedBox(width: 16),
+    void openUserHomeOrLogin() {
+      if (hasSession) {
+        _openProfilePage(
+          MaterialPageRoute(builder: (_) => const UserHomeScreen()),
+        );
+      } else {
+        Navigator.pushNamed(context, '/login');
+      }
+    }
 
-          // 右侧：信息与箭头 (整个区域可点击进入主页)
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                if (hasSession) {
-                  _openProfilePage(
-                    MaterialPageRoute(builder: (_) => const UserHomeScreen()),
-                  );
-                } else {
-                  Navigator.pushNamed(context, '/login');
-                }
-              },
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        // 第一行：昵称与编辑按钮
-                        GestureDetector(
-                          onTap: () {
-                            if (hasSession) {
-                              _showEditProfileDialog(context, authProvider);
-                            }
-                          },
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  user?.nickname ?? '未登录',
-                                  style: TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w700,
-                                    color:
-                                        AppThemeTokens.of(context).textPrimary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (hasSession) ...[
-                                const SizedBox(width: 6),
-                                Icon(
-                                  Icons.edit,
-                                  size: 16,
-                                  color:
-                                      AppThemeTokens.of(context).textSecondary,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
+    Widget buildRecoverableBanner() {
+      return GestureDetector(
+        onTap: () => authProvider.refreshSession(),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: Colors.orange.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.wifi_off, size: 12, color: Colors.orange.shade700),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  '网络异常，正在恢复 (点击重试)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
-                        if (authProvider.hasRecoverableSession) ...[
-                          const SizedBox(height: 6),
-                          GestureDetector(
-                            onTap: () => authProvider.refreshSession(),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                    color:
-                                        Colors.orange.withValues(alpha: 0.4)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.wifi_off,
-                                      size: 12, color: Colors.orange.shade700),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '网络异常，正在恢复 (点击重试)',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.orange.shade800,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+    List<Widget> buildTags() => [
+          if (user != null)
+            _buildTag(
+              user.levelLabel.startsWith('Lv')
+                  ? user.levelLabel
+                  : 'Lv.${user.levelLabel}',
+              icon: Icons.military_tech,
+              color: Color(user.levelColorValue),
+              isDark: isDark,
+            ),
+          _buildTag(
+            '诚信 ${user?.creditScore ?? 100}%',
+            icon: Icons.verified_user,
+            color: Colors.teal,
+            isDark: isDark,
+          ),
+        ];
 
-                        const SizedBox(height: 8),
+    Widget buildNicknameRow({required double fontSize}) {
+      return GestureDetector(
+        onTap: () {
+          if (hasSession) {
+            _showEditProfileDialog(context, authProvider);
+          }
+        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                user?.nickname ?? '未登录',
+                style: TextStyle(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w700,
+                  color: tokens.textPrimary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (hasSession) ...[
+              const SizedBox(width: 6),
+              Icon(
+                Icons.edit,
+                size: 16,
+                color: tokens.textSecondary,
+              ),
+            ],
+          ],
+        ),
+      );
+    }
 
-                        // 第二行：学院专业标签 (如果有)
-                        if (context.watch<EduProvider>().college.isNotEmpty ||
-                            context.watch<EduProvider>().major.isNotEmpty) ...[
-                          Text(
-                            '${context.watch<EduProvider>().college} ${context.watch<EduProvider>().major}'
-                                .trim(),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppThemeTokens.of(context).textSecondary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 6),
-                        ],
-
-                        // 第三行：数据统计 (等级、诚信、经验等)
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            if (user != null)
-                              _buildTag(
-                                user.levelLabel.startsWith('Lv')
-                                    ? user.levelLabel
-                                    : 'Lv.${user.levelLabel}',
-                                icon: Icons.military_tech,
-                                color: Color(user.levelColorValue),
-                                isDark: isDark,
-                              ),
-                            _buildTag(
-                              '诚信 ${user?.creditScore ?? 100}%',
-                              icon: Icons.verified_user,
-                              color: Colors.teal,
-                              isDark: isDark,
-                            ),
+    final resolved = ThemeHeaderResolved.of(context, 'me');
+    if (!resolved.isCustomized) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            buildAvatar(),
+            const SizedBox(width: 16),
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: openUserHomeOrLogin,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          buildNicknameRow(fontSize: 22),
+                          if (authProvider.hasRecoverableSession) ...[
+                            const SizedBox(height: 6),
+                            buildRecoverableBanner(),
                           ],
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // 最右侧箭头
-                  if (hasSession)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8.0, right: 4.0),
-                      child: Icon(
-                        Icons.arrow_forward_ios,
-                        size: 14,
-                        color: AppThemeTokens.of(context).textSecondary,
+                          const SizedBox(height: 8),
+                          if (collegeMajor.isNotEmpty) ...[
+                            Text(
+                              collegeMajor,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: tokens.textSecondary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 6),
+                          ],
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: buildTags(),
+                          ),
+                        ],
                       ),
                     ),
-                ],
+                    if (hasSession)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8.0, right: 4.0),
+                        child: Icon(
+                          Icons.arrow_forward_ios,
+                          size: 14,
+                          color: tokens.textSecondary,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: ThemeHeaderFrame(
+        slot: 'me',
+        defaultBuilder: (_) => const SizedBox.shrink(),
+        standardInfoBuilder: (_, layout) {
+          final wrapAlign = switch (layout.alignment) {
+            'center' => WrapAlignment.center,
+            'end' => WrapAlignment.end,
+            _ => WrapAlignment.start,
+          };
+          final details = Column(
+            crossAxisAlignment: layout.crossAxisAlignment,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              buildNicknameRow(fontSize: 20),
+              if (authProvider.hasRecoverableSession) ...[
+                const SizedBox(height: 6),
+                buildRecoverableBanner(),
+              ],
+              if (collegeMajor.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  collegeMajor,
+                  textAlign: layout.textAlign,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: tokens.textSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                alignment: wrapAlign,
+                children: buildTags(),
+              ),
+            ],
+          );
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: tokens.card,
+              borderRadius: BorderRadius.circular(shape.lg),
+              border: Border.all(color: tokens.cardBorder),
+            ),
+            child: layout.alignment == 'center'
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      buildAvatar(dimension: 68, radius: 32),
+                      const SizedBox(height: 10),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: openUserHomeOrLogin,
+                        child: details,
+                      ),
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: layout.alignment == 'end'
+                        ? [
+                            if (hasSession)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: Icon(
+                                  Icons.arrow_back_ios_new,
+                                  size: 13,
+                                  color: tokens.textSecondary,
+                                ),
+                              ),
+                            Expanded(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: openUserHomeOrLogin,
+                                child: details,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            buildAvatar(dimension: 68, radius: 32),
+                          ]
+                        : [
+                            buildAvatar(dimension: 68, radius: 32),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: openUserHomeOrLogin,
+                                child: details,
+                              ),
+                            ),
+                            if (hasSession)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: Icon(
+                                  Icons.arrow_forward_ios,
+                                  size: 14,
+                                  color: tokens.textSecondary,
+                                ),
+                              ),
+                          ],
+                  ),
+          );
+        },
+        compactInfoBuilder: (_, layout) {
+          final wrapAlign = switch (layout.alignment) {
+            'center' => WrapAlignment.center,
+            'end' => WrapAlignment.end,
+            _ => WrapAlignment.start,
+          };
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: tokens.card,
+              borderRadius: BorderRadius.circular(shape.lg),
+              border: Border.all(color: tokens.cardBorder),
+            ),
+            child: Row(
+              children: [
+                buildAvatar(dimension: 48, radius: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: openUserHomeOrLogin,
+                    child: Align(
+                      alignment: layout.boxAlignment,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        alignment: wrapAlign,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          buildNicknameRow(fontSize: 16),
+                          if (collegeMajor.isNotEmpty)
+                            Text(
+                              collegeMajor,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: tokens.textSecondary,
+                              ),
+                            ),
+                          ...buildTags(),
+                          if (authProvider.hasRecoverableSession)
+                            buildRecoverableBanner(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (hasSession)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Icon(
+                      Icons.arrow_forward_ios,
+                      size: 13,
+                      color: tokens.textSecondary,
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

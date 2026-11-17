@@ -1262,7 +1262,10 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangePlatformBrightness() {
-    if (_followSystem && (_materialGroup != null || usesThemeWallpapers)) {
+    if (_followSystem &&
+        (_materialGroup != null ||
+            usesThemeWallpapers ||
+            appearance.group(ThemeGroup.decoration) != null)) {
       notifyListeners();
     }
   }
@@ -1677,6 +1680,88 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> retryThemeFileCleanup() =>
       _queueAppearanceOperation((prefs) async {
         await _initializeThemeFiles(prefs);
+        await _cleanupThemeFiles();
+      });
+
+  Future<void> updateCardStyle(
+    Brightness brightness,
+    Map<String, dynamic>? cardStyle,
+  ) =>
+      _queueAppearanceOperation((prefs) async {
+        if (!_isLoaded) {
+          _applyStoredPreferences(prefs);
+          _isLoaded = true;
+        }
+        final next = _appearance.patchCardStyle(
+          brightness,
+          cardStyle,
+          fallbackOpacity: _componentOpacity,
+          fallbackFrosted: _frostedGlass,
+          fallbackStrength: _frostedGlassStrength,
+        );
+        if (!await _writeCurrentAppearance(prefs, next)) {
+          throw const FileSystemException('卡片样式未能保存');
+        }
+      });
+
+  Future<void> updateHeaderLayout(
+    String slot,
+    Map<String, dynamic>? headerLayout,
+  ) =>
+      _queueAppearanceOperation((prefs) async {
+        if (!_isLoaded) {
+          _applyStoredPreferences(prefs);
+          _isLoaded = true;
+        }
+        final next = _appearance.patchHeaderLayout(slot, headerLayout);
+        if (!await _writeCurrentAppearance(prefs, next)) {
+          throw const FileSystemException('页头布局未能保存');
+        }
+      });
+
+  Future<String> adoptDecorationImage(
+    String sourcePath,
+    ThemeAssetKind kind,
+  ) =>
+      _queueAppearanceOperation((prefs) async {
+        await _initializeThemeFiles(prefs);
+        final local = sourcePath.startsWith('file://')
+            ? File.fromUri(Uri.parse(sourcePath)).path
+            : sourcePath;
+        await ThemePackCodec.validateLocalImageFile(local, kind);
+        return themePacks.adoptWallpaper(local);
+      });
+
+  Future<void> updateHeaderDecoration(
+    Brightness brightness,
+    String slot,
+    Map<String, dynamic>? slotDecoration,
+  ) =>
+      _queueAppearanceOperation((prefs) async {
+        if (!_isLoaded) {
+          _applyStoredPreferences(prefs);
+          _isLoaded = true;
+        }
+        await _initializeThemeFiles(prefs);
+        final next =
+            _appearance.patchHeaderDecoration(brightness, slot, slotDecoration);
+        if (!await _writeCurrentAppearance(prefs, next)) {
+          throw const FileSystemException('页头装饰未能保存');
+        }
+        await _cleanupThemeFiles();
+      });
+
+  Future<void> resetAppearanceGroup(ThemeGroup group) =>
+      _queueAppearanceOperation((prefs) async {
+        if (!_isLoaded) {
+          _applyStoredPreferences(prefs);
+          _isLoaded = true;
+        }
+        await _initializeThemeFiles(prefs);
+        final next = _appearance.without(group);
+        if (!await _writeCurrentAppearance(prefs, next)) {
+          throw const FileSystemException('外观分组未能重置');
+        }
         await _cleanupThemeFiles();
       });
 

@@ -133,8 +133,26 @@ class ThemeAppearance {
             };
           }
         case ThemeGroup.layout:
+          final layoutData = manifest.data['layout'] as Map?;
+          if (layoutData != null && layoutData.isNotEmpty) {
+            next['layout'] = {
+              'source': source,
+              'value': {
+                for (final entry in layoutData.entries)
+                  if (entry.value is Map)
+                    entry.key as String:
+                        Map<String, dynamic>.from(entry.value as Map),
+              },
+            };
+          } else {
+            next.remove('layout');
+          }
         case ThemeGroup.decoration:
-          break;
+          next['decoration'] = {
+            'source': source,
+            'light': resolve(light['decorations'] ?? {}),
+            'dark': resolve(dark['decorations'] ?? {}),
+          };
       }
     }
     return ThemeAppearance(next);
@@ -142,6 +160,105 @@ class ThemeAppearance {
 
   ThemeAppearance without(ThemeGroup group) =>
       ThemeAppearance({...data}..remove(group.name));
+
+  ThemeAppearance patchCardStyle(
+    Brightness brightness,
+    Map<String, dynamic>? cardStyle, {
+    required double fallbackOpacity,
+    required bool fallbackFrosted,
+    required double fallbackStrength,
+  }) {
+    final mode = brightness == Brightness.dark ? 'dark' : 'light';
+    final existing = group(ThemeGroup.material);
+    final base = (existing != null && existing['legacy'] != true)
+        ? existing
+        : <String, dynamic>{
+            'source': null,
+            for (final m in const ['light', 'dark'])
+              m: <String, dynamic>{
+                'componentOpacity': fallbackOpacity,
+                'frostedGlass': {
+                  'enabled': fallbackFrosted,
+                  'strength': fallbackStrength,
+                },
+              },
+          };
+    final nextMode = Map<String, dynamic>.from(base[mode] as Map);
+    if (cardStyle == null || cardStyle.isEmpty) {
+      nextMode.remove('cardStyle');
+    } else {
+      nextMode['cardStyle'] = Map<String, dynamic>.from(cardStyle);
+    }
+    return ThemeAppearance({
+      ...data,
+      'material': {
+        ...base,
+        'source': null,
+        mode: nextMode,
+      },
+    });
+  }
+
+  ThemeAppearance patchHeaderLayout(
+    String slot,
+    Map<String, dynamic>? headerLayout,
+  ) {
+    final currentValue = Map<String, dynamic>.from(
+      (group(ThemeGroup.layout)?['value'] as Map?) ?? const {},
+    );
+    if (headerLayout == null || headerLayout.isEmpty) {
+      currentValue.remove(slot);
+    } else {
+      currentValue[slot] = Map<String, dynamic>.from(headerLayout);
+    }
+    if (currentValue.isEmpty) {
+      return without(ThemeGroup.layout);
+    }
+    return ThemeAppearance({
+      ...data,
+      'layout': {
+        'source': null,
+        'value': currentValue,
+      },
+    });
+  }
+
+  ThemeAppearance patchHeaderDecoration(
+    Brightness brightness,
+    String slot,
+    Map<String, dynamic>? slotDecoration,
+  ) {
+    final mode = brightness == Brightness.dark ? 'dark' : 'light';
+    final existing = group(ThemeGroup.decoration);
+    final lightMap = Map<String, dynamic>.from(
+      (existing?['light'] as Map?) ?? const {},
+    );
+    final darkMap = Map<String, dynamic>.from(
+      (existing?['dark'] as Map?) ?? const {},
+    );
+    final target = mode == 'dark' ? darkMap : lightMap;
+    final hasContent = slotDecoration != null &&
+        (slotDecoration['background'] != null ||
+            ((slotDecoration['stickers'] as List?)?.isNotEmpty ?? false));
+    if (!hasContent) {
+      target.remove(slot);
+    } else {
+      target[slot] = Map<String, dynamic>.from(slotDecoration);
+    }
+    final anyLight = lightMap.values.any((v) => v != null);
+    final anyDark = darkMap.values.any((v) => v != null);
+    if (!anyLight && !anyDark) {
+      return without(ThemeGroup.decoration);
+    }
+    return ThemeAppearance({
+      ...data,
+      'decoration': {
+        'source': null,
+        'light': lightMap,
+        'dark': darkMap,
+      },
+    });
+  }
 
   ThemeAppearance patchMaterial(
       Brightness brightness, Map<String, dynamic> patch) {

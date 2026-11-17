@@ -22,6 +22,7 @@ class AiModeSwitch extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: AppCardSurface(
         height: 48,
+        applyCardStyle: false,
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
           color: AppThemeTokens.of(context).primaryContainer,

@@ -17,11 +17,14 @@ import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import '../helpers/active_backdrop_filters.dart';
 import 'package:shenliyuan/features/theme_pack/installed_themes_screen.dart';
 import 'package:shenliyuan/features/theme_pack/theme_import_screen.dart';
+import 'package:shenliyuan/features/theme_pack/theme_layout_decoration_screen.dart';
 import 'package:shenliyuan/features/theme_pack/theme_manifest.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_codec.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_store.dart';
+import 'package:shenliyuan/features/theme_pack/theme_presentation.dart';
 import 'package:shenliyuan/features/theme_pack/theme_section.dart';
 import 'package:shenliyuan/features/theme_pack/theme_trial_banner.dart';
+import 'package:shenliyuan/widgets/campus/campus_header.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/theme/app_palette.dart';
@@ -925,6 +928,399 @@ void main() {
     final switcher =
         tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher));
     expect(switcher.duration, Duration.zero);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 60)));
+  });
+
+  test('P1.6 完整布局与五张贴纸持久化、按组混搭、局部修改与分组重置互不覆盖', () async {
+    final jsonA = themeFixture(id: '00000000-0000-4000-8000-000000000011')
+      ..['layout'] = {
+        'home': {
+          'preset': 'immersive',
+          'alignment': 'center',
+          'imageHeight': 180,
+          'imageWidth': 0.9,
+        },
+        'campus': {
+          'preset': 'compact',
+          'alignment': 'start',
+          'imageHeight': 120,
+          'imageWidth': 1.0,
+        },
+        'me': {
+          'preset': 'standard',
+          'alignment': 'end',
+          'imageHeight': 150,
+          'imageWidth': 0.8,
+        },
+      };
+    for (final mode in ['light', 'dark']) {
+      jsonA[mode]['tokens']['primary'] = '#0E7490';
+      jsonA[mode]['tokens']['onPrimary'] = '#FFFFFF';
+      jsonA[mode]['cardStyle'] = {
+        'borderWidth': 1.5,
+        'shadow': 'soft',
+      };
+      jsonA[mode]['decorations'] = {
+        'home': {
+          'background': {
+            'image': 'decorations/bg.png',
+            'fit': 'cover',
+            'focalX': 0.4,
+            'focalY': 0.6,
+            'blur': 2,
+            'scrim': 0.15,
+            'adjustments': {
+              'brightness': 10,
+              'contrast': 110,
+              'saturation': 90,
+            },
+          },
+          'stickers': [
+            for (var i = 0; i < 5; i++)
+              {
+                'image': 'decorations/s$i.png',
+                'x': 0.15 + i * 0.15,
+                'y': 0.5,
+                'width': 0.16,
+                'rotation': (i - 2) * 15.0,
+              },
+          ],
+        },
+      };
+    }
+    final packA = PreparedThemePack(
+      ThemeManifest.parse(jsonA, appVersion: '9.0.0'),
+      {
+        'preview/cover.png': themeImage(1080, 2340),
+        'decorations/bg.png': themeImage(320, 160),
+        for (var i = 0; i < 5; i++) 'decorations/s$i.png': themeImage(48, 48),
+      },
+    );
+
+    final jsonB = themeFixture(id: '00000000-0000-4000-8000-000000000012')
+      ..['layout'] = {
+        'home': {
+          'preset': 'compact',
+          'alignment': 'end',
+          'imageHeight': 110,
+          'imageWidth': 0.75,
+        },
+      };
+    final packB = PreparedThemePack(
+      ThemeManifest.parse(jsonB, appVersion: '9.0.0'),
+      {'preview/cover.png': themeImage(1080, 2340)},
+    );
+
+    final installedA = await provider.installTheme(packA);
+    final installedB = await provider.installTheme(packB);
+    await provider.applyInstalledTheme(installedA, ThemeGroup.applicable);
+    await provider.setThemeMode(ThemeMode.light);
+
+    // 模拟重启验证所有分组与五张贴纸保留
+    final restarted = ThemeProvider(themePackStore: store);
+    await restarted.installedThemes();
+    expect(
+      restarted.appearance.group(ThemeGroup.layout)!['value']['home']['preset'],
+      'immersive',
+    );
+    expect(
+      (restarted.appearance.group(ThemeGroup.decoration)!['light']['home']
+              ['stickers'] as List)
+          .length,
+      5,
+    );
+    expect(
+      restarted.appearance.group(ThemeGroup.material)!['light']['cardStyle'],
+      {'borderWidth': 1.5, 'shadow': 'soft'},
+    );
+    restarted.dispose();
+
+    // 仅应用 B 的布局，保留 A 的配色与装饰
+    await provider.applyInstalledTheme(installedB, {ThemeGroup.layout});
+    expect(
+      provider.appearance.group(ThemeGroup.layout)!['value']['home']['preset'],
+      'compact',
+    );
+    expect(
+      provider.buildAppTheme(Brightness.light).colorScheme.primary,
+      const Color(0xff0e7490),
+    );
+    expect(
+      (provider.appearance.group(ThemeGroup.decoration)!['light']['home']
+              ['stickers'] as List)
+          .length,
+      5,
+    );
+
+    // 手动修改透明度不清除 cardStyle
+    await provider.setComponentOpacity(0.84);
+    expect(
+      provider.appearance.group(ThemeGroup.material)!['light']['cardStyle'],
+      {'borderWidth': 1.5, 'shadow': 'soft'},
+    );
+
+    // 更换页头背景保留贴纸
+    final localBg = File(path.join(temp.path, 'new_header.png'));
+    await localBg.writeAsBytes(themeImage(200, 100));
+    final adoptedBg = await provider.adoptDecorationImage(
+      localBg.path,
+      ThemeAssetKind.header,
+    );
+    final currentHomeDeco = Map<String, dynamic>.from(
+      provider.appearance.group(ThemeGroup.decoration)!['light']['home'] as Map,
+    );
+    await provider.updateHeaderDecoration(Brightness.light, 'home', {
+      ...currentHomeDeco,
+      'background': {
+        'image': adoptedBg,
+        'fit': 'contain',
+        'focalX': 0.5,
+        'focalY': 0.5,
+        'blur': 0.0,
+        'scrim': 0.0,
+      },
+    });
+    expect(
+      (provider.appearance.group(ThemeGroup.decoration)!['light']['home']
+              ['stickers'] as List)
+          .length,
+      5,
+    );
+
+    // 导出混搭外观包含布局、卡片样式与装饰并可重新解码
+    final exported = await provider.exportCurrentAppearance(
+      customName: '布局装饰混搭',
+      appVersion: '1.0.0',
+    );
+    final decoded = await ThemePackCodec.decode(exported, appVersion: '9.0.0');
+    expect(decoded.manifest.data['layout']['home']['preset'], 'compact');
+    expect(decoded.manifest.data['light']['cardStyle']['shadow'], 'soft');
+    expect(
+      (decoded.manifest.data['light']['decorations']['home']['stickers'] as List)
+          .length,
+      5,
+    );
+
+    // 重置布局组只影响布局，装饰和卡片材质不受影响
+    await provider.resetAppearanceGroup(ThemeGroup.layout);
+    expect(provider.appearance.group(ThemeGroup.layout), isNull);
+    expect(provider.appearance.group(ThemeGroup.decoration), isNotNull);
+    expect(
+      provider.appearance.group(ThemeGroup.material)!['light']['cardStyle'],
+      isNotNull,
+    );
+  });
+
+  testWidgets('P1.6 页头三预设、贴纸不遮挡交互与语义、窄屏大字号与分栏边界及卡片描边阴影', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final stickerFile = File(path.join(temp.path, 'sticker.png'));
+    final bgFile = File(path.join(temp.path, 'header_bg.png'));
+    late String adoptedSticker;
+    late String adoptedBg;
+    await tester.runAsync(() async {
+      await stickerFile.writeAsBytes(themeImage(48, 48));
+      await bgFile.writeAsBytes(themeImage(240, 120));
+      adoptedSticker = await provider.adoptDecorationImage(
+        stickerFile.path,
+        ThemeAssetKind.sticker,
+      );
+      adoptedBg = await provider.adoptDecorationImage(
+        bgFile.path,
+        ThemeAssetKind.header,
+      );
+      await provider.updateCardStyle(Brightness.light, {
+        'borderWidth': 2.0,
+        'shadow': 'medium',
+      });
+      for (final slot in const ['home', 'campus', 'me']) {
+        await provider.updateHeaderDecoration(Brightness.light, slot, {
+          'background': {
+            'image': adoptedBg,
+            'fit': 'cover',
+            'focalX': 0.5,
+            'focalY': 0.5,
+            'blur': 0.0,
+            'scrim': 0.1,
+          },
+          'stickers': [
+            for (var i = 0; i < 5; i++)
+              {
+                'image': adoptedSticker,
+                'x': 0.2 + i * 0.15,
+                'y': 0.5,
+                'width': 0.18,
+                'rotation': 12.0 * i,
+              },
+          ],
+        });
+      }
+    });
+
+    var actionTapped = 0;
+    for (final preset in const ['standard', 'compact', 'immersive']) {
+      await tester.runAsync(() async {
+        for (final slot in const ['home', 'campus', 'me']) {
+          await provider.updateHeaderLayout(slot, {
+            'preset': preset,
+            'alignment': preset == 'compact' ? 'center' : 'start',
+            'imageHeight': 132.0,
+            'imageWidth': 0.85,
+          });
+        }
+      });
+
+      await tester.pumpWidget(
+        host(
+          Scaffold(
+            body: ListView(
+              children: [
+                const HomeThemedHeaderBanner(feedModeLabel: '推荐'),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: CampusHeader(
+                    semester: '2026—2027学年 · 第一学期',
+                    date: DateTime(2026, 10, 18),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: AppCardSurface(
+                    key: const ValueKey('content-card-sample'),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: FilledButton(
+                      onPressed: () => actionTapped++,
+                      child: const Text('卡片按钮'),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: AppCardSurface(
+                    key: const ValueKey('excluded-pill-surface'),
+                    applyCardStyle: false,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text('输入胶囊'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          scale: 1.5,
+        ),
+      );
+      await settleEmojiQAImages(
+        tester,
+        tester.element(find.byType(HomeThemedHeaderBanner)),
+        tester.widgetList<Image>(find.byType(Image)).map((image) => image.image),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      // 正式页面装饰区必须包裹 IgnorePointer 与 ExcludeSemantics
+      final decoFinder = find.byKey(
+        const ValueKey('theme-header-decoration-home'),
+      );
+      expect(decoFinder, findsOneWidget);
+      expect(
+        find.ancestor(of: decoFinder, matching: find.byType(IgnorePointer)),
+        findsWidgets,
+      );
+      expect(
+        find.ancestor(of: decoFinder, matching: find.byType(ExcludeSemantics)),
+        findsWidgets,
+      );
+
+      // immersive 预设装饰区在信息区上方，standard/compact 在下方
+      final infoRect = tester.getRect(
+        find.byKey(const ValueKey('home-themed-header-info')),
+      );
+      final decoRect = tester.getRect(decoFinder);
+      if (preset == 'immersive') {
+        expect(decoRect.top, lessThan(infoRect.top));
+      } else {
+        expect(infoRect.top, lessThan(decoRect.top));
+      }
+
+      // 卡片按钮可正常点击，不被装饰层劫持
+      await tester.ensureVisible(find.text('卡片按钮'));
+      await tester.tap(find.text('卡片按钮'));
+      await tester.pump();
+    }
+    expect(actionTapped, 3);
+
+    // 验证内容卡片应用 medium 阴影而输入胶囊排除 cardStyle
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('excluded-pill-surface')),
+    );
+    await tester.pump();
+    final contentOuter = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('content-card-sample')),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    expect((contentOuter.decoration as BoxDecoration?)?.boxShadow, isNotEmpty);
+    final pillOuter = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('excluded-pill-surface')),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    expect(pillOuter.decoration, isNull);
+
+    // 分栏宽度约束下装饰区不越过 380px 分栏边界
+    await tester.binding.setSurfaceSize(const Size(960, 800));
+    await tester.pumpWidget(
+      host(
+        const Scaffold(
+          body: Row(
+            children: [
+              SizedBox(
+                width: 380,
+                child: HomeThemedHeaderBanner(feedModeLabel: '综合'),
+              ),
+              VerticalDivider(width: 1),
+              Expanded(child: SizedBox()),
+            ],
+          ),
+        ),
+      ),
+    );
+    await settleEmojiQAImages(
+      tester,
+      tester.element(find.byType(HomeThemedHeaderBanner)),
+      tester.widgetList<Image>(find.byType(Image)).map((image) => image.image),
+    );
+    await tester.pumpAndSettle();
+    final splitDecoRect = tester.getRect(
+      find.byKey(const ValueKey('theme-header-decoration-home')),
+    );
+    expect(splitDecoRect.right, lessThanOrEqualTo(380.0));
+
+    // 设置编辑页在 360px + 1.5x 字号下无溢出渲染
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    await tester.pumpWidget(host(const ThemeLayoutDecorationScreen(), scale: 1.5));
+    await settleEmojiQAImages(
+      tester,
+      tester.element(find.byType(ThemeLayoutDecorationScreen)),
+      tester.widgetList<Image>(find.byType(Image)).map((image) => image.image),
+    );
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester

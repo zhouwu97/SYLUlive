@@ -126,6 +126,7 @@ class _AiInputComposerState extends State<AiInputComposer> {
               ),
             AppCardSurface(
               height: 48,
+              applyCardStyle: false,
               padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
               decoration: BoxDecoration(
                 color: composerSurface,

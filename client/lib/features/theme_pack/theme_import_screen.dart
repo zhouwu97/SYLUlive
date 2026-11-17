@@ -20,6 +20,7 @@ import 'theme_manifest.dart';
 import 'theme_navigation_images.dart';
 import 'theme_pack_codec.dart';
 import 'theme_pack_store.dart';
+import 'theme_presentation.dart';
 import 'theme_trial_banner.dart';
 import 'themed_wallpaper_layer.dart';
 
@@ -698,112 +699,152 @@ class _ThemePreviewState extends State<ThemePreview> {
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: Text('应用效果预览', style: Theme.of(context).textTheme.titleMedium),
         ),
-        Theme(
-          data: theme,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: ThemedWallpaperLayer(
-                    settings: wallpaper,
-                    imageProvider: wallpaper == null
-                        ? null
-                        : assetImage(wallpaper['portrait'] as String),
+        ThemePresentationOverride(
+          appearance: appearance,
+          brightnessOverride: brightness,
+          assetResolver: assetImage,
+          child: Theme(
+            data: theme,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ThemedWallpaperLayer(
+                      settings: wallpaper,
+                      imageProvider: wallpaper == null
+                          ? null
+                          : assetImage(wallpaper['portrait'] as String),
+                    ),
                   ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(
-                          theme.extension<AppShape>()!.md,
-                        ),
-                        child: OpacitySafeBackdropFilter(
-                          enabled: strength > 0,
-                          filter: ui.ImageFilter.blur(
-                            sigmaX: 10 * strength,
-                            sigmaY: 10 * strength,
-                          ),
-                          child: ColoredBox(
-                            color: theme
-                                .extension<AppPalette>()!
-                                .card
-                                .withValues(alpha: opacity),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    '校园生活',
-                                    style:
-                                        TextStyle(fontWeight: FontWeight.w600),
+                  Builder(
+                    builder: (previewContext) {
+                      final cardStyle =
+                          ThemeCardStyleSpec.resolve(previewContext);
+                      final previewRadius = BorderRadius.circular(
+                        theme.extension<AppShape>()!.md,
+                      );
+                      final previewShadows = cardStyle?.resolveBoxShadows(
+                        brightness == Brightness.dark,
+                      );
+                      final previewBorder =
+                          cardStyle?.resolveBoxBorder(previewContext);
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SizedBox(height: 12),
+                          const HomeThemedHeaderBanner(feedModeLabel: '推荐'),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Container(
+                              decoration: (previewShadows != null &&
+                                      previewShadows.isNotEmpty)
+                                  ? BoxDecoration(
+                                      borderRadius: previewRadius,
+                                      boxShadow: previewShadows,
+                                    )
+                                  : null,
+                              child: ClipRRect(
+                                borderRadius: previewRadius,
+                                child: OpacitySafeBackdropFilter(
+                                  enabled: strength > 0,
+                                  filter: ui.ImageFilter.blur(
+                                    sigmaX: 10 * strength,
+                                    sigmaY: 10 * strength,
                                   ),
-                                  const SizedBox(height: 6),
-                                  const Text('课程、动态和日常，都有自己的颜色。'),
-                                  const SizedBox(height: 12),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: [
-                                      FilledButton(
-                                        onPressed: () {},
-                                        child: Text(
-                                          '主要操作',
-                                          style: TextStyle(
-                                            fontFamily: theme
-                                                .textTheme
-                                                .labelLarge
-                                                ?.fontFamily,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: theme
+                                          .extension<AppPalette>()!
+                                          .card
+                                          .withValues(alpha: opacity),
+                                      borderRadius: previewRadius,
+                                      border: previewBorder == const Border()
+                                          ? null
+                                          : previewBorder,
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            '校园生活',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                           ),
-                                        ),
+                                          const SizedBox(height: 6),
+                                          const Text('课程、动态和日常，都有自己的颜色。'),
+                                          const SizedBox(height: 12),
+                                          Wrap(
+                                            spacing: 8,
+                                            runSpacing: 8,
+                                            children: [
+                                              FilledButton(
+                                                onPressed: () {},
+                                                child: Text(
+                                                  '主要操作',
+                                                  style: TextStyle(
+                                                    fontFamily: theme
+                                                        .textTheme
+                                                        .labelLarge
+                                                        ?.fontFamily,
+                                                  ),
+                                                ),
+                                              ),
+                                              OutlinedButton(
+                                                onPressed: () {},
+                                                child: const Text('次要操作'),
+                                              ),
+                                            ],
+                                          ),
+                                          Row(
+                                            children: [
+                                              const Expanded(
+                                                child: Text('设置开关'),
+                                              ),
+                                              Switch(
+                                                value: true,
+                                                onChanged: (_) {},
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
-                                      OutlinedButton(
-                                        onPressed: () {},
-                                        child: const Text('次要操作'),
-                                      ),
-                                    ],
+                                    ),
                                   ),
-                                  Row(
-                                    children: [
-                                      const Expanded(child: Text('设置开关')),
-                                      Switch(value: true, onChanged: (_) {}),
-                                    ],
-                                  ),
-                                ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                    ),
-                    if (navigation?['style'] == 'liquid_glass')
-                      SizedBox(
-                        height: 100,
-                        child: LiquidBottomNav(
-                          currentIndex: _index,
-                          visualIndexListenable: _visualIndex,
-                          onTap: select,
-                          themeImages: images,
-                          originalIcons: originalIcons,
-                          shaderEnabled: false,
-                        ),
-                      )
-                    else
-                      FloatingBottomNav(
-                        currentIndex: _index,
-                        onTap: select,
-                        docked: navigation?['style'] == 'normal',
-                        themeImages: images,
-                        originalIcons: originalIcons,
-                      ),
-                  ],
-                ),
-              ],
+                          if (navigation?['style'] == 'liquid_glass')
+                            SizedBox(
+                              height: 100,
+                              child: LiquidBottomNav(
+                                currentIndex: _index,
+                                visualIndexListenable: _visualIndex,
+                                onTap: select,
+                                themeImages: images,
+                                originalIcons: originalIcons,
+                                shaderEnabled: false,
+                              ),
+                            )
+                          else
+                            FloatingBottomNav(
+                              currentIndex: _index,
+                              onTap: select,
+                              docked: navigation?['style'] == 'normal',
+                              themeImages: images,
+                              originalIcons: originalIcons,
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         ),

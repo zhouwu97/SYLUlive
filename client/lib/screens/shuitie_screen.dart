@@ -1,5 +1,6 @@
 import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../features/theme_pack/theme_presentation.dart';
 import '../widgets/global_background_wrapper.dart';
 import '../widgets/app_card.dart';
 import 'dart:async';
@@ -2545,6 +2546,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                         child: _buildSearchBar(isDark),
                       ),
                     ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: HomeThemedHeaderBanner(feedModeLabel: config.label),
                   ),
                   // 未读回复属于当前账号的跨排序提醒，不应因用户停留在“综合”而消失。
                   if (_unreadReplyNotifications.isNotEmpty)

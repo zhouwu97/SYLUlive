@@ -621,8 +621,8 @@ AstrBot 食堂工具直接匿名复用现有 `/api/canteens/rankings`、`/search
 | --- | --- | --- |
 | `GET /api/themes` | 公开 | 查询参数：`sort`（`latest`/`popular`/`official`）、`tag`、`q`、`ids`（最多 50 个，批量检查更新）、`cursor`；每页 20 条，支持 `ETag` / `304` |
 | `GET /api/themes/:familyId` | 公开 | 已上架主题详情及规范化 `manifest`，支持 `ETag` / `304` |
-| `GET /api/themes/:familyId/versions/:version/package` | 公开 | 指定版本规范包，支持 `Range`、`ETag`（规范包 SHA-256）、`Cache-Control: public, max-age=31536000, immutable`；仅版本为 `approved`/`superseded` 且根记录非 `removed`/`withdrawn` 时可下载，无 `Range` 或 `Range: bytes=0-*` 时根记录 `downloads` 加 1 |
-| `GET /api/themes/:familyId/versions/:version/preview/:mode` | 公开 | 指定版本 `light`/`dark` 预览图，访问条件与不可变缓存头同上 |
+| `GET /api/themes/:familyId/versions/:version/package` | 公开 | 指定版本规范包，支持 `Range`、`ETag`（规范包 SHA-256）、`Cache-Control: public, no-cache`；仅版本为 `approved`/`superseded` 且根记录非 `removed`/`withdrawn` 时可下载，无 `Range` 或 `Range: bytes=0-*` 时根记录 `downloads` 加 1 |
+| `GET /api/themes/:familyId/versions/:version/preview/:mode` | 公开 | 指定版本 `light`/`dark` 预览图，支持 `Range`、`ETag` 与 `Cache-Control: public, no-cache`，访问条件同上 |
 | `GET /api/users/:id/themes` | 公开 | 指定作者已上架的主题列表 |
 | `POST /api/themes/submissions` | 登录 | `multipart/form-data`（上限 49MB）：`package`（`.sltheme`）、`idempotencyKey`，可选 `familyId`、`source`（仅管理员可指定 `official`）及元数据覆盖；配额为待审不超过 3 个、24 小时不超过 5 个（超限返回 `429 theme_quota`） |
 | `GET /api/themes/submissions` | 登录 | 本人投稿列表（`Cache-Control: private, no-store`） |
@@ -632,4 +632,3 @@ AstrBot 食堂工具直接匿名复用现有 `/api/canteens/rankings`、`/search
 | `GET /api/admin/themes?status=` | 管理员 | 审核队列（默认 `pending`），每项附带规范 `manifest` 与同版本族当前 `currentApproved` 摘要 |
 | `POST /api/admin/themes/:id/review` | 管理员 | JSON `{approve, reasonCode, note}`；禁止自审，根记录加锁保证单 `approved` 且版本号只进不退 |
 | `POST /api/admin/themes/:familyId/remove` | 管理员 | JSON `{reasonCode, note}`；下架整个版本族 |
-

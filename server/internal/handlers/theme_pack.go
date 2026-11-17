@@ -478,7 +478,7 @@ func (h *ThemePackHandler) ServePublicPackage(c *gin.Context) {
 	}
 
 	etag := `"` + pack.PackageSHA256 + `"`
-	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	c.Header("Cache-Control", "public, no-cache")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Type", "application/vnd.sylulive.theme+zip")
 	c.Header("ETag", etag)
@@ -520,7 +520,7 @@ func (h *ThemePackHandler) ServePublicPreview(c *gin.Context) {
 	}
 
 	etag := fmt.Sprintf(`"%s-%s"`, pack.PackageSHA256, mode)
-	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	c.Header("Cache-Control", "public, no-cache")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Type", "image/jpeg")
 	c.Header("ETag", etag)

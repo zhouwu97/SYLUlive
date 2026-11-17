@@ -300,12 +300,26 @@ func TestThemePackRoutesPermissionsCatalogVersionedDownloadAndRemoval(t *testing
 
 	dlV1Full := f.req(http.MethodGet, v1PackageURL, 0, nil, nil)
 	require.Equal(t, http.StatusOK, dlV1Full.Code)
+	require.Equal(t, "public, no-cache", dlV1Full.Header().Get("Cache-Control"))
+	require.Equal(t, "bytes", dlV1Full.Header().Get("Accept-Ranges"))
 	sumV1 := sha256.Sum256(dlV1Full.Body.Bytes())
 	require.Equal(t, v1SHA256, hex.EncodeToString(sumV1[:]))
 
 	pkgETag := dlV1Full.Header().Get("ETag")
+	require.NotEmpty(t, pkgETag)
 	dl304 := f.req(http.MethodGet, v1PackageURL, 0, nil, map[string]string{"If-None-Match": pkgETag})
 	require.Equal(t, http.StatusNotModified, dl304.Code)
+	require.Equal(t, "public, no-cache", dl304.Header().Get("Cache-Control"))
+
+	v1PreviewLightURL := fmt.Sprintf("/api/themes/%s/versions/1/preview/light", familyID)
+	prevV1 := f.req(http.MethodGet, v1PreviewLightURL, 0, nil, nil)
+	require.Equal(t, http.StatusOK, prevV1.Code)
+	require.Equal(t, "public, no-cache", prevV1.Header().Get("Cache-Control"))
+	require.Equal(t, "bytes", prevV1.Header().Get("Accept-Ranges"))
+	prevETag := prevV1.Header().Get("ETag")
+	require.NotEmpty(t, prevETag)
+	prev304 := f.req(http.MethodGet, v1PreviewLightURL, 0, nil, map[string]string{"If-None-Match": prevETag})
+	require.Equal(t, http.StatusNotModified, prev304.Code)
 
 	// 4. 用户 1 发布 v2 并由管理员审核通过：此时通过旧的 v1 packageUrl 仍能下载 v1，且 Range 分片续传与完整包逐字节一致
 	zipV2 := makeRouteTestZip(t, "海盐蓝二版")
@@ -375,8 +389,10 @@ func TestThemePackRoutesPermissionsCatalogVersionedDownloadAndRemoval(t *testing
 	require.Empty(t, catPendingBody.Items)
 	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, "/api/themes/"+familyID, 0, nil, nil).Code)
 	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, v1PackageURL, 0, nil, nil).Code)
+	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, v1PackageURL, 0, nil, map[string]string{"If-None-Match": pkgETag}).Code)
 	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, v2PackageURL, 0, nil, nil).Code)
-	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, fmt.Sprintf("/api/themes/%s/versions/1/preview/light", familyID), 0, nil, nil).Code)
+	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, v1PreviewLightURL, 0, nil, nil).Code)
+	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, v1PreviewLightURL, 0, nil, map[string]string{"If-None-Match": prevETag}).Code)
 	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, fmt.Sprintf("/api/themes/%s/versions/2/preview/dark", familyID), 0, nil, nil).Code)
 
 	// 8. 作者撤回已上架作品后，整个版本族不可下载

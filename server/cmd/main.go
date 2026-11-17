@@ -295,6 +295,7 @@ func main() {
 		&models.CommunityEmojiPack{},
 		&models.CommunityEmojiPackAsset{},
 		&models.EmojiCreator{},
+		&models.ThemePack{},
 
 		&models.ExamPaper{},
 
@@ -749,6 +750,7 @@ func main() {
 		// 机器人图片走独立上传接口，与 handler 内的 MaxBytesReader 保持同一上限。
 		middleware.BodyLimitRule{Prefix: "/api/integrations/v1/bot/media", Limit: (4 << 20) + (64 << 10)},
 		middleware.BodyLimitRule{Prefix: "/api/emoji/submissions", Limit: services.EmojiPackMaxUploadBytes},
+		middleware.BodyLimitRule{Prefix: "/api/themes/submissions", Limit: services.ThemePackMaxRequestBodyBytes},
 		middleware.BodyLimitRule{Prefix: "/api/exam-papers", Limit: services.ExamPaperMaxRequestBodySize},
 		middleware.BodyLimitRule{Prefix: "/api/admin/ai/knowledge/import", Limit: 9 << 20},
 		middleware.BodyLimitRule{Prefix: "/api/super/app-releases", Limit: cfg.AppReleaseMaxSize + 2<<20},
@@ -2064,6 +2066,9 @@ func main() {
 	emojiPackService := registerEmojiPackRoutes(r, db, cfg.UploadDir, cfg.JWTSecret)
 	go emojiPackService.Maintain(appCtx)
 
+	themePackService := registerThemePackRoutes(r, db, cfg.UploadDir, cfg.JWTSecret)
+	go themePackService.Maintain(appCtx)
+
 	emojiFavorites := r.Group("/api/emoji/favorites")
 	emojiFavorites.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
@@ -3037,11 +3042,16 @@ func ensureSecurityHardeningSchema(db *gorm.DB) error {
 			return err
 		}
 	}
+	if db.Migrator().HasTable(&models.Report{}) && !db.Migrator().HasColumn(&models.Report{}, "TargetKey") {
+		if err := db.Migrator().AddColumn(&models.Report{}, "TargetKey"); err != nil {
+			return err
+		}
+	}
 	statements := []string{
 		`CREATE INDEX IF NOT EXISTS idx_files_access_scope ON files (access_scope)`,
 		`DROP INDEX IF EXISTS uq_pending_report_target`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_report_target
- ON reports (reporter_id, target_type, target_id)
+ ON reports (reporter_id, target_type, target_id, target_key)
  WHERE status = 'pending'`,
 	}
 	for _, statement := range statements {

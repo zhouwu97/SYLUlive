@@ -196,6 +196,13 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 			}
 			payload["emoji_submissions"] = packs
 		}
+		if h.db.Migrator().HasTable(&models.ThemePack{}) {
+			themes := []models.ThemePack{}
+			if err := h.db.Omit("idempotency_key").Where("author_user_id = ?", userID).Order("created_at DESC").Find(&themes).Error; err != nil {
+				return nil, err
+			}
+			payload["theme_submissions"] = themes
+		}
 		requests := make([]models.PersonalDataRequest, 0)
 		if err := h.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&requests).Error; err != nil {
 			return nil, err
@@ -524,6 +531,9 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 			}
 		}
 		if err := services.WithdrawEmojiPacksForUser(tx, userID); err != nil {
+			return err
+		}
+		if err := services.WithdrawThemePacksForUser(tx, userID); err != nil {
 			return err
 		}
 		return tx.Create(&models.PersonalDataRequest{

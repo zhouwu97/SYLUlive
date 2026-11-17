@@ -58,7 +58,10 @@ func TestOfflineCanteenContentIsReadOnlyForUsers(t *testing.T) {
 		t.Fatalf("offline review must stay untouched: %+v", stored)
 	}
 
-	// 管理员治理不受下架影响。
+	// 超级管理员可以维护怀旧资料，普通用户的评价仍然只读。
+	if err := h.db.Model(&author).Update("role", models.RoleSuperAdmin).Error; err != nil {
+		t.Fatal(err)
+	}
 	var dish models.CanteenDish
 	h.db.Where("canteen_id = ?", canteen.ID).First(&dish)
 	hide := performDishPhotoRequest(t, NewCanteenDishPhotoAdminHandler(h.db).AdminUpdateDish, http.MethodPatch, "/x",

@@ -33,8 +33,13 @@ ResponseBody _json(String body, [int status = 200]) =>
     });
 
 class _LoggedInAuth extends Fake with ChangeNotifier implements AuthProvider {
+  final String role;
+  _LoggedInAuth({this.role = 'user'});
   @override
   bool get isLoggedIn => true;
+
+  @override
+  int get accountSessionEpoch => 0;
 
   @override
   User? get user => User(
@@ -45,6 +50,7 @@ class _LoggedInAuth extends Fake with ChangeNotifier implements AuthProvider {
         createdAt: DateTime(2026, 1, 1),
         studentVerified: true,
         eduBound: true,
+        role: role,
       );
 }
 
@@ -166,22 +172,22 @@ void main() {
 }
 
 void offlineAndScopeTests() {
-  testWidgets('排行默认看现有商家，切到全部排名会带上已下架商家并标注', (tester) async {
+  testWidgets('排行只显示营业商家，怀旧入口单独保留已下架商家', (tester) async {
     final scopes = <String?>[];
     final dio = Dio(BaseOptions(baseUrl: 'http://test'));
     dio.httpClientAdapter = _Adapter((options) async {
       if (options.path == '/canteens/rankings') {
         final scope = options.queryParameters['scope']?.toString();
         scopes.add(scope);
-        if (scope == 'all') {
-          return _json('{"items":['
-              '{"rank":1,"id":9,"name":"老字号面馆","rating_count":20,"average_star":4.9,"ranking_score":90,"is_offline":true,"operating_status":"offline"},'
-              '{"rank":2,"id":1,"name":"营业中的店","rating_count":5,"average_star":4.5,"ranking_score":80}'
-              '],"meta":{"total":2}}');
-        }
         return _json('{"items":['
+            '{"rank":1,"id":9,"name":"老字号面馆","rating_count":20,"is_offline":true},'
             '{"rank":1,"id":1,"name":"营业中的店","rating_count":5,"average_star":4.5,"ranking_score":80}'
             '],"meta":{"total":1}}');
+      }
+      if (options.path == '/canteens' &&
+          options.queryParameters['status'] == 'offline') {
+        return _json(
+            '[{"id":9,"name":"老字号面馆","is_offline":true,"rating_count":20,"average_star":4.9}]');
       }
       return _json('{"error":"not found"}', 404);
     });
@@ -192,13 +198,14 @@ void offlineAndScopeTests() {
     expect(find.text('老字号面馆'), findsNothing);
     expect(find.text('只排营业中的商家，综合分兼顾评分与评价人数'), findsOneWidget);
 
-    await tester.tap(find.text('全部排名'));
+    expect(find.text('全部排名'), findsNothing);
+    await tester.tap(find.text('怀旧'));
     await tester.pumpAndSettle();
-    expect(scopes.last, 'all');
+    expect(scopes, [null]);
+    expect(find.text('怀旧食堂'), findsOneWidget);
     expect(find.text('老字号面馆'), findsOneWidget);
-    expect(find.text('已下架'), findsOneWidget);
-
-    await tester.tap(find.text('现有商家'));
+    expect(find.textContaining('已下架 · 只读存档'), findsOneWidget);
+    await tester.pageBack();
     await tester.pumpAndSettle();
     expect(find.text('老字号面馆'), findsNothing);
   });
@@ -244,7 +251,7 @@ void offlineAndScopeTests() {
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.thumb_up_alt_outlined).last);
     await tester.pump();
-    expect(find.text('该商家已下架，评价和图片仅供查看；如需修改或删除请联系管理员'), findsOneWidget);
+    expect(find.text('该商家已下架，评价和图片仅供查看；食堂资料仅超级管理员可维护'), findsOneWidget);
     expect(requests.where((r) => r.startsWith('PUT')), isEmpty);
   });
 
@@ -260,14 +267,19 @@ void offlineAndScopeTests() {
       }
       return _json('{"error":"not found"}', 404);
     });
-    await tester.pumpWidget(_app(dio, const AdminCanteenOperationsScreen()));
+    await tester.pumpWidget(_app(dio, const AdminCanteenOperationsScreen(),
+        auth: _LoggedInAuth(role: 'super_admin')));
     await tester.pumpAndSettle();
 
     expect(find.text('全部 2'), findsOneWidget);
     expect(find.text('营业中 1'), findsOneWidget);
     expect(find.text('已下架 1'), findsOneWidget);
     expect(find.textContaining('原因：档口转让'), findsOneWidget);
+    await tester.tap(find.byTooltip('管理「关门的店」'));
+    await tester.pumpAndSettle();
     expect(find.text('恢复营业'), findsOneWidget);
+    await tester.tapAt(Offset.zero);
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('已下架 1'));
     await tester.pumpAndSettle();
@@ -276,10 +288,12 @@ void offlineAndScopeTests() {
 
     await tester.tap(find.text('全部 2'));
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('管理「营业中的店」'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('下架商家'));
     await tester.pumpAndSettle();
     expect(find.text('下架「营业中的店」'), findsOneWidget);
-    expect(find.textContaining('不再参与现有商家排名'), findsOneWidget);
-    expect(find.textContaining('只有管理员可以处理'), findsOneWidget);
+    expect(find.textContaining('不再参与任何排名'), findsOneWidget);
+    expect(find.text('评价、图片和投票只读，仅超级管理员可维护食堂资料或恢复营业'), findsOneWidget);
   });
 }

@@ -249,8 +249,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                         _AdminActionPill(
                           icon: Icons.restaurant_outlined,
                           iconColor: Colors.green,
-                          title: '食堂运营',
-                          subtitle: '下架、恢复营业与历史状态管理',
+                          title: '食堂管理',
+                          subtitle: '商家资料、展示标签、菜品与投稿审核',
                           isDark: isDark,
                           onTap: () => Navigator.push(
                             context,

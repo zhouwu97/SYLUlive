@@ -176,7 +176,7 @@ func TestSearchMatchesLocationAndTagsAndRankingExposesTagKeys(t *testing.T) {
 	}
 }
 
-// 默认“现有商家排名”不含下架店，现有店名次重排；“全部排名”按真实评分把下架店排进去并标注。
+// 旧客户端仍可传 scope=all，但所有排行榜都必须排除下架商家。
 func TestRankingScopeCurrentAndAll(t *testing.T) {
 	db := newCanteenTestDB(t)
 	seedSearchListCanteens(t, db) // 牛肉面 5★×4、黄焖鸡 4★×3、拉面 2★×1、下架面馆 5★×1（已下架）
@@ -203,12 +203,61 @@ func TestRankingScopeCurrentAndAll(t *testing.T) {
 		t.Fatalf("current scope=%v", current)
 	}
 	all := ranks("?scope=all")
-	if len(all) != 4 || all["下架面馆"][1] != true || all["牛肉面"][1] != false {
+	if len(all) != len(current) || all["牛肉面"][1] != false {
 		t.Fatalf("all scope=%v", all)
 	}
-	// 下架店不再被强制排到最后：它按评分参与排名，排在 2★ 的拉面前面。
-	if all["下架面馆"][0].(int) >= all["拉面"][0].(int) {
-		t.Fatalf("offline shop should be ranked by score in all scope: %v", all)
+	if _, ok := all["下架面馆"]; ok {
+		t.Fatalf("offline shop entered legacy all scope: %v", all)
+	}
+}
+
+func TestNostalgiaListOnlyIncludesOfflineCanteens(t *testing.T) {
+	db := newCanteenTestDB(t)
+	seedSearchListCanteens(t, db)
+	h := NewCanteenHandler(db)
+	resp := performCanteenRequest(t, h.GetList, http.MethodGet, "/api/canteens?status=offline&limit=20&page=1", nil, 0, "")
+	var items []struct {
+		Name         string  `json:"name"`
+		IsOffline    bool    `json:"is_offline"`
+		RankingScore float64 `json:"ranking_score"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Code != http.StatusOK || len(items) != 1 || items[0].Name != "下架面馆" || !items[0].IsOffline || items[0].RankingScore != 0 {
+		t.Fatalf("nostalgia list: status=%d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestNostalgiaOrderingSearchAndPagination(t *testing.T) {
+	db := newCanteenTestDB(t)
+	seedSearchListCanteens(t, db) // 已下架面馆没有下架时间，应排在有时间的记录之后。
+	older, newer := time.Now().Add(-48*time.Hour), time.Now().Add(-24*time.Hour)
+	for i, at := range []*time.Time{&older, &newer, &newer} {
+		shop := models.Canteen{ID: uint(10 + i), Name: fmt.Sprintf("怀旧小炒%d", i), Verified: true, CreatedBy: 1, OperatingStatus: models.CanteenOperatingOffline, OfflinedAt: at}
+		if err := db.Create(&shop).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := NewCanteenHandler(db)
+	for _, tc := range []struct{ query, want string }{
+		{"?status=offline&limit=2&page=1", "[12 11]"},
+		{"?status=offline&limit=2&page=2", "[10 4]"},
+		{"?status=offline&limit=2&page=3", "[]"},
+		{"?status=offline&q=面馆&limit=1&page=1", "[4]"},
+	} {
+		resp := performCanteenRequest(t, h.GetList, http.MethodGet, "/api/canteens"+tc.query, nil, 0, "")
+		var items []models.Canteen
+		if err := json.Unmarshal(resp.Body.Bytes(), &items); err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]uint, 0, len(items))
+		for _, item := range items {
+			ids = append(ids, item.ID)
+		}
+		if resp.Code != http.StatusOK || fmt.Sprint(ids) != tc.want {
+			t.Fatalf("%s status=%d ids=%v want %s", tc.query, resp.Code, ids, tc.want)
+		}
 	}
 }
 

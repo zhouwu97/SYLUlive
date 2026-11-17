@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import '../models/canteen.dart';
 import '../models/canteen_dish.dart';
 import '../models/canteen_review.dart';
+import '../services/publish_session_scope.dart';
 
 class CanteenRatingSubmitResult {
   final bool success;
@@ -48,13 +49,15 @@ class CanteenProvider with ChangeNotifier {
 
   // ── 模块可选项（服务端 /canteens/meta 下发）────────────────────────
   // 旧服务端没有该接口或请求失败时，回退到内置默认值，不影响提交和筛选。
-  static const List<String> defaultLocationAreas = ['一食堂', '二食堂'];
+  static const List<String> defaultLocationAreas = ['一食堂', '二食堂', '其他'];
   static const List<String> defaultLocationFloors = ['一楼', '二楼'];
 
   List<String> _locationAreas = defaultLocationAreas;
   List<String> _locationFloors = defaultLocationFloors;
   List<({String key, String label})> _reviewTags = const [];
   Future<void>? _metaFuture;
+  bool _supportsUnifiedManagement = false;
+  bool get supportsUnifiedManagement => _supportsUnifiedManagement;
 
   List<String> get locationAreas => _locationAreas;
   List<String> get locationFloors => _locationFloors;
@@ -78,7 +81,8 @@ class CanteenProvider with ChangeNotifier {
       _reviewTags.isEmpty ? defaultReviewTags : _reviewTags;
 
   /// 加载一次可选项；失败后允许下次调用重试。
-  Future<void> loadMeta() {
+  Future<void> loadMeta({bool forceRefresh = false}) {
+    if (forceRefresh) _metaFuture = null;
     return _metaFuture ??= _loadMetaInternal().then((ok) {
       if (!ok) _metaFuture = null;
     });
@@ -109,6 +113,7 @@ class CanteenProvider with ChangeNotifier {
           : const <({String key, String label})>[];
       if (areas.isNotEmpty) _locationAreas = areas;
       if (floors.isNotEmpty) _locationFloors = floors;
+      _supportsUnifiedManagement = data['supports_unified_management'] == true;
       _reviewTags = tags;
       notifyListeners();
       return true;
@@ -203,12 +208,15 @@ class CanteenProvider with ChangeNotifier {
     return _errorMessage == null && !_isLoading ? _canteens : null;
   }
 
-  /// 管理员修改商家名称与位置；只发送传入的字段。
+  /// 资料和标签一次保存；不传 updateTags 的旧调用保留原有标签。
   Future<bool> adminUpdateCanteen(
     int canteenId, {
     String? name,
     String? locationArea,
     String? locationFloor,
+    bool updateTags = false,
+    List<String>? tags,
+    PublishSessionScope? sessionScope,
   }) async {
     _errorMessage = null;
     try {
@@ -216,7 +224,8 @@ class CanteenProvider with ChangeNotifier {
         if (name != null) 'name': name,
         if (locationArea != null) 'location_area': locationArea,
         if (locationFloor != null) 'location_floor': locationFloor,
-      });
+        if (updateTags) 'tags': tags,
+      }, options: Options(extra: sessionScope?.requestExtra));
       return response.statusCode == 200;
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
@@ -225,6 +234,14 @@ class CanteenProvider with ChangeNotifier {
   }
 
   Future<void>? _loadFuture;
+
+  /// 独立请求，不覆盖营业商家列表；页面负责丢弃离页后的旧响应。
+  Future<List<Canteen>> loadNostalgiaCanteens() async {
+    final response = await _dio.get('/canteens', queryParameters: {'status': 'offline'});
+    if (response.data is! List) throw const FormatException('怀旧食堂数据无效');
+    return (response.data as List).whereType<Map>().map((item) => Canteen.fromJson(Map<String, dynamic>.from(item)))
+        .where((item) => item.isOffline).toList(growable: false);
+  }
 
   Future<void> loadCanteens() {
     if (_loadFuture != null) return _loadFuture!;
@@ -275,6 +292,7 @@ class CanteenProvider with ChangeNotifier {
     String image, {
     String locationArea = '',
     String locationFloor = '',
+    PublishSessionScope? sessionScope,
   }) async {
     _errorMessage = null;
     try {
@@ -286,6 +304,7 @@ class CanteenProvider with ChangeNotifier {
           if (locationArea.isNotEmpty) 'location_area': locationArea,
           if (locationFloor.isNotEmpty) 'location_floor': locationFloor,
         },
+        options: Options(extra: sessionScope?.requestExtra),
       );
       return response.statusCode == 201;
     } on DioException catch (e) {
@@ -476,11 +495,13 @@ class CanteenProvider with ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> offlineCanteen(int id,
-      {String reason = ''}) async {
+      {String reason = '', PublishSessionScope? sessionScope}) async {
+    _errorMessage = null;
     try {
       final response = await _dio.post(
         '/canteens/$id/offline',
         data: {'reason': reason.trim()},
+        options: Options(extra: sessionScope?.requestExtra),
       );
       if (response.statusCode == 200 && response.data is Map) {
         return Map<String, dynamic>.from(response.data as Map);
@@ -492,9 +513,12 @@ class CanteenProvider with ChangeNotifier {
     return null;
   }
 
-  Future<Map<String, dynamic>?> onlineCanteen(int id) async {
+  Future<Map<String, dynamic>?> onlineCanteen(int id,
+      {PublishSessionScope? sessionScope}) async {
+    _errorMessage = null;
     try {
-      final response = await _dio.post('/canteens/$id/online');
+      final response = await _dio.post('/canteens/$id/online',
+          options: Options(extra: sessionScope?.requestExtra));
       if (response.statusCode == 200 && response.data is Map) {
         return Map<String, dynamic>.from(response.data as Map);
       }

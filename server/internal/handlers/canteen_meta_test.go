@@ -16,9 +16,10 @@ func TestGetMetaListsEveryReviewTagAndLocation(t *testing.T) {
 		t.Fatalf("status=%d", resp.Code)
 	}
 	var body struct {
-		Areas  []string `json:"location_areas"`
-		Floors []string `json:"location_floors"`
-		Tags   []struct {
+		Areas   []string `json:"location_areas"`
+		Unified bool     `json:"supports_unified_management"`
+		Floors  []string `json:"location_floors"`
+		Tags    []struct {
 			Key   string `json:"key"`
 			Label string `json:"label"`
 		} `json:"review_tags"`
@@ -26,7 +27,7 @@ func TestGetMetaListsEveryReviewTagAndLocation(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Areas) != 2 || len(body.Floors) != 2 || len(body.Tags) != len(validCanteenTags) {
+	if len(body.Areas) != 3 || body.Areas[2] != "其他" || !body.Unified || len(body.Floors) != 2 || len(body.Tags) != len(validCanteenTags) {
 		t.Fatalf("meta=%+v", body)
 	}
 	if body.Tags[0].Key != "taste_good" || body.Tags[0].Label != "味道不错" {

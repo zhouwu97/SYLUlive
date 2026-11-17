@@ -44,7 +44,7 @@ class CanteenDiscoveryProvider with ChangeNotifier {
   int? get rankingTotal => _rankingTotal;
   String get rankingSort => _rankingSort;
 
-  /// 排行范围：现有商家（默认，下架商家不占名次）或全部排名（含已下架）。
+  /// 保留旧范围参数以兼容调用方；所有排行均排除下架商家。
   String get rankingScope => _rankingScope;
 
   CanteenDiscoveryProvider(this._dio);
@@ -159,6 +159,7 @@ class CanteenDiscoveryProvider with ChangeNotifier {
           _rankings[key] = rawItems
               .whereType<Map<String, dynamic>>()
               .map(CanteenRankingItem.fromJson)
+              .where((item) => !item.isOffline)
               .toList();
           _rankingLoadedAt[key] = DateTime.now();
         }

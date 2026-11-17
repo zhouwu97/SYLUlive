@@ -87,6 +87,9 @@ func TestCanteenOfflineOnlinePreservesHistoryAndBlocksNewWrites(t *testing.T) {
 		t.Fatalf("offline detail status=%d body=%s", detail.Code, detail.Body.String())
 	}
 
+	if err := h.db.Model(&user).Update("role", models.RoleSuperAdmin).Error; err != nil {
+		t.Fatal(err)
+	}
 	online := performCanteenRequest(t, h.OnlineCanteen, http.MethodPost,
 		"/api/canteens/88/online", mapParams("id", "88"), user.ID, `{}`)
 	if online.Code != http.StatusOK || !strings.Contains(online.Body.String(), `"operating_status":"active"`) {
@@ -139,6 +142,9 @@ func TestDeleteCanteenRemovesDependencyTreeWithoutDeletingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin := createCanteenTestUser(t, db, 1, "管理员")
+	if err := db.Model(&admin).Update("role", models.RoleSuperAdmin).Error; err != nil {
+		t.Fatal(err)
+	}
 	canteen := models.Canteen{Name: "待删除店", Image: "/uploads/c.png", CreatedBy: admin.ID, Verified: true, OperatingStatus: models.CanteenOperatingOffline}
 	if err := db.Create(&canteen).Error; err != nil {
 		t.Fatal(err)

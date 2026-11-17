@@ -364,8 +364,8 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
 
   Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isAdmin = context.watch<AuthProvider>().user?.isAdmin == true ||
-        context.watch<AuthProvider>().user?.isSuperAdmin == true;
+    final user = context.watch<AuthProvider>().user;
+    final isAdmin = user?.isSuperAdmin == true || (!_isOffline && user?.isAdmin == true);
     final hasData = _data != null;
 
     return Scaffold(

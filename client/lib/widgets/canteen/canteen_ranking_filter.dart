@@ -337,7 +337,7 @@ class _LocationFilterSheet extends StatefulWidget {
 
 class _LocationFilterSheetState extends State<_LocationFilterSheet> {
   late String _area = widget.initialArea;
-  late String _floor = widget.initialFloor;
+  late String _floor = widget.initialArea == '其他' ? '' : widget.initialFloor;
 
   @override
   Widget build(BuildContext context) {
@@ -364,7 +364,7 @@ class _LocationFilterSheetState extends State<_LocationFilterSheet> {
             ),
             const SizedBox(height: 4),
             Text(
-              '组合选择食堂区域与楼层，如「一食堂 + 一楼」',
+              '食堂可组合选择楼层；「其他」查看食堂以外的商家',
               style: TextStyle(
                 fontSize: 12,
                 color: CanteenTheme.textSecondaryColor(isDark),
@@ -381,17 +381,19 @@ class _LocationFilterSheetState extends State<_LocationFilterSheet> {
                   _optionChip(isDark, '区域', option),
               ],
             ),
-            const SizedBox(height: 14),
-            _groupLabel(isDark, '楼层'),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final option in _floorOptions(context))
-                  _optionChip(isDark, '楼层', option),
-              ],
-            ),
+            if (_area != '其他') ...[
+              const SizedBox(height: 14),
+              _groupLabel(isDark, '楼层'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final option in _floorOptions(context))
+                    _optionChip(isDark, '楼层', option),
+                ],
+              ),
+            ],
             const SizedBox(height: 18),
             Row(
               children: [
@@ -469,6 +471,7 @@ class _LocationFilterSheetState extends State<_LocationFilterSheet> {
       onTap: () => setState(() {
         if (group == '区域') {
           _area = option;
+          if (option == '其他') _floor = '';
         } else {
           _floor = option;
         }

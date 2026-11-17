@@ -31,6 +31,9 @@ func (h *CanteenDishPhotoAdminHandler) AdminMergeDish(c *gin.Context) {
 	}
 	adminID := c.GetUint("user_id")
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := requireDishArchiveWrite(tx, uint(sourceID), adminID); err != nil {
+			return err
+		}
 		var source, target models.CanteenDish
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&source, sourceID).Error; err != nil {
 			return err
@@ -154,6 +157,9 @@ func (h *CanteenDishPhotoAdminHandler) AdminMergeDish(c *gin.Context) {
 		}).Error
 	})
 	if err != nil {
+		if respondCanteenArchivePermission(c, err) {
+			return
+		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "菜品不存在或目标菜品无效"})
 			return

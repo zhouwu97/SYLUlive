@@ -129,4 +129,29 @@ void main() {
     expect(appliedArea, '');
     expect(appliedFloor, '');
   });
+
+  testWidgets('其他筛选清除原食堂楼层，不带着旧楼层过滤食堂外商家', (tester) async {
+    String? appliedArea, appliedFloor;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: CanteenRankingFilterBar(
+      selected: CanteenRankingSort.composite,
+      onChanged: (_) {},
+      locationArea: '一食堂',
+      locationFloor: '一楼',
+      onLocationFilterChanged: (area, floor) {
+        appliedArea = area;
+        appliedFloor = floor;
+      },
+    ))));
+    await tester.tap(find.text('一食堂·一楼'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('其他'));
+    await tester.pumpAndSettle();
+    expect(find.text('楼层'), findsNothing);
+    await tester.tap(find.text('看其他'));
+    await tester.pumpAndSettle();
+    expect(appliedArea, '其他');
+    expect(appliedFloor, '');
+  });
 }

@@ -19,11 +19,12 @@ import '../widgets/canteen/canteen_hero_recommendation.dart';
 import '../widgets/canteen/canteen_hot_dish_card.dart';
 import '../widgets/canteen/canteen_ranking_entry.dart';
 import '../widgets/canteen/canteen_recent_review_card.dart';
-import '../widgets/image_upload_widget.dart';
+import 'canteen_submit_screen.dart';
 import 'canteen_detail_screen.dart';
 import 'canteen_dish_detail_screen.dart';
 import 'canteen_hot_dishes_screen.dart';
 import 'canteen_ranking_screen.dart';
+import 'canteen_nostalgia_screen.dart';
 import 'canteen_review_editor_screen.dart';
 import '../widgets/app_card.dart';
 
@@ -361,8 +362,12 @@ class _CanteenScreenState extends State<CanteenScreen> {
         surfaceTintColor: Colors.transparent,
         foregroundColor: CanteenTheme.textPrimaryColor(isDark),
         actions: [
+          TextButton(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CanteenNostalgiaScreen())),
+            child: const Text('怀旧'),
+          ),
           IconButton(
-            onPressed: () => _showAddCanteenSheet(isDark),
+            onPressed: () => _openSubmitPage(),
             tooltip: '添加商家',
             icon: const Icon(Icons.add_rounded),
           ),
@@ -484,7 +489,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
             title: '没有找到「$query」',
             subtitle: '这家商家还没有被收录',
             actionLabel: '提交商家',
-            onAction: () => _showAddCanteenSheet(isDark, query),
+            onAction: () => _openSubmitPage(query),
           );
         }
 
@@ -529,7 +534,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
         title: '没有找到「$query」',
         subtitle: '换个关键词试试，或提交新的商家',
         actionLabel: '提交商家',
-        onAction: () => _showAddCanteenSheet(isDark, query),
+        onAction: () => _openSubmitPage(query),
       );
     }
     return ListView(
@@ -821,7 +826,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                   actionLabel: showHero ? '去评价并上传实拍' : '添加商家',
                   onAction: showHero
                       ? _openReviewComposer
-                      : () => _showAddCanteenSheet(isDark),
+                      : () => _openSubmitPage(),
                   minHeight: 150,
                 )
               else
@@ -1186,7 +1191,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
       padding: const EdgeInsets.only(top: 14),
       child: Center(
         child: TextButton.icon(
-          onPressed: () => _showAddCanteenSheet(isDark),
+          onPressed: () => _openSubmitPage(),
           icon: Icon(
             Icons.add_rounded,
             size: 16,
@@ -1259,373 +1264,22 @@ class _CanteenScreenState extends State<CanteenScreen> {
     );
   }
 
-  // ── Add canteen sheet（沿用原逻辑，token 换为 CanteenTheme）─────────
-
-  Future<void> _showAddCanteenSheet(bool isDark, [String? prefill]) async {
+  Future<void> _openSubmitPage([String? prefill]) async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请先登录后提交商家')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先登录后提交商家')),
+      );
       return;
     }
-
-    final canteenProvider = context.read<CanteenProvider>();
-    await canteenProvider.loadMeta();
-    if (!mounted) return;
-    final areaOptions = canteenProvider.locationAreas;
-    final floorOptions = canteenProvider.locationFloors;
-    final nameCtrl = TextEditingController(text: prefill ?? '');
-    List<String> uploadedImageUrls = [];
-    var submitting = false;
-    String? selectedArea;
-    String? selectedFloor;
-    final accent = CanteenTheme.accentColor(isDark);
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (sheetContext, setModalState) {
-            final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
-            return Padding(
-              padding: EdgeInsets.only(bottom: bottomInset),
-              child: AppCardSurface(
-                decoration: BoxDecoration(
-                  color: CanteenTheme.surfaceBg(isDark),
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(28)),
-                ),
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                child: SafeArea(
-                  top: false,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 42,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: CanteenTheme.borderColor(isDark),
-                            borderRadius: BorderRadius.circular(99),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: CanteenTheme.accentSoftColor(isDark),
-                              borderRadius:
-                                  BorderRadius.circular(CanteenTheme.radiusMd),
-                            ),
-                            child:
-                                Icon(Icons.storefront_rounded, color: accent),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '提交商家',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w800,
-                                    color:
-                                        CanteenTheme.textPrimaryColor(isDark),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '填写名称、选择位置并上传一张商家图片',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color:
-                                        CanteenTheme.textSecondaryColor(isDark),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 22),
-                      TextField(
-                        controller: nameCtrl,
-                        textInputAction: TextInputAction.done,
-                        decoration: InputDecoration(
-                          hintText: '请输入商家名称',
-                          hintStyle: TextStyle(
-                            color: CanteenTheme.textSecondaryColor(isDark),
-                          ),
-                          prefixIcon: const Icon(Icons.restaurant_rounded),
-                          filled: true,
-                          fillColor: CanteenTheme.surfaceMutedBg(isDark),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(CanteenTheme.radiusMd),
-                            borderSide: BorderSide(
-                                color: CanteenTheme.borderColor(isDark)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(CanteenTheme.radiusMd),
-                            borderSide: BorderSide(
-                                color: CanteenTheme.borderColor(isDark)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(CanteenTheme.radiusMd),
-                            borderSide: BorderSide(color: accent, width: 1.4),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      _locationChipGroup(
-                        isDark,
-                        label: '食堂',
-                        options: areaOptions,
-                        selected: selectedArea,
-                        onSelected: (value) =>
-                            setModalState(() => selectedArea = value),
-                      ),
-                      const SizedBox(height: 12),
-                      _locationChipGroup(
-                        isDark,
-                        label: '楼层',
-                        options: floorOptions,
-                        selected: selectedFloor,
-                        onSelected: (value) =>
-                            setModalState(() => selectedFloor = value),
-                      ),
-                      const SizedBox(height: 16),
-                      ImageUploadWidget(
-                        maxImages: 1,
-                        largeCard: true,
-                        emptyTitle: '添加图片',
-                        emptySubtitle: '建议上传商家门面或招牌图',
-                        onImagesUploaded: (images) {
-                          uploadedImageUrls = images.map((e) => e.url).toList();
-                          setModalState(() {});
-                        },
-                      ),
-                      const SizedBox(height: 22),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: submitting
-                                  ? null
-                                  : () => Navigator.pop(sheetContext),
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: const Size.fromHeight(48),
-                                side: BorderSide(
-                                  color: CanteenTheme.borderColor(isDark),
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(
-                                      CanteenTheme.radiusMd),
-                                ),
-                              ),
-                              child: const Text('取消'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: submitting
-                                  ? null
-                                  : () async {
-                                      final name = nameCtrl.text.trim();
-                                      if (name.isEmpty) {
-                                        ScaffoldMessenger.of(sheetContext)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text('请输入商家名称'),
-                                          ),
-                                        );
-                                        return;
-                                      }
-                                      if (selectedArea == null) {
-                                        ScaffoldMessenger.of(sheetContext)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text('请选择商家所在的食堂'),
-                                          ),
-                                        );
-                                        return;
-                                      }
-                                      if (selectedFloor == null) {
-                                        ScaffoldMessenger.of(sheetContext)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text('请选择商家所在的楼层'),
-                                          ),
-                                        );
-                                        return;
-                                      }
-                                      if (uploadedImageUrls.isEmpty) {
-                                        ScaffoldMessenger.of(sheetContext)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text('请上传一张商家门面图片'),
-                                          ),
-                                        );
-                                        return;
-                                      }
-
-                                      setModalState(() => submitting = true);
-                                      final success = await context
-                                          .read<CanteenProvider>()
-                                          .addCanteen(
-                                            name,
-                                            uploadedImageUrls.first,
-                                            locationArea: selectedArea!,
-                                            locationFloor: selectedFloor!,
-                                          );
-                                      if (!mounted || !sheetContext.mounted) {
-                                        return;
-                                      }
-                                      setModalState(() => submitting = false);
-                                      if (success) {
-                                        Navigator.pop(sheetContext);
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content:
-                                                Text('已提交审核，可在「我的食堂贡献」查看进度'),
-                                          ),
-                                        );
-                                        await context
-                                            .read<CanteenDiscoveryProvider>()
-                                            .loadHome();
-                                      } else {
-                                        // 同名店待审核/已收录时服务端会给出具体原因。
-                                        ScaffoldMessenger.of(sheetContext)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                                canteenProvider.errorMessage ??
-                                                    '提交失败，请稍后重试'),
-                                          ),
-                                        );
-                                      }
-                                    },
-                              style: FilledButton.styleFrom(
-                                backgroundColor: accent,
-                                foregroundColor: Colors.white,
-                                minimumSize: const Size.fromHeight(48),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(
-                                      CanteenTheme.radiusMd),
-                                ),
-                              ),
-                              child: submitting
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Text('提交'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    nameCtrl.dispose();
-  }
-
-  // ── 位置标签选择行：提交商家时选择食堂区域与楼层，避免把位置写进店名 ──
-
-  Widget _locationChipGroup(
-    bool isDark, {
-    required String label,
-    required List<String> options,
-    required String? selected,
-    required ValueChanged<String> onSelected,
-  }) {
-    final accent = CanteenTheme.accentColor(isDark);
-    return Row(
-      children: [
-        SizedBox(
-          width: 36,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: CanteenTheme.textSecondaryColor(isDark),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Row(
-            children: [
-              for (var i = 0; i < options.length; i++) ...[
-                if (i > 0) const SizedBox(width: 8),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => onSelected(options[i]),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      height: 40,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: selected == options[i]
-                            ? CanteenTheme.accentSoftColor(isDark)
-                            : CanteenTheme.surfaceMutedBg(isDark),
-                        borderRadius:
-                            BorderRadius.circular(CanteenTheme.radiusMd),
-                        border: Border.all(
-                          color: selected == options[i]
-                              ? accent
-                              : CanteenTheme.borderColor(isDark),
-                        ),
-                      ),
-                      child: Text(
-                        options[i],
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: selected == options[i]
-                              ? FontWeight.w800
-                              : FontWeight.w600,
-                          color: selected == options[i]
-                              ? CanteenTheme.accentStrongColor(isDark)
-                              : CanteenTheme.textSecondaryColor(isDark),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
+    final epoch = auth.accountSessionEpoch;
+    final saved = await Navigator.push<bool>(context, MaterialPageRoute(
+      builder: (_) => CanteenSubmitScreen(initialName: prefill ?? ''),
+    ));
+    if (!mounted || saved != true || epoch != auth.accountSessionEpoch) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('已提交审核，可在「我的食堂贡献」查看进度'),
+    ));
+    await context.read<CanteenDiscoveryProvider>().loadHome();
   }
 }

@@ -162,8 +162,7 @@ func (h *CanteenHandler) recentReviewCount(canteenID uint, days int) int64 {
 // GetRankings 食堂完整排行（sort=composite|rating|review_count；hot 暂不开放）。
 // rating 倒序展示：从低分开始往下，星级低→高、同星级评价人数少→多。
 //
-// scope=current（默认）只排营业中的商家，下架商家不占名次，现有商家的名次随之重排；
-// scope=all 是“全部排名”：已下架商家按真实评分一起参与，并标注下架状态。
+// 所有排行只包含营业中的商家；兼容旧客户端的 scope=all，但不再纳入下架商家。
 func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	sortMode := c.DefaultQuery("sort", "composite")
 	switch sortMode {
@@ -171,19 +170,16 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	default:
 		sortMode = "composite"
 	}
-	scope := c.DefaultQuery("scope", "current")
-	if scope != "all" {
-		scope = "current"
-	}
+	scope := "current"
 
-	cacheKey := "rankings:" + sortMode + ":" + scope
+	cacheKey := "rankings:v2:" + sortMode + ":" + scope
 	generation := canteenDiscoveryCache.Generation()
 	if cached, ok := canteenDiscoveryCache.Get(cacheKey); ok {
 		c.JSON(200, cached)
 		return
 	}
 
-	rows, err := h.queryCanteenStats(scope == "all")
+	rows, err := h.queryCanteenStats()
 	if err != nil {
 		c.JSON(500, gin.H{"error": "获取排行失败"})
 		return
@@ -194,7 +190,7 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 		score := services.BayesianRatingScore(r.AverageStar, r.EffectiveSample, mean, services.BayesianPriorWeight)
 		entries = append(entries, canteenRankingEntry{canteenStatsRow: r, RankingScore: score})
 	}
-	sortRankingScoped(entries, sortMode, scope != "all")
+	sortRanking(entries, sortMode)
 
 	// 批量拉取近 30 天全部评价标签（避免 N+1）：前 3 个用于展示，完整 key 列表供客户端按标签筛选。
 	tagMap, tagErr := h.batchAggregateSummaryTags(summaryTagDays, 0)

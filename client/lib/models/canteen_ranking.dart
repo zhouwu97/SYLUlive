@@ -126,7 +126,7 @@ class CanteenRankingScope {
   /// 现有商家：只排营业中的商家，下架商家不占名次（默认）。
   static const current = 'current';
 
-  /// 全部排名：已下架商家也按真实评分参与。
+  /// 旧范围参数保留兼容；服务端统一按 current 返回，下架商家不参与排名。
   static const all = 'all';
 }
 

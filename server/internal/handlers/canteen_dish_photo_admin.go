@@ -38,6 +38,9 @@ func (h *CanteenDishPhotoAdminHandler) ArchiveDishPhoto(c *gin.Context) {
 
 	var photo models.CanteenDishPhoto
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := requirePhotoArchiveWrite(tx, uint(photoID), adminID); err != nil {
+			return err
+		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&photo, photoID).Error; err != nil {
 			return err
 		}
@@ -138,6 +141,9 @@ func (h *CanteenDishPhotoAdminHandler) AdminUpdateDish(c *gin.Context) {
 
 	var dish models.CanteenDish
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := requireDishArchiveWrite(tx, uint(dishID), adminID); err != nil {
+			return err
+		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dish, dishID).Error; err != nil {
 			return err
 		}
@@ -202,6 +208,8 @@ func (h *CanteenDishPhotoAdminHandler) AdminUpdateDish(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "该食堂已存在同名菜品"})
 		case isUniqueConstraintError(err):
 			c.JSON(http.StatusConflict, gin.H{"error": "该食堂已存在同名菜品"})
+		case errors.Is(err, services.ErrCanteenArchiveSuperAdminRequired):
+			respondCanteenArchivePermission(c, err)
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "修改菜品失败"})
 		}
@@ -221,6 +229,9 @@ func (h *CanteenDishPhotoAdminHandler) SetDishPhotoCover(c *gin.Context) {
 	}
 	adminID := c.GetUint("user_id")
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := requirePhotoArchiveWrite(tx, uint(photoID), adminID); err != nil {
+			return err
+		}
 		var photo models.CanteenDishPhoto
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND status = ?", photoID, models.DishPhotoStatusApproved).First(&photo).Error; err != nil {
@@ -306,6 +317,9 @@ func adminNickname(tx *gorm.DB, adminID uint) string {
 }
 
 func respondDishPhotoAdminError(c *gin.Context, err error) {
+	if respondCanteenArchivePermission(c, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "实拍记录不存在"})

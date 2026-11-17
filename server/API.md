@@ -6,6 +6,8 @@
 
 `GET /api/admin/security/events` 与 `GET /api/admin/security/events/:id` 延续管理员鉴权；普通用户不可访问。`source_key` 仍只提供给超级管理员，用于既有 HMAC 来源封禁。
 
+需处置预警的账号／邮箱目标新增可选 `target_account` 和 `target_account_status`，管理员列表和详情按相同口径返回实际提交的完整登录名，不要求目标已经注册。目标由 `security_events.target_account_ciphertext` 的 AES-GCM 密文解密，且必须与事件 HMAC 摘要一致；`available` 表示读取成功，`unavailable` 表示密钥或密文异常。升级前无密文的登录暴力尝试可从现有 active 账号邮箱精确核对，成功标为 `matched`；无法核对标为 `not_recorded`，客户端明确提示历史完整值无法还原。不属于账号／邮箱预警的事件省略状态。`target_masked` 保留原值，旧客户端仍可读取。普通用户接口、通用事件 JSON、外发邮件和日志不返回完整目标。
+
 预警新增 `source_ip`、`source_ip_status`、`source_region`、`source_region_status`。IP 仅在可信来源且该预警已保存有效密文时返回，状态为 `available`；`not_recorded` 表示历史记录或普通审计未记录 IP，`untrusted` 表示来源归因不可信，`unavailable` 表示密文无法读取。归属地是国家／省／市的离线查询结果，不含经纬度；状态为 `resolved`、`private`、`local`、`reserved`、`unknown`、`database_unavailable` 或 `database_error`。缺少 IP 时不猜测归属地。
 
 列表继续返回 `items`、`total`、`page`、`limit`，客户端支持加载后续页及失败重试。统计接口 `protection.security_ip_location` 和 `security_ip_location_note` 报告本地 IPv4／IPv6 库是否可用。数据库缺失只影响归属地，不能伪装为归属地正常，也不阻断事件采集。
@@ -69,6 +71,8 @@
 | `POST` | `/api/forgot_password` | 旧教务找回入口，已退役，固定返回 `410` |
 | `POST` | `/api/change_password` | 修改密码 (需 JWT) |
 
+普通登录未达到限制时，错误密码返回 `401` / `INVALID_CREDENTIALS`。账号连续失败 100 次或来源 IP 累计失败 300 次触发 24 小时冷却，返回 `429` / `LOGIN_COOLDOWN`、`error` 提示和 `Retry-After` 剩余秒数（向上取整，至少为 1）。重复请求不延长冷却；15 分钟失败计数重置不能提前解除有效冷却。用户可等待结束或通过未登录页面中的公开开发者联系方式申诉，申诉由人工核查，不自动解锁。计数重置、旧记录兼容与邮箱找回边界以 [登录安全运维](../docs/ops/auth-security.md#普通登录密码容错) 为准。
+
 ## 2. 用户与个人中心 (User)
 
 大部分需 JWT 鉴权。
@@ -76,7 +80,7 @@
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/user/profile` | 获取当前用户资料 |
-| `GET` | `/api/user/account-security` | 当前账号的私有安全资料；完整邮箱仅在此返回 |
+| `GET` | `/api/user/account-security` | 当前账号的私有安全资料；普通用户查看本人完整邮箱的入口 |
 | `POST` | `/api/user/email/code` | 向目标邮箱发送绑定或换绑验证码；省略 `purpose` 时按账号实际绑定状态推导 |
 | `PUT` | `/api/user/email` | 使用邮箱验证码和当前 App 密码绑定或换绑邮箱，成功签发新会话 |
 | `DELETE` | `/api/user/email` | 使用当前 App 密码解除邮箱；唯一登录方式不能解除 |
@@ -278,15 +282,37 @@ FEED-H1 加固：
 | `GET` | `/api/canteens/:id?review_sort=best\|latest&review_filter=all\|with_image\|high\|low` | 公开获取食堂详情及评价；登录时附带个人评价/投票状态 |
 | `POST` | `/api/canteens/:id/rate` | 评价食堂（需登录并绑定教务） |
 | `PUT` | `/api/canteens/ratings/:ratingId/vote` | 给食堂评价点赞/点踩/取消投票，不能给自己的评价投票 |
-| `GET` / `PUT` | `/api/canteens/:id/display-tags` | 管理员读取或保存位置及排行展示标签。PUT 必须提供 `location_area`、`location_floor` 和 `tags`；`tags: null` 恢复评价自动汇总，数组按顺序指定最多三个既有评价标签，空数组表示不展示。修改不改变原始评价或评分。 |
+| `GET` | `/api/canteens/meta` | 下发区域、楼层、评价标签与 `supports_unified_management`；值为 `true` 表示支持资料及展示标签一次保存 |
+| `GET` / `PUT` | `/api/canteens/:id/display-tags` | 管理员读取或保存位置及排行展示标签。GET 另返回 `automatic_tags: [{key,name,count}]`，用于预览自动汇总结果。PUT 必须提供 `location_area`、`location_floor` 和 `tags`；`tags: null` 恢复评价自动汇总，数组按顺序指定最多三个既有评价标签，空数组表示不展示。修改不改变原始评价或评分。 |
 | `PUT` | `/api/canteens/:id/image` | (管理员) 修改食堂封面图片 |
-| `POST` | `/api/canteens` | (需登录) 提交新食堂，进入待审核；`verified=false` 不公开，管理员收到站内通知。请求体 `{"name", "image", "location_area", "location_floor"}`；`location_area` 可选值 `一食堂`/`二食堂`，`location_floor` 可选值 `一楼`/`二楼`（旧客户端可省略） |
+| `POST` | `/api/canteens` | (需登录) 提交新商家，进入管理员待审核列表；`verified=false` 不公开。请求体 `{"name", "image", "location_area", "location_floor"}`；`location_area` 可选值 `一食堂`/`二食堂`/`其他`，`location_floor` 可选值 `一楼`/`二楼`（旧客户端可省略） |
 | `GET` | `/api/canteens/pending` | (管理员) 待审核食堂列表（含 `creator_name` 提交人昵称与 `location_area`/`location_floor` 位置标签） |
 | `POST` | `/api/canteens/:id/approve` | (管理员) 通过审核，文件转 `public`，通知提交者；提交者获得 10 经验奖励（幂等，仅用户提交，响应含 `exp_awarded`） |
 | `DELETE` | `/api/canteens/:id/pending` | (管理员) 驳回并删除待审提交，可带 `{"reason": "..."}` 通知提交者 |
 | `POST` | `/api/canteens/:id/offline` | (管理员) 下架已公开食堂（历史数据保留）；如有未收回的提交奖励经验则收回，经验扣至下限 0 |
-| `POST` | `/api/canteens/:id/online` | (管理员) 恢复已下架食堂；返还此前因下架收回的提交奖励经验 |
-| `DELETE` | `/api/canteens/:id` | (管理员) 永久删除食堂；如有未收回的提交奖励经验则收回 |
+| `POST` | `/api/canteens/:id/online` | (超级管理员) 恢复已下架食堂；返还此前因下架收回的提交奖励经验 |
+| `PATCH` | `/api/canteens/:id` | (管理员；下架食堂仅超级管理员) 一次修改名称、位置和展示标签，保留历史评价、菜品和图片。可选字段 `name`、`location_area`、`location_floor`、`tags`，至少传一项；整组校验、更新与审计在同一事务中完成 |
+| `DELETE` | `/api/canteens/:id` | (管理员；下架食堂仅超级管理员) 永久删除食堂；如有未收回的提交奖励经验则收回 |
+
+### 商家管理与区域
+
+区域「其他」表示食堂以外的商家，使用现有 `location_area` 字段，不需要数据迁移；其楼层可为空。旧数据的空区域仍表示「未设置」，不会自动改为「其他」。公开列表、搜索、排行与管理端共用服务端区域白名单。
+
+统一编辑使用 `PATCH /api/canteens/:id`。`tags` 省略表示保持原设置，`null` 表示恢复评价自动汇总，`[]` 表示隐藏标签；非空数组按给定顺序展示最多三个不重复的既有标签。名称／位置冲突、非法标签、权限不足或审计写入失败时整组回滚。旧 `PUT /display-tags` 接口继续兼容旧端，二者共享标签校验。
+
+管理端读取设置时，`automatic_tags` 返回本店最近 30 天有效评价汇总的前三个标签，字段为 `key`、`name`、`count`，无标签时为 `[]`。它始终表示自动汇总结果，与当前 `tags` 的手动覆盖独立，切换回自动模式时可直接预览；读取不修改原始评价或店铺设置。旧服务未提供该字段时，客户端只提示保存后自动更新，不展示虚构标签。
+
+新版客户端先确认 `/meta` 的 `supports_unified_management`，旧服务或配置读取失败时阻止统一保存并提供重试，避免旧服务忽略新增 `tags` 字段却被误报保存成功。先升级服务端，再升级客户端；回退客户端仍可使用旧接口。回退服务端不会删除「其他」或已保存标签，但旧服务白名单无法继续编辑「其他」，应恢复配套服务后再维护此类商家。
+
+### 食堂下架与怀旧存档
+
+下架保留食堂、历史评价、评分、菜品和图片。下架商家退出首页推荐、热门菜品、发现搜索和所有排行榜；`GET /api/canteens/rankings` 只计算营业商家，兼容旧客户端传入 `scope=all`，返回 `meta.scope=current`，不再把下架商家纳入排名或评分先验。
+
+独立怀旧版块通过 `GET /api/canteens?status=offline` 读取，支持原有 `q`、`page`、`limit`，先筛选再分页；顶层数组结构保持兼容，默认不传状态时仍返回全部已审核商家。怀旧列表按下架时间倒序、同时间按 ID 倒序，缺失下架时间的旧记录排在最后；历史星级保留，`ranking_score=0`，客户端不显示名次。
+
+下架详情、评价与图片保持公开可读。普通用户（包括原作者）不能新增、编辑、删除评价或投票，返回 `409 canteen_offline`。普通管理员对怀旧资料只读；修改名称、位置、展示标签、封面、菜品、实拍、恢复营业、永久删除以及通过举报治理改变历史内容，均仅允许当前有效的超级管理员，拒绝时返回 `403 canteen_archive_super_admin_required`。举报本身仍可提交，普通管理员可查看与忽略，确认治理须由超级管理员处理。超级管理员维护食堂资料不代替作者改写历史评价；治理沿用原有隐藏和审计流程。
+
+维护事务锁定食堂状态，并从数据库复核超级管理员角色及有效账号，旧会话角色不作为授权依据。恢复营业后重新参与推荐、搜索和排名，用户写操作恢复；原有提交奖励的收回、返还与幂等规则保留。无需数据库迁移或批量改写既有下架记录。
 
 ### 食堂评价投票
 
@@ -425,7 +451,7 @@ FEED-H1 加固：
 | `POST` | `/api/super/security/blocks` | 超级管理员；`route/account/all` 作用域，`all` 必须 `confirm_global=true`；时长 15/60/1440 分钟；原因最多 200 个 Unicode 字符 |
 | `DELETE` | `/api/super/security/blocks/:id` | 超级管理员；一次解除同一操作组全部封禁 |
 
-事件列表默认每页 50 条，最多 100 条；事件和封禁页码最多 10000。事件按最后发生时间、ID 倒序稳定排序。正常验证码、正常改密等流水通过 `actionable=false` 区分，默认待办使用 `actionable=true&status=active`。普通管理员只取得脱敏来源指纹，完整来源键仅返回给超级管理员。
+事件列表默认每页 50 条，最多 100 条；事件和封禁页码最多 10000。事件按最后发生时间、ID 倒序稳定排序。普通登录失败、自动冷却、验证码额度及搜索／内容限流等通过 `actionable=false` 区分，默认待办使用 `actionable=true&status=active`。`severity` 是当前分类解释后的等级，历史严重程度筛选与 DTO 一致；普通记录即使原始等级为 high/critical，也只显示信息／提示且不外发高危邮件。`active_high_count` 与 `actionable_high_count` 均排除普通记录。多账号登录异常按同一可信来源在 10 分钟区间至少 20 个目标、100 次实际失败判定，证据见 `metadata_json.distinct_targets/failure_count/window`，冷却重复请求不参与；具体边界见 [安全运维](../docs/ops/auth-security.md#安全中心降噪与异常核查)。普通管理员只取得脱敏来源指纹，完整来源键仅返回给超级管理员。
 
 事件处置请求接受 `{"note":"处理说明"}`，兼容空请求体；非法 JSON 返回 `400`，不存在返回 `404`，已被其他请求处置返回 `409/security_event_already_handled`，保留第一次处理结论和审计。数据库故障返回 `500`。客户端收到冲突后刷新列表。防护数据加载失败时不沿用旧的健康状态；缺失的运行态保持“未验证”。
 

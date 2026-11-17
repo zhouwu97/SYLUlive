@@ -28,8 +28,8 @@ type CanteenHandler struct {
 var errCanteenOffline = errors.New("canteen_offline")
 
 // canteenOfflineReadonlyMessage 是商家下架后用户尝试改动内容时的统一提示：
-// 下架商家的评价、图片和投票都只读，只有管理员可以处理。
-const canteenOfflineReadonlyMessage = "该商家已下架，评价和图片仅供查看；如需修改或删除请联系管理员"
+// 下架商家的评价、图片和投票都只读，食堂资料仅超级管理员可维护。
+const canteenOfflineReadonlyMessage = "该商家已下架，评价和图片仅供查看；食堂资料仅超级管理员可维护"
 
 // respondCanteenOfflineReadonly 返回下架只读的统一错误，客户端按 code 展示提示。
 func respondCanteenOfflineReadonly(c *gin.Context) {
@@ -118,9 +118,10 @@ func (h *CanteenHandler) GetMeta(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"location_areas":  models.CanteenLocationAreas,
-		"location_floors": models.CanteenLocationFloors,
-		"review_tags":     tags,
+		"location_areas":              models.CanteenLocationAreas,
+		"location_floors":             models.CanteenLocationFloors,
+		"review_tags":                 tags,
+		"supports_unified_management": true,
 	})
 }
 
@@ -335,8 +336,7 @@ func sortRanking(entries []canteenRankingEntry, mode string) {
 	sortRankingScoped(entries, mode, true)
 }
 
-// sortRankingScoped 与 sortRanking 相同；activeFirst=false 时不把营业中的店强制排在前面，
-// 用于“全部排名”：已下架的店按当年的真实评分和营业中的店一起排名。
+// sortRankingScoped 提供营业状态优先的稳定排序；公开排行的调用方始终预先排除下架食堂。
 func sortRankingScoped(entries []canteenRankingEntry, mode string, activeFirst bool) {
 	less := func(a, b canteenRankingEntry) bool {
 		aActive, bActive := isCanteenOperatingActive(a.OperatingStatus), isCanteenOperatingActive(b.OperatingStatus)
@@ -419,10 +419,11 @@ func canteenMatchesQuery(row canteenStatsRow, normalizedQuery string, tags []ser
 //
 // 可选参数均不传时行为与旧版一致（全部已审核食堂，含已下架）：
 //   - q：按店名过滤；
-//   - status=active：只返回营业中的食堂；
+//   - status=active：只返回营业中的食堂；status=offline：怀旧版块，只返回下架食堂；
 //   - limit / page：传 limit 时才分页（limit 1~100，page 从 1 开始），仍返回顶层数组。
 func (h *CanteenHandler) GetList(c *gin.Context) {
 	activeOnly := c.Query("status") == models.CanteenOperatingActive
+	offlineOnly := c.Query("status") == models.CanteenOperatingOffline
 	rows, err := h.queryCanteenStats(!activeOnly)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取食堂列表失败"})
@@ -453,6 +454,9 @@ func (h *CanteenHandler) GetList(c *gin.Context) {
 	out := make([]canteenStatsRow, 0, len(entries))
 	for _, e := range entries {
 		row := e.canteenStatsRow
+		if offlineOnly && !row.IsOffline {
+			continue
+		}
 		if normalizedQuery != "" && !canteenMatchesQuery(row, normalizedQuery, tagMap[row.ID]) {
 			continue
 		}
@@ -462,6 +466,18 @@ func (h *CanteenHandler) GetList(c *gin.Context) {
 			row.RankingScore = 0
 		}
 		out = append(out, row)
+	}
+	if offlineOnly {
+		// 怀旧存档按下架时间展示，不再以历史评分排序。
+		sort.SliceStable(out, func(i, j int) bool {
+			if out[i].OfflinedAt != nil && out[j].OfflinedAt != nil && !out[i].OfflinedAt.Equal(*out[j].OfflinedAt) {
+				return out[i].OfflinedAt.After(*out[j].OfflinedAt)
+			}
+			if (out[i].OfflinedAt == nil) != (out[j].OfflinedAt == nil) {
+				return out[i].OfflinedAt != nil
+			}
+			return out[i].ID > out[j].ID
+		})
 	}
 	if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
 		limit, limitErr := strconv.Atoi(rawLimit)
@@ -1183,7 +1199,7 @@ func (h *CanteenHandler) Create(c *gin.Context) {
 	}
 	locationArea := strings.TrimSpace(input.LocationArea)
 	if !models.IsValidCanteenLocationArea(locationArea) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "食堂位置区域只能是一食堂或二食堂"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "商家区域只能是一食堂、二食堂或其他"})
 		return
 	}
 	locationFloor := strings.TrimSpace(input.LocationFloor)
@@ -1665,6 +1681,9 @@ func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
 	var admin models.User
 	expRevoked := false
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := services.RequireCanteenArchiveWrite(tx, uint(id), c.GetUint("user_id")); err != nil {
+			return err
+		}
 		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
 			return err
 		}
@@ -1688,6 +1707,9 @@ func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
 			Detail: fmt.Sprintf("删除食堂提交，创建者 %d，回收经验=%t", canteen.CreatedBy, expRevoked),
 		}).Error
 	}); err != nil {
+		if respondCanteenArchivePermission(c, err) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除食堂失败"})
 		return
 	}
@@ -2037,6 +2059,9 @@ func (h *CanteenHandler) OnlineCanteen(c *gin.Context) {
 	var canteen models.Canteen
 	alreadyOnline := false
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := services.RequireCanteenArchiveWrite(tx, uint(id), adminID); err != nil {
+			return err
+		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&canteen, id).Error; err != nil {
 			return err
 		}
@@ -2073,6 +2098,8 @@ func (h *CanteenHandler) OnlineCanteen(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
 		case err.Error() == "canteen_not_verified":
 			c.JSON(http.StatusConflict, gin.H{"error": "未审核食堂不能上架"})
+		case errors.Is(err, services.ErrCanteenArchiveSuperAdminRequired):
+			respondCanteenArchivePermission(c, err)
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "重新上架食堂失败"})
 		}
@@ -2122,6 +2149,9 @@ func (h *CanteenHandler) UpdateImage(c *gin.Context) {
 
 	// 开启事务
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := services.RequireCanteenArchiveWrite(tx, uint(id), c.GetUint("user_id")); err != nil {
+			return err
+		}
 		var canteen models.Canteen
 		if err := tx.First(&canteen, id).Error; err != nil {
 			return fmt.Errorf("食堂不存在")
@@ -2164,7 +2194,10 @@ func (h *CanteenHandler) UpdateImage(c *gin.Context) {
 	})
 
 	if err != nil {
-		if err.Error() == "食堂不存在" {
+		if respondCanteenArchivePermission(c, err) {
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) || err.Error() == "食堂不存在" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2182,8 +2215,8 @@ func (h *CanteenHandler) UpdateImage(c *gin.Context) {
 
 var errCanteenNameConflict = errors.New("canteen_name_conflict")
 
-// AdminUpdateCanteen 管理员修改商家名称与位置；只改传入的字段，评价、菜品等历史数据不受影响。
-// PATCH /api/canteens/:id  body: {"name"?, "location_area"?, "location_floor"?}
+// AdminUpdateCanteen 在一个事务中保存资料和展示标签，避免两个入口分步写入。
+// PATCH /api/canteens/:id  body: {"name"?, "location_area"?, "location_floor"?, "tags"?}
 func (h *CanteenHandler) AdminUpdateCanteen(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil || id == 0 {
@@ -2191,16 +2224,17 @@ func (h *CanteenHandler) AdminUpdateCanteen(c *gin.Context) {
 		return
 	}
 	var input struct {
-		Name          *string `json:"name"`
-		LocationArea  *string `json:"location_area"`
-		LocationFloor *string `json:"location_floor"`
+		Name          *string         `json:"name"`
+		LocationArea  *string         `json:"location_area"`
+		LocationFloor *string         `json:"location_floor"`
+		Tags          json.RawMessage `json:"tags"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
 		return
 	}
-	if input.Name == nil && input.LocationArea == nil && input.LocationFloor == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供要修改的名称或位置"})
+	if input.Name == nil && input.LocationArea == nil && input.LocationFloor == nil && len(input.Tags) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供要修改的名称、位置或展示标签"})
 		return
 	}
 	if input.Name != nil {
@@ -2227,9 +2261,20 @@ func (h *CanteenHandler) AdminUpdateCanteen(c *gin.Context) {
 		}
 		input.LocationFloor = &floor
 	}
+	var displayTags *string
+	if len(input.Tags) > 0 {
+		displayTags, err = parseCanteenDisplayTags(input.Tags)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	adminID := c.GetUint("user_id")
 	var canteen models.Canteen
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := services.RequireCanteenArchiveWrite(tx, uint(id), adminID); err != nil {
+			return err
+		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&canteen, id).Error; err != nil {
 			return err
 		}
@@ -2255,13 +2300,20 @@ func (h *CanteenHandler) AdminUpdateCanteen(c *gin.Context) {
 		if conflict > 0 {
 			return errCanteenNameConflict
 		}
-		if err := tx.Model(&models.Canteen{}).Where("id = ?", canteen.ID).Updates(map[string]interface{}{
+		updates := map[string]interface{}{
 			"name": canteen.Name, "normalized_name": canteen.NormalizedName,
 			"location_area": canteen.LocationArea, "location_floor": canteen.LocationFloor,
-		}).Error; err != nil {
+		}
+		if len(input.Tags) > 0 {
+			updates["display_tags"] = displayTags
+		}
+		if err := tx.Model(&models.Canteen{}).Where("id = ?", canteen.ID).Updates(updates).Error; err != nil {
 			return err
 		}
 		after := fmt.Sprintf("%s（%s %s）", canteen.Name, canteen.LocationArea, canteen.LocationFloor)
+		if len(input.Tags) > 0 {
+			after += "；展示标签：" + string(input.Tags)
+		}
 		return tx.Create(&models.AdminLog{
 			AdminID: adminID, AdminName: adminNickname(tx, adminID), Action: "修改食堂信息", Target: canteen.Name,
 			Detail: fmt.Sprintf("食堂 %d：%s → %s", canteen.ID, before, after),
@@ -2273,6 +2325,8 @@ func (h *CanteenHandler) AdminUpdateCanteen(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
 		case errors.Is(err, errCanteenNameConflict), isUniqueConstraintError(err):
 			c.JSON(http.StatusConflict, gin.H{"code": "canteen_name_conflict", "error": "同一位置已有同名商家"})
+		case errors.Is(err, services.ErrCanteenArchiveSuperAdminRequired):
+			respondCanteenArchivePermission(c, err)
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "修改食堂信息失败"})
 		}

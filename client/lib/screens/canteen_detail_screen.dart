@@ -792,9 +792,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     final heroHeight =
         (MediaQuery.of(context).size.width * 0.5).clamp(190.0, 230.0);
 
-    final authUser = context.read<AuthProvider>().user;
-    final isAdmin =
-        authUser?.role == 'admin' || authUser?.role == 'super_admin';
+    final authUser = context.watch<AuthProvider>().user;
+    final isAdmin = _canteenData != null &&
+        (authUser?.role == 'super_admin' || (!offline && authUser?.role == 'admin'));
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(
@@ -1004,9 +1004,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     }
   }
 
-  static const _offlineReadonlyMessage = '该商家已下架，评价和图片仅供查看；如需修改或删除请联系管理员';
+  static const _offlineReadonlyMessage = '该商家已下架，评价和图片仅供查看；食堂资料仅超级管理员可维护';
 
-  /// 下架商家的只读说明：评价、图片和投票都不能再改动，只有管理员可以处理。
+  /// 下架商家的评价、图片和投票只读，食堂资料仅超级管理员可维护。
   Widget _buildOfflineReadonlyNotice(bool isDark) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),

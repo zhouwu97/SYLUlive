@@ -1,11 +1,102 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
 	"shenliyuan/internal/models"
 )
+
+func TestAdminUnifiedCanteenUpdateIsAtomicAndCompatible(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	params := mapParams("id", fmt.Sprint(canteen.ID))
+	call := func(body string) int {
+		return performCanteenRequest(t, h.AdminUpdateCanteen, http.MethodPatch, "/", params, user.ID, body).Code
+	}
+	read := func() models.Canteen {
+		var stored models.Canteen
+		if err := h.db.First(&stored, canteen.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		return stored
+	}
+	if got := call(`{"name":"校外小馆","location_area":"其他","location_floor":"","tags":["clean","good_value"]}`); got != 200 {
+		t.Fatalf("unified update: %d", got)
+	}
+	stored := read()
+	if stored.Name != "校外小馆" || stored.LocationArea != "其他" || stored.LocationFloor != "" ||
+		stored.DisplayTags == nil || *stored.DisplayTags != `["clean","good_value"]` {
+		t.Fatalf("stored: %+v", stored)
+	}
+	// 无效标签或位置冲突必须回滚名称、位置、标签整组字段。
+	for _, tags := range []string{`["unknown"]`, `["clean","clean"]`, `["clean","good_value","taste_good","queue_long"]`, `{}`, `"clean"`} {
+		if got := call(`{"name":"不能部分保存","location_area":"一食堂","tags":` + tags + `}`); got != 400 {
+			t.Fatalf("invalid tags %s: %d", tags, got)
+		}
+		if after := read(); after.Name != stored.Name || after.LocationArea != stored.LocationArea || *after.DisplayTags != *stored.DisplayTags {
+			t.Fatalf("partial write: %+v", after)
+		}
+	}
+	other := models.Canteen{Name: "位置冲突", NormalizedName: "位置冲突", LocationArea: "其他", Image: "/uploads/a.png", Verified: true, CreatedBy: user.ID}
+	if err := h.db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := call(`{"name":"位置冲突","location_area":"其他","location_floor":"","tags":[]}`); got != 409 {
+		t.Fatal(got)
+	}
+	if after := read(); after.Name != stored.Name || *after.DisplayTags != *stored.DisplayTags {
+		t.Fatal("conflict partially saved")
+	}
+	// 旧客户端不传 tags 时保留设置；null 自动汇总，[] 隐藏。
+	if got := call(`{"name":"旧端改名"}`); got != 200 {
+		t.Fatal(got)
+	}
+	if after := read(); after.DisplayTags == nil || *after.DisplayTags != *stored.DisplayTags {
+		t.Fatal("legacy update erased tags")
+	}
+	if got := call(`{"tags":null}`); got != 200 {
+		t.Fatal(got)
+	}
+	if read().DisplayTags != nil {
+		t.Fatal("null must restore automatic aggregation")
+	}
+	if got := call(`{"tags":[]}`); got != 200 {
+		t.Fatal(got)
+	}
+	if after := read(); after.DisplayTags == nil || *after.DisplayTags != `[]` {
+		t.Fatal("empty array must hide tags")
+	}
+}
+
+func TestOtherCanteenSubmissionAndDiscovery(t *testing.T) {
+	h, _, user := prepareReviewV2DB(t)
+	file := models.File{Hash: "other-shop", Path: "/uploads/other-shop.png", Size: 1, MimeType: "image/png", UploaderID: user.ID, Status: "active"}
+	if err := h.db.Create(&file).Error; err != nil {
+		t.Fatal(err)
+	}
+	resp := performCanteenRequest(t, h.Create, http.MethodPost, "/", nil, user.ID,
+		`{"name":"校外餐饮","image":"/uploads/other-shop.png","location_area":"其他","location_floor":""}`)
+	if resp.Code != 201 {
+		t.Fatalf("create: %d %s", resp.Code, resp.Body.String())
+	}
+	var shop models.Canteen
+	if err := h.db.Where("name = ?", "校外餐饮").First(&shop).Error; err != nil {
+		t.Fatal(err)
+	}
+	if shop.Verified || shop.LocationArea != "其他" || shop.LocationFloor != "" {
+		t.Fatalf("shop: %+v", shop)
+	}
+	params := mapParams("id", fmt.Sprint(shop.ID))
+	resp = performCanteenRequest(t, h.ApproveCanteen, http.MethodPost, "/", params, user.ID, "")
+	if resp.Code != 200 {
+		t.Fatalf("approve: %d %s", resp.Code, resp.Body.String())
+	}
+	resp = performCanteenRequest(t, h.GetList, http.MethodGet, "/", nil, 0, "")
+	if resp.Code != 200 || !containsString(resp.Body.Bytes(), `"location_area":"其他"`) {
+		t.Fatalf("list: %s", resp.Body.String())
+	}
+}
 
 func TestAdminUpdateCanteenNameAndLocation(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)

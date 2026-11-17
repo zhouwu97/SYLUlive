@@ -108,10 +108,11 @@ void main() {
     store.gate = Completer<bool>();
     final save = theme.setFrostedGlassStrength(.62);
     await Future<void>.delayed(Duration.zero);
-    await theme.setCleanBackgroundMode();
+    final clean = theme.setCleanBackgroundMode();
     expect(theme.frostedGlass, isFalse);
     store.gate!.complete(true);
     expect(await save, isTrue);
+    await clean;
     expect(theme.frostedGlass, isFalse);
     expect(store.getDouble('frosted_glass_strength'), .62);
     await theme.trySetCustomBackgroundMode();

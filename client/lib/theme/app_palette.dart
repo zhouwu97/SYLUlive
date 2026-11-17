@@ -85,6 +85,52 @@ class AppPalette extends ThemeExtension<AppPalette> {
   factory AppPalette.defaults(Brightness brightness) =>
       brightness == Brightness.dark ? _dark : _light;
 
+  Map<String, Color> get tokenColors => {
+        'primary': primary,
+        'onPrimary': onPrimary,
+        'primaryContainer': primaryContainer,
+        'onPrimaryContainer': onPrimaryContainer,
+        'background': background,
+        'surface': surface,
+        'surfaceElevated': surfaceElevated,
+        'surfaceMuted': surfaceMuted,
+        'card': card,
+        'cardBorder': cardBorder,
+        'textPrimary': textPrimary,
+        'textSecondary': textSecondary,
+        'textTertiary': textTertiary,
+        'textDisabled': textDisabled,
+        'divider': divider,
+        'outline': outline,
+        'inputFill': inputFill,
+        'inputFillFocused': inputFillFocused,
+        'searchFill': searchFill,
+        'tagBackground': tagBackground,
+        'tagText': tagText,
+        'navBackground': navBackground,
+        'navSelected': navSelected,
+        'navUnselected': navUnselected,
+        'appBarBackground': appBarBackground,
+        'appBarForeground': appBarForeground,
+        'bubbleIncoming': bubbleIncoming,
+        'bubbleIncomingText': bubbleIncomingText,
+        'bubbleOutgoing': bubbleOutgoing,
+        'bubbleOutgoingText': bubbleOutgoingText,
+        'feedSectionSurface': feedSectionSurface,
+        'feedFeaturedSurface': feedFeaturedSurface,
+        'feedFeaturedText': feedFeaturedText,
+        'courseCardText': courseCardText,
+        'timetableGrid': timetableGrid,
+        'timetableToday': timetableToday,
+      };
+
+  Map<String, String> toJson() => tokenColors.map((name, color) {
+        final hex =
+            color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase();
+        return MapEntry(
+            name, '#${hex.startsWith('FF') ? hex.substring(2) : hex}');
+      });
+
   static const _light = AppPalette(
     primary: Color(0xFF147C72),
     onPrimary: Color(0xFFFFFFFF),

@@ -642,6 +642,13 @@ class FakeThemeProvider extends Fake
     with ChangeNotifier
     implements ThemeProvider {
   @override
+  bool get usesThemeWallpapers => false;
+  @override
+  bool get hasThemeColors => false;
+  @override
+  bool get canCustomizeCardMaterial => false;
+
+  @override
   bool get isDarkMode => false;
 
   @override

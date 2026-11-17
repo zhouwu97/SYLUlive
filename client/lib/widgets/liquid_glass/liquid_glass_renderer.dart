@@ -2,6 +2,8 @@ import 'dart:ui' as ui;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import '../../features/theme_pack/theme_navigation_images.dart';
 
 import '../../theme/app_theme_tokens.dart';
 import '../opacity_safe_backdrop_filter.dart';
@@ -34,6 +36,8 @@ class LiquidGlassRenderer extends StatefulWidget {
     this.tint,
     this.enabled = true,
     this.axis = Axis.horizontal,
+    this.themeImages = const {},
+    this.originalIcons = false,
   });
 
   final Rect lens;
@@ -53,6 +57,8 @@ class LiquidGlassRenderer extends StatefulWidget {
   final double? tint;
   final bool enabled;
   final Axis axis;
+  final ThemeNavigationImages themeImages;
+  final bool originalIcons;
 
   @override
   State<LiquidGlassRenderer> createState() => _LiquidGlassRendererState();
@@ -62,6 +68,58 @@ class _LiquidGlassRendererState extends State<LiquidGlassRenderer> {
   final _paintKey = GlobalKey();
   final _resources = _GlassResources();
   ui.FragmentShader? _shader;
+  final List<(ImageStream, ImageStreamListener)> _iconStreams = [];
+  List<ImageProvider?> _iconProviders = [];
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolveIcons();
+  }
+
+  @override
+  void didUpdateWidget(LiquidGlassRenderer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _resolveIcons();
+  }
+
+  void _resolveIcons() {
+    final providers = <ImageProvider?>[
+      for (var i = 0; i < widget.icons.length; i++) ...[
+        widget.themeImages[i]?.$1,
+        widget.themeImages[i]?.$2,
+      ]
+    ];
+    if (listEquals(providers, _iconProviders)) return;
+    _iconProviders = providers;
+    for (final (stream, listener) in _iconStreams) {
+      stream.removeListener(listener);
+    }
+    _iconStreams.clear();
+    for (final icon in _resources.icons.values) {
+      icon.dispose();
+    }
+    _resources.icons.clear();
+    _resources.failedIcons.clear();
+    _resources.atlasSignature = null;
+    for (final (key, provider) in providers.indexed) {
+      if (provider == null) continue;
+      final stream = provider.resolve(createLocalImageConfiguration(context));
+      final listener = ImageStreamListener((image, synchronous) {
+        _resources.icons.remove(key)?.dispose();
+        _resources.icons[key] = image;
+        _resources.failedIcons.remove(key);
+        _resources.atlasSignature = null;
+        if (mounted) setState(() {});
+      }, onError: (Object _, StackTrace? __) {
+        _resources.failedIcons.add(key);
+        _resources.atlasSignature = null;
+        if (mounted) setState(() {});
+      });
+      _iconStreams.add((stream, listener));
+      stream.addListener(listener);
+    }
+  }
 
   @override
   void initState() {
@@ -82,6 +140,9 @@ class _LiquidGlassRendererState extends State<LiquidGlassRenderer> {
 
   @override
   void dispose() {
+    for (final (stream, listener) in _iconStreams) {
+      stream.removeListener(listener);
+    }
     _shader?.dispose();
     _resources.dispose();
     super.dispose();
@@ -130,12 +191,17 @@ class _LiquidGlassRendererState extends State<LiquidGlassRenderer> {
 }
 
 class _GlassResources {
+  final Map<int, ImageInfo> icons = {};
+  final Set<int> failedIcons = {};
   ui.Image? atlas;
   ui.Image? capture;
   ui.Image? blurred;
   Object? atlasSignature;
 
   void dispose() {
+    for (final icon in icons.values) {
+      icon.dispose();
+    }
     atlas?.dispose();
     capture?.dispose();
     blurred?.dispose();
@@ -310,6 +376,7 @@ class _GlassPainter extends CustomPainter {
       ),
       Object.hashAll(settings.labels),
       Object.hashAll(settings.icons),
+      settings.originalIcons,
     );
     if (resources.atlasSignature == signature) return;
     final recorder = ui.PictureRecorder();
@@ -337,23 +404,37 @@ class _GlassPainter extends CustomPainter {
       final position = 4 + (i + .5) * item;
       final center = vertical ? size.width / 2 : position;
       final top = vertical ? position - 32 : 0.0;
-      final icon = settings.icons[i];
-      final iconPainter = TextPainter(
-        text: TextSpan(
-          text: String.fromCharCode(icon.codePoint),
-          style: TextStyle(
-            fontFamily: icon.fontFamily,
-            package: icon.fontPackage,
-            fontSize: 24,
-            color: color,
-            height: 1,
+      final image = resources.icons[i * 2 + (accent ? 1 : 0)]?.image;
+      if (image != null) {
+        paintImage(
+            canvas: canvas,
+            rect: Rect.fromLTWH(center - 12, top + 12, 24, 24),
+            image: image,
+            fit: BoxFit.contain,
+            colorFilter: settings.originalIcons
+                ? null
+                : ColorFilter.mode(color, BlendMode.srcIn));
+      } else {
+        final icon = resources.failedIcons.contains(i * 2 + (accent ? 1 : 0))
+            ? Icons.broken_image_outlined
+            : settings.icons[i];
+        final iconPainter = TextPainter(
+          text: TextSpan(
+            text: String.fromCharCode(icon.codePoint),
+            style: TextStyle(
+              fontFamily: icon.fontFamily,
+              package: icon.fontPackage,
+              fontSize: 24,
+              color: color,
+              height: 1,
+            ),
           ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      iconPainter.paint(
-          canvas, Offset(center - iconPainter.width / 2, top + 12));
-      iconPainter.dispose();
+          textDirection: TextDirection.ltr,
+        )..layout();
+        iconPainter.paint(
+            canvas, Offset(center - iconPainter.width / 2, top + 12));
+        iconPainter.dispose();
+      }
       final label = TextPainter(
         text: TextSpan(
           text: settings.labels[i],

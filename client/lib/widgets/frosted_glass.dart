@@ -24,7 +24,7 @@ class FrostedGlass extends StatelessWidget {
     final appearance = context.select<ThemeProvider?, (bool, double)>(
       (theme) {
         final active = (enabled ?? theme?.frostedGlass ?? false) &&
-            (theme == null || theme.shouldShowCustomBackground) &&
+            (theme == null || theme.canCustomizeCardMaterial) &&
             sigmaX > 0 &&
             sigmaY > 0;
         return (active, active ? theme?.frostedGlassStrength ?? 1 : 0);

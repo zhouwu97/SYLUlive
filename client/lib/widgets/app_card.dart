@@ -18,7 +18,7 @@ Color appGlassSurfaceColor(BuildContext context, Color? color, double opacity) {
 
 /// 壁纸上的说明文字使用实色语义前景，简洁模式保留原配色。
 Color appContentSecondaryColor(BuildContext context, Color fallback) =>
-    context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+    context.watch<ThemeProvider?>()?.canCustomizeCardMaterial == true
         ? Theme.of(context).colorScheme.onSurfaceVariant
         : fallback;
 
@@ -129,7 +129,7 @@ class AppContentSurface extends StatelessWidget {
             context.findAncestorWidgetOfExactType<AppCardMaterial>() != null ||
             context.findAncestorWidgetOfExactType<AppCard>() != null;
     final paint =
-        appearance?.shouldShowCustomBackground == true && !insideSurface;
+        appearance?.canCustomizeCardMaterial == true && !insideSurface;
     final color = AppThemeTokens.of(context).card;
     if (_reading) {
       // 背景与前景分开绘制：圆角不会裁切首尾文字，开关也不改变内容宽度。
@@ -206,7 +206,7 @@ class AppCardSurface extends Container {
     final settings = context.watch<ThemeProvider?>();
     final glass = settings?.frostedGlass == true && blur > 0;
     final progress = glass ? AppSurfaceTransition.progressOf(context) : 1.0;
-    final custom = settings?.shouldShowCustomBackground == true;
+    final custom = settings?.canCustomizeCardMaterial == true;
     final box =
         decoration is BoxDecoration ? decoration! as BoxDecoration : null;
     final surface = color ?? box?.color ?? AppThemeTokens.of(context).card;
@@ -338,7 +338,7 @@ class AppCard extends Card {
             margin: EdgeInsets.zero,
             color: glass
                 ? appGlassSurfaceColor(context, surface, alpha * progress)
-                : settings?.shouldShowCustomBackground == true
+                : settings?.canCustomizeCardMaterial == true
                     ? appGlassSurfaceColor(context, surface, alpha)
                     : alpha == 1
                         ? color
@@ -421,11 +421,11 @@ class _AppCardMaterialState extends State<Material> {
       color: glass
           ? appGlassSurfaceColor(context, surface, progress * alpha)
           : alpha == 1 || widget.type == MaterialType.transparency
-              ? settings?.shouldShowCustomBackground == true &&
+              ? settings?.canCustomizeCardMaterial == true &&
                       widget.type != MaterialType.transparency
                   ? appGlassSurfaceColor(context, surface, alpha)
                   : widget.color
-              : settings?.shouldShowCustomBackground == true
+              : settings?.canCustomizeCardMaterial == true
                   ? appGlassSurfaceColor(context, surface, alpha)
                   : plainColor?.withValues(alpha: plainColor.a * alpha),
       shadowColor: widget.shadowColor,

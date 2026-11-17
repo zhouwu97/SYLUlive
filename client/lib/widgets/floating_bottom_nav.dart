@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme_tokens.dart';
 import 'liquid_bottom_nav.dart';
 import 'navigation_dock_layout.dart';
+import '../features/theme_pack/theme_navigation_images.dart';
 
 /// Ordinary floating navigation: no scene capture, shader, or liquid springs.
 class FloatingBottomNav extends StatelessWidget {
@@ -10,21 +11,28 @@ class FloatingBottomNav extends StatelessWidget {
       required this.currentIndex,
       required this.onTap,
       this.badges = const {},
-      this.axis = Axis.horizontal});
+      this.axis = Axis.horizontal,
+      this.docked = false,
+      this.themeImages = const {},
+      this.originalIcons = false});
   final int currentIndex;
   final ValueChanged<int> onTap;
   final Map<int, bool> badges;
   final Axis axis;
+  final bool docked;
+  final ThemeNavigationImages themeImages;
+  final bool originalIcons;
 
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
     return NavigationDockLayout(
         axis: axis,
+        docked: docked,
         child: Material(
           color: tokens.navBackground.withValues(alpha: 1),
           elevation: 3,
-          borderRadius: BorderRadius.circular(32),
+          borderRadius: BorderRadius.circular(docked ? 0 : 32),
           clipBehavior: Clip.antiAlias,
           child: Flex(
               direction: axis,
@@ -69,8 +77,22 @@ class FloatingBottomNav extends StatelessWidget {
                                   children: [
                                 Badge(
                                     isLabelVisible: badges[i] == true,
-                                    child: Icon(LiquidBottomNav.icons[i],
-                                        color: color, size: 24)),
+                                    child: themeImages[i] == null
+                                        ? Icon(LiquidBottomNav.icons[i],
+                                            color: color, size: 24)
+                                        : Image(
+                                            image: selected
+                                                ? themeImages[i]!.$2
+                                                : themeImages[i]!.$1,
+                                            width: 24,
+                                            height: 24,
+                                            fit: BoxFit.contain,
+                                            color: originalIcons ? null : color,
+                                            colorBlendMode: BlendMode.srcIn,
+                                            errorBuilder: (_, __, ___) => Icon(
+                                                Icons.broken_image_outlined,
+                                                color: color,
+                                                size: 24))),
                                 const SizedBox(height: 3),
                                 Text(LiquidBottomNav.labels[i],
                                     maxLines: 1,

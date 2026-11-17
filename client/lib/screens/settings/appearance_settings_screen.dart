@@ -19,6 +19,7 @@ import 'widgets/background_picker_sheet.dart';
 import 'bottom_navigation_settings_screen.dart';
 import 'frosted_glass_settings_screen.dart';
 import '../../widgets/app_card.dart';
+import '../../features/theme_pack/theme_section.dart';
 
 /// 界面设置二级页
 class AppearanceSettingsScreen extends StatefulWidget {
@@ -339,6 +340,7 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
       children: [
         // 智能实时自适应微缩预览卡片
         _buildLivePreviewCard(context, themeProvider),
+        const ThemeSection(),
 
         // 主题模式段落
         SettingsSection(

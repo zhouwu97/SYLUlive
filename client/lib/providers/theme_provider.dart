@@ -1,12 +1,18 @@
 import 'dart:async' show unawaited;
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 import 'package:shenliyuan/models/startup_destination.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/root_page_state_service.dart';
 import 'package:shenliyuan/theme/app_text_scaler.dart';
+import '../features/theme_pack/theme_appearance.dart';
+import '../features/theme_pack/theme_manifest.dart';
+import '../features/theme_pack/theme_pack_codec.dart';
+import '../features/theme_pack/theme_pack_store.dart';
+import '../utils/app_navigator.dart';
 
 enum AppBackgroundMode {
   clean,
@@ -190,7 +196,16 @@ const Color kCleanWarmBackgroundLight = Color(0xFFFFFAF4);
 const Color kCleanWarmCardBorderLight = Color(0xFFE2EFEA);
 const Color kCleanWarmBackgroundDark = Color(0xFF111315);
 
-class ThemeProvider extends ChangeNotifier {
+class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
+  static const appearanceKey = 'theme_appearance_v1';
+  static const previousAppearanceKey = 'theme_previous_v1';
+  final ThemePackStore themePacks;
+  ThemeAppearance _appearance = const ThemeAppearance.empty();
+  ThemeAppearance? _previousAppearance;
+  bool _appearanceLoaded = false;
+  bool _themeFilesInitialized = false;
+  bool _disposed = false;
+  String? _themeStorageWarning;
   static const String _nightModeKey = 'night_mode';
   static const String _followSystemKey = 'night_mode_follow_system';
   static const String _fontSizePresetKey = 'font_size_preset';
@@ -266,7 +281,6 @@ class ThemeProvider extends ChangeNotifier {
       BottomNavPerformanceMode.highQuality;
   double _bottomNavAnimationIntensity = 1.0;
   double _bottomNavCustomIntensity = .65;
-  Future<void>? _bottomNavEffectWrites;
   bool _bottomNavClearMaterial = false;
   bool _bottomNavSetupHintDismissed = false;
   bool _bottomNavSetupHintSeen = false;
@@ -286,41 +300,87 @@ class ThemeProvider extends ChangeNotifier {
       ? ThemeMode.system
       : (_isDarkMode ? ThemeMode.dark : ThemeMode.light);
   AppFontSizePreset get fontSizePreset => _fontSizePreset;
-  AppBackgroundMode get backgroundMode => _backgroundMode;
-  bool get isCleanBackgroundMode => _backgroundMode == AppBackgroundMode.clean;
-  bool get isCustomBackgroundMode =>
-      _backgroundMode == AppBackgroundMode.custom;
-  String? get backgroundImage => _backgroundImage;
-  String? get landscapeBackgroundImage => _landscapeBackgroundImage;
-  bool get backgroundFillScreen => _backgroundFillScreen;
-  bool get landscapeBackgroundFillScreen => _landscapeBackgroundFillScreen;
-  double get backgroundBlur => _backgroundBlur;
+  AppBackgroundMode get backgroundMode => usesThemeWallpapers
+      ? (themeWallpaper == null
+          ? AppBackgroundMode.clean
+          : AppBackgroundMode.custom)
+      : _legacyWallpaper == null
+          ? _backgroundMode
+          : AppBackgroundMode.values
+              .byName(_legacyWallpaper!['mode'] as String);
+  bool get isCleanBackgroundMode => backgroundMode == AppBackgroundMode.clean;
+  bool get isCustomBackgroundMode => backgroundMode == AppBackgroundMode.custom;
+  String? get backgroundImage => usesThemeWallpapers
+      ? (themeWallpaper?['portrait'] as String?)
+      : _legacyWallpaper == null
+          ? _backgroundImage
+          : _legacyWallpaper!['portrait'] as String?;
+  String? get landscapeBackgroundImage => usesThemeWallpapers
+      ? (themeWallpaper?['landscape'] as String?)
+      : _legacyWallpaper == null
+          ? _landscapeBackgroundImage
+          : _legacyWallpaper!['landscape'] as String?;
+  bool get backgroundFillScreen => usesThemeWallpapers
+      ? (themeWallpaper?['fit'] == 'cover')
+      : _legacyWallpaper == null
+          ? _backgroundFillScreen
+          : _legacyWallpaper!['portraitFill'] as bool;
+  bool get landscapeBackgroundFillScreen => usesThemeWallpapers
+      ? backgroundFillScreen
+      : _legacyWallpaper == null
+          ? _landscapeBackgroundFillScreen
+          : _legacyWallpaper!['landscapeFill'] as bool;
+  double get backgroundBlur => usesThemeWallpapers
+      ? (themeWallpaper?['blur'] as num? ?? 0).toDouble()
+      : _legacyWallpaper == null
+          ? _backgroundBlur
+          : (_legacyWallpaper!['blur'] as num).toDouble();
+
   /// 已保存的不透明度偏好，界面调节使用 [componentOpacityLevel]。
-  double get componentOpacity => _componentOpacity;
+  double get componentOpacity =>
+      (_activeMaterial?['componentOpacity'] as num?)?.toDouble() ??
+      _componentOpacity;
 
   /// 调节档位 0–100% 对应实际底色 75–100%，历史偏好按实际底色换算。
-  double get componentOpacityLevel => _componentOpacity.isFinite
-      ? ((_componentOpacity - minComponentOpacity) / (1 - minComponentOpacity))
+  double get componentOpacityLevel => componentOpacity.isFinite
+      ? ((componentOpacity - minComponentOpacity) / (1 - minComponentOpacity))
           .clamp(0.0, 1.0)
       : 1.0;
 
-  /// 简洁模式使用实色，自定义背景按新的连续调节区间绘制。
-  double get effectiveComponentOpacity => shouldShowCustomBackground
-      ? minComponentOpacity + (1 - minComponentOpacity) * componentOpacityLevel
-      : 1.0;
+  /// 显式主题材质按变体绘制；原手动材质仅在自定义背景下生效。
+  double get effectiveComponentOpacity =>
+      _materialGroup != null && _materialGroup!['legacy'] != true
+          ? componentOpacity.clamp(minComponentOpacity, 1.0)
+          : shouldShowCustomBackground
+              ? minComponentOpacity +
+                  (1 - minComponentOpacity) * componentOpacityLevel
+              : 1.0;
 
   // 简洁模式只暂停材质，保留自定义背景下已保存的开关和强度。
-  bool get frostedGlass => _frostedGlass && shouldShowCustomBackground;
-  double get frostedGlassStrength => _frostedGlassStrength;
+  bool get frostedGlass => _activeMaterial == null
+      ? _frostedGlass && shouldShowCustomBackground
+      : _activeMaterial!['frostedGlass']['enabled'] as bool &&
+          (_materialGroup!['legacy'] != true || shouldShowCustomBackground);
+  double get frostedGlassStrength =>
+      (_activeMaterial?['frostedGlass']['strength'] as num?)?.toDouble() ??
+      _frostedGlassStrength;
   double get frostedGlassCustomStrength => _frostedGlassCustomStrength;
   double get customComponentOpacityLevel => _customComponentOpacityLevel;
   FrostedGlassPerformanceMode get frostedGlassPerformanceMode =>
-      !shouldShowCustomBackground
+      !canCustomizeCardMaterial
           ? FrostedGlassPerformanceMode.off
-          : _frostedGlassPerformanceMode;
+          : _activeMaterial == null
+              ? _frostedGlassPerformanceMode
+              : _modeForFrostedGlass(frostedGlass ? frostedGlassStrength : 0,
+                  componentOpacityLevel);
   String get frostedGlassPresetLabel => frostedGlassPerformanceMode.label;
-  bool get liquidGlass => _liquidGlass && _bottomNavPerformanceMode != BottomNavPerformanceMode.off;
-  bool get floatingNavBar => _floatingNavBar;
+  bool get liquidGlass => _navigationGroup?['style'] != null
+      ? bottomNavStyle == BottomNavStyle.liquidGlass
+      : _liquidGlass &&
+          bottomNavPerformanceMode != BottomNavPerformanceMode.off;
+  bool get floatingNavBar => _navigationGroup?['style'] != null
+      ? bottomNavStyle != BottomNavStyle.normal
+      : _floatingNavBar;
   bool get predictiveBack => _predictiveBack;
 
   /// 旧字段，保留一个版本供外部代码过渡。不再作为导航决策数据源。
@@ -331,53 +391,29 @@ class ThemeProvider extends ChangeNotifier {
   bool get marketIsListView => _marketIsListView;
 
   bool get hasBackground =>
-      _backgroundImage != null && _backgroundImage!.isNotEmpty;
+      backgroundImage != null && backgroundImage!.isNotEmpty;
   bool get hasLandscapeBackground =>
-      _landscapeBackgroundImage != null &&
-      _landscapeBackgroundImage!.isNotEmpty;
+      landscapeBackgroundImage != null && landscapeBackgroundImage!.isNotEmpty;
   bool get hasAnyBackground => hasBackground || hasLandscapeBackground;
 
   bool get shouldShowCustomBackground =>
       isCustomBackgroundMode && hasAnyBackground;
 
   static bool isBundledAssetBackground(String imagePath) {
-    return !imagePath.startsWith('/') &&
-        !imagePath.startsWith('file://') &&
+    return !isLocalFileBackground(imagePath) &&
         !imagePath.startsWith('http://') &&
         !imagePath.startsWith('https://');
   }
 
   static bool isLocalFileBackground(String imagePath) {
-    return imagePath.startsWith('/') || imagePath.startsWith('file://');
+    return imagePath.startsWith('/') ||
+        imagePath.startsWith('file://') ||
+        path.isAbsolute(imagePath);
   }
 
   static String resolveBundledAssetPath(String assetName) {
     if (assetName.startsWith('assets/')) return assetName;
     return 'assets/images/$assetName';
-  }
-
-  /// 安全性辅助方法：仅在 Provider 状态与 Preferences Store 更新成功后，异步清理存放在应用受管壁纸目录下的旧本地孤儿壁纸
-  static Future<void> _tryDeleteLocalManagedFile(String? filePath) async {
-    if (filePath == null || !isLocalFileBackground(filePath)) return;
-    try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final customDir = path.join(appDir.path, 'wallpapers', 'custom');
-      final normalizedFile = path.normalize(filePath);
-      final normalizedRoot = path.normalize(customDir);
-
-      final file = File(filePath);
-      final fileName = path.basename(filePath);
-
-      final isManagedName = fileName.startsWith('background_') ||
-          fileName.startsWith('landscape_background_');
-      final isManagedPath = path.isWithin(normalizedRoot, normalizedFile);
-
-      if (isManagedName || isManagedPath) {
-        if (await file.exists()) {
-          await file.delete();
-        }
-      }
-    } catch (_) {}
   }
 
   /// 获取自定义模式下当前环境适用的背景图；当前方向缺失时使用另一方向兜底。
@@ -386,10 +422,10 @@ class ThemeProvider extends ChangeNotifier {
         MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
     if (isWide) {
       return hasLandscapeBackground
-          ? _landscapeBackgroundImage
-          : _backgroundImage;
+          ? landscapeBackgroundImage
+          : backgroundImage;
     }
-    return hasBackground ? _backgroundImage : _landscapeBackgroundImage;
+    return hasBackground ? backgroundImage : landscapeBackgroundImage;
   }
 
   bool getCustomBackgroundFillScreenFor(BuildContext context) {
@@ -397,18 +433,20 @@ class ThemeProvider extends ChangeNotifier {
         MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
     if (isWide) {
       return hasLandscapeBackground
-          ? _landscapeBackgroundFillScreen
-          : _backgroundFillScreen;
+          ? landscapeBackgroundFillScreen
+          : backgroundFillScreen;
     }
-    return hasBackground
-        ? _backgroundFillScreen
-        : _landscapeBackgroundFillScreen;
+    return hasBackground ? backgroundFillScreen : landscapeBackgroundFillScreen;
   }
 
   ThemeProvider({
     bool loadOnStart = true,
     DevicePerformanceLevel? performanceLevel,
-  }) : _performanceLevelOverride = performanceLevel {
+    ThemePackStore? themePackStore,
+  })  : themePacks = themePackStore ?? const ThemePackStore(),
+        _performanceLevelOverride = performanceLevel {
+    WidgetsBinding.instance.addObserver(this);
+    currentHomeTabIndex.addListener(_onThemeTabChanged);
     if (!loadOnStart) return;
 
     final prewarmed = AppPreferencesStore.maybeInstance;
@@ -419,6 +457,7 @@ class ThemeProvider extends ChangeNotifier {
         debugPrint('同步读取主题本地配置失败，使用默认主题: $error');
       }
       _isLoaded = true;
+      _startThemeFileMaintenance();
       return;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadTheme());
@@ -428,21 +467,32 @@ class ThemeProvider extends ChangeNotifier {
     return _loadTheme();
   }
 
-  BottomNavStyle get bottomNavStyle => _bottomNavPerformanceMode == BottomNavPerformanceMode.off
-      ? BottomNavStyle.floating : _bottomNavStyle;
-  BottomNavPerformanceMode get bottomNavPerformanceMode =>
-      _bottomNavPerformanceMode;
-  double get bottomNavAnimationIntensity => _bottomNavAnimationIntensity;
-  bool get bottomNavClearMaterial => _bottomNavClearMaterial;
-  bool get showBottomNavSetupHint => isLoaded && !_bottomNavSetupHintDismissed && !_bottomNavSetupHintSeen;
-  double get bottomNavBlur => _bottomNavClearMaterial ? 0 : 2;
-  double? get bottomNavTint => _bottomNavClearMaterial ? .06 : .26;
+  BottomNavStyle get bottomNavStyle => _navigationGroup?['style'] != null
+      ? BottomNavStyleStorage.fromStorage(_navigationGroup!['style'] as String)!
+      : bottomNavPerformanceMode == BottomNavPerformanceMode.off
+          ? BottomNavStyle.floating
+          : _bottomNavStyle;
+  BottomNavPerformanceMode get bottomNavPerformanceMode => _navigationMotion ==
+          null
+      ? _bottomNavPerformanceMode
+      : BottomNavPerformanceModeStorage.fromStorage(
+          _navigationMotion!['performanceMode'] as String);
+  double get bottomNavAnimationIntensity =>
+      (_navigationMotion?['intensity'] as num?)?.toDouble() ??
+      _bottomNavAnimationIntensity;
+  bool get bottomNavClearMaterial =>
+      _navigationMotion?['clearMaterial'] as bool? ?? _bottomNavClearMaterial;
+  bool get showBottomNavSetupHint =>
+      isLoaded && !_bottomNavSetupHintDismissed && !_bottomNavSetupHintSeen;
+  double get bottomNavBlur => bottomNavClearMaterial ? 0 : 2;
+  double? get bottomNavTint => bottomNavClearMaterial ? .06 : .26;
   DevicePerformanceLevel get devicePerformanceLevel =>
       _performanceLevelOverride ?? DevicePerformanceDetector.current;
   bool get bottomNavLiquidGlassConfirmed => _bottomNavLiquidGlassConfirmed;
 
   /// 两个液态档位保留折射；关档使用独立的普通悬浮底栏。
-  bool get bottomNavShaderEnabled => _bottomNavPerformanceMode != BottomNavPerformanceMode.off;
+  bool get bottomNavShaderEnabled =>
+      bottomNavPerformanceMode != BottomNavPerformanceMode.off;
 
   double _motionPreset(BottomNavPerformanceMode mode) => switch (mode) {
     BottomNavPerformanceMode.highQuality => 1.0,
@@ -453,7 +503,9 @@ class ThemeProvider extends ChangeNotifier {
 
   BottomNavPerformanceMode _modeForIntensity(double value) {
     if (value == 0) return BottomNavPerformanceMode.off;
-    if ((value - .35).abs() < .0001) return BottomNavPerformanceMode.highPerformance;
+    if ((value - .35).abs() < .0001) {
+      return BottomNavPerformanceMode.highPerformance;
+    }
     if ((value - 1).abs() < .0001) return BottomNavPerformanceMode.highQuality;
     return BottomNavPerformanceMode.custom;
   }
@@ -488,6 +540,7 @@ class ThemeProvider extends ChangeNotifier {
     }
     return FrostedGlassPerformanceMode.custom;
   }
+
   Future<void> _loadTheme() async {
     try {
       final prefs = await AppPreferencesStore.getInstance();
@@ -497,11 +550,13 @@ class ThemeProvider extends ChangeNotifier {
     } finally {
       _isLoaded = true;
       notifyListeners();
+      _startThemeFileMaintenance();
     }
   }
 
   /// 将已初始化偏好应用到内存状态，供同步首帧与异步回退共用。
   void _applyStoredPreferences(AppPreferencesStore prefs) {
+    _readThemePreferences(prefs);
     // 初始化晚到时不能覆盖用户刚选的配色模式。
     if (!_themeModeChanged) {
       _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
@@ -630,11 +685,18 @@ class ThemeProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _setBackgroundMode(AppBackgroundMode mode) async {
+  Future<void> _setBackgroundMode(AppBackgroundMode mode) {
     _backgroundMode = mode;
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setString(_backgroundModeKey, _backgroundModeToString(mode));
+    _appearance = _appearance.without(ThemeGroup.wallpapers);
     notifyListeners();
+    return _queueAppearanceOperation((prefs) async {
+        if (!await prefs.setString(
+            _backgroundModeKey, _backgroundModeToString(mode))) {
+          throw const FileSystemException('背景模式未能保存');
+        }
+        _backgroundMode = mode;
+        await _clearWallpaperOverride(prefs);
+      });
   }
 
   Future<void> setCleanBackgroundMode() async {
@@ -693,70 +755,86 @@ class ThemeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setBackgroundImage(
-    String? imageUrl, {
-    bool fillScreen = false,
-  }) async {
-    final oldPath = _backgroundImage;
-    _backgroundImage = imageUrl;
-    _backgroundFillScreen =
-        imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
-    final prefs = await AppPreferencesStore.getInstance();
-    if (imageUrl != null && imageUrl.isNotEmpty) {
-      await prefs.setString(_backgroundImageKey, imageUrl);
-      await prefs.setBool(_backgroundFillScreenKey, _backgroundFillScreen);
-      _backgroundMode = AppBackgroundMode.custom;
-      await prefs.setString(
-        _backgroundModeKey,
-        _backgroundModeToString(_backgroundMode),
-      );
-    } else {
-      await prefs.remove(_backgroundImageKey);
-      await prefs.remove(_backgroundFillScreenKey);
-    }
-    notifyListeners();
+  Future<void> setBackgroundImage(String? imageUrl,
+          {bool fillScreen = false}) =>
+      _setManualWallpaper(imageUrl, fillScreen: fillScreen, landscape: false);
 
-    if (oldPath != imageUrl) {
-      await _tryDeleteLocalManagedFile(oldPath);
+  Future<void> setLandscapeBackgroundImage(String? imageUrl,
+          {bool fillScreen = false}) =>
+      _setManualWallpaper(imageUrl, fillScreen: fillScreen, landscape: true);
+
+  Future<void> _setManualWallpaper(String? image,
+          {required bool fillScreen, required bool landscape}) =>
+      _queueAppearanceOperation((prefs) async {
+        var savedPath = image;
+        if (image != null && isLocalFileBackground(image)) {
+          final local = image.startsWith('file://')
+              ? File.fromUri(Uri.parse(image)).path
+              : image;
+          if (await File(local).exists()) {
+            await _initializeThemeFiles(prefs);
+            savedPath = await themePacks.adoptWallpaper(local);
+          }
+        }
+        final oldPath =
+            landscape ? _landscapeBackgroundImage : _backgroundImage;
+        final key =
+            landscape ? _landscapeBackgroundImageKey : _backgroundImageKey;
+        final fillKey = landscape
+            ? _landscapeBackgroundFillScreenKey
+            : _backgroundFillScreenKey;
+        final hasValue = savedPath != null && savedPath.isNotEmpty;
+        final results = hasValue
+            ? [
+                await prefs.setString(key, savedPath),
+                await prefs.setBool(fillKey, fillScreen),
+                await prefs.setString(_backgroundModeKey, 'custom'),
+              ]
+            : [await prefs.remove(key), await prefs.remove(fillKey)];
+        if (!results.every((value) => value)) {
+          throw const FileSystemException('壁纸偏好未能保存');
+        }
+        if (landscape) {
+          _landscapeBackgroundImage = savedPath;
+          _landscapeBackgroundFillScreen = hasValue && fillScreen;
+        } else {
+          _backgroundImage = savedPath;
+          _backgroundFillScreen = hasValue && fillScreen;
+        }
+        if (hasValue) _backgroundMode = AppBackgroundMode.custom;
+        await _clearWallpaperOverride(prefs);
+        await _cleanupThemeFiles(legacyCandidates: [
+          if (oldPath != null) oldPath,
+          if (image != null) image
+        ]);
+      });
+
+  Future<void> _clearWallpaperOverride(AppPreferencesStore prefs) async {
+    if (_wallpaperGroup != null &&
+        !await _writeCurrentAppearance(
+            prefs, _appearance.without(ThemeGroup.wallpapers))) {
+      throw const FileSystemException('主题壁纸偏好未能保存');
     }
+    if (!_disposed) notifyListeners();
   }
 
-  Future<void> setLandscapeBackgroundImage(
-    String? imageUrl, {
-    bool fillScreen = false,
-  }) async {
-    final oldPath = _landscapeBackgroundImage;
-    _landscapeBackgroundImage = imageUrl;
-    _landscapeBackgroundFillScreen =
-        imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
-    final prefs = await AppPreferencesStore.getInstance();
-    if (imageUrl != null && imageUrl.isNotEmpty) {
-      await prefs.setString(_landscapeBackgroundImageKey, imageUrl);
-      await prefs.setBool(
-        _landscapeBackgroundFillScreenKey,
-        _landscapeBackgroundFillScreen,
-      );
-      _backgroundMode = AppBackgroundMode.custom;
-      await prefs.setString(
-        _backgroundModeKey,
-        _backgroundModeToString(_backgroundMode),
-      );
-    } else {
-      await prefs.remove(_landscapeBackgroundImageKey);
-      await prefs.remove(_landscapeBackgroundFillScreenKey);
-    }
+  Future<void> setBackgroundBlur(double blur) {
+    final value = blur.clamp(0.0, 30.0);
+    final brightness = effectiveBrightness;
+    final tab = currentHomeTabIndex.value;
+    _backgroundBlur = value;
+    _appearance = _appearance.patchWallpaperBlur(brightness, tab, value);
     notifyListeners();
-
-    if (oldPath != imageUrl) {
-      await _tryDeleteLocalManagedFile(oldPath);
-    }
-  }
-
-  Future<void> setBackgroundBlur(double blur) async {
-    _backgroundBlur = blur.clamp(0, 30);
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setDouble(_backgroundBlurKey, _backgroundBlur);
-    notifyListeners();
+    return _queueAppearanceOperation((prefs) async {
+      if (!await prefs.setDouble(_backgroundBlurKey, value)) {
+        throw const FileSystemException('背景模糊未能保存');
+      }
+      if (_wallpaperGroup != null &&
+          !await _writeCurrentAppearance(
+              prefs, _appearance.patchWallpaperBlur(brightness, tab, value))) {
+        throw const FileSystemException('主题背景模糊未能保存');
+      }
+    });
   }
 
   Future<bool> setComponentOpacityLevel(double value) {
@@ -770,10 +848,14 @@ class ThemeProvider extends ChangeNotifier {
   /// 保存底色偏好，界面滑块通过 [setComponentOpacityLevel] 换算后调用。
   Future<bool> setComponentOpacity(double value) {
     if (!value.isFinite) return Future<bool>.value(false);
+    _useEffectiveMaterial();
     final opacity = value.clamp(0.0, 1.0);
+    final brightness = effectiveBrightness;
     final oldMode = _frostedGlassPerformanceMode;
     final changed = _componentOpacity != opacity;
     _componentOpacity = opacity;
+    _appearance =
+        _appearance.patchMaterial(brightness, {'componentOpacity': opacity});
     _frostedGlassPerformanceMode = _modeForFrostedGlass(
       _frostedGlass ? _frostedGlassStrength : 0.0,
       componentOpacityLevel,
@@ -793,7 +875,9 @@ class ThemeProvider extends ChangeNotifier {
         await prefs.setDouble(_customComponentOpacityLevelKey, customLevel),
         await prefs.setDouble(_frostedGlassCustomStrengthKey, customStrength),
       ];
-      return results.every((saved) => saved);
+      return results.every((saved) => saved) &&
+          await _saveManualMaterial(
+              prefs, brightness, {'componentOpacity': opacity});
     });
   }
 
@@ -801,22 +885,30 @@ class ThemeProvider extends ChangeNotifier {
     _bottomNavStyle = BottomNavStyle.liquidGlass;
     _liquidGlass = true;
     _floatingNavBar = true;
-    final prefs = await AppPreferencesStore.getInstance();
-    await _persistBottomNavPreferences(prefs);
+    _appearance = _appearance.resetNavigationStyle();
     notifyListeners();
+    await _queueAppearanceOperation((prefs) async {
+      await _persistBottomNavPreferences(prefs);
+      if (!await _saveManualNavigation(prefs)) {
+        throw const FileSystemException('导航栏设置未能保存');
+      }
+    });
   }
 
   Future<bool> setBottomNavPerformanceMode(
     BottomNavPerformanceMode mode,
   ) {
+    _useEffectiveNavigation();
     _bottomNavPerformanceMode = mode;
     _bottomNavAnimationIntensity = _motionPreset(mode);
+    _appearance = _appearance.resetNavigationStyle();
     notifyListeners();
     return _persistBottomNavEffects();
   }
 
   Future<bool> setBottomNavAnimationIntensity(double value) {
     if (!value.isFinite) return Future<bool>.value(false);
+    _useEffectiveNavigation();
     _bottomNavAnimationIntensity = (value.clamp(0.0, 1.0) * 100).round() / 100;
     if (_bottomNavPerformanceMode != BottomNavPerformanceMode.off ||
         _bottomNavAnimationIntensity > 0) {
@@ -825,6 +917,7 @@ class ThemeProvider extends ChangeNotifier {
         _bottomNavCustomIntensity = _bottomNavAnimationIntensity;
       }
     }
+    _appearance = _appearance.resetNavigationStyle();
     notifyListeners();
     return _persistBottomNavEffects();
   }
@@ -834,28 +927,36 @@ class ThemeProvider extends ChangeNotifier {
     final mode = _bottomNavPerformanceMode.storageValue;
     final intensity = _bottomNavAnimationIntensity;
     final custom = _bottomNavCustomIntensity;
-    final write = (_bottomNavEffectWrites ?? Future<void>.value()).then((_) async {
-      try {
-        final prefs = await AppPreferencesStore.getInstance();
-        final results = [
-          await prefs.setString(_bottomNavPerformanceModeKey, mode),
-          await prefs.setDouble(_bottomNavAnimationIntensityKey, intensity),
-          await prefs.setDouble('bottom_nav_custom_intensity', custom),
-        ];
-        return results.every((saved) => saved);
-      } catch (_) {
-        return false;
-      }
+    final clear = _bottomNavClearMaterial;
+    return _queueCardAppearanceWrite((prefs) async {
+      final results = [
+        await prefs.setString(_bottomNavPerformanceModeKey, mode),
+        await prefs.setDouble(_bottomNavAnimationIntensityKey, intensity),
+        await prefs.setDouble('bottom_nav_custom_intensity', custom),
+        await prefs.setBool('bottom_nav_clear_material', clear),
+      ];
+      return results.every((saved) => saved) &&
+          await _saveManualNavigation(prefs);
     });
-    _bottomNavEffectWrites = write.then((_) {});
-    return write;
   }
 
   Future<void> setBottomNavClearMaterial(bool value) async {
+    _useEffectiveNavigation();
     _bottomNavClearMaterial = value;
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setBool('bottom_nav_clear_material', value);
+    _appearance = _appearance.resetNavigationStyle();
     notifyListeners();
+    if (!await _persistBottomNavEffects()) throw const FileSystemException('导航栏材质未能保存');
+  }
+
+  void _useEffectiveNavigation() {
+    _bottomNavAnimationIntensity = bottomNavAnimationIntensity;
+    _bottomNavPerformanceMode = bottomNavPerformanceMode;
+    _bottomNavClearMaterial = bottomNavClearMaterial;
+  }
+
+  Future<bool> _saveManualNavigation(AppPreferencesStore prefs) async {
+    if (_navigationGroup == null) return true;
+    return _writeCurrentAppearance(prefs, _appearance.resetNavigationStyle());
   }
 
   Future<void> dismissBottomNavSetupHint() async {
@@ -895,7 +996,9 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   Future<bool> setFrostedGlass(bool value) {
-    final strength = value && _frostedGlassStrength == 0 ? 1.0 : _frostedGlassStrength;
+    _useEffectiveMaterial();
+    final strength =
+        value && _frostedGlassStrength == 0 ? 1.0 : _frostedGlassStrength;
     final oldMode = _frostedGlassPerformanceMode;
     final changed = _frostedGlass != value || _frostedGlassStrength != strength;
     _frostedGlass = value;
@@ -908,11 +1011,14 @@ class ThemeProvider extends ChangeNotifier {
       _frostedGlassCustomStrength = _frostedGlass ? _frostedGlassStrength : 0.0;
       _customComponentOpacityLevel = _roundPercent(componentOpacityLevel);
     }
+    _previewMaterial(includeOpacity: false);
     if (changed || oldMode != _frostedGlassPerformanceMode) notifyListeners();
     return _persistFrostedGlass();
   }
 
-  Future<bool> setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode mode) {
+  Future<bool> setFrostedGlassPerformanceMode(
+      FrostedGlassPerformanceMode mode) {
+    _useEffectiveMaterial();
     _frostedGlassPerformanceMode = mode;
     final (strength, opacityLevel) = _frostedGlassPreset(mode);
     final enabled = switch (mode) {
@@ -926,6 +1032,7 @@ class ThemeProvider extends ChangeNotifier {
     _frostedGlass = enabled;
     _frostedGlassStrength = strength;
     _componentOpacity = opacity;
+    _previewMaterial(includeOpacity: true);
     notifyListeners();
     return _persistFrostedGlass(includeOpacity: true);
   }
@@ -938,6 +1045,7 @@ class ThemeProvider extends ChangeNotifier {
   /// 同值也允许保存，供存储失败后重试；设置页可从关闭状态向上拖动启用模糊。
   Future<bool> setFrostedGlassStrength(double value) {
     if (!value.isFinite) return Future<bool>.value(false);
+    _useEffectiveMaterial();
     final strength = (value.clamp(0.0, 1.0) * 100).round() / 100;
     final enabled = strength > 0;
     final oldMode = _frostedGlassPerformanceMode;
@@ -952,11 +1060,14 @@ class ThemeProvider extends ChangeNotifier {
       _frostedGlassCustomStrength = _frostedGlass ? _frostedGlassStrength : 0.0;
       _customComponentOpacityLevel = _roundPercent(componentOpacityLevel);
     }
+    _previewMaterial(includeOpacity: false);
     if (changed || oldMode != _frostedGlassPerformanceMode) notifyListeners();
     return _persistFrostedGlass();
   }
 
-  Future<bool> _persistFrostedGlass({bool includeEnabled = true, bool includeOpacity = false}) {
+  Future<bool> _persistFrostedGlass(
+      {bool includeEnabled = true, bool includeOpacity = false}) {
+    final brightness = effectiveBrightness;
     final mode = _frostedGlassPerformanceMode.storageValue;
     final enabled = _frostedGlass;
     final strength = _frostedGlassStrength;
@@ -972,49 +1083,383 @@ class ThemeProvider extends ChangeNotifier {
         if (includeEnabled) await prefs.setBool(_frostedGlassKey, enabled),
         if (includeOpacity) await prefs.setDouble(_componentOpacityKey, opacity),
       ];
-      return results.every((saved) => saved);
+      return results.every((saved) => saved) &&
+          await _saveManualMaterial(prefs, brightness, {
+            'frostedGlass': {'enabled': enabled, 'strength': strength},
+            if (includeOpacity) 'componentOpacity': opacity,
+          });
     });
   }
 
   Future<bool> _queueCardAppearanceWrite(
       Future<bool> Function(AppPreferencesStore) save) {
-    final write = (_cardAppearanceWrites ?? Future<void>.value())
-        .then((_) async {
-      try {
-        final prefs = await AppPreferencesStore.getInstance();
-        return await save(prefs);
-      } catch (_) {
-        return false;
-      }
+    return _queueAppearanceOperation(save).catchError((_) => false);
+  }
+
+  Future<T> _queueAppearanceOperation<T>(
+      Future<T> Function(AppPreferencesStore) action) {
+    final operation =
+        (_cardAppearanceWrites ?? Future<void>.value()).then((_) async {
+      final prefs = await AppPreferencesStore.getInstance();
+      _readThemePreferences(prefs);
+      return action(prefs);
     });
-    _cardAppearanceWrites = write.then((_) {});
-    return write;
+    _cardAppearanceWrites =
+        operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return operation;
   }
 
-  Future<void> clearBackground() async {
-    final oldPortrait = _backgroundImage;
-    final oldLandscape = _landscapeBackgroundImage;
-
-    _backgroundImage = null;
-    _landscapeBackgroundImage = null;
-    _backgroundFillScreen = false;
-    _landscapeBackgroundFillScreen = false;
-    _backgroundMode = AppBackgroundMode.clean;
-
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.remove(_backgroundImageKey);
-    await prefs.remove(_landscapeBackgroundImageKey);
-    await prefs.remove(_backgroundFillScreenKey);
-    await prefs.remove(_landscapeBackgroundFillScreenKey);
-    await prefs.setString(
-      _backgroundModeKey,
-      _backgroundModeToString(_backgroundMode),
-    );
-    notifyListeners();
-
-    await _tryDeleteLocalManagedFile(oldPortrait);
-    await _tryDeleteLocalManagedFile(oldLandscape);
+  void _useEffectiveMaterial() {
+    if (_activeMaterial == null) return;
+    _componentOpacity = componentOpacity;
+    _frostedGlass = _activeMaterial!['frostedGlass']['enabled'] as bool;
+    _frostedGlassStrength = frostedGlassStrength;
   }
+
+  void _previewMaterial({required bool includeOpacity}) {
+    _appearance = _appearance.patchMaterial(effectiveBrightness, {
+      'frostedGlass': {
+        'enabled': _frostedGlass,
+        'strength': _frostedGlassStrength
+      },
+      if (includeOpacity) 'componentOpacity': _componentOpacity,
+    });
+  }
+
+  Future<bool> _saveManualMaterial(AppPreferencesStore prefs, Brightness mode,
+      Map<String, dynamic> patch) async {
+    if (_materialGroup == null) return true;
+    return _writeCurrentAppearance(
+        prefs, _appearance.patchMaterial(mode, patch));
+  }
+
+  ThemeAppearance get appearance => _appearance;
+  bool get hasPreviousAppearance => _previousAppearance != null;
+  bool get hasThemeColors => _appearance.group(ThemeGroup.colors) != null;
+  String? get themeStorageWarning => _themeStorageWarning;
+  Brightness get effectiveBrightness => _followSystem
+      ? WidgetsBinding.instance.platformDispatcher.platformBrightness
+      : _isDarkMode
+          ? Brightness.dark
+          : Brightness.light;
+  String get _appearanceMode =>
+      effectiveBrightness == Brightness.dark ? 'dark' : 'light';
+  Map<String, dynamic>? get _materialGroup =>
+      _appearance.group(ThemeGroup.material);
+  Map<String, dynamic>? get _activeMaterial =>
+      _materialGroup?[_appearanceMode] as Map<String, dynamic>?;
+  Map<String, dynamic>? get _wallpaperGroup =>
+      _appearance.group(ThemeGroup.wallpapers);
+  Map<String, dynamic>? get _legacyWallpaper =>
+      _wallpaperGroup?['legacy'] as Map<String, dynamic>?;
+  Map<String, dynamic>? get _navigationGroup =>
+      _appearance.group(ThemeGroup.navigation);
+  Map<String, dynamic>? get _navigationMotion =>
+      _navigationGroup?['motion'] as Map<String, dynamic>?;
+  bool get usesThemeWallpapers =>
+      _wallpaperGroup != null && _legacyWallpaper == null;
+  bool get canCustomizeCardMaterial =>
+      shouldShowCustomBackground || (_materialGroup != null && _materialGroup!['legacy'] != true);
+
+  Map<String, dynamic>? get themeWallpaper {
+    return themeWallpaperFor();
+  }
+
+  Map<String, dynamic>? themeWallpaperFor({bool secondary = false}) {
+    if (!usesThemeWallpapers) return null;
+    final slots = _wallpaperGroup![_appearanceMode] as Map;
+    final slot = switch (secondary ? -1 : currentHomeTabIndex.value) {
+      0 => 'home',
+      2 => 'schedule',
+      4 => 'me',
+      _ => 'global'
+    };
+    return (slots[slot] ?? slots['global']) as Map<String, dynamic>?;
+  }
+
+  ThemeData buildAppTheme(Brightness brightness) =>
+      _appearance.buildTheme(brightness);
+
+  void _readThemePreferences(AppPreferencesStore prefs) {
+    if (_appearanceLoaded) return;
+    final current = prefs.getString(appearanceKey);
+    final previous = prefs.getString(previousAppearanceKey);
+    _appearance = current == null
+        ? const ThemeAppearance.empty()
+        : ThemeAppearance(jsonDecode(current) as Map<String, dynamic>);
+    _previousAppearance = previous == null
+        ? null
+        : ThemeAppearance(jsonDecode(previous) as Map<String, dynamic>);
+    _appearanceLoaded = true;
+  }
+
+  void _onThemeTabChanged() {
+    if (!usesThemeWallpapers) return;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_disposed) notifyListeners();
+      });
+    } else {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    if (_followSystem && (_materialGroup != null || usesThemeWallpapers)) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
+    currentHomeTabIndex.removeListener(_onThemeTabChanged);
+    super.dispose();
+  }
+
+  ThemeAppearance _snapshotAppearance() => ThemeAppearance({
+        ..._appearance.data,
+        if (_wallpaperGroup == null)
+          'wallpapers': {
+            'source': null,
+            'legacy': {
+              'mode': _backgroundMode.name,
+              'portrait': _backgroundImage,
+              'landscape': _landscapeBackgroundImage,
+              'portraitFill': _backgroundFillScreen,
+              'landscapeFill': _landscapeBackgroundFillScreen,
+              'blur': _backgroundBlur,
+            }
+          },
+        if (_materialGroup == null)
+          'material': {
+            'source': null,
+            'legacy': true,
+            for (final mode in ['light', 'dark'])
+              mode: {
+                'componentOpacity': _componentOpacity,
+                'frostedGlass': {
+                  'enabled': _frostedGlass,
+                  'strength': _frostedGlassStrength
+                },
+              }
+          },
+        'navigation': {
+          'source': null,
+          ...?_navigationGroup,
+          'style': bottomNavStyle.storageValue,
+          'icons': _navigationGroup?['icons'] ?? <String, dynamic>{},
+          'iconTint': _navigationGroup?['iconTint'] ?? 'template',
+          'motion': {
+            'intensity': bottomNavAnimationIntensity,
+            'performanceMode': bottomNavPerformanceMode.storageValue,
+            'clearMaterial': bottomNavClearMaterial
+          },
+        },
+      });
+
+  Future<List<InstalledTheme>> installedThemes() =>
+      _queueAppearanceOperation((prefs) async {
+        await _initializeThemeFiles(prefs);
+        return themePacks.list();
+      });
+
+  Future<InstalledTheme> installTheme(PreparedThemePack pack) =>
+      _queueAppearanceOperation((prefs) async {
+        await _initializeThemeFiles(prefs);
+        return themePacks.install(pack);
+      });
+
+  Future<void> applyInstalledTheme(
+      InstalledTheme theme, Set<ThemeGroup> groups) {
+    final selected =
+        Set<ThemeGroup>.of(groups).intersection(ThemeGroup.applicable).intersection(theme.manifest.groups);
+    return _queueAppearanceOperation((prefs) async {
+      if (!_isLoaded) {
+        _applyStoredPreferences(prefs);
+        _isLoaded = true;
+      }
+      await _initializeThemeFiles(prefs);
+      await _commitAppearance(
+          prefs,
+          _appearance.apply(theme.manifest, selected, theme.directory),
+          _snapshotAppearance());
+      await _cleanupThemeFiles();
+    });
+  }
+
+  Future<void> restorePreviousAppearance() =>
+      _queueAppearanceOperation((prefs) async {
+        final previous = _previousAppearance;
+        if (previous == null) return;
+        await _commitAppearance(prefs, previous, _snapshotAppearance());
+        await _cleanupThemeFiles();
+      });
+
+  Future<void> restoreManualAppearance() =>
+      _queueAppearanceOperation((prefs) async {
+        await _commitAppearance(
+            prefs, const ThemeAppearance.empty(), _snapshotAppearance());
+        await _cleanupThemeFiles();
+      });
+
+  Future<void> deleteInstalledTheme(String id) =>
+      _queueAppearanceOperation((prefs) async {
+        await themePacks.remove(id);
+        await _cleanupThemeFiles();
+        if (!_disposed) notifyListeners();
+      });
+
+  Future<void> retryThemeFileCleanup() =>
+      _queueAppearanceOperation((prefs) async {
+        await _initializeThemeFiles(prefs);
+        await _cleanupThemeFiles();
+      });
+
+  Future<void> _commitAppearance(AppPreferencesStore prefs,
+      ThemeAppearance next, ThemeAppearance previous) async {
+    final oldPrevious = prefs.getString(previousAppearanceKey);
+    if (!await prefs.setString(
+        previousAppearanceKey, jsonEncode(previous.data))) {
+      throw const FileSystemException('上一个外观未能保存');
+    }
+    var committed = false;
+    try {
+      committed = await prefs.setString(appearanceKey, jsonEncode(next.data));
+    } finally {
+      if (!committed) {
+        if (oldPrevious == null) {
+          await prefs.remove(previousAppearanceKey);
+        } else {
+          await prefs.setString(previousAppearanceKey, oldPrevious);
+        }
+      }
+    }
+    if (!committed) throw const FileSystemException('当前外观未能保存');
+    _appearance = next;
+    _previousAppearance = previous;
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<bool> _writeCurrentAppearance(
+      AppPreferencesStore prefs, ThemeAppearance next) async {
+    if (!await prefs.setString(appearanceKey, jsonEncode(next.data))) {
+      return false;
+    }
+    _appearance = next;
+    if (!_disposed) notifyListeners();
+    return true;
+  }
+
+  Iterable<String> get _protectedThemePaths => [
+        ..._appearance.paths,
+        ...?_previousAppearance?.paths,
+        if (_backgroundImage != null) _backgroundImage!,
+        if (_landscapeBackgroundImage != null) _landscapeBackgroundImage!,
+      ];
+
+  Future<void> _cleanupThemeFiles(
+      {List<String> legacyCandidates = const []}) async {
+    if (!_themeFilesInitialized) return;
+    try {
+      await themePacks.cleanup(
+          retainedPaths: _protectedThemePaths,
+          retainedVersions: [
+            ..._appearance.versions,
+            ...?_previousAppearance?.versions
+          ]);
+      final retained = _protectedThemePaths.map(path.normalize).toSet();
+      for (final old in legacyCandidates) {
+        if (isLocalFileBackground(old) &&
+            !retained.contains(path.normalize(old))) {
+          await themePacks.removeLegacyWallpaper(old);
+        }
+      }
+      _themeStorageWarning = null;
+    } on FileSystemException {
+      _themeStorageWarning = '外观已保存，部分旧主题文件未能清理';
+    }
+    if (!_disposed) notifyListeners();
+  }
+
+  void _startThemeFileMaintenance() {
+    if (_appearance.data.isEmpty &&
+        ![_backgroundImage, _landscapeBackgroundImage].any((image) => image != null && isLocalFileBackground(image))) {
+      return;
+    }
+    unawaited(_queueAppearanceOperation((prefs) => _initializeThemeFiles(prefs))
+        .catchError((Object error) {
+      if (_appearance.data.isNotEmpty) {
+        _themeStorageWarning = '本机主题文件整理未完成，请在主题设置中重试';
+        if (!_disposed) notifyListeners();
+      }
+    }));
+  }
+
+  Future<void> _initializeThemeFiles(AppPreferencesStore prefs) async {
+    if (_themeFilesInitialized) return;
+    await themePacks.clearStaging();
+    for (final pair in [
+      (_backgroundImageKey, _backgroundImage),
+      (_landscapeBackgroundImageKey, _landscapeBackgroundImage)
+    ]) {
+      final old = pair.$2;
+      if (old == null || !isLocalFileBackground(old)) continue;
+      final source =
+          old.startsWith('file://') ? File.fromUri(Uri.parse(old)).path : old;
+      final adopted = await themePacks.adoptWallpaper(source);
+      if (adopted == source) continue;
+      if (!await prefs.setString(pair.$1, adopted)) {
+        throw const FileSystemException('壁纸路径未能保存');
+      }
+      if (pair.$1 == _backgroundImageKey) {
+        _backgroundImage = adopted;
+      } else {
+        _landscapeBackgroundImage = adopted;
+      }
+      _appearance = _appearance.replacePath(old, adopted);
+      _previousAppearance = _previousAppearance?.replacePath(old, adopted);
+      if (_appearance.data.isNotEmpty &&
+          !await prefs.setString(appearanceKey, jsonEncode(_appearance.data))) {
+        throw const FileSystemException('迁移后的当前外观未能保存');
+      }
+      if (_previousAppearance != null &&
+          !await prefs.setString(
+              previousAppearanceKey, jsonEncode(_previousAppearance!.data))) {
+        throw const FileSystemException('迁移后的上一个外观未能保存');
+      }
+      await themePacks.removeLegacyWallpaper(source);
+    }
+    _themeFilesInitialized = true;
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<void> clearBackground() => _queueAppearanceOperation((prefs) async {
+        final old = [
+          if (_backgroundImage != null) _backgroundImage!,
+          if (_landscapeBackgroundImage != null) _landscapeBackgroundImage!
+        ];
+        final results = [
+          await prefs.remove(_backgroundImageKey),
+          await prefs.remove(_landscapeBackgroundImageKey),
+          await prefs.remove(_backgroundFillScreenKey),
+          await prefs.remove(_landscapeBackgroundFillScreenKey),
+          await prefs.setString(_backgroundModeKey, 'clean'),
+        ];
+        if (!results.every((value) => value)) {
+          throw const FileSystemException('背景偏好未能保存');
+        }
+        _backgroundImage = null;
+        _landscapeBackgroundImage = null;
+        _backgroundFillScreen = false;
+        _landscapeBackgroundFillScreen = false;
+        _backgroundMode = AppBackgroundMode.clean;
+        await _clearWallpaperOverride(prefs);
+        await _cleanupThemeFiles(legacyCandidates: old);
+      });
 
   /// 旧方法，仅保留兼容签名。内部同步写新 key。
   Future<void> setStartOnTimetable(bool v) async {

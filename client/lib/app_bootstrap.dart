@@ -68,7 +68,6 @@ import 'screens/notifications_screen.dart';
 import 'screens/feedback/feedback_detail_screen.dart';
 import 'screens/team/team_recruitment_detail_screen.dart';
 import 'services/course_reminder_service.dart';
-import 'theme/app_theme.dart';
 import 'config/api_constants.dart';
 import 'config/private_chat_policy.dart';
 import 'utils/app_navigator.dart';
@@ -1964,7 +1963,7 @@ class _AppContent extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      theme: AppTheme.lightTheme.copyWith(
+      theme: themeProvider.buildAppTheme(Brightness.light).copyWith(
         pageTransitionsTheme: PageTransitionsTheme(
           builders: {
             TargetPlatform.android: themeProvider.predictiveBack
@@ -1972,13 +1971,12 @@ class _AppContent extends StatelessWidget {
                 : const FadeUpwardsPageTransitionsBuilder(),
           },
         ),
-        // 简洁模式下把全局 Scaffold 底色统一为暖白，覆盖所有走主题默认底色的页面。
-        // 自定义背景模式与暗色模式不受影响（null = 沿用 ColorScheme 默认）。
-        scaffoldBackgroundColor: themeProvider.isCleanBackgroundMode
+        // 没有主题配色时保留简洁模式暖白；其余路径沿用生成的 ThemeData。
+        scaffoldBackgroundColor: !themeProvider.hasThemeColors && themeProvider.isCleanBackgroundMode
             ? kCleanWarmBackgroundLight
             : null,
       ),
-      darkTheme: AppTheme.darkTheme.copyWith(
+      darkTheme: themeProvider.buildAppTheme(Brightness.dark).copyWith(
         pageTransitionsTheme: PageTransitionsTheme(
           builders: {
             TargetPlatform.android: themeProvider.predictiveBack

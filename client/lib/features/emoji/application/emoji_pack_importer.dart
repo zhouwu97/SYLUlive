@@ -1,13 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:archive/archive.dart' hide ZLibDecoder;
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as image;
 import 'package:path/path.dart' as path;
+
+import '../../../utils/verified_zip_entry.dart';
 
 import '../domain/emoji_feature_flags.dart';
 import '../domain/emoji_local_id.dart';
@@ -320,39 +321,5 @@ class EmojiPackImporter {
         .validate();
   }
 
-  static Uint8List _extract(ZipFileHeader entry) {
-    final raw = entry.file!.getStream(decompress: false).toUint8List();
-    final sink = _BoundedSink(entry.uncompressedSize);
-    if (entry.compressionMethod == 0) {
-      sink.add(raw);
-    } else {
-      final decoder = ZLibDecoder(raw: true).startChunkedConversion(sink);
-      for (var offset = 0; offset < raw.length; offset += 4096) {
-        decoder.add(raw.sublist(offset, min(raw.length, offset + 4096)));
-      }
-      decoder.close();
-    }
-    final bytes = sink.bytes.takeBytes();
-    if (bytes.length != entry.uncompressedSize ||
-        getCrc32(bytes) != entry.crc32) {
-      throw const FormatException('ZIP 内容长度或 CRC 校验失败');
-    }
-    return bytes;
-  }
-}
-
-class _BoundedSink extends ByteConversionSinkBase {
-  _BoundedSink(this.limit);
-  final int limit;
-  final bytes = BytesBuilder(copy: false);
-  @override
-  void add(List<int> chunk) {
-    if (bytes.length + chunk.length > limit) {
-      throw const FormatException('ZIP 实际解压大小超出声明');
-    }
-    bytes.add(chunk);
-  }
-
-  @override
-  void close() {}
+  static Uint8List _extract(ZipFileHeader entry) => readVerifiedZipEntry(entry);
 }

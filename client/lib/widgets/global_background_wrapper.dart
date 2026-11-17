@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
+import '../features/theme_pack/themed_wallpaper_layer.dart';
+import '../theme/app_theme_tokens.dart';
 import '../services/wallpaper_prefetch_service.dart';
 
 final GlobalKey<BackgroundWrapperState> backgroundWrapperKey =
@@ -71,9 +73,14 @@ class CustomBackgroundLayer extends StatelessWidget {
     if (SharedPageBackground.of(context)) return const SizedBox.expand();
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final layer = themeProvider.shouldShowCustomBackground
+    final layer = themeProvider.usesThemeWallpapers
+        ? ThemedWallpaperLayer(settings: themeProvider.themeWallpaperFor(
+            secondary: ModalRoute.of(context)?.isFirst == false))
+        : themeProvider.shouldShowCustomBackground
         ? _buildBackgroundImageLayer(context, themeProvider, isDark)
-        : _buildCleanBackground(isDark);
+        : themeProvider.hasThemeColors
+            ? ColoredBox(color: AppThemeTokens.of(context).background)
+            : _buildCleanBackground(isDark);
     final canvas = canvasSize;
     if (canvas == null) return layer;
     return ClipRect(

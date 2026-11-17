@@ -44,6 +44,12 @@ Widget _app(ThemeProvider theme, {double scale = 1}) =>
 
 final _selector = find.byKey(const ValueKey('appearance-theme-mode'));
 
+Future<void> _showSelector(WidgetTester tester) async {
+  await tester.scrollUntilVisible(_selector, 240,
+      scrollable: find.byType(Scrollable).first);
+  await tester.pumpAndSettle();
+}
+
 void _expectSelection(WidgetTester tester, ThemeMode mode) {
   expect(
     tester.widget<CampusSegmentedControl<ThemeMode>>(_selector).selectedValue,
@@ -93,6 +99,7 @@ void main() {
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
     await tester.pumpWidget(_app(theme));
     await tester.pumpAndSettle();
+    await _showSelector(tester);
     _expectSelection(tester, ThemeMode.system);
 
     for (final (label, mode) in [
@@ -119,6 +126,7 @@ void main() {
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
     await tester.pumpWidget(_app(theme));
     await tester.pumpAndSettle();
+    await _showSelector(tester);
     for (final mode in ThemeMode.values) {
       await theme.setThemeMode(mode);
       for (final brightness in Brightness.values) {
@@ -147,6 +155,7 @@ void main() {
     addTearDown(theme.dispose);
     await tester.pumpWidget(_app(theme));
     await tester.pumpAndSettle();
+    await _showSelector(tester);
     for (final (label, mode, key) in [
       ('浅色模式', ThemeMode.light, LogicalKeyboardKey.enter),
       ('深色模式', ThemeMode.dark, LogicalKeyboardKey.space),
@@ -156,6 +165,7 @@ void main() {
       await tester.pump();
       await tester.sendKeyEvent(key);
       await tester.pumpAndSettle();
+      await _showSelector(tester);
       _expectSelection(tester, mode);
     }
     expect(tester.takeException(), isNull);
@@ -168,6 +178,7 @@ void main() {
     addTearDown(theme.dispose);
     await tester.pumpWidget(_app(theme));
     await tester.pumpAndSettle();
+    await _showSelector(tester);
     await _choose(tester, '深色模式');
     expect(find.text('配色已切换，但未能保存，请重试'), findsOneWidget);
     store.fail = false;
@@ -187,6 +198,7 @@ void main() {
     addTearDown(theme.dispose);
     await tester.pumpWidget(_app(theme));
     await tester.pumpAndSettle();
+    await _showSelector(tester);
     await _choose(tester, '深色模式');
     await tester.pumpWidget(const MaterialApp(home: Text('已离开设置')));
     pending.complete();
@@ -204,6 +216,7 @@ void main() {
     addTearDown(theme.dispose);
     await tester.pumpWidget(_app(theme));
     await tester.pumpAndSettle();
+    await _showSelector(tester);
     await _choose(tester, '深色模式');
     store.fail = false;
     await _choose(tester, '浅色模式');
@@ -236,6 +249,7 @@ void main() {
         child: _app(theme, scale: scale),
       ));
       await tester.pumpAndSettle();
+      await _showSelector(tester);
       _expectSelection(tester, mode);
       for (final label in ['跟随系统', '浅色模式', '深色模式']) {
         expect(find.text(label).hitTestable(), findsOneWidget);

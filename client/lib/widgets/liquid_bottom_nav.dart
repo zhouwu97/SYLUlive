@@ -10,6 +10,7 @@ import 'liquid_glass/liquid_glass_renderer.dart';
 import 'liquid_glass/liquid_glass_dynamics.dart';
 import 'liquid_glass/liquid_glass_tilt.dart';
 import 'navigation_dock_layout.dart';
+import '../features/theme_pack/theme_navigation_images.dart';
 export 'liquid_glass/bottom_nav_controller.dart';
 export 'liquid_glass/liquid_glass_scene.dart';
 
@@ -39,6 +40,8 @@ class LiquidBottomNav extends StatefulWidget {
     this.shaderEnabled = true,
     this.accent,
     this.axis = Axis.horizontal,
+    this.themeImages = const {},
+    this.originalIcons = false,
   });
   final int currentIndex;
   final ValueNotifier<double> visualIndexListenable;
@@ -54,6 +57,8 @@ class LiquidBottomNav extends StatefulWidget {
   final bool shaderEnabled;
   final Color? accent;
   final Axis axis;
+  final ThemeNavigationImages themeImages;
+  final bool originalIcons;
   @override
   State<LiquidBottomNav> createState() => _LiquidBottomNavState();
 }
@@ -423,6 +428,8 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
                                               .8),
                                   labels: LiquidBottomNav.labels,
                                   icons: LiquidBottomNav.icons,
+                                  themeImages: widget.themeImages,
+                                  originalIcons: widget.originalIcons,
                                   badges: widget.badges,
                                   accent: widget.accent ??
                                       AppThemeTokens.of(context).navSelected,

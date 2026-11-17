@@ -6,15 +6,26 @@ class NavigationDockLayout extends StatelessWidget {
     super.key,
     required this.axis,
     required this.child,
+    this.docked = false,
   });
 
   static const sideWidth = 112.0;
   final Axis axis;
   final Widget child;
+  final bool docked;
 
   @override
   Widget build(BuildContext context) {
     final vertical = axis == Axis.vertical;
+    if (docked) {
+      return SafeArea(
+          top: vertical,
+          child: SizedBox(
+            width: vertical ? 80 : double.infinity,
+            height: vertical ? double.infinity : 64,
+            child: child,
+          ));
+    }
     return SafeArea(
       top: vertical,
       right: !vertical,

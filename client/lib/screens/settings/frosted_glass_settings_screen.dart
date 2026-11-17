@@ -29,7 +29,7 @@ class _FrostedGlassSettingsScreenState
   Future<void> _saveGlass(Future<bool> Function(ThemeProvider) save,
       {bool includesOpacity = false}) async {
     final theme = context.read<ThemeProvider>();
-    if (!theme.shouldShowCustomBackground) return;
+    if (!theme.canCustomizeCardMaterial) return;
     final generation = ++_glassGeneration;
     _glassRetryIncludesOpacity |= includesOpacity;
     var saved = await save(theme);
@@ -50,7 +50,7 @@ class _FrostedGlassSettingsScreenState
 
   Future<void> _setOpacity(double value) async {
     final theme = context.read<ThemeProvider>();
-    if (!theme.shouldShowCustomBackground) return;
+    if (!theme.canCustomizeCardMaterial) return;
     final generation = ++_opacityGeneration;
     final saved = await theme.setComponentOpacityLevel(value);
     if (mounted &&
@@ -64,7 +64,7 @@ class _FrostedGlassSettingsScreenState
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeProvider>();
     final mode = theme.frostedGlassPerformanceMode;
-    final customBackground = theme.shouldShowCustomBackground;
+    final customBackground = theme.canCustomizeCardMaterial;
     return SettingsPageScaffold(
       title: '卡片外观',
       children: [

@@ -41,6 +41,13 @@ class _SearchAuth extends ChangeNotifier implements AuthProvider {
 
 class _SearchTheme extends ChangeNotifier implements ThemeProvider {
   @override
+  bool get usesThemeWallpapers => false;
+  @override
+  bool get hasThemeColors => false;
+  @override
+  bool get canCustomizeCardMaterial => false;
+
+  @override
   bool get shouldShowCustomBackground => false;
   @override
   bool get isCleanBackgroundMode => true;

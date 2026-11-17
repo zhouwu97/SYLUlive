@@ -24,6 +24,7 @@
 - 语义 Token 化，覆盖九个首批页面；
 - `.sltheme` 主题包，以及本机导入、导出、试用和回退；
 - 页面壁纸与底栏图标；
+- 单套 UI 内的页头布局、卡片样式、图片效果与装饰贴纸；
 - 自定义字体、桌面启动图标、桌面小部件跟随主题配色；
 - 主题工坊；
 - 服务端投稿、审核、目录、下载、下架；
@@ -34,11 +35,27 @@
 **不做**：
 
 - 鸿蒙端；
+- 第二套 UI 风格、任意组件树、脚本式主题；
 - 界面文案替换；
 - 付费；
 - 评论；
 - 多份外观历史，只保留"上一个外观"；
 - 工坊的撤销和重做。
+
+### 1.1 单套 UI 的完整交付边界
+
+本期只维护现有的一套共享组件和交互语义。页头模板、卡片参数和装饰属于这套 UI 的配置，不建立第二套页面实现。具体字段、范围、颜色矩阵规则和默认值只在格式契约第 2.7–2.9 节维护。
+
+| 范围 | 必须支持 | 验收边界 |
+| --- | --- | --- |
+| 九个首批页面 | 明暗 Token、字体、适用的圆角；共享内容卡片跟随 `AppCardStyle`（`cardStyle`） | 从每个入口进入真实页面；同时检查弹层、输入区、loading、empty、error、retry、权限不足和异步返回状态 |
+| 首页、校园、我 | 三种页头模板、对齐、图片区尺寸、背景与贴纸 | 共用页头呈现组件；默认不新增空白图片区；紧凑和沉浸模板不隐藏业务信息或功能入口 |
+| 课表、个人主页、AI、工具箱、设置、集市 | 各自适用的主题外观 | 课程色块保留课程语义，个人主页保留原用户封面，用户内容图片不滤色，分类和状态固定色按已确认边界保留 |
+| 顶栏、底栏、弹层、键盘上方输入区 | 跟随各自 Token 和 AppShape | 三种底栏材质都验证；液态玻璃的 shader 路径与基础路径均覆盖；不把通用卡片参数套给原生系统控件 |
+| 外观完整生命周期 | 工坊编辑 → 导出 → 本机导入／试用 → 应用 → 重启 → 恢复 → 投稿审核 → 商城下载 | 布局、材质、图片效果、贴纸位置与层次不得在任一环节丢失；按分组应用不覆盖未选分组 |
+| Android、iOS、桌面与移动网页 | 各平台支持的主题字段 | App 内自定义参数完整生效；系统图标、小部件按原有平台边界；移动网页在 P6 首批完成配色、壁纸（CSS `filter`）和字体，桌面网页维持现状 |
+
+“完整”不扩大为全仓库页面改版。首批范围外页面、原生文件选择器／裁剪器、系统权限弹窗保留平台或原有外观，不能在交付报告里写成已主题化。P0 仍只执行已经确认的 Token 迁移与门禁；新增参数的模型与持久化在 P1 完成，页头布局、装饰和卡片样式渲染在 P1.6 完成，编辑在 P2 完成。
 
 ## 2. 现状定位
 
@@ -175,6 +192,8 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
 | `theme_import_screen.dart` | 导入预览页 |
 | `installed_themes_screen.dart` | 本机主题页 |
 | `theme_section.dart` | 外观设置页中的"主题"分组 |
+| `theme_presentation.dart` | 复用正式组件渲染页头模板、页头装饰；卡片参数由 `AppTheme.build` 生成 `AppCardStyle` 扩展，按契约处理窄屏、分栏和触控边界 |
+| `themed_wallpaper_layer.dart` | 契约 2.9 的渲染时颜色矩阵（`ColorFilter.matrix`）、模糊与遮罩层，供壁纸、页头背景与工坊预览复用 |
 
 ### 4.2 codec
 
@@ -186,6 +205,7 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
   4. 读图片头部检查尺寸，再完整解码一次。
 - 遇到第一个错误就停止，返回错误码，并删除临时目录。
 - 每个读取的条目解压后调用 `ZipFile.verifyCrc32()`，返回 false 时报 `theme_zip_invalid`。`archive` 4.2.0 的 `ZipDecoder` 不会自动做这一步（它的校验代码被注释掉了）。除此之外不计算哈希。
+- 模型与资源遍历必须包含 layout、cardStyle、decorations、adjustments。它们直接纳入 formatVersion 1，不保留“只解析、不渲染”的字段；未知模板及越界参数使用既有错误码。
 
 ### 4.3 本机存储
 
@@ -193,7 +213,7 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
 <应用文档目录>/themes/
 ├── index.json                    # 已安装列表，先写 .tmp 再 rename
 ├── installed/<id>/<version>/     # 解出的 manifest 与图片，按版本分目录，安装后不再改写
-├── user/                         # 用户在外观设置里自选的壁纸
+├── user/                         # 用户在外观设置里自选的壁纸、页头背景和贴纸
 ├── drafts/<draftId>/             # 工坊草稿（P2）
 └── .staging/                     # 导入临时目录，App 启动时清空
 ```
@@ -212,15 +232,17 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
 
 **原则**：持久化保存的是"当前外观每个分组最终生效的值"，启动时直接读取这些值，不根据主题来源重新拼装。主题 ID 和版本只作为每个分组的来源标记，用于界面展示和更新提示。
 
-主题分为八个分组，各分组生效值的存放位置如下。后三个分组的应用逻辑在 P1.5 实现；P1 先实现前五个，并在数据结构中预留后三个。
+主题分为十个分组，各分组生效值的存放位置如下。font、widgets、launcherIcon 的应用逻辑在 P1.5 实现；P1 实现其余七组，并在数据结构中预留这三组。
 
 | 分组 | 包含 | 生效值存放位置 |
 | --- | --- | --- |
 | `colors` | 明暗两套的种子色、方案、Token、课程色板 | `theme_appearance_v1` |
 | `shape` | 圆角档位 | `theme_appearance_v1` |
-| `wallpapers` | 明暗两套各四个槽位的壁纸（路径、`fit`、焦点、`blur`、`scrim`） | `theme_appearance_v1` |
-| `material` | 明暗两套各自的组件透明度和毛玻璃 | `theme_appearance_v1` |
+| `wallpapers` | 明暗两套各四个槽位的壁纸（路径、`fit`、焦点、`blur`、`scrim`、adjustments） | `theme_appearance_v1` |
+| `material` | 明暗两套各自的组件透明度、毛玻璃和 cardStyle | `theme_appearance_v1` |
 | `navigation` | 底栏样式，加上五个槽位的图标和 `iconTint` | `theme_appearance_v1` |
+| `layout` | 三个页头的模板、对齐和图片区尺寸 | `theme_appearance_v1` |
+| `decoration` | 明暗两套的页头背景、图片效果和贴纸数组 | `theme_appearance_v1` |
 | `font` | 字体名称、常规体与粗体文件路径 | `theme_appearance_v1` |
 | `widgets` | 小部件是否跟随 App 主题 | 现有的小部件主题偏好 key（`widget_course_theme`、`widget_exam_theme`），取值为 `appTheme`。这是主题唯一会写入的现有 key，因为原生小部件只读这两个 key |
 | `launcherIcon` | 当前内置桌面图标 ID | 由系统组件的启用状态决定，见 5.2 节；`theme_appearance_v1` 只记录来源 |
@@ -233,8 +255,10 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
     colors:     { source, light, dark } | null,
     shape:      { source, value } | null,
     wallpapers: { source, light: {global, home, schedule, me}, dark: {...} } | null,
-    material:   { source, light: {componentOpacity, frostedGlass}, dark: {...} } | null,
+    material:   { source, light: {componentOpacity, frostedGlass, cardStyle}, dark: {...} } | null,
     navigation: { source, style, icons, iconTint } | null,
+    layout:     { source, value } | null,
+    decoration: { source, light, dark } | null,
     font:       { source, name, regular, bold } | null,
     widgets:    { source },
     launcherIcon: { source }
@@ -243,8 +267,9 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
   - `source` 的值为 `{themeId, version}`，或 null（表示默认值或用户自己设置的）。
   - `colors` 和 `shape` 为 null 时，使用 `AppPalette.defaults` 和 `standard`。
   - `wallpapers`、`material`、`navigation` 为 null 时，沿用 `ThemeProvider` 现有的偏好 key，也就是今天的行为。
-  - 不为 null 时，`ThemeProvider` 的对应 getter 返回 `theme_appearance_v1` 中的值；`material` 和 `wallpapers` 按当前生效的明暗模式（`MediaQuery.platformBrightness` 与用户的明暗设置共同决定）取 `light` 或 `dark`，系统切换明暗时立即切换。
-- **`theme_previous_v1`**：上一个外观，内容是 `theme_appearance_v1` 的完整副本。
+  - layout、decoration 为 null 时使用现有布局、无附加装饰；cardStyle 缺省时沿用组件默认样式。
+  - 不为 null 时，`ThemeProvider` 的对应 getter 返回 `theme_appearance_v1` 中的值；`material`、`wallpapers`、`decoration` 按当前生效的明暗模式（`MediaQuery.platformBrightness` 与用户的明暗设置共同决定）取 `light` 或 `dark`，系统切换明暗时立即切换。
+- **`theme_previous_v1`**：上一个外观，保存十个分组的完整生效值。快照时先解析现有偏好 key 对应的壁纸、材质和底栏值，不把 null 回退引用作为快照；后续手动修改现有 key 不得改变“上一个外观”。
 
 **主题不改写现有偏好 key**：壁纸、透明度、毛玻璃、底栏样式这些现有 key，只有用户在外观设置里手动修改时才会写入；主题的值全部存在 `theme_appearance_v1` 中。唯一的例外是 `widgets` 分组，见上表。
 
@@ -256,8 +281,9 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
    3. 按 4.3 节的规则清理不再被引用的文件。
 2. **手动修改**：
    - 用户在外观设置里改了壁纸，`wallpapers` 设为 null，回到现有的壁纸偏好，也就是用户刚设置的那张；
-   - 改了毛玻璃或透明度，`material` 设为 null，回到现有 key，也就是用户刚设置的值；
+   - 改了毛玻璃或透明度，把新值写入现有 key，并更新 material 内对应字段、清除该组 source；保留 cardStyle 和该组其他字段；
    - 改了底栏样式：把用户选的样式写入现有 key，`navigation.style` 设为 null，图标保留。`navigation.style` 为 null 时，样式读现有 key。
+   - 外观设置页的布局、卡片和装饰编辑与工坊共用参数控件；修改写入对应分组的最终值并清除 source。换页头背景时保留该页贴纸，改圆角档位时保留描边与阴影；每个分组和每个页头都有独立重置。
 3. **恢复上一个外观**：先把当前外观和 `theme_previous_v1` 互换，然后清理文件。连续点两次，会回到原来的外观。
 4. **恢复默认外观**：先保存 `theme_previous_v1`；然后把 `theme_appearance_v1` 中除 `widgets`、`launcherIcon` 以外的分组全部设为 null，外观回到现有 key 所记录的、用户自己设置过的值。
 5. **删除主题**：只把它从 `index.json` 中移除，当前外观不变。它的文件按清理规则处理：如果还被当前外观或上一个外观引用，就会保留。
@@ -284,11 +310,14 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
   - `template` 模式用 `ColorFiltered`（`BlendMode.srcIn`）着色；
   - 液态玻璃的着色器路径同样显示图片图标；
   - 语义标签沿用 `labels`。
+- **页头与卡片**：按第 1.1 节矩阵接入 `theme_presentation.dart` 与 `AppCardStyle`（`ThemeExtension`，在 `AppTheme.build` 中计算一次）。三种页头模板复用原资料、通知和操作组件，不复制业务请求与状态管理；`AppCardStyle` 只覆盖契约规定的内容卡片。
+- **图片效果与装饰**：图片效果在渲染时通过 `ColorFilter.matrix` 施加，不做解码阶段逐像素预处理；损坏图片显示资源错误提示。贴纸按契约裁切并包裹 `IgnorePointer` 与 `ExcludeSemantics` 排除命中和语义。
 
 ### 4.6 入口与页面
 
 - **外观设置页顶部的"主题"分组**：当前主题卡片、本机主题、从文件导入、导出当前外观、恢复上一个外观、恢复默认外观。商城入口在 P4 加入，工坊入口在 P2 加入。
 - **"我"页面**：新增"个性主题"入口。
+- **外观设置页**：新增布局、卡片、页头装饰分组，支持与工坊相同的参数编辑、明暗切换和分组重置；无需先导出主题才能调整本机外观。
 - **导入页的状态**：
   - 解析中；
   - 无效（显示提示、错误码和字段，以及"重新选择"）；
@@ -318,10 +347,15 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
 - **codec 表格驱动**：用内存生成的包，覆盖契约第 8 节中的每个客户端错误码，再加一条合法包；其中包括"内容能正常解压，但 CRC32 被改过"的用例，期望结果为 `theme_zip_invalid`；
 - **解压上限**：超过 96MB 时停止，并且临时目录被删除；
 - **对比度**：黑对白为 21.0，`#777777` 对白为 4.48，结果保留两位小数；每条规则都至少有一个不达标的例子。
+- **新增参数边界**：表格覆盖未知页头模板、越界尺寸、六张贴纸、非法旋转、坏装饰图及越界图片效果；合法完整包要能解析全部新增字段。
+- **颜色矩阵**：验证中性参数对应单位矩阵，亮度／对比度／饱和度矩阵系数与契约 2.9 一致；纯逻辑只在本文件测一次。
 
 **`client/test/theme_pack/theme_apply_test.dart`**：
 
 - **Provider**（每条用例结束时都重新构造 Provider，模拟重启后再断言）：
+  - 带布局、卡片、图片效果和五张贴纸的完整主题应用后重启，所有生效值及资源引用保留；只应用 B 的布局时，A 的装饰和配色不变；
+  - 应用主题后手动修改透明度，不清掉卡片样式；更换页头背景，不清掉贴纸；每组重置只影响本组；
+  - 保存上一个外观后再手动修改现有壁纸／材质 key，恢复仍回到快照时的真实生效值；
   - 先应用 A 的全部分组，再只应用 B 的壁纸，重启后是 A 的配色加上 B 的壁纸；
   - 应用主题后手动换壁纸，重启后壁纸是手动换的那张，配色仍是主题的；
   - A v1 更新到 v2 后，恢复上一个外观，回到 v1，并且 v1 的图片文件仍然存在；
@@ -333,6 +367,8 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
   - 试用期间不写任何偏好，重启后试用自然结束；
   - 用旧版本的偏好构造 Provider，外观保持不变，壁纸文件已移入 `themes/user/`。
 - **Widget**：
+  - 三个页头的三种模板、贴纸层次和卡片描边／阴影覆盖；360px 窄屏、1.5 倍字号与宽屏分栏均无溢出或操作遮挡；装饰不拦截点击和读屏；
+  - 切换主题或结束试用后，装饰与壁纸随状态更新；损坏图片显示资源错误；
   - 导入页的五个状态；
   - 试用横条：试用期间切换页签时横条始终在；点"结束"后回到原外观；点"应用"后写入偏好；
   - 重复点击"应用"只执行一次；
@@ -472,29 +508,33 @@ Kotlin 和 Swift 部分不新增单元测试，用下面的真机步骤验证。
 
 文件：`client/lib/features/theme_pack/theme_workshop_screen.dart`，以及 `theme_resolver.dart`（实现契约第 4 节的推导）。
 
-- **上半屏预览**：可以在"首页信息流 / 课表周视图 / 帖子卡片 / 设置列表"四个样例之间切换，并有明暗切换。
+- **上半屏预览**：九个首批页面均有样例，并能打开帖子／商品卡片、弹层和输入区样例；可切换明暗、正常／加载／空态／失败／权限状态。
   - 样例使用正式页面的共享组件，配上固定的假数据，不访问网络；
   - 样例放在 `theme_workshop_samples.dart` 一个文件里。
-- **下半屏分八个 Tab**：
+- **下半屏分十个 Tab**，窄屏横向滚动 Tab，编辑区支持键盘和读屏：
 
 | Tab | 内容 |
 | --- | --- |
 | 配色 | 种子色（色盘和 HEX 输入）、方案选择、"高级"折叠区中的 Token 列表（可以逐个覆盖，也可以重置）、对比度面板（列出契约第 5 节的每一组，不达标的标红并提供"自动修正"） |
 | 课表 | 色板编辑（5–12 色，可以增删）、"从种子色生成" |
-| 壁纸 | 四个槽位：选图（复用现有的裁剪流程）、焦点、`blur`、`scrim`、`fit`；暗色组提供"沿用亮色" |
-| 材质 | 透明度、毛玻璃、底栏样式、圆角档位 |
+| 壁纸 | 四个槽位：选图（复用现有的裁剪流程）、焦点、`blur`、`scrim`、`fit`，以及亮度、对比度、饱和度；暗色组提供"复制亮色设置"，复制后两组独立编辑 |
+| 材质 | 透明度、毛玻璃、底栏样式、圆角档位；内容卡片的描边宽度和阴影档位 |
+| 布局 | 首页、校园、我分别选标准／紧凑／沉浸页头，调整对齐和图片区高度、宽度 |
+| 装饰 | 三个页头各自选择背景图、裁剪焦点和图片效果；最多五张贴纸，可拖动、缩放、旋转、调整前后层次、替换和删除；另有数值输入与重置入口 |
 | 图标 | 五个槽位，每个两态；选图后自动居中裁成正方形，并缩放到 192px；`template`／`original` 切换 |
 | 字体 | 从文件选择常规体，可选粗体；选择字体许可；预览区显示"正文 / 标题 / 数字与英文"三行样例 |
 | 桌面图标 | 从内置图标中选一个（可以不选）；可选上传一张自定义图标，预览中按圆形、圆角方形两种遮罩显示 |
 | 小部件 | 只读预览：按契约 3.1 节的映射，显示课表和考试小部件在亮色、暗色下的效果 |
 
 - **起点**：可以选"当前外观"、某个已安装主题，或"默认"。
+- **直接编辑**：预览点选页头／卡片后定位到对应 Tab 和参数；贴纸操作仅在工坊编辑态响应手势，实际页面不响应。拖动时先更新预览，结束后写入草稿；键盘、数值输入和读屏操作能完成同样的编辑。
+- **重置与切换**：支持重置单个参数、单个页头或整个分组。切换样例、明暗和 Tab 不丢编辑值；复制亮色到暗色是一次复制，不建立隐藏联动。离开工坊遇到草稿保存失败时，保留内容并提供重试和明确放弃入口。
 - **制作指南**：顶栏的"制作指南"打开一个静态页面，内容是制作细则第 1–5 节。
 - **草稿**：编辑停顿 800ms 后自动保存到 `drafts/<draftId>/`。保存失败时，顶栏显示"未保存"和"重试"。
 - **导出**：
   1. 用 `RepaintBoundary` 离屏渲染首页样例，亮色和暗色各一张，尺寸 1080×2340，编码为 PNG；
   2. 长边超过 2560 的壁纸，缩小后编码为 JPEG（质量 88）；
-  3. 写入完整的 tokens，然后打包；
+  3. 写入完整的 tokens、布局、卡片样式、图片效果和装饰资源引用，然后打包；原图保持未施加 adjustments 的状态，避免导入后重复处理；
   4. 用 codec 再解析一遍，并运行对比度检查。不达标时停留在工坊，并定位到对应的 Token。
 
 ### 6.2 验证标准
@@ -510,9 +550,11 @@ Kotlin 和 Swift 部分不新增单元测试，用下面的真机步骤验证。
 - **草稿**：保存后再读取，内容一致。
 - **Widget**：
   - 修改种子色后，预览跟着变化；
-  - 在 360×800 视口、1.5 倍字号下，五个 Tab 都没有溢出。
+  - 在 360×800 视口、1.5 倍字号下，十个 Tab 的编辑内容均可访问，没有溢出；
+  - 点选页头／卡片定位编辑区，贴纸拖动与数值输入改变同一组值，调整层次后预览跟随；
+  - 切换样例与明暗不丢修改，复制后独立编辑，单项重置不影响同页其他贴纸；草稿保存失败保留编辑并能重试。
 
-**手工验收**：按制作细则第 9 节的参数做出"海盐蓝"，导出后在另一台设备上导入，外观一致；杀掉进程后草稿能恢复。
+**手工验收**：按制作细则第 9 节的参数做出"海盐蓝"，再用同一套组件做一个沉浸页头、卡片覆盖、背景效果和五张贴纸的完整主题。导出后在另一台设备上导入，九页明暗渲染与工坊一致；试用、应用后重启、恢复上一个外观均完成；杀掉进程后草稿能恢复。参数解析和图片算法不在本文件重复测试。
 
 ## 7. P3 服务端
 
@@ -619,7 +661,7 @@ Kotlin 和 Swift 部分不新增单元测试，用下面的真机步骤验证。
 | --- | --- | --- | --- |
 | GET | `/api/themes` | 公开 | 查询参数：`sort`（取值为 `latest`、`popular`、`official`）、`tag`、`q`、`ids`、`cursor`。每页 20 条；`popular` 按 `Downloads` 降序；`ids` 用于批量检查更新，最多 50 个；带 ETag |
 | GET | `/api/themes/:familyId` | 公开 | 详情 |
-| GET | `/api/themes/:familyId/versions/:version/package` | 公开 | 指定版本的规范包，支持 Range，`ETag` 为 sha256，`Cache-Control: public, max-age=31536000, immutable`。可以下载的条件：该版本状态为 `approved` 或 `superseded`，并且根记录不是 `removed` 或 `withdrawn`。这样客户端读到 v1 的目录后，即使 v2 刚好审核通过，v1 的下载和断点续传也不受影响 |
+| GET | `/api/themes/:familyId/versions/:version/package` | 公开 | 指定版本的规范包，支持 Range，`ETag` 为 sha256，`Cache-Control: public, no-cache`。可以下载的条件：该版本状态为 `approved` 或 `superseded`，并且根记录不是 `removed` 或 `withdrawn`。这样客户端读到 v1 的目录后，即使 v2 刚好审核通过，v1 的下载和断点续传也不受影响；一旦作品撤回或下架，带 `If-None-Match` 的请求也立即返回 404 |
 | GET | `/api/themes/:familyId/versions/:version/preview/:mode` | 公开 | 预览图，可以下载的条件和缓存头同上 |
 | GET | `/api/users/:id/themes` | 公开 | 作者已上架的作品 |
 | POST | `/api/themes/submissions` | 登录 | multipart 表单：`package`、`idempotencyKey`，可选 `familyId`、`source` |
@@ -644,6 +686,7 @@ Kotlin 和 Swift 部分不新增单元测试，用下面的真机步骤验证。
 
 - **校验器表格驱动**：覆盖契约第 8 节中的每个错误码，测试包在内存中生成；
 - **规范化**：输出中不含 `Exif`、`http://ns.adobe.com/xap` 字节串；WebP 输入被转换为其他格式；`source` 被强制设定；未知字段被删除；
+- **自定义字段保留**：规范化前后 layout、cardStyle、adjustments、装饰顺序及变换值相同；背景资源路径改写后仍可定位；透明贴纸重编码后 alpha 保留；非法字段只在服务端信任边界拒绝，不静默截断为另一套外观；
 - **配额**：两个上限，每个都有一条刚好通过、一条刚好超出的用例；
 - **幂等**：同一个幂等键返回原记录；
 - **新版本**：
@@ -714,7 +757,7 @@ Kotlin 和 Swift 部分不新增单元测试，用下面的真机步骤验证。
 **管理端**：在 `admin_panel_screen` 中新增"主题审核"：
 
 - 队列页；
-- 审核页：明暗预览、与上一版的对比、小部件预览、字体信息（manifest 声明的许可，以及服务端读出的 `name` 表版权和许可说明）、桌面图标（内置 ID 与自定义图片）、"试用此主题"、"通过"、"拒绝"（原因必选）。
+- 审核页：明暗预览、布局／卡片／图片效果参数、全部装饰原图及层次、与上一版的对比、小部件预览、字体信息（manifest 声明的许可，以及服务端读出的 `name` 表版权和许可说明）、桌面图标（内置 ID 与自定义图片）、"试用此主题"、"通过"、"拒绝"（原因必选）。
   - "试用此主题"会下载私有包，安装为临时版本，然后调用 `startTrial` 进入全局试用会话。审核员按制作细则 8.1 节的路径跨页面检查，再通过试用横条上的"结束"回到原外观，最后返回审核页做出判定。
   - 审核页上同时显示当前是否处于试用中。
 - 已上架列表：可以下架。
@@ -749,9 +792,11 @@ Kotlin 和 Swift 部分不新增单元测试，用下面的真机步骤验证。
 6. A 发布新版本，B 审核通过，C 的本机主题页显示"可更新"，更新后生效；
 7. B 下架这个主题：C 本机的副本仍可使用，商城中搜不到，分享链接打开显示"主题不存在或已下架"。
 
+上述完整链路使用带非默认布局、卡片、图片效果和贴纸的主题；核对服务端规范包下载后的实际外观，不用只含颜色的主题替代。审核员跨页面试用、账号切换和结束试用后，装饰及旧图片任务均不得残留。
+
 ## 9. P5 首批官方主题
 
-1. 按制作细则第 9 节的参数，在工坊中做出前 5 套主题。其中"沈理青"以内置默认值为基础，只把亮色 `textSecondary` 改为 `#6E757C`。这个改动和内置默认外观不同，单独截图对比，作为有意的视觉变化验收。
+1. 按制作细则第 9 节的参数，在工坊中做出前 5 套主题。其中"沈理青"以内置默认值为基础，把亮色 `textSecondary` 改为 `#6E757C`、亮色 `tagText` 改为 `#107A70`（原值对比度 4.47）。这个改动和内置默认外观不同，单独截图对比，作为有意的视觉变化验收。
 2. 用维护者账号以 `official` 来源投稿，用另一个管理员账号审核通过。生产环境的操作需要维护者授权。
 3. 校园四季等维护者提供照片后再制作。
 
@@ -760,34 +805,38 @@ Kotlin 和 Swift 部分不新增单元测试，用下面的真机步骤验证。
 - 5 套主题的对比度面板全部为绿；
 - 九个页面明暗两套的截图，存放在 `docs/reports/<日期>-official-themes/`；
 - 商城"官方主题"区按顺序显示这 5 套。
+- 五套主题共用同一套组件风格，其中至少一套使用 compact 页头、另一套使用 immersive 页头与装饰；参数与素材在制作记录中列明。默认沈理青保持原布局，其已确认颜色变化单列；素材未到位的作品不记为已完成。
 
 ## 10. P6 移动网页
 
 1. 在 `web/tokens.css` 中加入与契约第 3 节对应的 `--theme-<kebab-case>` 变量，默认值等于契约的默认值。
-2. 在 600px 以下的布局中，把首批页面对应的网页视图的颜色迁移到这些变量上。600px 以上的桌面布局不改。
+2. 在 600px 以下的布局中，把首批页面对应的网页视图的颜色迁移到这些变量上。600px 以上的桌面布局与主题落地页桌面视图不改。
 3. 新增"外观 → 主题"页面：
-   - 商城列表和详情；
+   - 商城列表（支持游标分页加载更多，切换筛选与排序时取消旧请求）和详情（按 `id` 绑定详情状态）；
    - **应用**：
-     - 用目录中的 `packageUrl` 下载规范包，用 `fflate` 解压；
+     - 用目录中的 `packageUrl` 下载规范包，使用浏览器原生 `DecompressionStream("deflate-raw")` 解压（不新增第三方依赖）；
      - 读取 manifest 中 `light`／`dark` 的 `tokens`，写到 `:root` 上；
-     - 带字体时，用 `FontFace` API 从解出的字节注册字体，并设置 `--theme-font-family`。正文的 `font-family` 改为 `var(--theme-font-family), <现有字体栈>`。刷新后同样从缓存的规范包中重新注册；
+     - 读取壁纸配置与 `adjustments`，渲染时使用 CSS `filter`（`brightness()`、`contrast()`、`saturate()`、`blur()`）施加图片效果，不使用离屏 Canvas 或逐像素预处理；移动网页布局模板与贴纸装饰推迟，参数只作用于 600px 以下的移动界面；
+     - 带字体时，用 `FontFace` API 从解出的字节试加载并注册字体，校验通过后再设置 `--theme-font-family` 并写入存储。正文的 `font-family` 改为 `var(--theme-font-family, <现有字体栈>)`。刷新后同样从规范包中重新注册；
      - 桌面图标和小部件只在 App 中生效，网页端忽略；
-     - 把 `{familyId, version, packageUrl, light: tokens, dark: tokens}` 存入 `localStorage`，读写都要包在 try/catch 中。这份数据只有几 KB。
+     - 把 `{familyId, version, name, authorName, packageUrl, light, dark, font}` 的生效元数据存入 `localStorage`。图片和字体仅保存包内路径，不写入字节或临时 object URL；读写都要包在 try/catch 中。
    - **刷新后恢复**：
-     1. 页面启动时，同步读取 `localStorage` 中的 tokens 并写到 `:root` 上，避免先闪一下默认配色；
-     2. 再用保存的 `packageUrl` 重新获取规范包，解出壁纸，生成 object URL 显示。这个地址带版本号，响应头是 `immutable`，所以通常直接命中浏览器缓存；
-     3. 如果离线、缓存里也没有这个包，就只显示配色，不显示壁纸；联网后重新加载，再显示壁纸。
-     4. `localStorage` 读取失败时，按默认主题处理。
+     1. 页面启动时，在 `<head>` 同步恢复配色 Token，避免先闪一下默认配色；
+     2. 再用保存的 `packageUrl` 重新获取规范包（配合 `ETag` 与 `Cache-Control: public, no-cache`），解出壁纸与字体，生成 object URL 显示；
+     3. 如果离线、缓存里也没有这个包，或字体／资源加载失败，保留配色并显示可重试的资源状态；重试时清理损坏的内存缓存并重新拉取验证；
+     4. `localStorage` 读取失败时，按默认主题处理；
+     5. 主题切换或恢复默认后，丢弃旧异步结果并释放旧 object URL。
    - 规范包已经由服务端校验过，网页端不重复校验，也不实现推导。
-4. 新增网站页面 `/theme/<familyId>`：显示主题详情，提供"在 App 中打开"和"在网页上应用"。
+4. 新增网站页面 `/theme/<familyId>`（经 Go 服务 `302` 跳转至 `/web/theme/<familyId>`）：显示主题详情，提供"在 App 中打开"和"在网页上应用"，主题变量仅在 `≤600px` 下生效。
 
 **验证标准**：只新增一个测试文件 `web/e2e/theme.spec.ts`，视口 390×844。
 
-- 应用"海盐蓝"后，首页卡片、正文、底栏的计算颜色等于主题的值；
+- 应用"海盐蓝"后，首页卡片、正文、底栏的计算颜色等于主题的值，壁纸 CSS `filter` 与自定义字体生效；
 - 刷新后，首帧就是主题配色（在页面加载后的第一次绘制之前读取颜色值断言），壁纸随后出现；
-- 断网后刷新，配色仍然生效；
-- 恢复默认后颜色回到原值；
-- 1280 宽的视口下颜色不变。
+- 断网或字体损坏后刷新，配色仍然生效且无未捕获异常，修复或联网后重试能重新获取并恢复；
+- 目录支持加载更多，切换筛选取消旧请求；详情页切换 ID 不闪现旧主题；
+- 恢复默认后释放旧 object URL，颜色回到原值；
+- 1280 宽的视口下首页与 `/web/theme/<familyId>` 落地页颜色、字体均不变。
 
 **全量检查**：`pnpm -r check`；`pnpm test`。
 
@@ -799,6 +848,7 @@ Kotlin 和 Swift 部分不新增单元测试，用下面的真机步骤验证。
 | --- | --- |
 | P0 | 回填契约第 3 节 |
 | P1 | `docs/local-storage-inventory.md`：`themes/` 目录（包括 `user/` 下的自选壁纸）、`theme_appearance_v1`、`theme_previous_v1`、`cacheDir/incoming-theme/` |
+| P1／P2 | 同一存储台账补齐 layout、decoration、cardStyle、图片效果和装饰原图／草稿的存储与引用清理；不新增资源哈希 |
 | P1.5 | `docs/local-storage-inventory.md`：`widget_app_palette_v1`（小部件共享存储，Android SharedPreferences 与 iOS App Group）；`docs/ops/app-release.md`：在引入桌面图标 alias 的版本的更新说明中，写明"部分桌面需要重新添加图标" |
 | P6 | `docs/local-storage-inventory.md`：网页端 `localStorage` 中保存的主题数据 |
 | P3 | `docs/privacy-data-inventory.md`：投稿属于公开内容，服务端去除元数据 |

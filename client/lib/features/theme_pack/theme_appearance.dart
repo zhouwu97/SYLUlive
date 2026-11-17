@@ -21,9 +21,18 @@ class ThemeAppearance {
     final preset = group(ThemeGroup.shape)?['value'] as String? ?? 'standard';
     final fontFamily =
         ThemeFontRegistry.resolvedFamilyFor(group(ThemeGroup.font));
+    final materialGroup = group(ThemeGroup.material);
+    Map? rawCardStyle;
+    if (materialGroup != null && materialGroup['legacy'] != true) {
+      final modeMat = materialGroup[mode];
+      if (modeMat is Map && modeMat['cardStyle'] is Map) {
+        rawCardStyle = modeMat['cardStyle'] as Map;
+      }
+    }
     return AppTheme.build(
       brightness: brightness,
       fontFamily: fontFamily,
+      rawCardStyle: rawCardStyle,
       palette: colors == null
           ? null
           : AppPalette.fromJson(colors['tokens'] as Map<String, dynamic>,

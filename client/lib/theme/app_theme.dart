@@ -36,10 +36,13 @@ class AppTheme {
     required Brightness brightness,
     AppPalette? palette,
     AppShape shape = const AppShape(),
+    Map? rawCardStyle,
+    AppCardStyle? cardStyle,
     Color seedColor = AppColors.brandPrimary,
     DynamicSchemeVariant variant = DynamicSchemeVariant.tonalSpot,
     String? fontFamily,
   }) {
+    final effectiveCardStyle = cardStyle ?? AppCardStyle.fromJson(rawCardStyle);
     final effectiveFont = (fontFamily != null && fontFamily.isNotEmpty)
         ? fontFamily
         : 'NotoSansCJKsc';
@@ -71,7 +74,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      extensions: [colors, shape],
+      extensions: [colors, shape, effectiveCardStyle],
       // 默认图标保留原有黑白前景，应用主题后跟随正文配色。
       iconTheme:
           palette == null ? null : IconThemeData(color: colors.textPrimary),

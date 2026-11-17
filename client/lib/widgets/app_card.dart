@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../features/theme_pack/theme_presentation.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_palette.dart';
 import '../theme/app_theme_tokens.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
@@ -235,14 +235,17 @@ class AppCardSurface extends Container {
     final custom = settings?.canCustomizeCardMaterial == true;
     final box =
         decoration is BoxDecoration ? decoration! as BoxDecoration : null;
-    final cardStyle = _shouldApplyCardStyle(context, box)
-        ? ThemeCardStyleSpec.resolve(context)
+    final extCardStyle = AppCardStyle.of(context);
+    final cardStyle = _shouldApplyCardStyle(context, box) &&
+            extCardStyle.hasOverrides
+        ? extCardStyle
         : null;
-    final resolvedBorder = cardStyle?.resolveBoxBorder(context);
+    final tokens = AppThemeTokens.of(context);
+    final resolvedBorder = cardStyle?.resolveBoxBorder(tokens.cardBorder);
     final outerShadows = cardStyle?.resolveBoxShadows(
       Theme.of(context).brightness == Brightness.dark,
     );
-    final surface = color ?? box?.color ?? AppThemeTokens.of(context).card;
+    final surface = color ?? box?.color ?? tokens.card;
     final alpha =
         (surfaceOpacity ?? settings?.effectiveComponentOpacity ?? 1.0) *
             progress;
@@ -370,10 +373,13 @@ class AppCard extends Card {
         RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(
                 Theme.of(context).useMaterial3 ? AppRadius.md : 4));
+    final extCardStyle = theme.extension<AppCardStyle>() ?? const AppCardStyle();
     final cardStyle = (applyCardStyle ??
-            context.findAncestorWidgetOfExactType<Dialog>() == null)
-        ? ThemeCardStyleSpec.resolve(context)
+                context.findAncestorWidgetOfExactType<Dialog>() == null) &&
+            extCardStyle.hasOverrides
+        ? extCardStyle
         : null;
+    final tokens = AppThemeTokens.of(context);
     var effectiveShape =
         glass && !preserveBorder && originalShape is OutlinedBorder
             ? originalShape.copyWith(side: BorderSide.none)
@@ -382,13 +388,13 @@ class AppCard extends Card {
         cardStyle?.borderWidth != null &&
         effectiveShape is OutlinedBorder) {
       effectiveShape = effectiveShape.copyWith(
-        side: cardStyle!.resolveBorderSide(context)!,
+        side: cardStyle!.resolveBorderSide(tokens.cardBorder)!,
       );
     }
     final outerShadows = cardStyle?.resolveBoxShadows(
       theme.brightness == Brightness.dark,
     );
-    final surface = color ?? cardTheme.color ?? AppThemeTokens.of(context).card;
+    final surface = color ?? cardTheme.color ?? tokens.card;
     Widget clipped = ClipPath(
       clipper: ShapeBorderClipper(shape: effectiveShape),
       child: FrostedGlass(

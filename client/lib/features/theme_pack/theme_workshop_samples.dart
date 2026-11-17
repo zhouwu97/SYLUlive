@@ -918,7 +918,7 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
     final shadows = cardStyle?.resolveBoxShadows(
       widget.brightness == Brightness.dark,
     );
-    final border = cardStyle?.resolveBoxBorder(context) ??
+    final border = cardStyle?.resolveBoxBorder(tokens.cardBorder) ??
         Border.all(color: tokens.cardBorder);
 
     return GestureDetector(

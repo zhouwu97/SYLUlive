@@ -442,3 +442,81 @@ class AppShape extends ThemeExtension<AppShape> {
   AppShape lerp(covariant AppShape? other, double t) =>
       other == null || t < 0.5 ? this : other;
 }
+
+class AppCardStyle extends ThemeExtension<AppCardStyle> {
+  const AppCardStyle({
+    this.borderWidth,
+    this.shadow,
+  });
+
+  final double? borderWidth;
+  final String? shadow;
+
+  bool get hasOverrides => borderWidth != null || shadow != null;
+
+  static AppCardStyle of(BuildContext context) =>
+      Theme.of(context).extension<AppCardStyle>() ?? const AppCardStyle();
+
+  factory AppCardStyle.fromJson(Map? raw) {
+    if (raw == null || raw.isEmpty) return const AppCardStyle();
+    final bw = (raw['borderWidth'] as num?)?.toDouble();
+    final sh = raw['shadow'] as String?;
+    return AppCardStyle(
+      borderWidth: (bw != null && bw.isFinite) ? bw.clamp(0.0, 2.0) : null,
+      shadow: const {'none', 'soft', 'medium'}.contains(sh) ? sh : null,
+    );
+  }
+
+  BoxBorder? resolveBoxBorder(Color borderColor) {
+    final bw = borderWidth;
+    if (bw == null) return null;
+    if (bw <= 0) return const Border();
+    return Border.all(color: borderColor, width: bw);
+  }
+
+  BorderSide? resolveBorderSide(Color borderColor) {
+    final bw = borderWidth;
+    if (bw == null) return null;
+    if (bw <= 0) return BorderSide.none;
+    return BorderSide(color: borderColor, width: bw);
+  }
+
+  List<BoxShadow>? resolveBoxShadows(bool isDark) {
+    final sh = shadow;
+    if (sh == null) return null;
+    return switch (sh) {
+      'none' => const <BoxShadow>[],
+      'soft' => [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.08),
+            offset: const Offset(0, 2),
+            blurRadius: 8,
+            spreadRadius: 0,
+          ),
+        ],
+      'medium' => [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.12),
+            offset: const Offset(0, 4),
+            blurRadius: 16,
+            spreadRadius: 0,
+          ),
+        ],
+      _ => null,
+    };
+  }
+
+  @override
+  AppCardStyle copyWith({
+    double? borderWidth,
+    String? shadow,
+  }) =>
+      AppCardStyle(
+        borderWidth: borderWidth ?? this.borderWidth,
+        shadow: shadow ?? this.shadow,
+      );
+
+  @override
+  AppCardStyle lerp(covariant AppCardStyle? other, double t) =>
+      other == null || t < 0.5 ? this : other;
+}

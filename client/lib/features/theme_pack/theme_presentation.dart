@@ -101,83 +101,11 @@ class ThemeHeaderLayoutSpec {
 }
 
 class ThemeCardStyleSpec {
-  const ThemeCardStyleSpec({
-    this.borderWidth,
-    this.shadow,
-  });
+  const ThemeCardStyleSpec._();
 
-  final double? borderWidth;
-  final String? shadow;
-
-  bool get hasOverrides => borderWidth != null || shadow != null;
-
-  static ThemeCardStyleSpec? resolve(BuildContext context) {
-    final override = ThemePresentationOverride.maybeOf(context);
-    final brightness = override?.brightnessOverride ?? Theme.of(context).brightness;
-    final mode = brightness == Brightness.dark ? 'dark' : 'light';
-    final provider = context.watch<ThemeProvider?>();
-    final appearance = override?.appearance ??
-        (provider?.canCustomizeCardMaterial == true
-            ? provider!.appearance
-            : null);
-    final materialGroup = appearance?.group(ThemeGroup.material);
-    if (materialGroup == null || materialGroup['legacy'] == true) return null;
-    final modeMat = materialGroup[mode] as Map?;
-    final raw = modeMat?['cardStyle'] as Map?;
-    if (raw == null || raw.isEmpty) return null;
-    final bw = (raw['borderWidth'] as num?)?.toDouble();
-    final sh = raw['shadow'] as String?;
-    final spec = ThemeCardStyleSpec(
-      borderWidth:
-          (bw != null && bw.isFinite) ? bw.clamp(0.0, 2.0) : null,
-      shadow: const {'none', 'soft', 'medium'}.contains(sh) ? sh : null,
-    );
-    return spec.hasOverrides ? spec : null;
-  }
-
-  BoxBorder? resolveBoxBorder(BuildContext context) {
-    final bw = borderWidth;
-    if (bw == null) return null;
-    if (bw <= 0) return const Border();
-    return Border.all(
-      color: AppThemeTokens.of(context).cardBorder,
-      width: bw,
-    );
-  }
-
-  BorderSide? resolveBorderSide(BuildContext context) {
-    final bw = borderWidth;
-    if (bw == null) return null;
-    if (bw <= 0) return BorderSide.none;
-    return BorderSide(
-      color: AppThemeTokens.of(context).cardBorder,
-      width: bw,
-    );
-  }
-
-  List<BoxShadow>? resolveBoxShadows(bool isDark) {
-    final sh = shadow;
-    if (sh == null) return null;
-    return switch (sh) {
-      'none' => const <BoxShadow>[],
-      'soft' => [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.08),
-            offset: const Offset(0, 2),
-            blurRadius: 8,
-            spreadRadius: 0,
-          ),
-        ],
-      'medium' => [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.12),
-            offset: const Offset(0, 4),
-            blurRadius: 16,
-            spreadRadius: 0,
-          ),
-        ],
-      _ => null,
-    };
+  static AppCardStyle? resolve(BuildContext context) {
+    final style = AppCardStyle.of(context);
+    return style.hasOverrides ? style : null;
   }
 }
 

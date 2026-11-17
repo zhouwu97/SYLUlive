@@ -727,8 +727,9 @@ class _ThemePreviewState extends State<ThemePreview> {
                       final previewShadows = cardStyle?.resolveBoxShadows(
                         brightness == Brightness.dark,
                       );
-                      final previewBorder =
-                          cardStyle?.resolveBoxBorder(previewContext);
+                      final previewBorder = cardStyle?.resolveBoxBorder(
+                        theme.extension<AppPalette>()!.cardBorder,
+                      );
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [

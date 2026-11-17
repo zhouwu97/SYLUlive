@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Empty, Head, Icon } from "./ui";
 import {
@@ -77,21 +77,34 @@ export function MobileThemesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
   const [items, setItems] = useState<CatalogThemeItem[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+  const loadMoreControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    loadMoreControllerRef.current?.abort();
+    loadMoreControllerRef.current = null;
     const controller = new AbortController();
     setLoading(true);
+    setLoadingMore(false);
     setError(null);
+    setLoadMoreError(null);
+    setNextCursor(null);
     const params = new URLSearchParams({ sort });
     if (selectedTag) params.set("tag", selectedTag);
     if (appliedQuery) params.set("q", appliedQuery);
-    fetchJson<{ items: CatalogThemeItem[] }>(`/api/themes?${params.toString()}`, controller.signal)
+    fetchJson<{ items: CatalogThemeItem[]; nextCursor?: string }>(
+      `/api/themes?${params.toString()}`,
+      controller.signal,
+    )
       .then((data) => {
         if (!controller.signal.aborted) {
           setItems(Array.isArray(data.items) ? data.items : []);
+          setNextCursor(typeof data.nextCursor === "string" && data.nextCursor ? data.nextCursor : null);
           setLoading(false);
         }
       })
@@ -101,8 +114,45 @@ export function MobileThemesPage() {
           setLoading(false);
         }
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      loadMoreControllerRef.current?.abort();
+      loadMoreControllerRef.current = null;
+    };
   }, [sort, selectedTag, appliedQuery, reloadTick]);
+
+  const handleLoadMore = () => {
+    if (!nextCursor || loading || loadingMore) return;
+    loadMoreControllerRef.current?.abort();
+    const controller = new AbortController();
+    loadMoreControllerRef.current = controller;
+    setLoadingMore(true);
+    setLoadMoreError(null);
+    const params = new URLSearchParams({ sort, cursor: nextCursor });
+    if (selectedTag) params.set("tag", selectedTag);
+    if (appliedQuery) params.set("q", appliedQuery);
+    fetchJson<{ items: CatalogThemeItem[]; nextCursor?: string }>(
+      `/api/themes?${params.toString()}`,
+      controller.signal,
+    )
+      .then((data) => {
+        if (!controller.signal.aborted && loadMoreControllerRef.current === controller) {
+          const incoming = Array.isArray(data.items) ? data.items : [];
+          setItems((prev) => {
+            const seen = new Set(prev.map((x) => x.familyId));
+            return [...prev, ...incoming.filter((x) => !seen.has(x.familyId))];
+          });
+          setNextCursor(typeof data.nextCursor === "string" && data.nextCursor ? data.nextCursor : null);
+          setLoadingMore(false);
+        }
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted && loadMoreControllerRef.current === controller) {
+          setLoadMoreError(err instanceof Error ? err.message : "加载更多主题失败");
+          setLoadingMore(false);
+        }
+      });
+  };
 
   const onSearchSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -219,76 +269,122 @@ export function MobileThemesPage() {
       ) : items.length === 0 ? (
         <Empty title="暂无符合条件的主题" description="可切换分类或清空搜索词后查看。" />
       ) : (
-        <div className="mobile-theme-grid">
-          {items.map((item) => {
-            const isCurrent =
-              runtime.saved?.familyId === item.familyId &&
-              runtime.saved?.version === item.version;
-            return (
-              <Link
-                key={item.familyId}
-                to={`/theme/${item.familyId}`}
-                className="mobile-theme-card"
+        <>
+          <div className="mobile-theme-grid">
+            {items.map((item) => {
+              const isCurrent =
+                runtime.saved?.familyId === item.familyId &&
+                runtime.saved?.version === item.version;
+              return (
+                <Link
+                  key={item.familyId}
+                  to={`/theme/${item.familyId}`}
+                  className="mobile-theme-card"
+                >
+                  <div className="mobile-theme-card-cover">
+                    {item.previewLight ? (
+                      <img src={item.previewLight} alt={`${item.name} 预览`} loading="lazy" />
+                    ) : null}
+                    {isCurrent ? (
+                      <span className="mobile-theme-badge">使用中</span>
+                    ) : item.source === "official" ? (
+                      <span className="mobile-theme-badge">官方</span>
+                    ) : null}
+                  </div>
+                  <div className="mobile-theme-card-body">
+                    <b>{item.name}</b>
+                    <small>{item.author?.nickname || "创作者"} · v{item.version}</small>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+          {(nextCursor || loadMoreError) && (
+            <div className="mobile-feed-end" style={{ marginTop: 12, textAlign: "center" }}>
+              {loadMoreError && (
+                <p role="alert" style={{ margin: "0 0 8px", fontSize: 13, color: "var(--danger)" }}>
+                  {loadMoreError}
+                </p>
+              )}
+              <button
+                type="button"
+                className="btn"
+                disabled={loadingMore}
+                onClick={handleLoadMore}
               >
-                <div className="mobile-theme-card-cover">
-                  {item.previewLight ? (
-                    <img src={item.previewLight} alt={`${item.name} 预览`} loading="lazy" />
-                  ) : null}
-                  {isCurrent ? (
-                    <span className="mobile-theme-badge">使用中</span>
-                  ) : item.source === "official" ? (
-                    <span className="mobile-theme-badge">官方</span>
-                  ) : null}
-                </div>
-                <div className="mobile-theme-card-body">
-                  <b>{item.name}</b>
-                  <small>{item.author?.nickname || "创作者"} · v{item.version}</small>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+                {loadingMore ? "正在加载…" : loadMoreError ? "重试加载更多" : "加载更多"}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
+interface BoundThemeDetailState {
+  boundId: string;
+  item: CatalogThemeItem | null;
+  loading: boolean;
+  notFound: boolean;
+  error: string | null;
+}
+
 export function ThemeLandingPage() {
   const { id = "" } = useParams();
   const runtime = useMobileThemeRuntime();
-  const [item, setItem] = useState<CatalogThemeItem | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [applyError, setApplyError] = useState<string | null>(null);
+  const [detailState, setDetailState] = useState<BoundThemeDetailState>({
+    boundId: id,
+    item: null,
+    loading: Boolean(id),
+    notFound: !id,
+    error: null,
+  });
+  const [applyError, setApplyError] = useState<{ boundId: string; message: string } | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
-    if (!id) {
-      setNotFound(true);
-      setLoading(false);
+    const requestedId = id;
+    if (!requestedId) {
+      setDetailState({ boundId: "", item: null, loading: false, notFound: true, error: null });
       return;
     }
     const controller = new AbortController();
-    setLoading(true);
-    setNotFound(false);
-    setError(null);
-    fetchJson<CatalogThemeItem>(`/api/themes/${encodeURIComponent(id)}`, controller.signal)
+    setDetailState({ boundId: requestedId, item: null, loading: true, notFound: false, error: null });
+    fetchJson<CatalogThemeItem>(`/api/themes/${encodeURIComponent(requestedId)}`, controller.signal)
       .then((detail) => {
-        if (!controller.signal.aborted) {
-          setItem(detail);
-          setLoading(false);
+        if (
+          !controller.signal.aborted &&
+          String(detail.familyId || "").toLowerCase() === requestedId.toLowerCase()
+        ) {
+          setDetailState({
+            boundId: requestedId,
+            item: detail,
+            loading: false,
+            notFound: false,
+            error: null,
+          });
         }
       })
       .catch((err: Error & { status?: number }) => {
         if (!controller.signal.aborted) {
-          if (err.status === 404) setNotFound(true);
-          else setError(err.message || "加载主题详情失败");
-          setLoading(false);
+          setDetailState({
+            boundId: requestedId,
+            item: null,
+            loading: false,
+            notFound: err.status === 404,
+            error: err.status === 404 ? null : err.message || "加载主题详情失败",
+          });
         }
       });
     return () => controller.abort();
   }, [id, reloadTick]);
+
+  const item = detailState.boundId === id ? detailState.item : null;
+  const loading = Boolean(id) && (detailState.boundId !== id || detailState.loading);
+  const notFound = !id || (detailState.boundId === id && detailState.notFound);
+  const error = detailState.boundId === id ? detailState.error : null;
+  const currentApplyError = applyError?.boundId === id ? applyError.message : null;
 
   if (loading) {
     return <div className="loading-state" role="status">正在加载主题详情…</div>;
@@ -297,7 +393,7 @@ export function ThemeLandingPage() {
     return (
       <Empty
         title={notFound ? "主题不存在或已下架" : "加载主题详情失败"}
-        description={notFound ? "该分享链接对应的主题可能已被作者撤回或下架。" : error || "请检查网络后重试"}
+        description={notFound ? "该分享链接对应的主题已被作者撤回或下架。" : error || "请检查网络后重试"}
       >
         {!notFound && (
           <button type="button" className="btn primary" onClick={() => setReloadTick((v) => v + 1)}>
@@ -315,11 +411,15 @@ export function ThemeLandingPage() {
   const isApplyingThis = runtime.applyingFamilyId === item.familyId;
 
   const handleApplyOnWeb = async () => {
+    const targetId = item.familyId;
     setApplyError(null);
     try {
       await applyMobileThemeFromCatalog(item);
     } catch (err) {
-      setApplyError(err instanceof Error ? err.message : "应用主题失败，请重试");
+      setApplyError({
+        boundId: targetId,
+        message: err instanceof Error ? err.message : "应用主题失败，请重试",
+      });
     }
   };
 
@@ -353,9 +453,9 @@ export function ThemeLandingPage() {
           <p style={{ margin: "12px 0 0", fontSize: 14, lineHeight: 1.6 }}>{item.description}</p>
         )}
 
-        {applyError && (
+        {currentApplyError && (
           <p role="alert" style={{ margin: "10px 0 0", color: "var(--danger)", fontSize: 13 }}>
-            {applyError}
+            {currentApplyError}
           </p>
         )}
         {runtime.storageWarning && (

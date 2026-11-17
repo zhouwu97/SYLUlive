@@ -282,4 +282,7 @@
 .theme-landing-preview-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .theme-landing-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 .theme-landing-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.theme-landing-tags span { padding: 3px 9px; border-radius: 999px; background: var(--theme-tag-background, var(--surface-2)); color: var(--theme-tag-text, var(--text-2)); font-size: 12px; }
+.theme-landing-tags span { padding: 3px 9px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 12px; }
+@media (max-width: 600px) {
+  .theme-landing-tags span { background: var(--theme-tag-background); color: var(--theme-tag-text); }
+}

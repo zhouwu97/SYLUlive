@@ -408,18 +408,20 @@ async function applyFontFromEntries(
     const regFace = new FontFace(familyName, regBytes as unknown as BufferSource, { weight: "400" });
     await regFace.load();
     if (gen !== resourceGeneration) return;
-    document.fonts.add(regFace);
 
+    let loadedBoldFace: FontFace | null = null;
     if (saved.font.bold) {
       const boldKey = saved.font.bold.replace(/^\/+/, "");
       const boldBytes = entries.get(boldKey);
-      if (boldBytes) {
-        const boldFace = new FontFace(familyName, boldBytes as unknown as BufferSource, { weight: "700" });
-        await boldFace.load();
-        if (gen !== resourceGeneration) return;
-        document.fonts.add(boldFace);
-      }
+      if (!boldBytes) throw new Error("主题包粗体资源缺失");
+      const boldFace = new FontFace(familyName, boldBytes as unknown as BufferSource, { weight: "700" });
+      await boldFace.load();
+      if (gen !== resourceGeneration) return;
+      loadedBoldFace = boldFace;
     }
+
+    document.fonts.add(regFace);
+    if (loadedBoldFace) document.fonts.add(loadedBoldFace);
     registeredFontFamilies.add(familyName);
   }
   if (gen === resourceGeneration) {
@@ -430,14 +432,24 @@ async function applyFontFromEntries(
   }
 }
 
-async function hydrateArchiveResources(saved: SavedMobileThemeMeta, gen: number) {
+async function hydrateArchiveResources(
+  saved: SavedMobileThemeMeta,
+  gen: number,
+  forceNetwork = false,
+) {
   const archiveKey = `${saved.familyId}@${saved.version}:${saved.packageUrl}`;
-  if (cachedArchiveKey === archiveKey && cachedArchiveEntries) {
-    await applyFontFromEntries(saved, cachedArchiveEntries, gen);
-    if (gen !== resourceGeneration) return;
-    applyWallpaperFromEntries(saved, cachedArchiveEntries, isDarkActive(), currentPathname);
-    setSnapshot({ loading: false, resourceError: null });
-    return;
+  if (!forceNetwork && cachedArchiveKey === archiveKey && cachedArchiveEntries) {
+    try {
+      await applyFontFromEntries(saved, cachedArchiveEntries, gen);
+      if (gen !== resourceGeneration) return;
+      applyWallpaperFromEntries(saved, cachedArchiveEntries, isDarkActive(), currentPathname);
+      setSnapshot({ loading: false, resourceError: null });
+      return;
+    } catch {
+      if (gen !== resourceGeneration) return;
+      cachedArchiveKey = "";
+      cachedArchiveEntries = null;
+    }
   }
 
   activeFetchAbort?.abort();
@@ -449,6 +461,7 @@ async function hydrateArchiveResources(saved: SavedMobileThemeMeta, gen: number)
     const resp = await fetch(saved.packageUrl, {
       signal: controller.signal,
       credentials: "same-origin",
+      cache: forceNetwork ? "no-cache" : "default",
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const buf = await resp.arrayBuffer();
@@ -457,15 +470,23 @@ async function hydrateArchiveResources(saved: SavedMobileThemeMeta, gen: number)
     const entries = await extractSlthemeEntries(buf);
     if (gen !== resourceGeneration) return;
 
+    await applyFontFromEntries(saved, entries, gen);
+    if (gen !== resourceGeneration) return;
+
     cachedArchiveKey = archiveKey;
     cachedArchiveEntries = entries;
 
-    await applyFontFromEntries(saved, entries, gen);
-    if (gen !== resourceGeneration) return;
     applyWallpaperFromEntries(saved, entries, isDarkActive(), currentPathname);
     setSnapshot({ loading: false, resourceError: null });
-  } catch (err) {
+  } catch {
     if (gen !== resourceGeneration || controller.signal.aborted) return;
+    if (cachedArchiveKey === archiveKey) {
+      cachedArchiveKey = "";
+      cachedArchiveEntries = null;
+    }
+    if (typeof document !== "undefined") {
+      document.documentElement.style.removeProperty("--theme-font-family");
+    }
     revokeCurrentWallpaperUrl();
     setSnapshot({
       wallpaper: null,
@@ -591,8 +612,13 @@ export async function applyMobileThemeFromCatalog(item: CatalogThemeItem): Promi
 
 export function retryMobileThemeResources() {
   if (!snapshot.saved) return;
+  const archiveKey = `${snapshot.saved.familyId}@${snapshot.saved.version}:${snapshot.saved.packageUrl}`;
+  if (cachedArchiveKey === archiveKey) {
+    cachedArchiveKey = "";
+    cachedArchiveEntries = null;
+  }
   const gen = ++resourceGeneration;
-  void hydrateArchiveResources(snapshot.saved, gen);
+  void hydrateArchiveResources(snapshot.saved, gen, true);
 }
 
 export function restoreDefaultMobileTheme() {

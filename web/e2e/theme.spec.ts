@@ -89,6 +89,7 @@ function buildThemeZip(opts: {
   lightNavSelected: string;
   lightNavUnselected: string;
   withFont?: boolean;
+  fontBytesOverride?: Buffer;
 }) {
   const manifest = {
     formatVersion: 1,
@@ -218,9 +219,22 @@ function buildThemeZip(opts: {
     "preview/light.png": ONE_PIXEL_PNG,
     "preview/dark.png": ONE_PIXEL_PNG,
     "wallpapers/sea.png": ONE_PIXEL_PNG,
-    ...(opts.withFont ? { "fonts/regular.ttf": MINIMAL_TTF } : {}),
+    ...(opts.withFont ? { "fonts/regular.ttf": opts.fontBytesOverride || MINIMAL_TTF } : {}),
   });
 }
+
+const CORRUPT_FONT_SEA_ZIP = buildThemeZip({
+  id: SEA_ID,
+  name: "海盐蓝",
+  lightBg: "#F5F9FF",
+  lightCard: "#FAFCFF",
+  lightText: "#191C20",
+  lightNavBg: "#D9E1ECFA",
+  lightNavSelected: "#3C6090",
+  lightNavUnselected: "#4A586B",
+  withFont: true,
+  fontBytesOverride: Buffer.from("not-a-valid-font-binary"),
+});
 
 const SEA_ZIP = buildThemeZip({
   id: SEA_ID,
@@ -249,10 +263,21 @@ const SAKURA_ZIP = buildThemeZip({
 async function setupThemeApi(page: Page) {
   const state = {
     failPackage: false,
-    holdSeaPackage: null as (() => void) | null,
+    corruptSeaFont: false,
+    paginatedCatalog: false,
+    holdSeaPackage: null as Promise<void> | null,
+    holdPopularCatalog: null as Promise<void> | null,
+    holdSakuraDetail: null as Promise<void> | null,
+    seaPackageHits: 0,
+    abortedCatalogUrls: [] as string[],
     errors: [] as string[],
   };
   page.on("pageerror", (err) => state.errors.push(err.message));
+  page.on("requestfailed", (req) => {
+    if (req.url().includes("/api/themes")) {
+      state.abortedCatalogUrls.push(req.url());
+    }
+  });
 
   const seaItem = {
     familyId: SEA_ID,
@@ -323,12 +348,32 @@ async function setupThemeApi(page: Page) {
       });
     }
     if (url.pathname === "/api/themes") {
+      const sort = url.searchParams.get("sort") || "latest";
+      const cursor = url.searchParams.get("cursor") || "";
+      if (sort === "popular" && state.holdPopularCatalog) {
+        await state.holdPopularCatalog;
+        return route.fulfill({ json: { items: [sakuraItem] } });
+      }
+      if (state.paginatedCatalog && sort === "latest") {
+        if (!cursor) {
+          return route.fulfill({ json: { items: [seaItem], nextCursor: "cursor-page-2" } });
+        }
+        if (cursor === "cursor-page-2") {
+          return route.fulfill({ json: { items: [sakuraItem] } });
+        }
+      }
+      if (sort === "official") {
+        return route.fulfill({ json: { items: [seaItem] } });
+      }
       return route.fulfill({ json: { items: [seaItem, sakuraItem] } });
     }
     if (url.pathname === `/api/themes/${SEA_ID}`) {
       return route.fulfill({ json: seaItem });
     }
     if (url.pathname === `/api/themes/${SAKURA_ID}`) {
+      if (state.holdSakuraDetail) {
+        await state.holdSakuraDetail;
+      }
       return route.fulfill({ json: sakuraItem });
     }
     if (url.pathname.endsWith("/preview/light") || url.pathname.endsWith("/preview/dark")) {
@@ -339,20 +384,18 @@ async function setupThemeApi(page: Page) {
       });
     }
     if (url.pathname === `/api/themes/${SEA_ID}/versions/1/package`) {
+      state.seaPackageHits += 1;
       if (state.failPackage) {
         return route.abort("internetdisconnected");
       }
       if (state.holdSeaPackage) {
-        await new Promise<void>((resolve) => {
-          state.holdSeaPackage = resolve;
-        });
-        state.holdSeaPackage = null;
+        await state.holdSeaPackage;
       }
       return route.fulfill({
         status: 200,
         contentType: "application/vnd.sylulive.theme+zip",
-        headers: { "Cache-Control": "no-store" },
-        body: SEA_ZIP,
+        headers: { "Cache-Control": "public, no-cache" },
+        body: state.corruptSeaFont ? CORRUPT_FONT_SEA_ZIP : SEA_ZIP,
       });
     }
     if (url.pathname === `/api/themes/${SAKURA_ID}/versions/1/package`) {
@@ -543,16 +586,21 @@ test("移动网页主题：应用海盐蓝、首帧无闪烁恢复、离线保�
   expect(restoredColors).toEqual(mobileDefaultColors);
 
   // 竞态验证：先点海盐蓝（挂起包下载），立即切换到樱粉并应用，随后放行海盐蓝旧响应 -> 樱粉保持生效不被覆盖
-  state.holdSeaPackage = () => {};
+  let releaseSeaPackage!: () => void;
+  state.holdSeaPackage = new Promise<void>((r) => {
+    releaseSeaPackage = r;
+  });
   await page.goto(`theme/${SEA_ID}`);
   await page.getByRole("button", { name: "在网页上应用", exact: true }).click();
   await page.goto(`theme/${SAKURA_ID}`);
   await page.getByRole("button", { name: "在网页上应用", exact: true }).click();
   await expect(page.getByRole("button", { name: "已在网页上应用", exact: true })).toBeVisible();
-  if (state.holdSeaPackage) (state.holdSeaPackage as () => void)();
+  state.holdSeaPackage = null;
+  releaseSeaPackage();
   await page.waitForTimeout(80);
 
   await page.goto("./");
+  await expect(page.locator(".mobile-app-feed .feed-card").first()).toBeVisible();
   const sakuraCardBg = await page
     .locator(".mobile-app-feed .feed-card")
     .first()
@@ -568,6 +616,111 @@ test("移动网页主题：应用海盐蓝、首帧无闪烁恢复、离线保�
   });
   await page.getByRole("button", { name: "在网页上应用", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("浏览器本地存储不可用或空间已满");
+
+  expect(state.errors).toEqual([]);
+});
+
+test("移动网页主题：目录分页与筛选取消旧请求、详情按 ID 绑定、坏字体重试恢复及落地页桌面隔离", async ({ page }) => {
+  const state = await setupThemeApi(page);
+  state.paginatedCatalog = true;
+
+  // 1. 记录 1280×800 桌面视口下 /web/theme/:id 落地页的默认颜色基线
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`theme/${SEA_ID}`);
+  await expect(page.getByRole("heading", { name: "海盐蓝", exact: true })).toBeVisible();
+  const landingDesktopBaseline = {
+    bodyColor: await page.locator("body").evaluate((el) => getComputedStyle(el).color),
+    panelBg: await page.locator(".theme-landing-page .panel").evaluate((el) => getComputedStyle(el).backgroundColor),
+    tagBg: await page.locator(".theme-landing-tags span").first().evaluate((el) => getComputedStyle(el).backgroundColor),
+    tagColor: await page.locator(".theme-landing-tags span").first().evaluate((el) => getComputedStyle(el).color),
+  };
+
+  // 2. 目录分页加载更多，以及切换筛选时取消挂起的旧请求
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("themes");
+  await expect(page.getByText("海盐蓝")).toBeVisible();
+  await expect(page.getByText("樱粉")).toHaveCount(0);
+  await page.getByRole("button", { name: "加载更多", exact: true }).click();
+  await expect(page.getByText("樱粉")).toBeVisible();
+  await expect(page.getByRole("button", { name: "加载更多", exact: true })).toHaveCount(0);
+
+  let releasePopularCatalog!: () => void;
+  state.holdPopularCatalog = new Promise<void>((r) => {
+    releasePopularCatalog = r;
+  });
+  await page.getByRole("tab", { name: "热门", exact: true }).click();
+  await expect(page.getByText("正在加载主题列表…")).toBeVisible();
+  // 立即切到“官方”，旧“热门”请求应被取消且不能覆盖“官方”结果
+  await page.getByRole("tab", { name: "官方", exact: true }).click();
+  await expect(page.getByText("海盐蓝")).toBeVisible();
+  state.holdPopularCatalog = null;
+  releasePopularCatalog();
+  await page.waitForTimeout(60);
+  await expect(page.getByText("海盐蓝")).toBeVisible();
+  await expect(page.getByText("樱粉")).toHaveCount(0);
+  expect(state.abortedCatalogUrls.some((u) => u.includes("sort=popular"))).toBe(true);
+
+  // 3. 详情页按 ID 绑定：在同组件内从海盐蓝导航到慢响应的樱粉，不闪现旧详情
+  state.paginatedCatalog = false;
+  await page.goto(`theme/${SEA_ID}`);
+  await expect(page.getByRole("heading", { name: "海盐蓝", exact: true })).toBeVisible();
+  let releaseSakuraDetail!: () => void;
+  state.holdSakuraDetail = new Promise<void>((r) => {
+    releaseSakuraDetail = r;
+  });
+  await page.evaluate((nextId) => {
+    window.history.pushState({ idx: 2 }, "", `/web/theme/${nextId}`);
+    window.dispatchEvent(new PopStateEvent("popstate", { state: { idx: 2 } }));
+  }, SAKURA_ID);
+  await expect(page.getByText("正在加载主题详情…")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "海盐蓝", exact: true })).toHaveCount(0);
+  state.holdSakuraDetail = null;
+  releaseSakuraDetail();
+  await expect(page.getByRole("heading", { name: "樱粉", exact: true })).toBeVisible();
+
+  // 4. 落地页主题变量仅在 ≤600px 生效：手机端应用海盐蓝后，390px 落地页标签变色，1280px 落地页完全不变
+  await page.goto(`theme/${SEA_ID}`);
+  await page.getByRole("button", { name: "在网页上应用", exact: true }).click();
+  await expect(page.getByRole("button", { name: "已在网页上应用", exact: true })).toBeVisible();
+  const mobileTagStyles = {
+    tagBg: await page.locator(".theme-landing-tags span").first().evaluate((el) => getComputedStyle(el).backgroundColor),
+    tagColor: await page.locator(".theme-landing-tags span").first().evaluate((el) => getComputedStyle(el).color),
+  };
+  expect(mobileTagStyles.tagBg).toBe("rgb(225, 236, 250)"); // #E1ECFA
+  expect(mobileTagStyles.tagColor).toBe("rgb(30, 78, 140)"); // #1E4E8C
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const landingDesktopAfter = {
+    bodyColor: await page.locator("body").evaluate((el) => getComputedStyle(el).color),
+    panelBg: await page.locator(".theme-landing-page .panel").evaluate((el) => getComputedStyle(el).backgroundColor),
+    tagBg: await page.locator(".theme-landing-tags span").first().evaluate((el) => getComputedStyle(el).backgroundColor),
+    tagColor: await page.locator(".theme-landing-tags span").first().evaluate((el) => getComputedStyle(el).color),
+  };
+  expect(landingDesktopAfter).toEqual(landingDesktopBaseline);
+
+  // 5. 字体重试的缓存与错误处理：刷新遇到损坏字体时不产生未捕获异常、保留配色、不注入坏字体；修复后重试重新拉包恢复字体与壁纸
+  await page.setViewportSize({ width: 390, height: 844 });
+  state.corruptSeaFont = true;
+  await page.goto("themes");
+  await page.reload();
+  await expect(page.getByRole("button", { name: "重试资源", exact: true })).toBeVisible();
+  const fontDuringError = await page.locator("body").evaluate((el) => getComputedStyle(el).fontFamily);
+  expect(fontDuringError).not.toContain("sylulive_web_theme_");
+
+  // 再次点击重试仍处于损坏状态时安全捕获错误，无未处理 Promise 拒绝
+  const hitsBeforeBadRetry = state.seaPackageHits;
+  await page.getByRole("button", { name: "重试资源", exact: true }).click();
+  await expect.poll(() => state.seaPackageHits).toBeGreaterThan(hitsBeforeBadRetry);
+  await expect(page.getByRole("button", { name: "重试资源", exact: true })).toBeVisible();
+
+  // 恢复合法字体包后点击重试：清掉坏缓存重新获取并完成注册
+  state.corruptSeaFont = false;
+  const hitsBeforeGoodRetry = state.seaPackageHits;
+  await page.getByRole("button", { name: "重试资源", exact: true }).click();
+  await expect.poll(() => state.seaPackageHits).toBeGreaterThan(hitsBeforeGoodRetry);
+  await expect(page.getByTestId("mobile-theme-wallpaper")).toBeVisible();
+  const fontAfterRetry = await page.locator("body").evaluate((el) => getComputedStyle(el).fontFamily);
+  expect(fontAfterRetry).toContain("sylulive_web_theme_");
 
   expect(state.errors).toEqual([]);
 });

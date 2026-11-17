@@ -1,7 +1,6 @@
 import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
-
-import '../campus/campus_theme.dart';
+import '../../theme/app_theme_tokens.dart';
 
 class AiTypingStatus extends StatelessWidget {
   final String status;
@@ -14,27 +13,27 @@ class AiTypingStatus extends StatelessWidget {
       child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? CampusTheme.darkCard : Colors.white,
+          color: AppThemeTokens.of(context).card,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: CampusTheme.softBorder),
+          border: Border.all(color: AppThemeTokens.of(context).cardBorder),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(
+            SizedBox(
               width: 14,
               height: 14,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                color: CampusTheme.primary,
+                color: AppThemeTokens.of(context).primary,
               ),
             ),
             const SizedBox(width: 9),
             Text(
               status.isEmpty ? '正在查找可靠信息…' : status,
-              style:
-                  const TextStyle(color: CampusTheme.subText, fontSize: 12.5),
+              style: TextStyle(
+                  color: AppThemeTokens.of(context).textSecondary,
+                  fontSize: 12.5),
             ),
           ],
         ),

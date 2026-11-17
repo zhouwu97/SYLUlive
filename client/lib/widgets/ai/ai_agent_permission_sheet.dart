@@ -1,11 +1,11 @@
+import '../../theme/app_theme_tokens.dart';
 import '../app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/ai_personal_data_permission_service.dart';
-import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 
 /// 普通用户只选择 Agent 的工作方式；内部 scope 由服务端原子写入。
 class AiAgentPermissionSheet extends StatefulWidget {
@@ -82,9 +82,9 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
     return AppCardSurface(
       constraints: const BoxConstraints(maxHeight: 460),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(AppRadius.sheet),
+        color: AppThemeTokens.of(context).card,
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppShape.of(context).sheet),
         ),
       ),
       child: FutureBuilder<AiAgentPermissionMode>(
@@ -117,7 +117,7 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
           margin: const EdgeInsets.only(top: 10, bottom: 6),
           decoration: BoxDecoration(
             color: colors.outlineVariant,
-            borderRadius: BorderRadius.circular(AppRadius.pill),
+            borderRadius: BorderRadius.circular(AppShape.of(context).pill),
           ),
         ),
         Padding(
@@ -130,8 +130,8 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
                 decoration: BoxDecoration(
                   color: isDark
                       ? colors.primaryContainer
-                      : AppColors.brandSurfaceLight,
-                  borderRadius: BorderRadius.circular(AppRadius.md),
+                      : AppThemeTokens.of(context).primaryContainer,
+                  borderRadius: BorderRadius.circular(AppShape.of(context).md),
                 ),
                 child: Icon(Icons.shield_outlined, color: colors.primary),
               ),
@@ -257,7 +257,7 @@ class _ModeOption extends StatelessWidget {
       label: '$title。$detail',
       child: InkWell(
         onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(AppRadius.md),
+        borderRadius: BorderRadius.circular(AppShape.of(context).md),
         child: AnimatedContainer(
           duration: AppMotion.duration(context, AppMotion.fast),
           constraints: const BoxConstraints(minHeight: 64),
@@ -269,7 +269,7 @@ class _ModeOption extends StatelessWidget {
             border: Border.all(
               color: selected ? colors.primary : colors.outlineVariant,
             ),
-            borderRadius: BorderRadius.circular(AppRadius.md),
+            borderRadius: BorderRadius.circular(AppShape.of(context).md),
           ),
           child: Row(
             children: [

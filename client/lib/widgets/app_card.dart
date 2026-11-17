@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
-import '../theme/app_colors.dart';
+import '../theme/app_theme_tokens.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import 'frosted_glass.dart';
@@ -10,9 +10,7 @@ import 'app_surface_transition.dart';
 
 /// 卡片及系统弹层共用的最终底色，透明度只应用一次。
 Color appGlassSurfaceColor(BuildContext context, Color? color, double opacity) {
-  final base = Theme.of(context).brightness == Brightness.dark
-      ? AppColors.surfaceSecondaryDark
-      : AppColors.surfaceSecondaryLight;
+  final base = AppThemeTokens.of(context).card;
   // 语义色的浅色底（如 warning.withValues(alpha: .08)）仍保持原来的色调，
   // 仅把最终卡片底面的透明度交给全局设置。
   return Color.alphaBlend(color ?? base, base).withValues(alpha: opacity);
@@ -132,9 +130,7 @@ class AppContentSurface extends StatelessWidget {
             context.findAncestorWidgetOfExactType<AppCard>() != null;
     final paint =
         appearance?.shouldShowCustomBackground == true && !insideSurface;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final color =
-        dark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight;
+    final color = AppThemeTokens.of(context).card;
     if (_reading) {
       // 背景与前景分开绘制：圆角不会裁切首尾文字，开关也不改变内容宽度。
       return Stack(
@@ -213,14 +209,10 @@ class AppCardSurface extends Container {
     final custom = settings?.shouldShowCustomBackground == true;
     final box =
         decoration is BoxDecoration ? decoration! as BoxDecoration : null;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final surface = color ??
-        box?.color ??
-        (dark
-            ? AppColors.surfaceSecondaryDark
-            : AppColors.surfaceSecondaryLight);
-    final alpha = (surfaceOpacity ?? settings?.effectiveComponentOpacity ?? 1.0) *
-        progress;
+    final surface = color ?? box?.color ?? AppThemeTokens.of(context).card;
+    final alpha =
+        (surfaceOpacity ?? settings?.effectiveComponentOpacity ?? 1.0) *
+            progress;
     final radius = box?.borderRadius ?? BorderRadius.zero;
     final plain = box == null
         ? BoxDecoration(color: surface)
@@ -333,12 +325,7 @@ class AppCard extends Card {
         glass && !preserveBorder && originalShape is OutlinedBorder
             ? originalShape.copyWith(side: BorderSide.none)
             : originalShape;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final surface = color ??
-        cardTheme.color ??
-        (dark
-            ? AppColors.surfaceSecondaryDark
-            : AppColors.surfaceSecondaryLight);
+    final surface = color ?? cardTheme.color ?? AppThemeTokens.of(context).card;
     return Padding(
       padding: margin ?? cardTheme.margin ?? const EdgeInsets.all(4),
       child: ClipPath(
@@ -419,11 +406,7 @@ class _AppCardMaterialState extends State<Material> {
     final shape = glass && originalShape is OutlinedBorder
         ? originalShape.copyWith(side: BorderSide.none)
         : originalShape;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final surface = widget.color ??
-        (dark
-            ? AppColors.surfaceSecondaryDark
-            : AppColors.surfaceSecondaryLight);
+    final surface = widget.color ?? AppThemeTokens.of(context).card;
     final alpha =
         material.surfaceOpacity ?? settings?.effectiveComponentOpacity ?? 1.0;
     final plainColor = widget.color ??

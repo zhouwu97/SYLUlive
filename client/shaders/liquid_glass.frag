@@ -27,6 +27,7 @@ uniform vec2 uBend;
 uniform vec4 uInverse;
 uniform float uEnergy;
 uniform float uVertical;
+uniform vec3 uNavBackground;
 uniform sampler2D uScene;
 uniform sampler2D uTabs;
 out vec4 fragColor;
@@ -115,7 +116,7 @@ vec3 dock(vec2 p, float accent) {
   vec3 c = scene(at);
   float luma = dot(c, vec3(.2126, .7152, .0722));
   c = mix(vec3(luma), c, 1.12);
-  c = mix(c, mix(vec3(1), vec3(.082), uDark), uTint);
+  c = mix(c, uNavBackground, uTint);
   c += surfaceLight(d, normalAt(q, h), halfSize, .75);
   c = mix(scene(p), c, coverage(d));
   vec4 ink = tabs(p, accent);

@@ -63,11 +63,16 @@ class GraduationChecklistScreen extends StatelessWidget {
       };
 
   Color _color(RequirementState state) => switch (state) {
-        RequirementState.completed => Colors.green,
-        RequirementState.notCompleted => Colors.orange,
-        RequirementState.unknown => Colors.blueGrey,
-        RequirementState.blocked => Colors.red,
-        RequirementState.notApplicable => Colors.grey,
+        RequirementState.completed =>
+          Colors.green, // theme: fixed 毕业清单完成、未完成、未知、阻断、不适用状态色
+        RequirementState.notCompleted =>
+          Colors.orange, // theme: fixed 毕业清单完成、未完成、未知、阻断、不适用状态色
+        RequirementState.unknown =>
+          Colors.blueGrey, // theme: fixed 毕业清单完成、未完成、未知、阻断、不适用状态色
+        RequirementState.blocked =>
+          Colors.red, // theme: fixed 毕业清单完成、未完成、未知、阻断、不适用状态色
+        RequirementState.notApplicable =>
+          Colors.grey, // theme: fixed 毕业清单完成、未完成、未知、阻断、不适用状态色
       };
 
   String _label(RequirementState state) => switch (state) {

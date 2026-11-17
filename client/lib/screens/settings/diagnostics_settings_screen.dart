@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../theme/app_theme_tokens.dart';
 import '../../models/diagnostic_log_entry.dart';
 import '../../platform/platform_capabilities.dart';
 import '../../providers/auth_provider.dart';
@@ -317,24 +318,24 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
             title: '诊断结论',
             children: [
               if (isUnsupported)
-                const SettingsTile(
+                SettingsTile(
                   icon: Icons.info_outline_rounded,
-                  iconColor: CampusTheme.subText,
+                  iconColor: AppThemeTokens.of(context).textSecondary,
                   title: '当前平台不支持远程推送',
                   subtitle: '课程和考试本地提醒仍可正常使用。仅 Android / iOS 移动端支持远程推送。',
-                  trailing: SettingsStatusBadge(
+                  trailing: const SettingsStatusBadge(
                     label: '不支持',
                     type: SettingsStatusBadgeType.neutral,
                   ),
                   showChevron: false,
                 )
               else if (isOptedOut)
-                const SettingsTile(
+                SettingsTile(
                   icon: Icons.notifications_off_outlined,
-                  iconColor: CampusTheme.subText,
+                  iconColor: AppThemeTokens.of(context).textSecondary,
                   title: '远程推送未启用',
                   subtitle: '你已主动关闭远程推送，这不是故障。可在通知与后台设置中开启。',
-                  trailing: SettingsStatusBadge(
+                  trailing: const SettingsStatusBadge(
                     label: '未启用',
                     type: SettingsStatusBadgeType.neutral,
                   ),
@@ -345,8 +346,9 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
                   icon: issues.isEmpty
                       ? Icons.check_circle_outline_rounded
                       : Icons.warning_amber_rounded,
-                  iconColor:
-                      issues.isEmpty ? CampusTheme.green : CampusTheme.orange,
+                  iconColor: issues.isEmpty
+                      ? CampusTheme.green
+                      : CampusTheme.orange, // theme: fixed 诊断正常、需处理、警告状态色
                   title:
                       issues.isEmpty ? '通知状态正常' : '发现 ${issues.length} 项需要处理',
                   subtitle:
@@ -446,14 +448,17 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
                     height: 38,
                     decoration: BoxDecoration(
                       color: isDark
-                          ? const Color(0xFF1B3B36)
-                          : const Color(0xFFE4F4F0),
+                          ? const Color(
+                              0xFF1B3B36) // theme: fixed 技术诊断、运行日志、反馈入口识别色
+                          : const Color(
+                              0xFFE4F4F0), // theme: fixed 技术诊断、运行日志、反馈入口识别色
                       borderRadius: BorderRadius.circular(11),
                     ),
                     child: const Icon(
                       Icons.bug_report_outlined,
                       size: 22,
-                      color: CampusTheme.primary,
+                      color:
+                          CampusTheme.primary, // theme: fixed 技术诊断、运行日志、反馈入口识别色
                     ),
                   ),
                   title: const Text(
@@ -526,10 +531,12 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
           children: [
             SettingsTile(
               icon: Icons.history_rounded,
-              iconBgColor:
-                  isDark ? const Color(0xFF1A334E) : const Color(0xFFE6F0FA),
-              iconColor:
-                  isDark ? const Color(0xFF82B1FF) : const Color(0xFF2A72D4),
+              iconBgColor: isDark
+                  ? const Color(0xFF1A334E) // theme: fixed 诊断、日志、反馈入口识别色
+                  : const Color(0xFFE6F0FA), // theme: fixed 技术诊断、运行日志、反馈入口识别色
+              iconColor: isDark
+                  ? const Color(0xFF82B1FF) // theme: fixed 诊断、日志、反馈入口识别色
+                  : const Color(0xFF2A72D4), // theme: fixed 技术诊断、运行日志、反馈入口识别色
               title: '运行诊断日志',
               subtitle: '查看网络请求、推送事件与异常抓取记录',
               onTap: () {
@@ -543,10 +550,12 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
             ),
             SettingsTile(
               icon: Icons.feedback_outlined,
-              iconBgColor:
-                  isDark ? const Color(0xFF3D2A1A) : const Color(0xFFFDF0E6),
-              iconColor:
-                  isDark ? const Color(0xFFFFB74D) : const Color(0xFFE07A2B),
+              iconBgColor: isDark
+                  ? const Color(0xFF3D2A1A) // theme: fixed 诊断、日志、反馈入口识别色
+                  : const Color(0xFFFDF0E6), // theme: fixed 技术诊断、运行日志、反馈入口识别色
+              iconColor: isDark
+                  ? const Color(0xFFFFB74D) // theme: fixed 诊断、日志、反馈入口识别色
+                  : const Color(0xFFE07A2B), // theme: fixed 技术诊断、运行日志、反馈入口识别色
               title: '问题与建议反馈',
               subtitle: '在线提交页面异常、功能建议或改进想法',
               onTap: () {
@@ -565,7 +574,6 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
   }
 
   Widget _buildTechRow(String label, String value, {bool isWarning = false}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -577,7 +585,7 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
               label,
               style: TextStyle(
                 fontSize: 12.5,
-                color: isDark ? Colors.white60 : CampusTheme.subText,
+                color: AppThemeTokens.of(context).textSecondary,
               ),
             ),
           ),
@@ -588,8 +596,8 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
                 color: isWarning
-                    ? CampusTheme.red
-                    : (isDark ? Colors.white : CampusTheme.text),
+                    ? CampusTheme.red // theme: fixed 诊断正常、需处理、警告状态色
+                    : (AppThemeTokens.of(context).textPrimary),
               ),
             ),
           ),

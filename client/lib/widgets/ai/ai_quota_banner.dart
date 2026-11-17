@@ -3,7 +3,7 @@ import '../app_card.dart';
 
 import '../../models/ai_quota.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 
 class AiQuotaBanner extends StatelessWidget {
   final AiQuota quota;
@@ -40,11 +40,17 @@ class AiQuotaBanner extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: isEmpty
-              ? (dark ? AppColors.dangerSurfaceDark : AppColors.dangerSurfaceLight)
-              : (dark ? AppColors.warningSurfaceDark : AppColors.warningSurfaceLight),
-          borderRadius: BorderRadius.circular(AppRadius.sm),
+              ? (dark
+                  ? AppColors.dangerSurfaceDark
+                  : AppColors.dangerSurfaceLight) // theme: fixed 配额不足、耗尽状态色
+              : (dark
+                  ? AppColors.warningSurfaceDark
+                  : AppColors.warningSurfaceLight), // theme: fixed 配额不足、耗尽状态色
+          borderRadius: BorderRadius.circular(AppShape.of(context).sm),
           border: Border.all(
-            color: isEmpty ? AppColors.danger : const Color(0xFFF2DDBD),
+            color: isEmpty
+                ? AppColors.danger
+                : const Color(0xFFF2DDBD), // theme: fixed 配额不足、耗尽状态色
           ),
         ),
         child: Row(
@@ -52,15 +58,20 @@ class AiQuotaBanner extends StatelessWidget {
             Icon(
               isEmpty ? Icons.block_outlined : Icons.info_outline_rounded,
               size: 16,
-              color: isEmpty ? AppColors.danger : AppColors.warning,
+              color: isEmpty
+                  ? AppColors.danger
+                  : AppColors.warning, // theme: fixed 配额不足、耗尽状态色
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 '$_message · 每次最多 $maxCharacters 字',
                 style: TextStyle(
-                  color: dark ? Theme.of(context).colorScheme.onSurface
-                      : isEmpty ? AppColors.danger : const Color(0xFF8A5A12),
+                  color: dark
+                      ? Theme.of(context).colorScheme.onSurface
+                      : isEmpty
+                          ? AppColors.danger
+                          : const Color(0xFF8A5A12), // theme: fixed 配额不足、耗尽状态色
                   fontSize: 11.5,
                   fontWeight: FontWeight.w600,
                 ),

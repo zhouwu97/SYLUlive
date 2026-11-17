@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_theme_tokens.dart';
 import '../../models/competition_action_draft.dart';
-import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import '../app_card.dart';
 
 class AiCompetitionPlanDraftCard extends StatefulWidget {
@@ -51,27 +51,26 @@ class _AiCompetitionPlanDraftCardState
       margin: const EdgeInsets.only(top: 12, bottom: 4),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? AppColors.surfaceSecondaryDark
-            : Colors.white,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.borderNormalLight),
+        color: AppThemeTokens.of(context).card,
+        borderRadius: BorderRadius.circular(AppShape.of(context).lg),
+        border: Border.all(color: AppThemeTokens.of(context).cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.playlist_add_rounded,
-                  size: 20, color: AppColors.brandPrimary),
+              Icon(Icons.playlist_add_rounded,
+                  size: 20, color: AppThemeTokens.of(context).primary),
               const SizedBox(width: 8),
               const Expanded(
                 child: Text('建议加入计划',
                     style: TextStyle(fontWeight: FontWeight.w800)),
               ),
               Text(statusText,
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.textSecondaryLight)),
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: AppThemeTokens.of(context).textSecondary)),
             ],
           ),
           const SizedBox(height: 10),

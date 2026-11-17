@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
+import '../theme/app_theme_tokens.dart';
 import 'liquid_glass/bottom_nav_controller.dart';
 import 'liquid_glass/liquid_glass_renderer.dart';
 import 'liquid_glass/liquid_glass_dynamics.dart';
@@ -424,10 +425,7 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
                                   icons: LiquidBottomNav.icons,
                                   badges: widget.badges,
                                   accent: widget.accent ??
-                                      (Theme.of(context).brightness ==
-                                              Brightness.dark
-                                          ? const Color(0xff84baff)
-                                          : const Color(0xff1765da)),
+                                      AppThemeTokens.of(context).navSelected,
                                   compare: widget.compare,
                                   blur: widget.blur,
                                   tint: widget.tint,
@@ -452,10 +450,8 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
                                       ),
                                       border: Border.all(
                                         color: widget.accent ??
-                                            (Theme.of(context).brightness ==
-                                                    Brightness.dark
-                                                ? const Color(0xff84baff)
-                                                : const Color(0xff1765da)),
+                                            AppThemeTokens.of(context)
+                                                .navSelected,
                                         width: 2,
                                       ),
                                     ),

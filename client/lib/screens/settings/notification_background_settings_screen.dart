@@ -1,3 +1,4 @@
+import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -357,12 +358,12 @@ class _NotificationBackgroundSettingsScreenState
           title: '远程消息推送',
           children: [
             if (!supportsJPush)
-              const SettingsTile(
+              SettingsTile(
                 icon: Icons.notifications_off_outlined,
-                iconColor: CampusTheme.subText,
+                iconColor: AppThemeTokens.of(context).textSecondary,
                 title: '远程推送',
                 subtitle: '当前平台不支持极光远程推送（仅移动端 App 支持）',
-                trailing: SettingsStatusBadge(
+                trailing: const SettingsStatusBadge(
                   label: '不支持',
                   type: SettingsStatusBadgeType.neutral,
                 ),
@@ -371,8 +372,9 @@ class _NotificationBackgroundSettingsScreenState
             else
               SettingsTile(
                 icon: Icons.notifications_outlined,
-                iconColor:
-                    isPushActive ? CampusTheme.primary : CampusTheme.subText,
+                iconColor: isPushActive
+                    ? AppThemeTokens.of(context).primary
+                    : AppThemeTokens.of(context).textSecondary,
                 title: '远程消息推送',
                 subtitle: _buildPushSubtitle(),
                 trailing: Row(
@@ -398,7 +400,7 @@ class _NotificationBackgroundSettingsScreenState
           children: [
             SettingsTile(
               icon: Icons.event_available_outlined,
-              iconColor: CampusTheme.green,
+              iconColor: CampusTheme.green, // theme: fixed 本地提醒有效状态色
               title: '本地课程与考试提醒',
               subtitle: '基于应用本地常驻任务生成，不受远程推送开关影响',
               trailing: SettingsStatusBadge(
@@ -464,8 +466,8 @@ class _NotificationBackgroundSettingsScreenState
               SettingsTile(
                 icon: Icons.bolt_outlined,
                 iconColor: _keepAliveStatus.enabled
-                    ? CampusTheme.primary
-                    : CampusTheme.subText,
+                    ? AppThemeTokens.of(context).primary
+                    : AppThemeTokens.of(context).textSecondary,
                 title: '开启前台保活服务',
                 subtitle: _keepAliveStatus.serviceRunning
                     ? '前台服务正在运行中'

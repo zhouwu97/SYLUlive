@@ -1,10 +1,10 @@
+import '../../theme/app_theme_tokens.dart';
 import '../../providers/theme_provider.dart';
 import 'package:provider/provider.dart';
 import '../app_card.dart';
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 
 class AiModeSwitch extends StatelessWidget {
   final bool isPersonalMode;
@@ -18,20 +18,16 @@ class AiModeSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: AppCardSurface(
         height: 48,
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
-          color:
-              isDark ? AppColors.brandSurfaceDark : AppColors.brandSurfaceLight,
-          borderRadius: BorderRadius.circular(AppRadius.md),
+          color: AppThemeTokens.of(context).primaryContainer,
+          borderRadius: BorderRadius.circular(AppShape.of(context).md),
           border: Border.all(
-            color: isDark
-                ? AppColors.borderNormalDark
-                : AppColors.borderNormalLight,
+            color: AppThemeTokens.of(context).cardBorder,
           ),
         ),
         child: Row(
@@ -85,14 +81,14 @@ class _ModeButton extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
+          borderRadius: BorderRadius.circular(AppShape.of(context).sm),
           child: Container(
             constraints: const BoxConstraints(minHeight: 44),
             decoration: BoxDecoration(
               color: isSelected
                   ? colors.surface.withValues(alpha: customBackground ? .16 : 1)
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(AppRadius.sm),
+              borderRadius: BorderRadius.circular(AppShape.of(context).sm),
               boxShadow: isSelected
                   ? [
                       BoxShadow(

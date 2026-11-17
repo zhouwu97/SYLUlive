@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../theme/app_theme_tokens.dart';
 import '../opacity_safe_backdrop_filter.dart';
 
 import 'liquid_glass_runtime.dart';
@@ -90,6 +91,7 @@ class _LiquidGlassRendererState extends State<LiquidGlassRenderer> {
   Widget build(BuildContext context) {
     final source = LiquidGlassScene.maybeOf(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final tokens = AppThemeTokens.of(context);
     final fallback = !widget.enabled || _shader == null || source == null;
     if (!widget.enabled) {
       updateLiquidGlassRuntimeStatus(
@@ -106,6 +108,8 @@ class _LiquidGlassRendererState extends State<LiquidGlassRenderer> {
         shader: widget.enabled ? _shader : null,
         settings: widget,
         dark: dark,
+        background: tokens.navBackground,
+        unselected: tokens.navUnselected,
         dpr: MediaQuery.devicePixelRatioOf(context),
         textScale: MediaQuery.textScalerOf(context).scale(12) / 12,
         highContrast: MediaQuery.highContrastOf(context),
@@ -146,6 +150,8 @@ class _GlassPainter extends CustomPainter {
     required this.shader,
     required this.settings,
     required this.dark,
+    required this.background,
+    required this.unselected,
     required this.dpr,
     required this.textScale,
     required this.highContrast,
@@ -157,6 +163,8 @@ class _GlassPainter extends CustomPainter {
   final ui.FragmentShader? shader;
   final LiquidGlassRenderer settings;
   final bool dark;
+  final Color background;
+  final Color unselected;
   final double dpr;
   final double textScale;
   final bool highContrast;
@@ -271,6 +279,9 @@ class _GlassPainter extends CustomPainter {
       a,
       settings.energy,
       settings.axis == Axis.vertical ? 1 : 0,
+      background.r,
+      background.g,
+      background.b,
     ];
     for (var i = 0; i < values.length; i++) {
       shader.setFloat(i, values[i]);
@@ -292,6 +303,7 @@ class _GlassPainter extends CustomPainter {
       textScale,
       dpr,
       settings.accent,
+      unselected,
       settings.axis,
       Object.hashAll(
         settings.badges.entries.map((e) => Object.hash(e.key, e.value)),
@@ -317,9 +329,7 @@ class _GlassPainter extends CustomPainter {
   }
 
   void _drawTabs(Canvas canvas, Size size, bool accent) {
-    final color = accent
-        ? settings.accent
-        : (dark ? const Color(0xffd1d5db) : const Color(0xff4b525e));
+    final color = accent ? settings.accent : unselected;
     final vertical = settings.axis == Axis.vertical;
     final item =
         ((vertical ? size.height : size.width) - 8) / settings.labels.length;
@@ -365,7 +375,7 @@ class _GlassPainter extends CustomPainter {
         canvas.drawCircle(
           Offset(center + 12, top + 13),
           4,
-          Paint()..color = const Color(0xffff4d58),
+          Paint()..color = const Color(0xffff4d58), // theme: fixed 未读消息状态色
         );
       }
     }
@@ -374,9 +384,7 @@ class _GlassPainter extends CustomPainter {
   void _fallback(Canvas canvas, Size size, RRect dock) {
     canvas.drawRRect(
       dock,
-      Paint()
-        ..color = (dark ? const Color(0xff252a32) : const Color(0xffedf0f5))
-            .withValues(alpha: dark ? .72 : .62),
+      Paint()..color = background,
     );
     _drawTabs(canvas, size, false);
     canvas.save();
@@ -385,7 +393,11 @@ class _GlassPainter extends CustomPainter {
     );
     canvas.drawRRect(
       dock,
-      Paint()..color = dark ? const Color(0xff39434e) : const Color(0xffdce5f0),
+      Paint()
+        ..color = Color.alphaBlend(
+          settings.accent.withValues(alpha: .12),
+          background.withValues(alpha: 1),
+        ),
     );
     _drawTabs(canvas, size, true);
     canvas.restore();

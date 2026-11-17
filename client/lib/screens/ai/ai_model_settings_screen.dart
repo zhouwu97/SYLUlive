@@ -1,5 +1,6 @@
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:shenliyuan/widgets/app_input_surface.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_card.dart';
 import 'dart:async';
 
@@ -214,7 +215,6 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
       barrierColor: Colors.black.withValues(alpha: 0.28),
       builder: (context) {
         final theme = Theme.of(context);
-        final isDark = theme.brightness == Brightness.dark;
         final selectedModel = _modelController.text.trim();
         return AppCardSurface(
           constraints: BoxConstraints(
@@ -222,7 +222,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
           ),
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
           decoration: BoxDecoration(
-            color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+            color: AppThemeTokens.of(context).card,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: Column(
@@ -250,7 +250,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
               Text(
                 '共发现 ${models.length} 个模型，选择后可单独测试连接。',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: CampusTheme.subText,
+                  color: AppThemeTokens.of(context).textSecondary,
                 ),
               ),
               const SizedBox(height: 12),
@@ -264,7 +264,9 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                     final selected = model == selectedModel;
                     return Material(
                       color: selected
-                          ? CampusTheme.primary.withValues(alpha: 0.10)
+                          ? AppThemeTokens.of(context)
+                              .primary
+                              .withValues(alpha: 0.10)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(14),
                       child: InkWell(
@@ -281,8 +283,8 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                                 Icons.smart_toy_outlined,
                                 size: 20,
                                 color: selected
-                                    ? CampusTheme.primary
-                                    : CampusTheme.subText,
+                                    ? AppThemeTokens.of(context).primary
+                                    : AppThemeTokens.of(context).textSecondary,
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -298,10 +300,10 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                                 ),
                               ),
                               if (selected)
-                                const Icon(
+                                Icon(
                                   Icons.check_circle_rounded,
                                   size: 21,
-                                  color: CampusTheme.primary,
+                                  color: AppThemeTokens.of(context).primary,
                                 ),
                             ],
                           ),

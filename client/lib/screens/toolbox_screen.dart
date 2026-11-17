@@ -1,3 +1,4 @@
+import '../theme/app_theme_tokens.dart';
 import '../widgets/app_page_background.dart';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -9,7 +10,7 @@ import '../app_bootstrap.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
-import '../theme/app_radius.dart';
+import '../theme/app_palette.dart';
 import '../widgets/glass_container.dart';
 import '../services/physical_credential_store.dart';
 import 'erke_score_screen.dart';
@@ -32,70 +33,70 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       title: '省大创平台',
       subtitle: '创新创业训练计划',
       icon: Icons.lightbulb_outline,
-      color: Color(0xFF55B97A),
+      color: Color(0xFF55B97A), // theme: fixed 工具入口、网站入口分类识别色
       url: 'https://cxcy.upln.cn/',
     ),
     _WebsiteDirectoryItem(
       title: '教务处',
       subtitle: '教务通知与公告',
       icon: Icons.school_outlined,
-      color: Color(0xFF826FE8),
+      color: Color(0xFF826FE8), // theme: fixed 工具入口、网站入口分类识别色
       url: 'https://jwc.sylu.edu.cn/',
     ),
     _WebsiteDirectoryItem(
       title: '创院',
       subtitle: '创新创业学院',
       icon: Icons.emoji_events_outlined,
-      color: Color(0xFFE9A23B),
+      color: Color(0xFFE9A23B), // theme: fixed 工具入口、网站入口分类识别色
       url: 'https://cxcyxy.sylu.edu.cn/',
     ),
     _WebsiteDirectoryItem(
       title: '查二课',
       subtitle: 'WebVPN 入口',
       icon: Icons.vpn_key_outlined,
-      color: Color(0xFF35B7C4),
+      color: Color(0xFF35B7C4), // theme: fixed 工具入口、网站入口分类识别色
       url: 'https://webvpn.sylu.edu.cn/',
     ),
     _WebsiteDirectoryItem(
       title: '图书馆',
       subtitle: '馆藏与资源服务',
       icon: Icons.local_library_outlined,
-      color: Color(0xFF5B8DEF),
+      color: Color(0xFF5B8DEF), // theme: fixed 工具入口、网站入口分类识别色
       url: 'https://tsg.sylu.edu.cn/',
     ),
     _WebsiteDirectoryItem(
       title: '沈理就业网',
       subtitle: '招聘就业信息',
       icon: Icons.work_outline,
-      color: Color(0xFFEE5C8A),
+      color: Color(0xFFEE5C8A), // theme: fixed 工具入口、网站入口分类识别色
       url: 'https://job.sylu.edu.cn/',
     ),
     _WebsiteDirectoryItem(
       title: '蓝桥杯成绩',
       subtitle: '竞赛成绩快速查询',
       icon: Icons.military_tech_outlined,
-      color: Color(0xFF0EA5A4),
+      color: Color(0xFF0EA5A4), // theme: fixed 工具入口、网站入口分类识别色
       url: 'https://c16h22o4.github.io/',
     ),
     _WebsiteDirectoryItem(
       title: '四六级',
       subtitle: 'CET 报名与成绩查询',
       icon: Icons.translate,
-      color: Color(0xFF0EA5E9),
+      color: Color(0xFF0EA5E9), // theme: fixed 工具入口、网站入口分类识别色
       url: 'https://cet.neea.edu.cn/',
     ),
     _WebsiteDirectoryItem(
       title: '计算机等级考试',
       subtitle: 'NCRE 报名与证书查询',
       icon: Icons.computer_outlined,
-      color: Color(0xFF6366F1),
+      color: Color(0xFF6366F1), // theme: fixed 工具入口、网站入口分类识别色
       url: 'https://ncre.neea.edu.cn/',
     ),
     _WebsiteDirectoryItem(
       title: '教师资格证',
       subtitle: 'NTCE 报名与认定',
       icon: Icons.history_edu_outlined,
-      color: Color(0xFFEF4444),
+      color: Color(0xFFEF4444), // theme: fixed 工具入口、网站入口分类识别色
       url: 'https://ntce.neea.edu.cn/',
     ),
   ];
@@ -111,14 +112,17 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     final themeProvider = context.watch<ThemeProvider>();
     final useCustomBackground = themeProvider.shouldShowCustomBackground;
     final cleanLightMode = !useCustomBackground && !isDark;
-    final foregroundColor =
-        cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
-    final secondaryColor =
-        cleanLightMode ? const Color(0xFF6B7280) : Colors.white;
+    final foregroundColor = useCustomBackground
+        ? Colors.white // theme: fixed 壁纸覆盖层对比前景
+        : AppThemeTokens.of(context).appBarForeground;
+    final secondaryColor = useCustomBackground
+        ? Colors.white // theme: fixed 壁纸覆盖层对比前景
+        : AppThemeTokens.of(context).textSecondary;
 
     return GlobalBackgroundWrapper(
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(
+            context, AppThemeTokens.of(context).background),
         extendBodyBehindAppBar: true,
         appBar: AppBar(
           centerTitle: false,
@@ -146,7 +150,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                   shadows: [
                     if (useCustomBackground)
                       const Shadow(
-                        color: Colors.black45,
+                        color: Colors
+                            .black45, // theme: fixed 图片覆盖层对比色、固定光照阴影；B17/B18 只改简洁模式文字
                         blurRadius: 8,
                       ),
                   ],
@@ -177,7 +182,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Colors.black54,
+                        Colors
+                            .black54, // theme: fixed 图片覆盖层对比色、固定光照阴影；B17/B18 只改简洁模式文字
                         Colors.transparent,
                       ],
                     ),
@@ -219,7 +225,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                               _buildToolCard(
                                 context,
                                 icon: Icons.school_outlined,
-                                color: const Color(0xFF55B97A),
+                                color: const Color(
+                                    0xFF55B97A), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '二课分查询',
                                 subtitle: '支持 WebVPN 穿透',
                                 onTap: () => _openErke(context),
@@ -227,7 +234,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                               _buildToolCard(
                                 context,
                                 icon: Icons.fitness_center,
-                                color: const Color(0xFFE9A23B),
+                                color: const Color(
+                                    0xFFE9A23B), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '体测成绩',
                                 subtitle: '扫码核验 / 查询',
                                 onTap: () => _openPhysicalTest(context),
@@ -235,7 +243,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                               _buildToolCard(
                                 context,
                                 icon: Icons.event_note,
-                                color: const Color(0xFF826FE8),
+                                color: const Color(
+                                    0xFF826FE8), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '考试日程',
                                 subtitle: 'AI一键提取',
                                 onTap: () => Navigator.push(
@@ -248,7 +257,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                               _buildToolCard(
                                 context,
                                 icon: Icons.library_books_outlined,
-                                color: const Color(0xFFEC6F5B),
+                                color: const Color(
+                                    0xFFEC6F5B), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '试卷库',
                                 subtitle: '历年试卷 / 投稿审核',
                                 onTap: () => Navigator.push(
@@ -262,7 +272,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                               _buildToolCard(
                                 context,
                                 icon: Icons.travel_explore_outlined,
-                                color: const Color(0xFF4F8DF7),
+                                color: const Color(
+                                    0xFF4F8DF7), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '网站大全',
                                 subtitle: '用得到的网站',
                                 onTap: () => _showWebsiteDirectory(context),
@@ -283,7 +294,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                               _buildToolCard(
                                 context,
                                 icon: Icons.sports_esports,
-                                color: const Color(0xFF35B7C4),
+                                color: const Color(
+                                    0xFF35B7C4), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '云原神',
                                 subtitle: '点击即玩',
                                 onTap: () => _launchCloudGenshin(context),
@@ -291,7 +303,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                               _buildToolCard(
                                 context,
                                 icon: Icons.card_giftcard,
-                                color: const Color(0xFFEE5C8A),
+                                color: const Color(
+                                    0xFFEE5C8A), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '抽奖活动',
                                 subtitle: '公平福利派送',
                                 onTap: () => Navigator.push(
@@ -353,11 +366,12 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       style: TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.w700,
-        color: isDark ? Colors.white : const Color(0xFF1F2937),
+        color: AppThemeTokens.of(context).textPrimary,
         shadows: [
           if (useCustomBackground)
             Shadow(
-              color: Colors.black.withValues(alpha: 0.35),
+              color: Colors.black.withValues(
+                  alpha: 0.35), // theme: fixed 图片覆盖层对比色、固定光照阴影；B17/B18 只改简洁模式文字
               blurRadius: 6,
             ),
         ],
@@ -367,7 +381,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
 
   Widget _buildMoreToolsCard(bool isDark) {
     return GlassContainer(
-      borderRadius: AppRadius.lg,
+      borderRadius: AppShape.of(context).lg,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: [
@@ -375,11 +389,13 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: const Color(0xFF5B8DEF).withValues(alpha: 0.15),
+              color: const Color(0xFF5B8DEF) // theme: fixed 工具入口分类识别色
+                  .withValues(alpha: 0.15), // theme: fixed 工具入口、网站入口分类识别色
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.auto_stories_outlined,
-                color: Color(0xFF5B8DEF), size: 22),
+                color: Color(0xFF5B8DEF), // theme: fixed 工具入口分类识别色
+                size: 22), // theme: fixed 工具入口、网站入口分类识别色
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -391,7 +407,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 15,
-                    color: isDark ? Colors.white : const Color(0xFF20232A),
+                    color: AppThemeTokens.of(context).textPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -400,7 +416,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w400,
-                    color: isDark ? Colors.white60 : const Color(0xFF7D8492),
+                    color: AppThemeTokens.of(context).textSecondary,
                   ),
                 ),
               ],
@@ -411,7 +427,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: isDark ? Colors.white54 : const Color(0xFF94A3B8),
+              color: AppThemeTokens.of(context).textTertiary,
             ),
           ),
         ],
@@ -497,10 +513,9 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return GlassContainer(
       onTap: onTap,
-      borderRadius: AppRadius.lg,
+      borderRadius: AppShape.of(context).lg,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
@@ -526,7 +541,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 15,
-                    color: isDark ? Colors.white : const Color(0xFF20232A),
+                    color: AppThemeTokens.of(context).textPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -537,7 +552,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w400,
-                    color: isDark ? Colors.white60 : const Color(0xFF7D8492),
+                    color: AppThemeTokens.of(context).textSecondary,
                   ),
                 ),
               ],
@@ -560,14 +575,17 @@ class _WebsiteDirectoryScreen extends StatelessWidget {
     final themeProvider = context.watch<ThemeProvider>();
     final useCustomBackground = themeProvider.shouldShowCustomBackground;
     final cleanLightMode = !useCustomBackground && !isDark;
-    final foregroundColor =
-        cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
-    final secondaryColor =
-        cleanLightMode ? const Color(0xFF6B7280) : Colors.white70;
+    final foregroundColor = useCustomBackground
+        ? Colors.white // theme: fixed 壁纸覆盖层对比前景
+        : AppThemeTokens.of(context).appBarForeground;
+    final secondaryColor = useCustomBackground
+        ? Colors.white70 // theme: fixed 壁纸覆盖层对比前景
+        : AppThemeTokens.of(context).textSecondary;
 
     return GlobalBackgroundWrapper(
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(
+            context, AppThemeTokens.of(context).background),
         extendBodyBehindAppBar: true,
         appBar: AppBar(
           centerTitle: false,
@@ -592,7 +610,10 @@ class _WebsiteDirectoryScreen extends StatelessWidget {
                   color: foregroundColor,
                   shadows: [
                     if (useCustomBackground)
-                      const Shadow(color: Colors.black45, blurRadius: 8),
+                      const Shadow(
+                          color: Colors.black45,
+                          blurRadius:
+                              8), // theme: fixed 图片覆盖层对比色、固定光照阴影；B17/B18 只改简洁模式文字
                   ],
                 ),
               ),
@@ -620,7 +641,10 @@ class _WebsiteDirectoryScreen extends StatelessWidget {
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [Colors.black54, Colors.transparent],
+                      colors: [
+                        Colors.black54,
+                        Colors.transparent
+                      ], // theme: fixed 图片覆盖层对比色、固定光照阴影；B17/B18 只改简洁模式文字
                     ),
                   ),
                 ),
@@ -637,12 +661,13 @@ class _WebsiteDirectoryScreen extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          color:
-                              isDark ? Colors.white : const Color(0xFF1F2937),
+                          color: AppThemeTokens.of(context).textPrimary,
                           shadows: [
                             if (useCustomBackground)
                               Shadow(
-                                color: Colors.black.withValues(alpha: 0.35),
+                                color: Colors.black.withValues(
+                                    alpha:
+                                        0.35), // theme: fixed 图片覆盖层对比色、固定光照阴影；B17/B18 只改简洁模式文字
                                 blurRadius: 6,
                               ),
                           ],
@@ -677,32 +702,30 @@ class _WebsiteDirectoryCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final useCustomBackground = themeProvider.shouldShowCustomBackground;
-    final backgroundColor = isDark
-        ? Colors.black.withValues(alpha: 0.65)
-        : useCustomBackground
-            ? Colors.white.withValues(alpha: 0.78)
-            : Colors.white;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.1)
-        : useCustomBackground
-            ? Colors.white.withValues(alpha: 0.65)
-            : const Color(0xFFEEF0F5);
+    final backgroundColor = AppThemeTokens.of(context)
+        .card
+        .withValues(alpha: !isDark && useCustomBackground ? 0.78 : 1);
+    final borderColor = AppThemeTokens.of(context)
+        .cardBorder
+        .withValues(alpha: !isDark && useCustomBackground ? 0.65 : 1);
 
     return AppCardSurface(
       decoration: BoxDecoration(
           color: backgroundColor,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderRadius: BorderRadius.circular(AppShape.of(context).lg),
           border: Border.all(color: borderColor),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
+                color: Colors.black.withValues(
+                    alpha:
+                        0.06), // theme: fixed 图片覆盖层对比色、固定光照阴影；B17/B18 只改简洁模式文字
                 blurRadius: 16,
                 offset: const Offset(0, 6))
           ]),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderRadius: BorderRadius.circular(AppShape.of(context).lg),
           onTap: () => _openWebsiteDirectoryItem(context, item),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -725,22 +748,17 @@ class _WebsiteDirectoryCard extends StatelessWidget {
                         style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            color: isDark
-                                ? Colors.white
-                                : const Color(0xFF20232A))),
+                            color: AppThemeTokens.of(context).textPrimary)),
                     const SizedBox(height: 4),
                     Text(item.subtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                             fontSize: 12,
-                            color: isDark
-                                ? Colors.white60
-                                : const Color(0xFF7D8492)))
+                            color: AppThemeTokens.of(context).textSecondary))
                   ])),
               Icon(Icons.open_in_new,
-                  size: 18,
-                  color: isDark ? Colors.white38 : const Color(0xFF94A3B8))
+                  size: 18, color: AppThemeTokens.of(context).textTertiary)
             ]),
           ),
         ),
@@ -852,12 +870,10 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return AppPageBackground(
         builder: (context) => Scaffold(
-              backgroundColor: AppPageBackground.color(context,
-                  isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
+              backgroundColor: AppPageBackground.color(
+                  context, AppThemeTokens.of(context).background),
               appBar: AppBar(
                 title: const Text('体测成绩查询'),
                 backgroundColor: Colors.transparent,
@@ -876,7 +892,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                           children: [
                             const Icon(
                               Icons.info_outline,
-                              color: Colors.blue,
+                              color: Colors.blue, // theme: fixed 体测工具识别色
                               size: 20,
                             ),
                             const SizedBox(width: 12),
@@ -886,7 +902,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                                 style: TextStyle(
                                   fontSize: 13,
                                   color:
-                                      isDark ? Colors.white70 : Colors.black87,
+                                      AppThemeTokens.of(context).textSecondary,
                                 ),
                               ),
                             ),
@@ -904,7 +920,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                               children: [
                                 const Icon(
                                   Icons.fitness_center,
-                                  color: Colors.blue,
+                                  color: Colors.blue, // theme: fixed 体测工具识别色
                                   size: 22,
                                 ),
                                 const SizedBox(width: 10),
@@ -920,9 +936,8 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                                   '初始密码默认为111111',
                                   style: TextStyle(
                                     fontSize: 10,
-                                    color: isDark
-                                        ? Colors.white38
-                                        : Colors.grey[500],
+                                    color:
+                                        AppThemeTokens.of(context).textTertiary,
                                   ),
                                 ),
                               ],
@@ -948,9 +963,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                                       () => _obscurePwd = !_obscurePwd),
                                 ),
                                 filled: true,
-                                fillColor: isDark
-                                    ? Colors.white.withValues(alpha: 0.05)
-                                    : Colors.black.withValues(alpha: 0.03),
+                                fillColor: AppThemeTokens.of(context).inputFill,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
                                   borderSide: BorderSide.none,
@@ -968,7 +981,8 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                           onPressed: _queryManual,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Theme.of(context).primaryColor,
-                            foregroundColor: Colors.white,
+                            foregroundColor:
+                                AppThemeTokens.of(context).onPrimary,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),

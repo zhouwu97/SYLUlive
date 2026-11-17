@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme_tokens.dart';
 import 'liquid_bottom_nav.dart';
 import 'navigation_dock_layout.dart';
 
@@ -17,11 +18,11 @@ class FloatingBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
+    final tokens = AppThemeTokens.of(context);
     return NavigationDockLayout(
         axis: axis,
         child: Material(
-          color: dark ? const Color(0xff252a32) : const Color(0xfff4f6fa),
+          color: tokens.navBackground.withValues(alpha: 1),
           elevation: 3,
           borderRadius: BorderRadius.circular(32),
           clipBehavior: Clip.antiAlias,
@@ -29,9 +30,8 @@ class FloatingBottomNav extends StatelessWidget {
               direction: axis,
               children: List.generate(5, (i) {
                 final selected = currentIndex == i;
-                final color = selected
-                    ? (dark ? const Color(0xff84baff) : const Color(0xff1765da))
-                    : (dark ? Colors.white70 : const Color(0xff4c5360));
+                final color =
+                    selected ? tokens.navSelected : tokens.navUnselected;
                 return Expanded(
                     child: Semantics(
                   button: true,

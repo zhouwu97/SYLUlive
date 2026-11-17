@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
+import '../../theme/app_theme_tokens.dart';
 import '../../models/ai_chat_message.dart';
 import '../../models/competition_action_draft.dart';
 import '../../models/ai_source.dart';
 import '../../models/user_calendar.dart';
 import '../../models/ai_run_feedback.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import '../../utils/ai_citation_mapper.dart';
 import 'ai_calendar_action_draft_card.dart';
 import 'ai_competition_plan_draft_card.dart';
@@ -61,7 +62,7 @@ class AiMessageCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
             decoration: BoxDecoration(
               color: colors.primary,
-              borderRadius: BorderRadius.circular(AppRadius.lg),
+              borderRadius: BorderRadius.circular(AppShape.of(context).lg),
             ),
             child: Text(
               message.content,
@@ -93,13 +94,14 @@ class AiMessageCard extends StatelessWidget {
                       height: 25,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: AppColors.brandSurfaceLight,
-                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        color: AppThemeTokens.of(context).primaryContainer,
+                        borderRadius:
+                            BorderRadius.circular(AppShape.of(context).sm),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.auto_awesome_rounded,
                         size: 14,
-                        color: AppColors.brandPrimary,
+                        color: AppThemeTokens.of(context).primary,
                       ),
                     ),
                     const SizedBox(width: 8),

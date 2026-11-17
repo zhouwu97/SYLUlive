@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_theme_tokens.dart';
 import '../../models/ai_agent_activity.dart';
 import '../../models/ai_agent_activity_reducer.dart';
 import '../../models/ai_run_event.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import '../app_card.dart';
 
 /// 展示 SSE 真实产生的 Agent activity；收起态是摘要，展开态保留完整审计过程。
@@ -127,10 +128,8 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
         key: const ValueKey('ai-agent-execution-card'),
         margin: const EdgeInsets.only(top: 2, bottom: 10),
         decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? AppColors.surfaceSecondaryDark
-              : Colors.white,
-          borderRadius: BorderRadius.circular(AppRadius.md),
+          color: AppThemeTokens.of(context).card,
+          borderRadius: BorderRadius.circular(AppShape.of(context).md),
           border: Border.all(
             color: isError
                 ? AppColors.danger.withValues(alpha: 0.4)
@@ -310,7 +309,7 @@ class _ActivityMark extends StatelessWidget {
         ? AppColors.danger
         : completed || status == AiAgentActivityStatus.success
             ? AppColors.success
-            : AppColors.brandPrimary;
+            : AppThemeTokens.of(context).primary;
     return Icon(icon, size: 20, color: color);
   }
 }
@@ -321,11 +320,11 @@ class AiThinkingIndicator extends StatefulWidget {
   const AiThinkingIndicator({
     super.key,
     this.size = 16,
-    this.color = AppColors.brandPrimary,
+    this.color,
   });
 
   final double size;
-  final Color color;
+  final Color? color;
 
   @override
   State<AiThinkingIndicator> createState() => _AiThinkingIndicatorState();
@@ -369,7 +368,7 @@ class _AiThinkingIndicatorState extends State<AiThinkingIndicator>
       child: Icon(
         Icons.auto_awesome_rounded,
         size: widget.size,
-        color: widget.color,
+        color: widget.color ?? AppThemeTokens.of(context).primary,
       ),
     );
     if (_reducedMotion ?? MediaQuery.disableAnimationsOf(context)) {
@@ -423,7 +422,7 @@ class _ActivityRow extends StatelessWidget {
     final color = switch (activity.status) {
       AiAgentActivityStatus.success => AppColors.success,
       AiAgentActivityStatus.failed => AppColors.danger,
-      AiAgentActivityStatus.running => AppColors.brandPrimary,
+      AiAgentActivityStatus.running => AppThemeTokens.of(context).primary,
       AiAgentActivityStatus.pending => Theme.of(context).colorScheme.outline,
     };
     return Padding(

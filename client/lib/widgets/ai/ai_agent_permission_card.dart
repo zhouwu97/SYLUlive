@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_theme_tokens.dart';
 import '../../models/ai_run_event.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import '../app_card.dart';
 
 /// 单次 Agent 授权卡。长期策略只能从权限 Bottom Sheet 修改。
@@ -30,9 +31,10 @@ class AiAgentPermissionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).brightness == Brightness.dark
             ? AppColors.warningSurfaceDark
-            : const Color(0xFFFFFAF1),
-        border: Border.all(color: const Color(0xFFF2DDBD)),
-        borderRadius: BorderRadius.circular(AppRadius.md),
+            : const Color(0xFFFFFAF1), // theme: fixed 授权或配额警告状态色
+        border: Border.all(
+            color: const Color(0xFFF2DDBD)), // theme: fixed 授权或配额警告状态色
+        borderRadius: BorderRadius.circular(AppShape.of(context).md),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -60,17 +62,17 @@ class AiAgentPermissionCard extends StatelessWidget {
           _InfoRow(label: '现有$label数据', value: '已授权快照'),
           const _InfoRow(label: '本次要求', value: '最新数据'),
           const SizedBox(height: 8),
-          const Row(
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(Icons.lock_outline_rounded,
-                  size: 15, color: AppColors.brandPrimary),
-              SizedBox(width: 6),
+                  size: 15, color: AppThemeTokens.of(context).primary),
+              const SizedBox(width: 6),
               Expanded(
                   child: Text('不上传密码、Cookie 或 Token',
                       style: TextStyle(
                           fontSize: 11.5,
-                          color: AppColors.textSecondaryLight))),
+                          color: AppThemeTokens.of(context).textSecondary))),
             ],
           ),
           const SizedBox(height: 8),
@@ -128,8 +130,9 @@ class _InfoRow extends StatelessWidget {
         children: [
           Expanded(
               child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 11.5, color: AppColors.textSecondaryLight))),
+                  style: TextStyle(
+                      fontSize: 11.5,
+                      color: AppThemeTokens.of(context).textSecondary))),
           Text(value,
               style:
                   const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),

@@ -4,10 +4,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../theme/app_theme_tokens.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/app_text_scaler.dart';
 import '../../utils/responsive_util.dart';
-import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/settings/campus_segmented_control.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
 import '../../widgets/settings/settings_section.dart';
@@ -86,13 +86,13 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
   Widget _buildLivePreviewCard(
       BuildContext context, ThemeProvider themeProvider) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryColor = isDark ? const Color(0xFF7ED6C5) : CampusTheme.primary;
+    final primaryColor = AppThemeTokens.of(context).primary;
 
     // 统一引用全局主题规范 Token
-    final pageBgColor = isDark ? CampusTheme.darkBg : CampusTheme.bg;
+    final pageBgColor = AppThemeTokens.of(context).background;
     final outerContainerBg = isDark
-        ? CampusTheme.darkCard.withValues(alpha: 0.5)
-        : kCleanWarmCardBorderLight.withValues(alpha: 0.4);
+        ? AppThemeTokens.of(context).card.withValues(alpha: 0.5)
+        : AppThemeTokens.of(context).cardBorder.withValues(alpha: 0.4);
 
     final isLandscapeScreen =
         MediaQuery.of(context).orientation == Orientation.landscape;
@@ -159,8 +159,10 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
         ColoredBox(color: pageBgColor, child: backgroundWidget),
         ColoredBox(
           color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
+              ? Colors.black
+                  .withValues(alpha: 0.35) // theme: fixed 设备模型装饰色、图片明暗遮罩和光照阴影
+              : Colors.white
+                  .withValues(alpha: 0.25), // theme: fixed 设备模型装饰色、图片明暗遮罩和光照阴影
         ),
       ]);
     } else {
@@ -179,9 +181,7 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
         color: outerContainerBg,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : CampusTheme.softBorder,
+          color: AppThemeTokens.of(context).cardBorder,
         ),
       ),
       child: Center(
@@ -193,12 +193,15 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: isDark ? Colors.white30 : Colors.white,
+              color: isDark
+                  ? Colors.white30
+                  : Colors.white, // theme: fixed 设备模型装饰色、图片明暗遮罩和光照阴影
               width: 3,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
+                color: Colors.black.withValues(
+                    alpha: 0.12), // theme: fixed 设备模型装饰色、图片明暗遮罩和光照阴影
                 blurRadius: 14,
                 offset: const Offset(0, 5),
               ),
@@ -222,13 +225,11 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: (isDark ? CampusTheme.darkCard : Colors.white)
+                          color: (AppThemeTokens.of(context).card)
                               .withValues(alpha: cardOpacity),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                            color: isDark
-                                ? Colors.white10
-                                : kCleanWarmCardBorderLight,
+                            color: AppThemeTokens.of(context).cardBorder,
                             width: 0.8,
                           ),
                         ),
@@ -248,18 +249,18 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: (isDark ? CampusTheme.darkCard : Colors.white)
+                          color: (AppThemeTokens.of(context).card)
                               .withValues(alpha: cardOpacity),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: isDark
-                                ? Colors.white10
-                                : kCleanWarmCardBorderLight,
+                            color: AppThemeTokens.of(context).cardBorder,
                             width: 0.8,
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.03),
+                              color: Colors.black.withValues(
+                                  alpha:
+                                      0.03), // theme: fixed 设备模型装饰色、图片明暗遮罩和光照阴影
                               blurRadius: 6,
                               offset: const Offset(0, 2),
                             ),
@@ -290,9 +291,8 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
                                     height: 5,
                                     width: 45,
                                     decoration: BoxDecoration(
-                                      color: isDark
-                                          ? Colors.white70
-                                          : CampusTheme.text,
+                                      color: AppThemeTokens.of(context)
+                                          .textPrimary,
                                       borderRadius: BorderRadius.circular(2.5),
                                     ),
                                   ),
@@ -301,9 +301,8 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
                                     height: 3.5,
                                     width: 65,
                                     decoration: BoxDecoration(
-                                      color: isDark
-                                          ? Colors.white30
-                                          : CampusTheme.subText,
+                                      color: AppThemeTokens.of(context)
+                                          .textSecondary,
                                       borderRadius: BorderRadius.circular(2),
                                     ),
                                   ),

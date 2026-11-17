@@ -14,7 +14,7 @@ import '../../widgets/settings/settings_tile.dart';
 import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_effect_option.dart';
 import '../../widgets/settings/settings_effect_preview.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 
 /// 全量替换后的底栏设置，仅调节新材质，不再提供旧样式入口。
 class BottomNavigationSettingsScreen extends StatefulWidget {
@@ -51,7 +51,7 @@ class _BottomNavigationSettingsScreenState
               margin: const EdgeInsets.symmetric(vertical: 12),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppRadius.lg),
+                borderRadius: BorderRadius.circular(AppShape.of(context).lg),
               ),
               child: Text(
                   '${sideNavigation ? '上下' : '左右'}拖动预览，感受不同速度下的形变。首次使用建议先调低动画强度；'

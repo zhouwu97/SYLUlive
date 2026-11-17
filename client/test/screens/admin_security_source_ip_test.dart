@@ -51,7 +51,7 @@ Map<String, dynamic> _event(int id,
         bool trusted = true}) =>
     {
       'id': id,
-      'event_type': 'login_bruteforce',
+      'event_type': 'admin_login_new_device',
       'severity': 'high',
       'status': 'active',
       'route': '/api/login',
@@ -160,6 +160,144 @@ Future<void> _visible(WidgetTester tester, Finder finder) async {
 void main() {
   setUpAll(loadTestFonts);
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
+
+  for (final profile in ['light', 'dark', 'large']) {
+    testWidgets('普通输错和自动冷却只在全部记录展示且没有人工处置入口 $profile', (tester) async {
+      final api = _Api();
+      api.auth.current = User(
+          id: 1,
+          studentId: '',
+          nickname: '测试管理员',
+          role: 'super_admin',
+          createdAt: DateTime(2026));
+      final rows = [
+        {
+          ..._event(1),
+          'event_type': 'login_failed',
+          'severity': 'critical',
+          'actionable': false,
+            'attempt_count': 1,
+            'action': 'observed',
+            'source_ip': '',
+            'source_ip_status': 'not_recorded',
+            'source_region': '',
+            'source_region_status': 'not_recorded',
+        },
+        {
+          ..._event(2),
+          'event_type': 'login_bruteforce',
+          'severity': 'critical',
+          'actionable': false,
+          'source_key': 'synthetic-source-key',
+            'attempt_count': 65,
+            'blocked_count': 65,
+            'action': 'blocked',
+            'target_type': 'account',
+            'target_masked': 'sy***@example.invalid',
+            'target_account': 'synthetic@example.invalid',
+            'target_account_status': 'available',
+        },
+        _event(3),
+      ];
+      api.events = (options) async {
+        final items = options.queryParameters['actionable'] == 'true'
+            ? rows.where((row) => row['actionable'] == true).toList()
+            : rows;
+        return {'items': items, 'total': items.length};
+      };
+      final capture = await _pump(tester, api,
+          mode: profile == 'dark' ? ThemeMode.dark : ThemeMode.light,
+          textScale: profile == 'large' ? 1.3 : 1);
+      await tester.pumpAndSettle();
+      expect(find.text('登录未成功'), findsNothing);
+      expect(find.text('登录触发冷却限制'), findsNothing);
+      await _visible(tester, find.text('全部记录'));
+      await tester.tap(find.text('全部记录'));
+      await tester.pumpAndSettle();
+      await _visible(tester, find.text('登录触发冷却限制'));
+      expect(find.text('登录未成功'), findsOneWidget);
+      expect(find.text('审计流水'), findsNWidgets(2));
+      await _save(tester, capture, 'center-$profile-audit-list');
+      await tester.tap(find.text('登录触发冷却限制'));
+      await tester.pumpAndSettle();
+      expect(find.text('标记已处理'), findsNothing);
+      expect(find.text('临时封禁来源'), findsNothing);
+        expect(find.textContaining('超级管理员来源键：'), findsNothing);
+        expect(find.text('目标：synthetic@example.invalid'), findsWidgets);
+      expect(find.text('系统已自动限流，触发额度或冷却不能单独证明攻击。'), findsWidgets);
+      await _save(tester, capture, 'center-$profile-audit-detail');
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final profile in ['light', 'dark', 'large']) {
+    testWidgets('完整目标邮箱在列表及详情展示且切号后清理 $profile', (tester) async {
+      const email = '32123456789012345678901234567890@qq.com';
+      final api = _Api();
+      api.events = (_) async => {
+            'items': [
+              {
+                ..._event(1),
+                'target_masked': '32***@qq.com',
+                if (api.auth.user.id == 1) 'target_account': email,
+                'target_account_status':
+                    api.auth.user.id == 1 ? 'available' : 'not_recorded',
+              }
+            ],
+            'total': 1,
+          };
+      final capture = await _pump(tester, api,
+          mode: profile == 'dark' ? ThemeMode.dark : ThemeMode.light,
+          textScale: profile == 'large' ? 1.3 : 1);
+      await tester.pumpAndSettle();
+      final target = find.text('目标：$email');
+      await _visible(tester, target);
+      expect(target, findsOneWidget);
+      expect(find.text('目标：32***@qq.com'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await _save(tester, capture, 'security-account-$profile-list');
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+      expect(find.text('目标：$email'), findsNWidgets(2));
+      await _save(tester, capture, 'security-account-$profile-detail');
+      expect(tester.takeException(), isNull);
+      api.auth.switchAccount();
+      await tester.pumpAndSettle();
+      expect(find.text('目标：$email'), findsNothing);
+      expect(find.text('登录状态或权限已变化，请重新打开安全页面。'), findsOneWidget);
+      await tester.tap(find.text('关闭'));
+      await tester.pumpAndSettle();
+      await _visible(tester, find.text('目标：32***@qq.com'));
+      expect(find.text('目标：32***@qq.com'), findsOneWidget);
+      expect(find.text('完整账号未记录，历史值无法还原'), findsOneWidget);
+      await _save(tester, capture, 'security-account-$profile-historical');
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('完整账号密文异常时保留目标并明确提示不可读取', (tester) async {
+    final api = _Api();
+    api.events = (_) async => {
+          'items': [
+            {
+              ..._event(1),
+              'target_masked': '32***@qq.com',
+              'target_account_status': 'unavailable',
+            }
+          ],
+          'total': 1,
+        };
+    final capture = await _pump(tester, api);
+    await tester.pumpAndSettle();
+    final target = find.text('目标：32***@qq.com');
+    await _visible(tester, target);
+    expect(find.text('完整账号暂不可读取（密钥或密文异常）'), findsOneWidget);
+    await _save(tester, capture, 'security-account-unavailable-list');
+    await tester.tap(target);
+    await tester.pumpAndSettle();
+    expect(find.text('完整账号暂不可读取（密钥或密文异常）'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
 
   for (final mode in [ThemeMode.light, ThemeMode.dark]) {
     testWidgets('安全中心顶栏随背景切换且保持文字可读 $mode', (tester) async {

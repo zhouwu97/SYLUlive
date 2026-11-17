@@ -156,6 +156,17 @@ func highAlert(eventType string) SecurityAlertEvent {
 	}
 }
 
+func TestSecurityAlertNeverEmailsOrdinaryFailuresOrAutomaticLimits(t *testing.T) {
+	for _, kind := range []string{"login_failed", "login_bruteforce", "email_target_flood", "verification_source_rate", "verification_spray", "password_reset_spray", "search_abuse"} {
+		if securityAlertWorthy(highAlert(kind)) {
+			t.Fatalf("%s 即使带着历史 high 也不能外发攻击告警", kind)
+		}
+	}
+	if !securityAlertWorthy(highAlert("refresh_token_reused")) || !securityAlertWorthy(highAlert("login_password_spray")) {
+		t.Fatal("需要核查的凭据异常及多账号异常仍须通知")
+	}
+}
+
 // 高危且待处置的事件必须把人叫醒，并且只带脱敏信息。
 func TestSecurityAlertNotifiesHighActionableEvent(t *testing.T) {
 	mailer := &recordingAlertMailer{}

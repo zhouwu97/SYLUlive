@@ -6,7 +6,7 @@ import 'package:shenliyuan/models/security_event.dart';
 import 'package:shenliyuan/utils/security_event_presentation.dart';
 
 SecurityEvent makeEvent({
-  String eventType = 'login_failed',
+  String eventType = 'login_password_spray',
   String severity = 'low',
   String status = 'active',
   String action = 'observed',
@@ -49,6 +49,28 @@ SecurityEvent makeEvent({
 }
 
 void main() {
+  test('管理员完整目标优先显示，旧服务和无法核对的历史事件仍显示脱敏值', () {
+    Map<String, dynamic> payload() => {
+          'event_type': 'login_bruteforce',
+          'target_type': 'account',
+          'target_masked': '32***@qq.com',
+        };
+    expect(
+        securityEventTargetLabel(SecurityEvent.fromJson(
+            {...payload(), 'target_account': '3212345678@qq.com'})),
+        '3212345678@qq.com');
+    expect(securityEventTargetLabel(SecurityEvent.fromJson(payload())),
+        '32***@qq.com');
+    expect(
+        securityEventContext(SecurityEvent.fromJson(
+            {...payload(), 'target_account_status': 'not_recorded'})),
+        contains('完整账号未记录，历史值无法还原'));
+    expect(
+        securityEventContext(SecurityEvent.fromJson(
+            {...payload(), 'target_account_status': 'unavailable'})),
+        contains('完整账号暂不可读取（密钥或密文异常）'));
+  });
+
   group('密码重置链路按阶段命名', () {
     // 三条事件曾经都叫「密码重置请求」，于是出现
     // 「请求 1 · 实际发信 0 · 成功改密 1」这种自相矛盾的卡片。
@@ -92,20 +114,23 @@ void main() {
         severity: 'low',
         attemptCount: 1,
       );
-      expect(securityEventTitle(event), '登录失败观察');
-      expect(securityEventMetrics(event), ['尝试 1 次']);
+      expect(securityEventTitle(event), '登录未成功');
+      expect(securityEventMetrics(event), ['未成功登录 1 次']);
     });
 
-    test('达到锁定阈值才升级为登录暴力尝试并体现拦截', () {
+    test('达到冷却阈值只显示自动限流，不推断攻击', () {
       final event = makeEvent(
         eventType: 'login_bruteforce',
         severity: 'medium',
         action: 'throttled',
         attemptCount: 3,
         blockedCount: 1,
+        actionable: false,
       );
-      expect(securityEventTitle(event), '登录暴力尝试');
-      expect(securityEventMetrics(event), ['尝试 3 次 · 已拦截 1 次']);
+      expect(securityEventTitle(event), '登录触发冷却限制');
+      expect(securityEventSeverityLabel(event), '提示');
+      expect(securityEventStatusLabel(event), '审计流水');
+      expect(securityEventMetrics(event), ['冷却相关请求 3 次 · 已拦截 1 次']);
     });
 
     test('多账号扫描显示涉及目标数而不是路由名', () {
@@ -118,12 +143,34 @@ void main() {
         blockedCount: 23,
         metadata: const {'distinct_targets': 16, 'window': '10m'},
       );
-      expect(securityEventTitle(event), '多账号登录扫描');
+      expect(securityEventTitle(event), '多账号登录异常（待核查）');
       expect(securityEventMetrics(event), ['10m内涉及 16 个目标 · 已拦截 23 次']);
     });
   });
 
   group('审计流水与待处置', () {
+    test('历史高等级限流按提示显示，凭据异常仍保留高危', () {
+      for (final kind in [
+        'login_failed',
+        'login_bruteforce',
+        'email_target_flood',
+        'verification_source_rate',
+        'verification_spray',
+        'password_reset_spray',
+        'search_abuse'
+      ]) {
+        final event =
+            makeEvent(eventType: kind, severity: 'critical', actionable: false);
+        expect(securityEventDisplaySeverity(event), 'low');
+        expect(securityEventStatusLabel(event), '审计流水');
+        expect(securityEventTitle(event), isNot(contains('攻击')));
+        expect(securityEventTitle(event), isNot(contains('暴力')));
+      }
+      expect(
+          securityEventDisplaySeverity(
+              makeEvent(eventType: 'refresh_token_reused', severity: 'high')),
+          'high');
+    });
     test('正常验证码与正常改密标记为审计流水', () {
       expect(
         securityEventStatusLabel(makeEvent(
@@ -248,9 +295,10 @@ void main() {
     expect(service, contains("String scope = 'route'"));
     expect(service, contains("'confirm_global': confirmGlobal"));
 
-    final screen =
-        File('lib/screens/admin_security_center_screen.dart').readAsStringSync();
-    expect(screen, contains("var scope = routePrefix.isEmpty ? 'account' : 'route';"));
+    final screen = File('lib/screens/admin_security_center_screen.dart')
+        .readAsStringSync();
+    expect(screen,
+        contains("var scope = routePrefix.isEmpty ? 'account' : 'route';"));
     expect(screen, contains("confirmGlobal: scope == 'all'"));
     expect(screen, contains("Text(scope == 'all' ? '确认全站封禁' : '确认封禁')"));
   });
@@ -283,10 +331,11 @@ void main() {
     expect(text, contains('普通 GET 读取与检索不进入来源封禁'));
 
     // 旧服务端没给这个字段时只解释语义，不能凭空报出一份路径清单。
-    expect(securityBlockScopeDescription(null, 'account'), isNot(contains('实际路径')));
+    expect(securityBlockScopeDescription(null, 'account'),
+        isNot(contains('实际路径')));
 
-    final screen =
-        File('lib/screens/admin_security_center_screen.dart').readAsStringSync();
+    final screen = File('lib/screens/admin_security_center_screen.dart')
+        .readAsStringSync();
     expect(screen, contains('securityBlockScopeDescription'));
     // 页面上那份手抄的 7 条前缀就是 A12 的预期差来源，必须不再出现。
     expect(screen, isNot(contains('/api/forgot_password')));

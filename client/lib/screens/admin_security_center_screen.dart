@@ -339,11 +339,11 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                     if (!event.actionable)
                       const Padding(
                         padding: EdgeInsets.only(top: AppSpacing.xs),
-                        child: Text('审计流水：正常业务记录，无需处置',
+                        child: Text('审计记录：当前无需人工处置',
                             style: TextStyle(color: AppColors.info)),
                       ),
                     if (event.installationSeen) const Text('安装标识：已记录（仅用于关联判断）'),
-                    if (isSuper && event.sourceKey.isNotEmpty)
+                    if (event.actionable && isSuper && event.sourceKey.isNotEmpty)
                       Text('超级管理员来源键：${event.sourceKey}',
                           style: const TextStyle(fontSize: 12)),
                     const SizedBox(height: AppSpacing.lg),
@@ -351,7 +351,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                       spacing: AppSpacing.sm,
                       runSpacing: AppSpacing.sm,
                       children: [
-                        if (event.status == 'active')
+                        if (event.actionable && event.status == 'active')
                           FilledButton.tonal(
                             onPressed: _actionBusy
                                 ? null
@@ -361,7 +361,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                                   },
                             child: const Text('标记已处理'),
                           ),
-                        if (event.status == 'active')
+                        if (event.actionable && event.status == 'active')
                           OutlinedButton(
                             onPressed: _actionBusy
                                 ? null
@@ -371,7 +371,8 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                                   },
                             child: const Text('误报'),
                           ),
-                        if (isSuper &&
+                        if (event.actionable &&
+                            isSuper &&
                             event.sourceKey.isNotEmpty &&
                             event.sourceAttributionValid)
                           OutlinedButton.icon(
@@ -700,10 +701,10 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
         '高危/严重 · 未处理 · 需处置'
       ),
       (
-        '${overview.range} 拦截',
+        '${overview.range} 自动拦截',
         '${overview.blockedRequests}',
-        AppColors.warning,
-        '本区间被限流或封禁挡下的次数'
+        AppColors.info,
+        '包含正常触发的冷却与额度限制'
       ),
       ('涉及目标', '${overview.affectedUsers}', AppColors.info, '出现事件的账号或邮箱数'),
       (
@@ -716,7 +717,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
       (
         '密码重置成功',
         '${overview.passwordResetSuccessCount}',
-        AppColors.danger,
+        AppColors.success,
         '验证码校验通过并完成改密'
       ),
     ];

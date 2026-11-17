@@ -109,7 +109,7 @@ User _user(int id, String role) => User(
 
 Map<String, dynamic> _event(int id) => {
       'id': id,
-      'event_type': 'login_bruteforce',
+      'event_type': 'admin_login_new_device',
       'severity': 'high',
       'status': 'active',
       'route': '/api/login',

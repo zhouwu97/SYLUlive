@@ -11,7 +11,7 @@
 | `uploads/` | 服务器/对象存储 | TODO | 内容删除与备份轮换 | 待核验 |
 | Caddy/Nginx 日志 | TODO | TODO | 日志轮换 | 待核验 |
 | systemd/Go/Python 日志 | TODO | TODO | 日志轮换、敏感字段脱敏 | 待核验 |
-| 成功登录逐条流水及安全中心聚合事件 | PostgreSQL `account_security_audit_logs`（仅 `login_success`）、`security_events` | 90 天 | 服务端定时 `PurgeSecurityData`；事故保全副本按专门事件记录管理 | 普通审计保留脱敏摘要，需处置预警附来源 IP 密文；密文随事件一并到期删除，其他账号安全审计沿用原策略 |
+| 成功登录逐条流水及安全中心聚合事件 | PostgreSQL `account_security_audit_logs`（仅 `login_success`）、`security_events` | 90 天 | 服务端定时 `PurgeSecurityData`；事故保全副本按专门事件记录管理 | 普通单次失败等流水保留脱敏摘要，异常和保留调查字段的自动限流记录附来源 IP 与目标账号／邮箱密文；分类降级不删除原字段，密文随事件一并到期删除，其他账号安全审计沿用原策略 |
 | 个人信息请求记录 | PostgreSQL | 按法定/治理义务确定 | 管理员处理与到期归档 | 已有模型，期限 TODO |
 | 教务凭证清理任务 | PostgreSQL + Python 服务 | 直到成功或人工处置 | 任务重试、审计结果 | 已有模型 |
 | Web 教务助手可选自动登录凭据 | 扩展本机 IndexedDB，AES-GCM 密文及不可导出 CryptoKey | 本人清除或卸载扩展前保留；站点/账号/系统隔离；浏览器重启及本站退出后保留 | 助手页清除（含损坏密文）或网页断开当前系统；卸载扩展 | 明确勾选且学校身份核对成功后保存，不进入本站服务端或备份；服务端注销不能远程删除浏览器数据 |

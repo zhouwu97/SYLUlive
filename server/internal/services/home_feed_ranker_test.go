@@ -258,3 +258,41 @@ func TestRankHomeFeedFinalFillPreservesDeepFeedOrder(t *testing.T) {
 		t.Fatalf("deep feed order changed, expected 21 at index 20, got %d", ids[20])
 	}
 }
+
+func TestRankHomeFeedFeedbackPenaltyDemotesAndSkipsFreshSlot(t *testing.T) {
+	now := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	build := func(penalty float64) []HomeFeedCandidate {
+		candidates := make([]HomeFeedCandidate, 0, 30)
+		// 一条点赞较多的新帖，其余为不同作者、互动略少的帖子。
+		candidates = append(candidates, HomeFeedCandidate{
+			Post:            models.Post{ID: 1, AuthorID: 1, PostType: "chat", CreatedAt: now.Add(-2 * time.Hour), LastActivityAt: now, LikeCount: 12},
+			FeedbackPenalty: penalty,
+		})
+		for i := 0; i < 29; i++ {
+			candidates = append(candidates, HomeFeedCandidate{Post: models.Post{
+				ID: uint(100 + i), AuthorID: uint(10 + i), PostType: string(rune('a' + i%20)),
+				CreatedAt: now.Add(-time.Duration(3+i) * time.Hour), LastActivityAt: now, LikeCount: 8,
+			}})
+		}
+		return candidates
+	}
+	position := func(ids []uint, id uint) int {
+		for i, item := range ids {
+			if item == id {
+				return i
+			}
+		}
+		return -1
+	}
+	baseline := position(RankHomeFeed(build(0), now), 1)
+	demoted := position(RankHomeFeed(build(0.3), now), 1)
+	if baseline < 0 || demoted < 0 {
+		t.Fatalf("post missing: baseline=%d demoted=%d", baseline, demoted)
+	}
+	if demoted <= baseline {
+		t.Fatalf("penalized post should rank lower: baseline=%d demoted=%d", baseline, demoted)
+	}
+	if got := AdjustedHotScore(HomeFeedCandidate{HotScore: 1, FeedbackPenalty: 5}); got < 1-MaxFeedbackPenalty-1e-9 {
+		t.Fatalf("penalty must be capped, got score %f", got)
+	}
+}

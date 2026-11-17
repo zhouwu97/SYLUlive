@@ -51,16 +51,19 @@ String securityEventTitle(SecurityEvent event) => switch (event.eventType) {
           _ => '验证码活动',
         },
       'verification_mail_delivery_failed' => '验证码邮件发送失败',
-      'password_reset_spray' => '密码重置喷洒',
-      'verification_spray' => '验证码喷洒',
-      'verification_source_rate' => '验证码来源限流',
+      'password_reset_spray' => '多邮箱重置请求已限流',
+      'verification_spray' => '多邮箱验证码请求已限流',
+      'verification_source_rate' => '验证码请求已限流',
       'verification_cooldown' => '验证码冷却拦截',
-      'email_target_flood' => '验证码目标轰炸',
-      'verification_code_bruteforce' => '验证码暴力尝试',
-      'login_password_spray' => '多账号登录扫描',
-      'login_failed' => '登录失败观察',
-      'login_bruteforce' => '登录暴力尝试',
-      'refresh_token_reused' => 'Refresh Token Reuse',
+      'email_target_flood' => '验证码发送额度已用完',
+      'verification_code_bruteforce' => '验证码连续校验失败（待核查）',
+      'login_password_spray' => '多账号登录异常（待核查）',
+      'login_failed' => '登录未成功',
+      'login_bruteforce' => '登录触发冷却限制',
+      'login_success' => '登录成功',
+      'login_new_device' => '新设备登录记录',
+      'admin_login_new_device' => '管理员新设备登录（待核查）',
+      'refresh_token_reused' => '会话凭据重复使用（待核查）',
       'suspicious_password_reset_succeeded' => '可疑密码重置成功',
       'content_post_flood' => '发帖被限流',
       'content_reply_flood' => contentQuotaReason(event) == 'duplicate_content'
@@ -69,7 +72,7 @@ String securityEventTitle(SecurityEvent event) => switch (event.eventType) {
       'private_message_flood' => '私信发送被限流',
       'feedback_ticket_flood' => '反馈提交被限流',
       'security_blocked_request' => '来源封禁拦截',
-      'search_abuse' => '搜索扫描',
+      'search_abuse' => '搜索请求已限流',
       _ => event.eventType,
     };
 
@@ -84,11 +87,26 @@ List<String> securityEventMetrics(SecurityEvent event) {
     parts.add(targets > 0
         ? '${sprayWindowLabel(event)}内涉及 $targets 个目标'
         : '请求 ${event.attemptCount} 次');
+    final failures = event.metadata['failure_count'];
+    if (event.eventType == 'login_password_spray' && failures is num) {
+      parts.add('登录失败 ${failures.toInt()} 次');
+    }
     if (event.blockedCount > 0) parts.add('已拦截 ${event.blockedCount} 次');
     return [parts.join(' · ')];
   }
 
   switch (event.eventType) {
+    case 'login_failed':
+      parts.add('未成功登录 ${event.attemptCount} 次');
+      break;
+    case 'login_bruteforce':
+      parts.add('冷却相关请求 ${event.attemptCount} 次');
+      break;
+    case 'login_success':
+    case 'login_new_device':
+    case 'admin_login_new_device':
+      parts.add('登录 ${event.attemptCount} 次');
+      break;
     case 'password_reset_activity':
     case 'verification_activity':
       switch (event.action) {
@@ -120,11 +138,25 @@ List<String> securityEventMetrics(SecurityEvent event) {
   return [parts.join(' · ')];
 }
 
-/// 内容限流事件的补充上下文。事件只保留定位所需的元数据，不保存正文。
+/// 目标读取状态和业务补充上下文；事件不保存提交正文。
 List<String> securityEventContext(SecurityEvent event) {
-  if (!isContentQuotaEvent(event.eventType)) return const [];
-  final metadata = event.metadata;
   final lines = <String>[];
+  if (event.targetAccount.isEmpty) {
+    if (event.targetAccountStatus == 'not_recorded') {
+      lines.add('完整账号未记录，历史值无法还原');
+    } else if (event.targetAccountStatus == 'unavailable') {
+      lines.add('完整账号暂不可读取（密钥或密文异常）');
+    }
+  }
+  if (event.eventType == 'login_failed') {
+    lines.add('未成功登录的观察记录，无需人工处置。');
+  } else if (isAutomaticSecurityLimit(event.eventType)) {
+    lines.add('系统已自动限流，触发额度或冷却不能单独证明攻击。');
+  } else if (event.eventType == 'login_password_spray') {
+    lines.add('同一来源出现较多账号失败；共享网络可能影响判断，请结合账号和设备记录核查。');
+  }
+  if (!isContentQuotaEvent(event.eventType)) return lines;
+  final metadata = event.metadata;
   final reason = contentQuotaReason(event);
   final rule = metadata['rule']?.toString() ?? '';
   final kind = metadata['content_kind']?.toString() ?? '';
@@ -159,12 +191,28 @@ String contentQuotaReason(SecurityEvent event) =>
 /// 旧事件可能仍保存 medium，但内容额度事件已经是自动拦截的审计提示。
 /// 展示层按新的语义降为「提示」，避免历史记录继续被看成待处置风险。
 String securityEventDisplaySeverity(SecurityEvent event) =>
-    isContentQuotaEvent(event.eventType) ? 'low' : event.severity;
+    isContentQuotaEvent(event.eventType) ||
+            isAutomaticSecurityLimit(event.eventType) ||
+            event.eventType == 'login_failed'
+        ? 'low'
+        : event.severity;
+
+bool isAutomaticSecurityLimit(String eventType) => switch (eventType) {
+      'login_bruteforce' ||
+      'verification_source_rate' ||
+      'email_target_flood' ||
+      'verification_spray' ||
+      'password_reset_spray' ||
+      'search_abuse' =>
+        true,
+      _ => false,
+    };
 
 String securityEventSeverityLabel(SecurityEvent event) =>
     securitySeverityLabel(securityEventDisplaySeverity(event));
 
 String securityEventTargetLabel(SecurityEvent event) {
+  if (event.targetAccount.isNotEmpty) return event.targetAccount;
   if (event.targetMasked.isNotEmpty) return event.targetMasked;
   final postID = event.metadata['post_id']?.toString() ?? '';
   if (event.targetType == 'post' && postID.isNotEmpty) return '帖子 #$postID';

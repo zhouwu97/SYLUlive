@@ -31,7 +31,7 @@ func TestSecurityEventAggregationEscalatesSeverityAndAction(t *testing.T) {
 	service := NewSecurityEventService(db, "security-test-secret", func() time.Time { return now })
 
 	base := SecurityEventInput{
-		EventType: "login_bruteforce", Route: "/api/login", Method: "POST",
+		EventType: "login_password_spray", Route: "/api/login", Method: "POST",
 		ClientIP: "203.0.113.9", TargetType: "account", TargetValue: "student-a",
 	}
 	observed := base
@@ -80,7 +80,7 @@ func TestSecurityEventAggregationNeverDowngrades(t *testing.T) {
 	service := NewSecurityEventService(db, "security-test-secret", func() time.Time { return now })
 
 	base := SecurityEventInput{
-		EventType: "verification_spray", Route: "/api/password/email/code", Method: "POST",
+		EventType: "verification_code_bruteforce", Route: "/api/password/email/code", Method: "POST",
 		ClientIP: "203.0.113.10", TargetType: "email", TargetValue: "victim@example.com",
 	}
 	high := base
@@ -140,8 +140,8 @@ func TestSecurityEventAggregationEscalatesObservedToThrottled(t *testing.T) {
 	}
 
 	event := loadSingleSecurityEvent(t, db)
-	if event.Action != "throttled" || event.Severity != models.SecuritySeverityMedium {
-		t.Fatalf("action 应升级为 throttled、severity 升级为 medium，实际 action=%q severity=%q",
+	if event.Action != "throttled" || event.Severity != models.SecuritySeverityLow {
+		t.Fatalf("action 应升级为 throttled，普通限流保持提示级，实际 action=%q severity=%q",
 			event.Action, event.Severity)
 	}
 }

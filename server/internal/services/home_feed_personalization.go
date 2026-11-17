@@ -56,7 +56,8 @@ func applyExploration(
 	var pool []explore
 	for i := 20; i < len(ranked); i++ {
 		c, ok := byID[ranked[i]]
-		if !ok {
+		// 用户明确表示不感兴趣的作者或版块不进入探索池，否则降权会被探索槽位抵消。
+		if !ok || c.FeedbackPenalty > 0 {
 			continue
 		}
 		score := 0.0

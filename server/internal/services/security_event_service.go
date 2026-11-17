@@ -300,7 +300,7 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 	if strings.TrimSpace(input.EventType) == "" {
 		return errors.New("安全事件类型不能为空")
 	}
-	severity := normalizeSecuritySeverity(input.Severity)
+	severity := models.SecurityEventEffectiveSeverity(input.EventType, normalizeSecuritySeverity(input.Severity))
 	status := strings.TrimSpace(input.Status)
 	if status == "" {
 		status = models.SecurityEventStatusActive
@@ -347,6 +347,10 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 	if err != nil {
 		return errors.New("安全来源加密失败")
 	}
+	targetCiphertext, err := s.encryptTargetAccount(input)
+	if err != nil {
+		return errors.New("安全目标加密失败")
+	}
 	attemptCount := 1
 	if input.SkipAttempt {
 		attemptCount = 0
@@ -359,7 +363,8 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 		SourceUAHash:           sourceUAHash, InstallationHash: installationHash,
 		ActorUserID: input.ActorUserID, TargetType: truncateSecurityValue(input.TargetType, 32),
 		TargetHash: targetHash, TargetMasked: truncateSecurityValue(input.TargetMasked, 320),
-		RequestIDSample: truncateSecurityValue(input.RequestID, 128), AttemptCount: attemptCount,
+		TargetAccountCiphertext: targetCiphertext,
+		RequestIDSample:         truncateSecurityValue(input.RequestID, 128), AttemptCount: attemptCount,
 		BlockedCount: boolInt(input.Blocked), MailSentCount: boolInt(input.MailSent),
 		PasswordResetSuccessCount: boolInt(input.PasswordResetSucceeded), Action: action, MetadataJSON: metadataJSON,
 		FirstSeenAt: now, LastSeenAt: now, CreatedAt: now, UpdatedAt: now,
@@ -383,6 +388,10 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 			// method 在同一桶内不保证每次都带值（例如聚合计数写入），只在现有值为空时填充。
 			"method":               securityEventFillIfEmpty("method"),
 			"source_ip_ciphertext": securityEventFillIfEmpty("source_ip_ciphertext"),
+			"target_account_ciphertext": gorm.Expr("CASE WHEN " + securityEventsTable + ".target_account_ciphertext = '' AND " +
+				securityEventsTable + ".target_hash = excluded.target_hash AND " + securityEventsTable + ".target_type = excluded.target_type" +
+				" THEN excluded.target_account_ciphertext ELSE " + securityEventsTable + ".target_account_ciphertext END"),
+			"request_id_sample": securityEventFillIfEmpty("request_id_sample"),
 			// 同一五分钟聚合桶再次出现新攻击时重新激活事件，旧的处置结果必须清掉，
 			// 否则后台会同时显示 active 和历史 resolved_at，造成错误判断。
 			"resolved_at":     nil,

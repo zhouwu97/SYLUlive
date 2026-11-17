@@ -476,6 +476,9 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 				if err := tx.First(&review, report.TargetID).Error; err != nil {
 					return err
 				}
+				if err := services.RequireCanteenArchiveWrite(tx, review.CanteenID, userID.(uint)); err != nil {
+					return err
+				}
 				oldImageFileIDs, err := services.FileIDsByPublicPaths(tx, decodeStringList(review.Images)...)
 				if err != nil {
 					return err
@@ -509,6 +512,9 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 				if err := tx.First(&rating, report.TargetID).Error; err != nil {
 					return err
 				}
+				if err := services.RequireCanteenArchiveWrite(tx, rating.CanteenID, userID.(uint)); err != nil {
+					return err
+				}
 				oldImageFileIDs, err := services.FileIDsByPublicPaths(tx, decodeStringList(rating.Images)...)
 				if err != nil {
 					return err
@@ -537,6 +543,9 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 				if err := tx.First(&dishReview, report.TargetID).Error; err != nil {
 					return err
 				}
+				if err := requireDishArchiveWrite(tx, dishReview.DishID, userID.(uint)); err != nil {
+					return err
+				}
 				if err := tx.Model(&dishReview).Update("status", models.ReviewEventStatusHidden).Error; err != nil {
 					return err
 				}
@@ -547,6 +556,9 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 			case "canteen_dish_photo":
 				var photo models.CanteenDishPhoto
 				if err := tx.First(&photo, report.TargetID).Error; err != nil {
+					return err
+				}
+				if err := requireDishArchiveWrite(tx, photo.DishID, userID.(uint)); err != nil {
 					return err
 				}
 				now := time.Now()
@@ -623,6 +635,8 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "举报或目标内容不存在"})
 		case errors.Is(err, errReportAlreadyHandled):
 			c.JSON(http.StatusConflict, gin.H{"error": "举报已处理，请勿重复提交"})
+		case errors.Is(err, services.ErrCanteenArchiveSuperAdminRequired):
+			respondCanteenArchivePermission(c, err)
 		default:
 			var governanceErr *reportGovernanceReasonError
 			if errors.As(err, &governanceErr) {

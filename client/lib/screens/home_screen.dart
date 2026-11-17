@@ -1497,7 +1497,10 @@ class _HomeScreenState extends State<HomeScreen>
           Positioned.fill(
               child: LiquidGlassBackground(
                   child: Stack(children: [
-            const Positioned.fill(child: CustomBackgroundLayer()),
+            Positioned.fill(
+              child:
+                  CustomBackgroundLayer(canvasSize: MediaQuery.sizeOf(context)),
+            ),
             Row(children: [
               SizedBox(width: useSideRail ? sideWidth : 0),
               Expanded(child: _buildTabContent()),

@@ -31,13 +31,13 @@ func TestLoginFailureOutcomeKeepsSingleFailureOutOfBruteforce(t *testing.T) {
 		t.Fatalf("单次失败应记为 observed，实际 %q", single.Action)
 	}
 
-	// 第 3 次失败进入账号锁定：这里才升级为暴力尝试，且必须体现已被处置。
-	locked := loginFailureOutcome(time.Minute)
+	// 达到账号门槛只是自动冷却，保留原事件代码兼容历史数据，不再认定为攻击。
+	locked := loginFailureOutcome(loginLockDurationForFailures(loginAccountFailureLimit))
 	if locked.EventType != "login_bruteforce" {
 		t.Fatalf("达到锁定阈值应升级为 login_bruteforce，实际 %q", locked.EventType)
 	}
-	if locked.Severity != models.SecuritySeverityMedium || !locked.Blocked {
-		t.Fatalf("锁定应记为中危且已拦截: severity=%q blocked=%v", locked.Severity, locked.Blocked)
+	if locked.Severity != models.SecuritySeverityLow || !locked.Blocked || models.SecurityEventActionable(locked.EventType) {
+		t.Fatalf("冷却应记为提示且已自动处理: severity=%q blocked=%v", locked.Severity, locked.Blocked)
 	}
 	if locked.Action != "throttled" {
 		t.Fatalf("触发锁定应记为 throttled，实际 %q", locked.Action)
@@ -125,8 +125,8 @@ func TestSecurityOverviewSeparatesActionableFromAudit(t *testing.T) {
 	number := func(key string) int { return int(payload[key].(float64)) }
 
 	// 旧字段把已由封禁层处置掉的高危流水也算成待办，这正是「安全事件 1」被误读的根源。
-	if got := number("active_high_count"); got != 2 {
-		t.Fatalf("旧口径 active_high_count 应为 2，实际 %d", got)
+	if got := number("active_high_count"); got != 1 {
+		t.Fatalf("兼容字段也应排除普通记录，高危待核查应为 1，实际 %d", got)
 	}
 	if got := number("actionable_high_count"); got != 1 {
 		t.Fatalf("高危待处理只应统计待处置事件，期望 1 实际 %d", got)
@@ -144,7 +144,7 @@ func TestListEventsActionableFilter(t *testing.T) {
 	handler, db := newSecurityAdminTestEnv(t)
 	now := time.Now()
 	seedSecurityEvent(t, db, "audit-reset", "password_reset_activity", models.SecuritySeverityInfo, now)
-	seedSecurityEvent(t, db, "real-spray", "password_reset_spray", models.SecuritySeverityHigh, now)
+	seedSecurityEvent(t, db, "real-spray", "login_password_spray", models.SecuritySeverityHigh, now)
 
 	pending := listSecurityEventIDs(t, handler, "/probe?actionable=true&status=active")
 	if len(pending) != 1 {

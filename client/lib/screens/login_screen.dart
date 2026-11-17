@@ -4,11 +4,13 @@ import '../widgets/app_card.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../widgets/responsive_content.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import 'legal_documents_screen.dart';
+import '../config/app_contacts.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -101,7 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Future<void> _showLoginLimitedDialog(String message) async {
+  Future<void> _showLoginLimitedDialog(String message, String account) async {
     FocusManager.instance.primaryFocus?.unfocus();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = isDark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF);
@@ -120,6 +122,13 @@ class _LoginScreenState extends State<LoginScreen> {
           TextButton(
             onPressed: () async {
               Navigator.pop(dialogContext);
+              if (mounted) await _showLoginAppealDialog(account);
+            },
+            child: const Text('向开发者申诉'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
               await _showForgotPasswordDialog();
             },
             style: TextButton.styleFrom(foregroundColor: subText),
@@ -128,10 +137,62 @@ class _LoginScreenState extends State<LoginScreen> {
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext),
             style: FilledButton.styleFrom(
-                backgroundColor: accent, foregroundColor: Colors.black),
+                backgroundColor: accent,
+                foregroundColor: Colors.black,
+                textStyle: Theme.of(context).textTheme.labelLarge),
             child: const Text('知道了'),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _showLoginAppealDialog(String account) async {
+    final appeal = '登录限制申诉\n受限账号：$account\n'
+        '请补充出现时间、情况说明和登录受限截图。\n'
+        '无需提供密码或验证码。\n\n${AppContacts.legalContactText}';
+    String? copyFeedback;
+    await showAppDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AppAlertDialog(
+          title: const Text('向开发者申诉'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SelectableText(appeal),
+                if (copyFeedback != null) ...[
+                  const SizedBox(height: 12),
+                  Text(copyFeedback!),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                try {
+                  await Clipboard.setData(ClipboardData(text: appeal));
+                  if (dialogContext.mounted) {
+                    setDialogState(() => copyFeedback = '申诉信息已复制，请联系开发者人工核查');
+                  }
+                } catch (_) {
+                  if (dialogContext.mounted) {
+                    setDialogState(() => copyFeedback = '复制失败，请长按文字手动复制');
+                  }
+                }
+              },
+              child: const Text('复制申诉信息'),
+            ),
+            FilledButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                style: FilledButton.styleFrom(
+                    textStyle: Theme.of(context).textTheme.labelLarge),
+                child: const Text('关闭')),
+          ],
+        ),
       ),
     );
   }
@@ -147,6 +208,7 @@ class _LoginScreenState extends State<LoginScreen> {
     FocusManager.instance.primaryFocus?.unfocus();
 
     final authProvider = context.read<AuthProvider>();
+    final submittedAccount = _studentIdController.text.trim();
     AuthResult result;
 
     if (mounted) setState(() => _isLoading = true);
@@ -162,8 +224,8 @@ class _LoginScreenState extends State<LoginScreen> {
         consents: _registrationConsents,
       );
     } else {
-      final account = _studentIdController.text.trim();
-      result = await authProvider.login(account, _appPasswordController.text);
+      result = await authProvider.login(
+          submittedAccount, _appPasswordController.text);
     }
 
     if (mounted) setState(() => _isLoading = false);
@@ -178,7 +240,7 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.pop(context);
     } else if (mounted && result.errorMessage != null) {
       if (!_isRegister && result.statusCode == 429) {
-        await _showLoginLimitedDialog(result.errorMessage!);
+        await _showLoginLimitedDialog(result.errorMessage!, submittedAccount);
         return;
       }
       if (!_isRegister && result.errorMessage!.contains('尚未注册')) {

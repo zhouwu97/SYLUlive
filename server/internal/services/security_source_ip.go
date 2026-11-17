@@ -15,7 +15,7 @@ func (s *SecurityEventService) sourceIPEncryptionKey() string {
 }
 
 func (s *SecurityEventService) encryptSourceIP(input SecurityEventInput, sourceHash string, valid bool) (string, error) {
-	if !valid || len(s.secret) == 0 || !models.SecurityEventActionable(input.EventType) {
+	if !valid || len(s.secret) == 0 || !models.SecurityEventRetainsEvidence(input.EventType) {
 		return "", nil
 	}
 	raw := strings.TrimSpace(input.ClientIP)
@@ -32,7 +32,7 @@ func (s *SecurityEventService) SourceIP(event models.SecurityEvent) (string, str
 	if !event.SourceAttributionValid {
 		return "", "untrusted"
 	}
-	if !models.SecurityEventActionable(event.EventType) || event.SourceIPCiphertext == "" {
+	if !models.SecurityEventRetainsEvidence(event.EventType) || event.SourceIPCiphertext == "" {
 		return "", "not_recorded"
 	}
 	if s == nil || len(s.secret) == 0 {

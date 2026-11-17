@@ -61,17 +61,31 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
 /// 二级路由覆盖全局壳时必须自行绘制背景；集中实现可避免不同页面的
 /// 模糊半径、明暗遮罩与横竖屏回退出现漂移。
 class CustomBackgroundLayer extends StatelessWidget {
-  const CustomBackgroundLayer({super.key});
+  const CustomBackgroundLayer({super.key, this.canvasSize});
+
+  /// 首页在 Scaffold 调整键盘避让前传入窗口尺寸，壁纸不随内容区收缩重裁切。
+  final Size? canvasSize;
 
   @override
   Widget build(BuildContext context) {
     if (SharedPageBackground.of(context)) return const SizedBox.expand();
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    if (themeProvider.shouldShowCustomBackground) {
-      return _buildBackgroundImageLayer(context, themeProvider, isDark);
-    }
-    return _buildCleanBackground(isDark);
+    final layer = themeProvider.shouldShowCustomBackground
+        ? _buildBackgroundImageLayer(context, themeProvider, isDark)
+        : _buildCleanBackground(isDark);
+    final canvas = canvasSize;
+    if (canvas == null) return layer;
+    return ClipRect(
+      child: OverflowBox(
+        alignment: Alignment.topLeft,
+        minWidth: canvas.width,
+        maxWidth: canvas.width,
+        minHeight: canvas.height,
+        maxHeight: canvas.height,
+        child: layer,
+      ),
+    );
   }
 
   Widget _buildBackgroundImageLayer(

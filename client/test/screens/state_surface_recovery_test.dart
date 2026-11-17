@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/models/user.dart';
+import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/canteen_provider.dart';
 import 'package:shenliyuan/providers/poll_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
@@ -18,14 +20,25 @@ import '../helpers/golden_test_app.dart';
 import '../helpers/golden_viewport.dart';
 import '../helpers/load_test_fonts.dart';
 
+class _ManagerAuth extends Fake with ChangeNotifier implements AuthProvider {
+  @override
+  int get accountSessionEpoch => 0;
+  @override
+  User get user => User(
+      id: 7,
+      studentId: 'fixture',
+      nickname: '管理员',
+      role: 'admin',
+      createdAt: DateTime(2026));
+}
+
 void main() {
   setUpAll(loadTestFonts);
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
 
   for (final page in ['poll', 'catalog']) {
     for (final dark in [false, true]) {
-      testWidgets('$page 失败可重试、空态可读且大字号不溢出 dark=$dark',
-          (tester) async {
+      testWidgets('$page 失败可重试、空态可读且大字号不溢出 dark=$dark', (tester) async {
         await setGoldenViewport(tester, GoldenViewports.phone360x800);
         final appearance = ThemeProvider(loadOnStart: false);
         addTearDown(appearance.dispose);
@@ -52,7 +65,8 @@ void main() {
         await tester.pumpWidget(MultiProvider(
           providers: [
             ChangeNotifierProvider.value(value: appearance),
-            ChangeNotifierProvider(create: (_) => PollProvider(PollService(dio))),
+            ChangeNotifierProvider(
+                create: (_) => PollProvider(PollService(dio))),
           ],
           child: GoldenTestApp(
             themeMode: dark ? ThemeMode.dark : ThemeMode.light,
@@ -87,7 +101,8 @@ void main() {
     var requests = 0;
     dio.interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
       requests++;
-      h.resolve(Response(requestOptions: o, statusCode: 200, data: {'sections': []}));
+      h.resolve(
+          Response(requestOptions: o, statusCode: 200, data: {'sections': []}));
     }));
     await tester.pumpWidget(ChangeNotifierProvider(
       create: (_) => WaterSectionProvider(dio),
@@ -102,17 +117,20 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('食堂运营首帧后加载，不在构建时通知上层 Provider', (tester) async {
+  testWidgets('食堂管理首帧后加载，不在构建时通知上层 Provider', (tester) async {
     final dio = Dio();
     dio.interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
       h.resolve(Response(requestOptions: o, statusCode: 200, data: <Object>[]));
     }));
-    await tester.pumpWidget(ChangeNotifierProvider(
-      create: (_) => CanteenProvider(dio),
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
+        ChangeNotifierProvider<AuthProvider>(create: (_) => _ManagerAuth()),
+      ],
       child: const GoldenTestApp(home: AdminCanteenOperationsScreen()),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('食堂运营'), findsOneWidget);
+    expect(find.text('食堂管理'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

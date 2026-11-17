@@ -13,13 +13,14 @@ type SecurityEvent struct {
 	Route                     string     `gorm:"size:160;not null;index" json:"route"`
 	Method                    string     `gorm:"size:12;not null" json:"method"`
 	SourceIPHash              string     `gorm:"size:64;index" json:"-"`
-	SourceIPCiphertext        string     `gorm:"size:256;not null;default:''" json:"-"` // 仅待处置预警保存密文，普通审计只保存摘要。
+	SourceIPCiphertext        string     `gorm:"size:256;not null;default:''" json:"-"` // 异常与自动限流保留原有密文，普通单次失败只保留摘要。
 	SourceAttributionValid    bool       `gorm:"not null;default:true;index" json:"source_attribution_valid"`
 	SourceUAHash              string     `gorm:"size:64" json:"-"`
 	InstallationHash          string     `gorm:"size:64;index" json:"-"`
 	ActorUserID               *uint      `gorm:"index" json:"actor_user_id,omitempty"`
 	TargetType                string     `gorm:"size:32;index" json:"target_type"`
 	TargetHash                string     `gorm:"size:64;index" json:"-"`
+	TargetAccountCiphertext   string     `gorm:"size:2048;not null;default:''" json:"-"` // 异常或自动限流的账号／邮箱目标，管理员接口按需解密。
 	TargetMasked              string     `gorm:"size:320" json:"target_masked"`
 	RequestIDSample           string     `gorm:"size:128" json:"request_id_sample"`
 	AttemptCount              int        `gorm:"not null;default:1" json:"attempt_count"`

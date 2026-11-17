@@ -130,7 +130,9 @@ export async function request<T = Entity>(
     throw new ApiError(
       response.status,
       data?.code || "request_failed",
-      data?.message || data?.error || `请求未完成（${response.status}）`,
+      data?.message || data?.error || (response.status >= 500
+        ? `服务器暂时不可用，请稍后重试。（${response.status}）`
+        : `请求未完成（${response.status}）`),
     );
   if (data === null && response.status !== 204)
     throw new ApiError(502, "invalid_response", "接口没有返回可读取的数据");

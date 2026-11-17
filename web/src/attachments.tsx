@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, requestBlob } from "./api";
 import { useUI } from "./ui";
+import {ImageViewer} from './image-viewer';
 import "./attachments.css";
 
 // 工单附件是私有文件：服务端在事务内把上传记录 claim 成 private，
@@ -204,7 +205,8 @@ function AttachmentImage({ fileID, label }: { fileID: number; label: string }) {
         onClick={() =>
           ui.open(
             label,
-            <img className="attachment-full" src={state.url} alt={label} />,
+            <ImageViewer images={[{src:state.url}]} title={label}/>,
+            'media',
           )
         }
       >

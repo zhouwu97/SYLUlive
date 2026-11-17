@@ -247,7 +247,6 @@
   .desktop-top-nav a:hover, .sidebar-board:hover, .profile-home:hover, .campus-event:hover b, .campus-hot-item:hover > span:nth-child(2) { color: var(--brand-strong); }
   .social-shell .nav-item:not(.active):hover, .composer-tools button:hover { background: var(--surface-2); }
   .social-shell .btn.primary:hover, .modal .btn.primary:hover { background: var(--color-accent-hover); color: var(--color-accent-ink); }
-  .social-shell :is(.community-feed, .dashboard-feed) .feed-card:hover { background: var(--surface); border-radius: var(--radius-card); }
   .social-shell :is(.community-feed, .dashboard-feed) .post-summary:hover .post-title { color: var(--brand-strong); }
   .social-shell :is(.community-feed, .dashboard-feed) .post-interaction:not(:disabled):hover { background: var(--surface-3); }
   .public-post-link:hover b { color: var(--brand-strong); }
@@ -437,15 +436,16 @@
   .social-shell .split-stats { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 }
 .social-shell .tabs + .split-stats { margin-top: 16px; }
-/* 表格外框内的空状态不再叠一层卡片描边。 */
+/* 表格外框及评论区内的空状态不再叠一层卡片描边。 */
 .social-shell .table-scroll > .empty-state { min-height: 180px; border: 0; border-radius: 0; background: transparent; }
+.social-shell .post-comments > :is(.empty-state, .loading-state) { min-height: 112px; padding-block: 24px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 
 /* 首页 v4（桌面）：浅灰蓝页面底 + 白卡浅阴影建立层次；顶栏胶囊选中；首页问候横幅与常用入口；右栏小组件。
    只作用于 601px 以上，手机端沿用 mobile-app.css 的独立外观。 */
 @media (min-width: 601px) {
   :root[data-theme="light"] body, .social-shell { background: var(--bg); }
   .social-shell .sidebar { background: transparent; }
-  .social-shell :is(.rail-card, .sidebar-boards, .profile-rail-card, .campus-composer, .home-hero, .dashboard-feed .feed-card, .community-feed .feed-card, .public-posts) { box-shadow: var(--shadow-card); }
+  .social-shell :is(.rail-card, .sidebar-boards, .profile-rail-card, .campus-composer, .home-hero, .public-posts) { box-shadow: var(--shadow-card); }
 
   /* 顶栏：当前页用浅蓝胶囊，搜索框填充底色，图标按钮去外框并与发布、登录分组。 */
   .desktop-top-nav { gap: 4px; }
@@ -546,9 +546,8 @@
   .hot-rank { display: grid; place-items: center; flex: 0 0 22px; height: 22px; border-radius: var(--radius-xs); background: var(--surface-2); font-size: var(--text-tiny); font-style: normal; font-weight: var(--weight-bold); }
   .campus-hot-item:nth-child(-n+3) .hot-rank { background: color-mix(in srgb, var(--color-price) 12%, transparent); }
 
-  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card { transition: border-color var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out); }
-  :root[data-theme="light"] .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card:hover { border-color: color-mix(in srgb, var(--brand) 22%, var(--line)); box-shadow: var(--shadow-hover); }
-  :root[data-theme="dark"] .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card:hover { border-color: color-mix(in srgb, var(--brand) 30%, var(--line)); }
+  /* 信息流条目连成列表，悬停只换底色；描边和阴影会把相邻条目的分隔线挤乱。 */
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card { transition: background-color var(--dur-short) var(--ease-out); }
   .market-rail-thumb img { transition: transform var(--dur-short) var(--ease-out); }
   .home-hero { position: relative; overflow: hidden; }
   .home-hero::after { content: ""; position: absolute; right: -60px; top: -80px; width: 240px; height: 240px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--brand) 10%, transparent), transparent 70%); pointer-events: none; }
@@ -633,27 +632,49 @@
   .market-shell .sidebar .nav-item:not(.active) .nav-icon { background: var(--surface); box-shadow: var(--shadow-card), inset 0 0 0 1px var(--line); }
 }
 
-/* 桌面：帖子详情（社区与集市共用）——更舒展的留白、醒目的价格区、联系方式卡与放大的图片。 */
+/* 桌面详情采用与首页一致的圆角卡片与分组操作栏，评论直接在原位置编辑。 */
 @media (min-width: 601px) {
   .social-shell .profile-rail-card .profile-rail-avatar { width: 56px; height: 56px; flex-basis: 56px; }
-  .social-shell .post-detail-page .post-full { padding: 28px 32px 12px; }
-  .social-shell .post-detail-page .post-full > h1 { margin: 0 0 16px; font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: 1.4; letter-spacing: 0; }
-  .social-shell .post-detail-page .post-full .details-text { margin: 16px 0 4px; color: var(--text); font-size: var(--text-reading); line-height: 1.85; }
+  .social-shell .post-detail-layout { gap: 20px; }
+  .social-shell .post-detail-main { border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+  .social-shell .post-detail-page .post-full { padding: 22px 26px 8px; border-radius: var(--radius-card) var(--radius-card) 0 0; }
+  .social-shell .post-detail-page .post-full > h1 { margin: 16px 0 0; font-size: 22px; font-weight: var(--weight-bold); line-height: 1.45; letter-spacing: 0; }
+  .social-shell .post-detail-page .post-full .details-text { margin: 12px 0 0; color: var(--text); font-size: var(--text-reading); line-height: 1.75; }
   .social-shell .post-detail-page .post-market-summary { display: flex; align-items: center; gap: 12px; margin: 20px 0 4px; padding: 14px 18px; border-radius: var(--radius-control); background: linear-gradient(90deg, color-mix(in srgb, var(--color-price) 9%, var(--surface)), var(--surface) 85%); }
   .social-shell .post-detail-page .post-market-price { font-size: var(--text-hero); line-height: 1.2; font-variant-numeric: tabular-nums; }
   .social-shell .post-detail-page .post-market-price small { font-size: var(--text-md); }
   .social-shell .post-detail-page .post-market-summary > span { padding: 2px 10px; border: 1px solid color-mix(in srgb, var(--color-price) 25%, var(--line)); border-radius: var(--radius-pill); background: var(--surface); color: var(--color-price); font-size: var(--text-xs); font-weight: var(--weight-semibold); }
-  .social-shell .post-detail-page .post-detail-gallery { gap: 10px; margin-top: 18px; }
+  .social-shell .post-detail-page .post-detail-gallery { gap: 8px; margin-top: 14px; }
   .social-shell .post-detail-page .post-detail-gallery .media-tile { height: 300px; border-radius: var(--radius-control); }
-  .social-shell .post-detail-page .post-full .info-box { position: relative; margin-top: 18px; padding: 14px 16px 14px 18px; border: 1px dashed var(--color-accent-border); border-radius: var(--radius-control); background: var(--brand-soft); }
+  .social-shell .post-detail-page .post-full .info-box { position: relative; margin-top: 18px; padding: 14px 16px; border: 1px solid var(--color-accent-border); border-radius: var(--radius-control); background: var(--brand-soft); }
   .social-shell .post-detail-page .post-full .info-box::before { content: "联系方式"; display: block; margin-bottom: 4px; color: var(--brand-strong); font-size: var(--text-xs); font-weight: var(--weight-bold); }
   .social-shell .post-detail-page .post-full .info-box p { margin: 0; color: var(--text); font-size: var(--text-base); font-weight: var(--weight-semibold); user-select: all; }
   .social-shell .post-detail-page .post-full .post-actions { margin-top: 20px; }
-  .social-shell .post-detail-page .post-comments { padding: 24px 32px; }
+  .social-shell .post-detail-page .post-toolbar { margin-top: 18px; padding-top: 8px; border-top: 1px solid var(--line-2); }
+  .social-shell .post-detail-page .post-interactions { display: flex; align-items: center; gap: 6px; }
+  .social-shell .post-detail-page .post-interaction { flex: 0 0 auto; min-height: 44px; padding: 8px 14px; border-radius: var(--radius-control); }
+  .social-shell .post-detail-page .post-interaction:last-child { margin-left: auto; }
+  .social-shell .post-detail-page .post-comments { padding: 14px 26px 20px; border-top: 1px solid var(--line); border-radius: 0 0 var(--radius-card) var(--radius-card); }
+  .social-shell .post-detail-page .post-comments-head { min-height: 44px; padding: 0 0 12px; border-top: 0; border-bottom: 1px solid var(--line-2); }
   .social-shell .post-detail-page .post-comments-head h2 { font-size: var(--text-md); }
-  .social-shell .post-detail-page .post-comment-start { min-height: 46px; border-radius: var(--radius-control); }
-  .social-shell .post-detail-rail .rail-card { padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
-  .social-shell .post-detail-rail h2 { font-size: var(--text-base); }
+  .social-shell .post-detail-page .post-comments-head select { min-height: 32px; padding-block: 4px; border-color: var(--line-2); border-radius: var(--radius-pill); background: var(--surface-2); }
+  .social-shell .post-detail-page .post-comment-prompt { gap: 10px; margin: 14px 0 8px; }
+  .social-shell .post-detail-page .post-comment-start { min-height: 40px; padding: 8px 14px; border-radius: 22px; }
+  .social-shell .post-detail-page .post-comment-thread { padding: 16px 0 10px; }
+  .social-shell .post-detail-page .post-comment-main > p { margin-top: 5px; line-height: 1.7; }
+  .social-shell .post-detail-page .post-comment-footer { margin-top: 2px; min-height: 34px; }
+  .social-shell .post-detail-page .post-comment-children { gap: 10px; margin-top: 8px; }
+  .social-shell .post-detail-rail .rail-card { padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
+  .social-shell .post-detail-rail h2 { font-size: 14px; }
+  .social-shell .post-context-person { margin-top: 4px; gap: 11px; }
+  .social-shell .post-context-stats { margin-block: 14px 0; }
+  .social-shell .post-context-item { gap: 10px; padding-block: 11px; }
+  .social-shell .post-context-copy { gap: 4px; }
+}
+@media (min-width: 601px) and (max-width: 860px) {
+  .reply-shortcut { display: none; }
+  .social-shell .post-detail-page .post-full { padding: 18px 18px 0; }
+  .social-shell .post-detail-page .post-comments { padding-inline: 18px; }
 }
 
 /* 桌面信息流混排投票：外观是投票卡，外框与帖子卡一致，标题进入投票详情。 */
@@ -771,3 +792,6 @@
   .campus-columns { grid-template-columns: minmax(0, 1fr); }
   .campus-aside { position: static; }
 }
+/* 加载时保留排版占位；最终空态与失败态按内容收拢，让后续入口可见。 */
+.social-shell .right-rail :is(.campus-events-card, .campus-hot-card):is([data-state="empty"], [data-state="error"]) { min-height: 0; }
+.social-shell .right-rail :is(.campus-events-card, .campus-hot-card):is([data-state="empty"], [data-state="error"]) > .rail-status { min-height: 64px; padding: 8px 0; }

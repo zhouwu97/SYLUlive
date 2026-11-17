@@ -1,14 +1,27 @@
 import {defineConfig} from 'vite';
 import react from '@vitejs/plugin-react';
 
-const origin = new URL(process.env.SYLULIVE_API_ORIGIN || 'http://127.0.0.1:8080');
+export default defineConfig(({mode}) => {
+// 线上联调必须显式选择；默认开发和测试继续连接本机后端。
+const origin = new URL(process.env.SYLULIVE_API_ORIGIN || (mode === 'online' ? 'https://sylulive.online' : 'http://127.0.0.1:8080'));
 if (!['http:', 'https:'].includes(origin.protocol) || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash)
   throw new Error('SYLULIVE_API_ORIGIN 必须是不含账号、路径或查询参数的 HTTP(S) origin');
 const target = origin.origin;
 
-export default defineConfig({
+return {
   base: '/web/',
-  plugins: [react()],
+  plugins: [react(), {
+    name: 'local-test-environment',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (new URL(req.url || '/', 'http://localhost').pathname !== '/web/__test-environment') return next();
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Cache-Control', 'no-store');
+        // 仅报告能否进行本机测试，不向浏览器暴露上游配置或任何凭据。
+        res.end(JSON.stringify({localApi: ['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname)}));
+      });
+    },
+  }],
   server: {
     host: '127.0.0.1', port: 5173, strictPort: true,
     watch: {ignored: ['**/public/assistant/**']},
@@ -31,4 +44,5 @@ export default defineConfig({
     },
   },
   build: {sourcemap: false},
+};
 });

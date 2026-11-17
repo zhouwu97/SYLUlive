@@ -4,6 +4,8 @@ React + TypeScript + Vite，复用 Go API；Web 当前视觉实现入口为 [tok
 
 ## 运行
 
+正文 Emoji 使用同源打包的 [Noto Color Emoji v2.051](https://github.com/googlefonts/noto-emoji/releases/tag/v2.051) 彩色字体，按 Unicode 字素簇呈现，保留复制内容与组合表情；字体加载失败时退回系统彩色字体。字体只作用于 Emoji，中文、数字、标点沿用当前主题。浏览器资源为 `src/assets/fonts/noto-color-emoji-v2.051.woff2`，由上游 `fonts/Noto-COLRv1.ttf` 转为 WOFF2，保留 COLRv1 彩色字形；来源、校验值和复现步骤见该目录 README。OFL-1.1 许可随站点分发于 `public/licenses/NotoColorEmoji-OFL.txt`。移除 `inline-emoji.css` 的字体声明与对应字体资源即可退回系统字形，不影响已发布文字。
+
 在仓库根目录执行：
 
 ```powershell
@@ -15,14 +17,15 @@ pnpm dev
 
 浏览本地页面期间保持 `pnpm dev` 运行；测试临时启动的开发服务会在测试结束时退出，不能代替日常开发进程。网络连接失败时，社区、集市和其他读取页显示中文说明与重试入口；重试保留当前搜索和筛选，不将故障当作空数据。
 
-需要在本地最新 Web 上连接线上服务器时，在仓库根目录的独立 PowerShell 终端运行：
+Playwright 启动前会读取开发服务的只读探针 `/web/__test-environment`，只有该进程确认 API 指向 loopback 才能继续；自动启动的服务固定指向本机 8080，复用连接生产的开发进程会被拒绝。探针仅在 Vite 开发服务存在，不导出上游地址或凭据；本地 Go 与测试数据库仍须使用可丢弃测试环境。代理集成测试使用独立依赖缓存，避免破坏正在运行的 Vite 页面。
+
+需要在本地最新 Web 上连接线上服务器时，在仓库根目录的独立终端运行：
 
 ```powershell
-$env:SYLULIVE_API_ORIGIN='https://sylulive.online'
-pnpm dev
+pnpm dev:online
 ```
 
-此时仍访问 `http://127.0.0.1:5173/web/`，账号登录及业务请求会通过代理连接真实服务器；表单保存、回复和治理操作会写入真实数据。若未启动本地 Go，又没有设置上述变量，默认代理访问本机 `8080` 会返回 502。不要把 Playwright 自动启动的临时服务当作此联调进程；完整自动化继续使用隔离服务与夹具，避免与正在使用的 `5173` 联调进程共用。
+此时仍访问 `http://127.0.0.1:5173/web/`，账号登录及业务请求会通过代理连接真实服务器；表单保存、回复和治理操作会写入真实数据。`dev:online` 显式选择线上联调模式，已设置的 `SYLULIVE_API_ORIGIN` 仍优先用于自定义环境。普通 `pnpm dev` 继续连接本机 `8080`，需要先启动本地 Go；本地后端未启动时会返回 502。切换模式前先停止占用 `5173` 的旧开发进程。不要把 Playwright 自动启动的临时服务当作此联调进程；完整自动化继续使用隔离服务与夹具，避免与正在使用的 `5173` 联调进程共用。
 
 ## 手机 App 扫码同步
 
@@ -31,6 +34,8 @@ pnpm dev
 ## 登录与本机账号记录
 
 登录面板提供账号选择、密码显隐、注册和找回密码。按表单选择在当前浏览器保留最近 5 个成功登录账号，邮箱大小写和首尾空格统一去重；密码须额外勾选「记住密码」，默认不保存。重新打开时可回填最近账号，历史账号中可逐条移除或清空。取消记住密码会移除该记录的保存密码，退出登录保留此前已选择保存的记录。
+
+服务端返回登录冷却时，面板提供公开隐私页中的开发者联系方式，未登录也可查看并自行申诉；链接不传账号、密码或验证码。普通错误密码不显示冷却申诉提示。策略与恢复边界见[登录安全运维](../docs/ops/auth-security.md#普通登录密码容错)，浏览器验收入口为 `e2e/login-cooldown.spec.ts`。
 
 记录位于本站 origin 的 IndexedDB `sylulive-login`。密码以 AES-GCM 密文与不可导出 CryptoKey 保存，不写入 localStorage／sessionStorage；不保存会话 Token，不同步到服务器。这是浏览器本机保存，不是操作系统凭据库，仍受同源脚本安全边界约束。清理可使用面板操作，或清除站点数据并刷新。本站密码与教务助手保存的学校密码分开管理。
 
@@ -107,6 +112,30 @@ Chrome 打开 `chrome://extensions`，Edge 打开 `edge://extensions`，开启�
 
 明确未做的优化：身份结果的同代次 TTL 复用、成绩分页并发抓取、用课表响应自带的学号代替独立身份复核。
 
+## 食堂详情与怀旧存档
+
+店铺详情由 `src/canteen-detail.tsx` 与限定范围的 `src/canteen-detail.css` 维护，沿用食堂主页的封面、评分和配色。详情优先展示接口返回的店铺封面、平均分、人数、就餐评价数和五项分数；缺失评分不编造默认值。评价使用共享图片预览组件，限定缩略图尺寸并支持失败重试、大图预览和原图入口，菜品保留独立加载、空态与失败恢复。分页请求在离页时取消，换店后不能回填旧评价。渲染和恢复验收入口为 `e2e/canteen-detail-ui.spec.ts`。
+
+食堂页「怀旧食堂」单独展示下架存档，保留历史评分但不显示名次。超级管理员可在怀旧详情「维护怀旧食堂」修改名称和位置，保存失败保留表单。接口、只读权限和旧端兼容见 [食堂下架与怀旧存档](../server/API.md#食堂下架与怀旧存档)；定向验收入口为 `e2e/canteen.spec.ts`。详情页「管理店铺」为管理员提供营业店铺下架、永久删除入口；怀旧店铺的管理与恢复营业只向超级管理员开放，最终由服务端复核权限。下架需填写原因，删除需输入店铺名称，失败保留确认内容。操作成功后刷新相关列表，删除后返回店铺列表。
+
+AI 页面布局由 `src/ai.css` 维护：历史列表独立滚动，长标题最多显示两行，回答与输入区分别占用明确空间；手机通过「历史会话」展开列表。布局改动保留原有会话读取、生成、停止与会话隔离逻辑，回归入口为 `e2e/ai-experience.spec.ts` 和上述渲染用例。
+
+## 图片预览、通知与工单
+
+共享查看器由 `src/image-viewer.tsx` 与 `src/image-viewer.css` 维护，使用独立的 `media` 弹层。图片默认完整适应视口，支持按钮、滚轮、双击缩放、放大后拖动、双指缩放、方向键切图和 Esc 关闭；单图隐藏翻页。公开图片保留原图入口，工单附件继续通过鉴权接口读取为临时 Blob，关闭页面时由原读取组件回收，不改为公开地址。
+
+店铺发现与排行使用 `src/canteen-list.tsx` 的实景卡片；综合与点评人气排行突出前三，低分关注榜保持列表排序。名次和分数来自接口，零评价商家不占名次，下架商家仍在怀旧版块独立展示。
+
+通知点击立即打开关联内容，已读回执独立同步，回执失败保留原未读状态并提示；已读通知不重复写回执。`src/notification-target.ts` 按业务类型、有效编号和当前角色选择站内目标，无法访问的目标展示通知详情。工单详情区分沟通记录、公开回复、内部备注、进度与操作记录；附件可预览、移除，发送失败保留文字和附件，成功后清空。手机详情保留工单标题与编号。
+
+定向回归入口为 `e2e/ui-repair.spec.ts`、`e2e/feedback-admin.spec.ts`、`e2e/feedback-attachments.spec.ts` 与 `src/notification-target.test.ts`。当 `5173` 用于线上联调时，可使用独立的本机 `5187` 测试服务，避免与该进程共用：
+
+```powershell
+pnpm exec playwright test -c playwright.local.config.ts web/e2e/ui-repair.spec.ts web/e2e/canteen.spec.ts web/e2e/canteen-detail-ui.spec.ts web/e2e/feedback-admin.spec.ts web/e2e/feedback-attachments.spec.ts
+```
+
+该配置沿用测试环境探针，并固定代理到本机 API；用例中的业务写入全部由模拟接口接收。
+
 ## 构建、测试与打包
 
 ```powershell
@@ -148,6 +177,12 @@ scripts/deploy-web.sh rollback   # 切回上一版本
 发布后请确认 `/web/assistant/assistant.json` 真的以 JSON 返回（例如 `curl -I https://<站点>/web/assistant/assistant.json` 看 `content-type`）。`web/deploy/nginx.conf` 的 `try_files` 会把缺失文件伪装成 200 + `index.html`，此时页面只会提示“本站暂无可用的教务助手安装包”，不会显示下载按钮。
 
 ## 验收边界
+
+图文发帖在首页、社区、手机与集市入口进入独立单页 `/web/compose`（集市 `?board=2`），旧帖编辑使用 `/web/post/:id/edit`。顶部直接确认分区或发布类型；标题、正文与图片按单列填写，集市交易字段位于内容下方。正文自动增高，提供编辑/预览、分区状态、按需添加图片及粘贴/排序；操作栏紧接内容，长文时保持可达，返回保留来源筛选和阅读位置。桌面评论原地展开，楼中楼在对应评论下回复，表情和图片从工具栏按需打开；收起保留本页草稿，Ctrl/Cmd+Enter 发布，手机保留输入弹框。草稿仅保留在当前标签页内存，站内返回后重进可继续，刷新/切号清除；编辑新增图片会与保留原图共同提交。上传失败保留选择和成功编号；发布结果不确定，或发送后通过浏览器后退离开时，重开先核对“我的发布”，不会自动重放。功能边界见[发帖与草稿契约](../docs/design/post-composer-contract.md)，验收入口为 `web/e2e/post-composer.spec.ts`、`web/e2e/comment-composer.spec.ts` 和 `web/src/media-upload.test.ts`。
+
+`web/e2e/experience-audit.spec.ts` 以用户操作检查快捷搜索的焦点、方向键与回车、六个列表的搜索历史回填、手机资讯搜索保留列表视图、结构化校历与旧图片返回的兼容，以及地图失败后的恢复。校历沿用服务端返回的学期、教学周、事件和调课规则，不以只有学年标题表示已展示完整内容。
+
+`web/e2e/ai-experience.spec.ts` 检查历史会话的迟到响应隔离、新建会话清理来源、创建等待与已创建运行的停止恢复、重复提交及账号切换。创建结果尚未返回时只能停止本页等待，页面会明确要求从历史核对服务端结果，不报告运行已取消。这些写入与事件流使用本地合成夹具，不代表真实学校或真实模型端到端验收。
 
 已运行的自动化包括共享数据校验、解析与提醒计算、SSE 分帧、课表编辑及冲突、主要路由和移动导航，以及真实 Chromium 扩展加载和握手。Go 测试覆盖收藏、Origin 校验与个人 AI 授权/用量等边界。`web/e2e/assistant-install.spec.ts` 覆盖未装助手时的下载引导与安装步骤、装好后不刷新自动复检（并断言此间不发起学校查询）、以及安装包缺失或通道不符时的降级；`web/src/assistant-package.test.ts` 和 `browser-extension/src/inject.test.ts` 覆盖包清单校验与补注入的站点计划。
 

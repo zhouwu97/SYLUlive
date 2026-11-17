@@ -7,8 +7,10 @@ export function formatScore(value:unknown):string{
 }
 
 export function stringList(value:unknown):string[]{
-  const list=typeof value==='string'?JSON.parse(value||'[]'):value;
-  return Array.isArray(list)?list.filter((item):item is string=>typeof item==='string'):[];
+  try {
+    const list=typeof value==='string'?JSON.parse(value||'[]'):value;
+    return Array.isArray(list)?list.filter((item):item is string=>typeof item==='string'):[];
+  } catch { return []; }
 }
 
 // 编辑接口使用完整替换语义，因此必须从权威上下文保留菜品关系和图片绑定。

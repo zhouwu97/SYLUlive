@@ -1,0 +1,19 @@
+/* 字体随站点同源分发；加载失败时退回系统彩色 Emoji，文字保持原始 Unicode。 */
+@font-face {
+  font-family: "SYLU Color Emoji";
+  src: url("./assets/fonts/noto-color-emoji-v2.051.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+.inline-emoji {
+  font-family: "SYLU Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  font-size: 1.1em;
+  font-weight: 400;
+  font-style: normal;
+  font-synthesis: none;
+  font-variant-emoji: emoji;
+  letter-spacing: 0;
+  line-height: 1;
+  vertical-align: -.06em;
+}

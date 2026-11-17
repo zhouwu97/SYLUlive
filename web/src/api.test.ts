@@ -41,6 +41,14 @@ it("连接失败给出中文恢复提示，保留接口与程序错误的原始�
   expect(errorText(new DOMException("操作已取消", "AbortError"))).toBe("操作已取消");
 });
 
+it("网关没有返回业务说明时给出恢复提示，保留服务端明确的错误", async () => {
+  vi.stubGlobal('fetch', vi.fn()
+    .mockResolvedValueOnce(new Response('Bad Gateway', {status: 502, headers: {'content-type': 'text/plain'}}))
+    .mockResolvedValueOnce(jsonResponse({message: '当前服务正在维护，请稍后再试'}, 503)));
+  await expect(request('/api/posts')).rejects.toMatchObject({status: 502, message: '服务器暂时不可用，请稍后重试。（502）'});
+  await expect(request('/api/posts')).rejects.toMatchObject({status: 503, message: '当前服务正在维护，请稍后再试'});
+});
+
 it("多步操作的会话检查覆盖 A → B → A 与退出转换", () => {
   setAuthSession(1);
   const first = captureAuthSession();

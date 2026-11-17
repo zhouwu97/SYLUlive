@@ -5,6 +5,7 @@
   "packageManager": "pnpm@12.4.2",
   "scripts": {
     "dev": "pnpm --filter @sylulive/web dev",
+    "dev:online": "pnpm --filter @sylulive/web dev:online",
     "build": "pnpm -r build",
     "check": "pnpm -r check",
     "test": "vitest run",

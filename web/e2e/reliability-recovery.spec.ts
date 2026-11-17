@@ -127,10 +127,14 @@ test('注册协议链接使用当前站点，不跳到固定生产站点', async
 
 test('页面模块下载失败有恢复入口，重新加载后可以进入原页面', async ({page}) => {
   await syntheticUser(page);
-  await page.route('**/src/connected-apps.tsx', route => route.abort());
+  // Vite 热更新会附加 ?t=...，故障注入按模块路径匹配，不能漏掉带版本的请求。
+  const moduleURL = (url: URL) => url.pathname === '/web/src/connected-apps.tsx';
+  let blocked = 0;
+  await page.route(moduleURL, route => {blocked++; return route.abort();});
   await page.goto('connected-apps');
+  await expect.poll(() => blocked).toBeGreaterThan(0);
   await expect(page.getByText('页面加载未完成', {exact: true})).toBeVisible();
-  await page.unroute('**/src/connected-apps.tsx');
+  await page.unroute(moduleURL);
   await page.getByRole('button', {name: '重新加载页面', exact: true}).click();
   await expect(page.getByText('页面加载未完成', {exact: true})).toHaveCount(0);
   await expect(page.locator('main')).toContainText('当前校园账号：恢复测试同学');

@@ -941,8 +941,6 @@ body {
 .file-field b { padding: 6px 10px; border-radius: 8px; background: var(--brand-soft); color: var(--brand-strong); font-size: 12px; }
 .file-field small { color: var(--text-3); }
 .file-upload-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-.post-full + .section .dialog-form { gap: 11px; }
-.post-full + .section .field textarea { min-height: 88px; }
 
 .profile-rail-card { padding: 16px; }
 .profile-rail-head { display: flex; align-items: center; gap: 10px; }

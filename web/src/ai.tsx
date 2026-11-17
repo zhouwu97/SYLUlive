@@ -1,46 +1,84 @@
 import { gradeStats } from "@sylulive/academic-contracts";
 import { useAcademic } from "./academic";
 import { useEffect, useRef, useState } from "react";
-import { useApi, rows, write, type Entity, errorText } from "./api";
-import { Head, QueryState, useUI } from "./ui";
+import { useApi, rows, request, write, type Entity, errorText } from "./api";
+import { Head, Icon, QueryState, useUI } from "./ui";
 import { useAuth } from "./auth";
 import { consumeSSE } from "./sse";
+import './ai.css';
 export function AiPage() {
   const auth = useAuth(),
     ui = useUI();
   const history = useApi(auth.user ? "/api/ai/conversations" : null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const conversations = rows(history.data, 'conversations');
   const [conversation, setConversation] = useState(""),
     [question, setQuestion] = useState(""),
     [answer, setAnswer] = useState(""),
     [busy, setBusy] = useState(false),
+    [stopping, setStopping] = useState(false),
+    [historyLoading, setHistoryLoading] = useState(false),
     [error, setError] = useState(""),
     [sources, setSources] = useState<Entity[]>([]);
   const active = useRef<{ id: string; controller: AbortController } | null>(
     null,
   );
-  useEffect(() => () => active.current?.controller.abort(), []);
+  const historyRead = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    active.current?.controller.abort();
+    active.current = null;
+    historyRead.current?.abort();
+    historyRead.current = null;
+  }, []);
+  async function readConversation(id: string) {
+    historyRead.current?.abort();
+    const controller = new AbortController();
+    historyRead.current = controller;
+    setHistoryLoading(true);
+    try {
+      const data = await request(`/api/ai/conversations/${id}`, {signal: controller.signal});
+      if (historyRead.current !== controller || controller.signal.aborted) return;
+      setConversation(id);
+      setHistoryOpen(false);
+      setAnswer(rows(data, "messages").map(m => `${m.role === "user" ? "你" : "助手"}：${m.content}`).join("\n\n"));
+      setSources([]);
+      setError("");
+    } catch (e) {
+      if (historyRead.current === controller && !controller.signal.aborted) ui.notify(errorText(e));
+    } finally {
+      if (historyRead.current === controller) {
+        historyRead.current = null;
+        setHistoryLoading(false);
+      }
+    }
+  }
   async function ask() {
-    if (!question.trim() || busy || !auth.requireUser()) return;
+    if (!question.trim() || busy || historyLoading || !auth.requireUser()) return;
     setBusy(true);
     setError("");
     setAnswer("");
     setSources([]);
     const controller = new AbortController();
+    const operation = {id: "", controller};
+    active.current = operation;
+    const isCurrent = () => active.current === operation && !controller.signal.aborted;
     try {
-      const created = await write("/api/ai/runs", {
+      const created = await request("/api/ai/runs", {method: "POST", signal: controller.signal, body: JSON.stringify({
         message: question,
         client_request_id: crypto.randomUUID(),
         ...(conversation ? { conversation_id: conversation } : {}),
-      });
+      })});
+      if (!isCurrent()) return;
       const run = created.run;
       if (!run?.id) throw new Error("服务器未返回有效会话");
-      active.current = { id: run.id, controller };
+      operation.id = run.id;
       if (run.conversation_id) setConversation(run.conversation_id);
       const response = await fetch(`/api/ai/runs/${run.id}/events`, {
         credentials: "same-origin",
         signal: controller.signal,
       });
       await consumeSSE(response, (type, data) => {
+        if (!isCurrent()) return;
         const value = data as Entity,
           p = value.payload || {};
         if (type === "answer.delta") setAnswer((s) => s + String(p.text || ""));
@@ -51,28 +89,44 @@ export function AiPage() {
         if (type === "run.cancelled") setError("已取消");
         if (type === "sources.ready") setSources(rows(p, "sources"));
       });
-      await history.refetch();
+      if (isCurrent()) await history.refetch();
     } catch (e) {
-      if (!controller.signal.aborted) setError(errorText(e));
+      if (isCurrent()) setError(errorText(e));
     } finally {
-      active.current = null;
-      setBusy(false);
+      if (active.current === operation) {
+        active.current = null;
+        setBusy(false);
+      }
     }
   }
   async function cancel() {
     const run = active.current;
-    if (!run) return;
+    if (!run || stopping) return;
+    if (!run.id) {
+      run.controller.abort();
+      active.current = null;
+      setBusy(false);
+      setError("已停止等待创建结果；服务端是否已开始生成尚未确认，请从历史会话核对。");
+      return;
+    }
+    setStopping(true);
     try {
       await write(`/api/ai/runs/${run.id}/cancel`);
+      if (active.current !== run) return;
       run.controller.abort();
+      active.current = null;
+      setBusy(false);
       setError("已取消");
     } catch (e) {
-      ui.notify(errorText(e));
+      if (active.current === run) ui.notify(errorText(e));
+    } finally {
+      setStopping(false);
     }
   }
   return (
     <>
       <Head title="AI 校园助手" description="校园问答与公共信息查询">
+        <button className="btn ai-history-toggle" aria-expanded={historyOpen} onClick={()=>setHistoryOpen(value=>!value)}><Icon name="clock" size={16}/>历史会话</button>
         <button
           className="btn"
           onClick={() =>
@@ -83,58 +137,54 @@ export function AiPage() {
           分析我的成绩摘要
         </button>
       </Head>
-      <div className="ai-shell">
+      <div className={`ai-shell${historyOpen?' history-open':''}`}>
         <aside className="ai-side">
+          <div className="ai-side-title"><Icon name="ai" size={20}/><b>校园问答</b><span>AI</span></div>
           <button
             className="btn primary full-width"
             disabled={busy}
             onClick={() => {
+              historyRead.current?.abort();
+              historyRead.current = null;
+              setHistoryLoading(false);
               setConversation("");
               setAnswer("");
               setQuestion("");
               setError("");
+              setSources([]);
+              setHistoryOpen(false);
             }}
           >
             ＋ 新建会话
           </button>
-          {auth.user && (
+          <div className="ai-history-heading">最近会话<span>{auth.user?conversations.length:''}</span></div>
+          <nav className="ai-history" aria-label="历史会话">{auth.user ? (
             <QueryState query={history}>
-              {rows(history.data, "conversations").map((c) => (
+              {conversations.map((c) => (
                 <button
                   className="ai-history-item"
+                  type="button"
                   disabled={busy}
                   key={c.id}
-                  onClick={async () => {
-                    try {
-                      const res = await fetch(`/api/ai/conversations/${c.id}`, {
-                        credentials: "same-origin",
-                      });
-                      if (!res.ok) throw new Error("读取历史失败");
-                      const data = await res.json();
-                      setConversation(c.id);
-                      setAnswer(
-                        rows(data, "messages")
-                          .map(
-                            (m) =>
-                              `${m.role === "user" ? "你" : "助手"}：${m.content}`,
-                          )
-                          .join("\n\n"),
-                      );
-                    } catch (e) {
-                      ui.notify(errorText(e));
-                    }
-                  }}
+                  title={c.title||'校园问答'}
+                  aria-pressed={conversation === String(c.id)}
+                  onClick={() => void readConversation(String(c.id))}
                 >
-                  {c.title || "校园问答"}
+                  <Icon name="community" size={17}/><span>{c.title || "校园问答"}</span>
                 </button>
               ))}
+              {!conversations.length&&<p className="ai-history-empty">还没有会话，试着问一个校园问题吧。</p>}
             </QueryState>
-          )}
+          ):<div className="ai-history-empty"><Icon name="lock" size={22}/><p>登录后，随时继续之前的校园问答。</p><button className="btn" onClick={auth.login}>登录</button></div>}</nav>
+          <p className="ai-side-note"><Icon name="info" size={14}/>回答仅供参考，请核对官方信息。</p>
         </aside>
         <div className="ai-main">
-          <div className="ai-content">
+          <div className="ai-conversation-heading"><Icon name="ai" size={18}/><b>{conversations.find(c=>String(c.id)===conversation)?.title||'新的校园问答'}</b><span>{busy?'正在生成':historyLoading?'读取中':'校园公共信息'}</span></div>
+          <div className="ai-content" aria-busy={historyLoading || busy}>
+            {historyLoading && <p role="status">正在读取历史会话…</p>}
             {!answer && !busy ? (
-              <>
+              <div className="ai-welcome">
+                <span className="ai-welcome-symbol"><Icon name="ai" size={34}/></span>
                 <h2 className="ai-title">有什么校园问题？</h2>
                 <p className="muted">可以问校园服务、活动与公开信息。</p>
                 <div className="ai-suggest">
@@ -144,12 +194,12 @@ export function AiPage() {
                     "校园有哪些常用服务？",
                     "如何高效安排复习？",
                   ].map((s) => (
-                    <button key={s} onClick={() => setQuestion(s)}>
-                      {s}
+                    <button type="button" key={s} onClick={() => setQuestion(s)}>
+                      <Icon name="community" size={17}/><span>{s}</span><Icon name="chevron" size={14}/>
                     </button>
                   ))}
                 </div>
-              </>
+              </div>
             ) : (
               <div className="ai-output">{answer || "正在等待回答…"}</div>
             )}
@@ -158,9 +208,9 @@ export function AiPage() {
                 {error}
               </p>
             )}
-            {sources.map((s, i) => (
+            {sources.length>0&&<div className="ai-sources"><b>参考来源</b>{sources.map((s, i) => (
               <p key={i}>{s.title || s.name}</p>
-            ))}
+            ))}</div>}
           </div>
           <form
             className="ai-input"
@@ -179,11 +229,11 @@ export function AiPage() {
             />
             <div className="inline-actions">
               {busy ? (
-                <button className="btn" type="button" onClick={cancel}>
-                  停止生成
+                <button className="btn" type="button" disabled={stopping} onClick={event => {event.preventDefault(); void cancel();}}>
+                  {stopping ? "正在停止…" : "停止生成"}
                 </button>
               ) : (
-                <button className="btn primary">
+                <button className="btn primary" disabled={historyLoading || stopping}>
                   {error ? "重试" : "发送"}
                 </button>
               )}

@@ -9,8 +9,8 @@ import { PaperLibrary } from './papers';
 import { teachingWeek, mergeCourses } from "@sylulive/academic-contracts";
 import {
   PostCard as CommunityPostCard,
-  PostForm as CommunityPostForm,
 } from "./community";
+import {usePostEditor} from './post-editor-page';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -90,7 +90,7 @@ export function Dashboard() {
   return useMobile() ? <MobileHome /> : <DesktopDashboard />;
 }
 function DesktopDashboard() {
-  const nav = useNavigate(), ui = useUI(), auth = useAuth();
+  const nav = useNavigate(), auth = useAuth(), openPostEditor = usePostEditor();
   const [params, setParams] = useSearchParams();
   const sort = params.get("sort") || "all";
   const posts = useDesktopHomeFeed(sort);
@@ -113,12 +113,12 @@ function DesktopDashboard() {
   const pinned = [...new Map([...publicPosts, ...items.filter(isPublicPost)].map(post => [post.id, post])).values()];
   const feed = items.filter(post => !pinned.some(item => item.id === post.id));
   const expired = posts.error instanceof ApiError && posts.error.code === "feed_session_expired";
-  const publish = () => auth.requireUser() && ui.open("发布内容", <CommunityPostForm />);
+  const publish = () => openPostEditor();
   return <div className="campus-home">
     <section className="home-hero" aria-label="今日">
       <div className="home-hero-top">
         <div><h1>{greeting}，{auth.user?.nickname || "同学"}。</h1><p>看看同学们的新鲜事，也分享你的校园日常。</p></div>
-        <Link className="home-week" to="/campus" aria-label={`${dayLabel(academic.data.termStart)}，打开校园日历`}><Icon name="schedule" size={14} />{dayLabel(academic.data.termStart)}</Link>
+        <Link className="home-week" to="/campus" aria-label={`${dayLabel(academic.data.termStart)}，查看校园通知与服务`}><Icon name="schedule" size={14} />{dayLabel(academic.data.termStart)}</Link>
       </div>
       <nav className="home-quick" aria-label="常用入口">
         {HOME_QUICK.map(([id, label]) => <Link key={id} to={`/${id}`}><span className={`home-quick-icon tone-${id}`}><Icon name={id} size={20} /></span>{label}</Link>)}

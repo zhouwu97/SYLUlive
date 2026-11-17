@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { ApiError, query, request, rows, write, type Entity } from "./api";
 import { useAuth } from "./auth";
-import { Icon, useUI } from "./ui";
+import { useUI } from "./ui";
+import { SocialActionIcon } from "./social-action-icon";
 
 // 会话初始化会取消同帧启动的读取；只重试一次被取消的读请求，不重放写操作。
 export function retryInterruptedRead(count: number, error: Error) {
@@ -54,7 +55,6 @@ export function PostActions({
   const [pending, setPending] = useState("");
   // 点赞先在本地切换，服务端确认前按钮保持忙碌；失败时回到原状态。
   const [likeOverride, setLikeOverride] = useState<LikeState | null>(null);
-  const [popped, setPopped] = useState(false);
   const locked = useRef(false);
   const serverLike = `${!!post.is_liked}:${Number(post.like_count) || 0}`;
   const lastServerLike = useRef(serverLike);
@@ -97,12 +97,11 @@ export function PostActions({
         const previous = like;
         const next = { liked: !previous.liked, count: Math.max(0, previous.count + (previous.liked ? -1 : 1)) };
         setLikeOverride(next);
-        if (next.liked) setPopped(true);
         const ok = await ui.act(
           () => write(`/api/posts/${post.id}/like`, {}, previous.liked ? "DELETE" : "POST"),
           previous.liked ? "已取消点赞" : "已点赞",
         );
-        if (!ok) { setLikeOverride(previous); setPopped(false); }
+        if (!ok) setLikeOverride(previous);
         return;
       }
       const id = Number(post.id), was = bookmarked;
@@ -129,19 +128,19 @@ export function PostActions({
       setPending("");
     }
   }
-  const commentContent = <><Icon name="community" size={19} /><span className="post-action-label">评论</span><span className="post-action-count">{post.reply_count || 0}</span></>;
+  const commentContent = <><SocialActionIcon kind="comment" /><span className="post-action-label">评论</span><span className="post-action-count">{post.reply_count || 0}</span></>;
   return (
     <div className="post-toolbar">
       <div className="post-interactions" role="group" aria-label="帖子互动">
-        <button type="button" className={`post-interaction post-like${popped ? " is-popped" : ""}`} aria-pressed={like.liked} aria-busy={pending === "like"} disabled={!!pending || auth.loading} onClick={() => mutate("like")} onAnimationEnd={() => setPopped(false)}>
-          <Icon name="heart" size={19} /><span className="post-action-label">{like.liked ? "已赞" : "点赞"}</span><span className="post-action-count">{like.count}</span>
+        <button type="button" className="post-interaction post-like" aria-pressed={like.liked} aria-busy={pending === "like"} disabled={!!pending || auth.loading} onClick={() => mutate("like")}>
+          <SocialActionIcon kind="like" /><span className="post-action-label">{like.liked ? "已赞" : "点赞"}</span><span className="post-action-count">{like.count}</span>
         </button>
         {onComment ? <button type="button" className="post-interaction" onClick={onComment}>{commentContent}</button> : <Link className="post-interaction" to={`/post/${post.id}#post-comments`} state={{ from }}>{commentContent}</Link>}
         <button type="button" className="post-interaction" title={bookmarks.error?.message} aria-pressed={bookmarked} aria-busy={pending === "bookmark" || (!!auth.user && bookmarks.isPending)} disabled={!!pending || auth.loading || (!!auth.user && bookmarks.isPending)} onClick={() => mutate("bookmark")}>
-          <Icon name="bookmark" size={19} /><span className="post-action-label">{bookmarks.error ? "重试收藏" : bookmarked ? "已收藏" : "收藏"}</span>
+          <SocialActionIcon kind="save" /><span className="post-action-label">{bookmarks.error ? "重试收藏" : bookmarked ? "已收藏" : "收藏"}</span>
         </button>
         <button type="button" className="post-interaction" aria-busy={pending === "share"} disabled={!!pending} onClick={share}>
-          <Icon name="share" size={19} /><span className="post-action-label">分享</span>
+          <SocialActionIcon kind="share" /><span className="post-action-label">分享</span>
         </button>
       </div>
       {more}

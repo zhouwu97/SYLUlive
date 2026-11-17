@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useCallback,
   useRef,
   useState,
   useId,
@@ -28,12 +29,14 @@ export function Icon({ name, size }: { name: string; size?: number }) {
   );
 }
 // drawer：桌面端从右侧滑出的编辑面板，适合需要边改边看列表的管理表单；手机端仍是底部弹层。
-export type DialogVariant = "modal" | "drawer";
+export type DialogVariant = "modal" | "drawer" | "media";
 type Dialog = { title: string; body: ReactNode; variant?: DialogVariant };
 const UIContext = createContext<{
   dialog: Dialog | null;
   open: (title: string, body: ReactNode, variant?: DialogVariant) => void;
   close: () => void;
+  requestClose: () => void;
+  registerCloseGuard: (guard: () => boolean) => () => void;
   notify: (s: string) => void;
   act: (fn: () => Promise<unknown>, success?: string) => Promise<boolean>;
 }>({} as never);
@@ -42,13 +45,19 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [dialog, setDialog] = useState<Dialog | null>(null),
     [toast, setToast] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const closeGuard = useRef<(() => boolean) | null>(null);
+  const registerCloseGuard = useCallback((guard: () => boolean) => {
+    closeGuard.current = guard;
+    return () => {if (closeGuard.current === guard) closeGuard.current = null;};
+  }, []);
   const qc = useQueryClient();
   function notify(s: string) {
     setToast(s);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setToast(""), 4200);
   }
-  const close = () => setDialog(null);
+  const close = () => {closeGuard.current = null; setDialog(null);};
+  const requestClose = () => {if (!closeGuard.current || closeGuard.current()) close();};
   async function act(fn: () => Promise<unknown>, success = "操作已完成") {
     try {
       await fn();
@@ -64,8 +73,14 @@ export function UIProvider({ children }: { children: ReactNode }) {
     <UIContext.Provider
       value={{
         dialog,
-        open: (title, body, variant) => setDialog({ title, body, variant }),
+        open: (title, body, variant) => {
+          if (closeGuard.current && !closeGuard.current()) return;
+          closeGuard.current = null;
+          setDialog({ title, body, variant });
+        },
         close,
+        requestClose,
+        registerCloseGuard,
         notify,
         act,
       }}
@@ -80,6 +95,11 @@ export function UIProvider({ children }: { children: ReactNode }) {
       </div>
     </UIContext.Provider>
   );
+}
+export function useDialogCloseGuard(guard: () => boolean) {
+  const {registerCloseGuard} = useUI();
+  const current = useRef(guard); current.current = guard;
+  useEffect(() => registerCloseGuard(() => current.current()), [registerCloseGuard]);
 }
 export function Modal({
   title,
@@ -105,9 +125,9 @@ export function Modal({
         close();
       }
       if (e.key === "Tab") {
-        const all = ref.current?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]',
-        );
+        const all = [...(ref.current?.querySelectorAll<HTMLElement>(
+          'button,a[href],input:not([type="hidden"]),select,textarea,[tabindex="0"]',
+        ) || [])].filter(element => element.getClientRects().length > 0 && !element.matches(':disabled'));
         if (!all?.length) return;
         const first = all[0],
           last = all[all.length - 1];
@@ -129,14 +149,14 @@ export function Modal({
   }, []);
   return (
     <div
-      className={variant === "drawer" ? "overlay open overlay-drawer" : "overlay open"}
+      className={`overlay open${variant === "modal" ? "" : ` overlay-${variant}`}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) close();
       }}
     >
       <div
         ref={ref}
-        className={variant === "drawer" ? "modal modal-drawer" : "modal"}
+        className={`modal${variant === "modal" ? "" : ` modal-${variant}`}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -171,11 +191,13 @@ export function Form({
   fields,
   onSubmit,
   submit = "保存",
+  submitDisabled = false,
   children,
 }: {
   fields: Field[];
   onSubmit: (data: Entity, form: FormData) => Promise<void>;
   submit?: string;
+  submitDisabled?: boolean;
   children?: ReactNode;
 }) {
   const [busy, setBusy] = useState(false),
@@ -264,7 +286,7 @@ export function Form({
         </p>
       )}
       <div className="form-actions">
-        <button className="btn primary" disabled={busy} aria-busy={busy}>
+        <button className="btn primary" disabled={busy || submitDisabled} aria-busy={busy}>
           {busy ? "正在提交…" : submit}
         </button>
       </div>
@@ -461,9 +483,9 @@ export function Pagination({
 }
 
 export function DialogOutlet() {
-  const { dialog, close } = useUI();
+  const { dialog, requestClose } = useUI();
   return dialog ? (
-    <Modal title={dialog.title} close={close} variant={dialog.variant}>
+    <Modal title={dialog.title} close={requestClose} variant={dialog.variant}>
       {dialog.body}
     </Modal>
   ) : null;

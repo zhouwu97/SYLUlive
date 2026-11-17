@@ -5,10 +5,22 @@ import {resolve} from 'node:path';
 import {createLogger, createServer} from 'vite';
 
 const root = resolve(import.meta.dirname, '..');
-const options = {root, configFile: resolve(root, 'vite.config.ts'), customLogger: createLogger('silent'), optimizeDeps: {noDiscovery: true, include: []}, server: {port: 0, strictPort: false, host: '127.0.0.1'}};
+// 集成测试的优化配置不同于日常开发，必须隔离缓存，避免使正在运行的网页依赖返回 504。
+const options = {root, cacheDir: resolve(root, '../artifacts/vite-proxy-test-cache'), configFile: resolve(root, 'vite.config.ts'), customLogger: createLogger('silent'), optimizeDeps: {noDiscovery: true, include: []}, server: {port: 0, strictPort: false, host: '127.0.0.1'}};
 afterEach(() => vi.unstubAllEnvs());
 
 describe('development proxy boundaries', () => {
+  it.each([['http://127.0.0.1:8080', true], ['https://example.invalid', false]])('测试环境探针核对实际开发进程的上游：%s', async (upstream, localApi) => {
+    vi.stubEnv('SYLULIVE_API_ORIGIN', upstream);
+    const server = await createServer(options);
+    try {
+      await server.listen();
+      const address = server.httpServer!.address() as {port: number};
+      const response = await fetch(`http://127.0.0.1:${address.port}/web/__test-environment`);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(await response.json()).toEqual({localApi});
+    } finally {await server.close();}
+  });
   it('defaults every backend route to local Go rather than production', async () => {
     vi.stubEnv('SYLULIVE_API_ORIGIN', undefined);
     const server = await createServer(options);
@@ -16,6 +28,18 @@ describe('development proxy boundaries', () => {
       for (const path of ['/api', '/uploads', '/stickers', '/terms', '/privacy'])
         expect((server.config.server.proxy![path] as {target: string}).target).toBe('http://127.0.0.1:8080');
     } finally { await server.close(); }
+  });
+  it('explicit online mode connects the live API while an explicit origin still wins', async () => {
+    vi.stubEnv('SYLULIVE_API_ORIGIN', undefined);
+    const online = await createServer({...options, mode: 'online'});
+    try {
+      for (const path of ['/api', '/uploads', '/stickers', '/terms', '/privacy'])
+        expect((online.config.server.proxy![path] as {target: string}).target).toBe('https://sylulive.online');
+    } finally {await online.close();}
+    vi.stubEnv('SYLULIVE_API_ORIGIN', 'http://127.0.0.1:8080');
+    const explicit = await createServer({...options, mode: 'online'});
+    try {expect((explicit.config.server.proxy!['/api'] as {target: string}).target).toBe('http://127.0.0.1:8080');}
+    finally {await explicit.close();}
   });
   it('serves legal documents through the selected local upstream and preserves foreign Origin checks', async () => {
     const origins: (string | undefined)[] = [];

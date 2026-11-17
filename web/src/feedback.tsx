@@ -5,8 +5,11 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { entity, query, rows, time, useApi, write, type Entity } from "./api";
-import { Empty, Form, Head, Pagination, QueryState, Tabs, useUI } from "./ui";
+import {useEffect,useRef,useState} from 'react';
+import {useQueryClient} from '@tanstack/react-query';
+import { captureAuthSession, entity, errorText, query, request, rows, time, useApi, write, type Entity } from "./api";
+import { Empty, Form, Head, Icon, Pagination, QueryState, Tabs, useUI } from "./ui";
+import {notificationTarget} from './notification-target';
 import { useAuth } from "./auth";
 import { uploadIDs } from "./community";
 import {
@@ -19,6 +22,7 @@ import {
   ticketAttachmentLimits,
   TicketAttachments,
 } from "./attachments";
+import {MediaUploadPicker} from './media';
 import "./feedback.css";
 export const states: Record<string, string> = {
   pending: "待受理",
@@ -243,6 +247,8 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
   const base = admin ? "/api/admin/feedback" : "/api/feedback";
   const q = useApi(`${base}/tickets/${id}`);
   const ticket = entity(q.data, "ticket");
+  const [replyScope,setReplyScope]=useState('public'),[replyBusy,setReplyBusy]=useState(false);
+  useEffect(()=>setReplyScope('public'),[id]);
   const back = ticketListHREF(admin, location.search);
   const closedForUser = !admin && ticket.status === "closed";
   const closedForAdmin = admin && ticket.status === "closed";
@@ -265,19 +271,16 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
     .join(" · ");
   return (
     <>
-      <Head title={ticket.title || "工单详情"} description={headline}>
-        <Link className="btn" to={back}>
-          返回列表
-        </Link>
-      </Head>
+      <header className="ticket-page-head"><div><span className="ticket-breadcrumb"><Icon name="feedback" size={15}/>{admin?'工单管理':'我的工单'}</span><h1>{ticket.title || '工单详情'}</h1>{headline&&<p>{headline}</p>}</div><div className="ticket-page-actions">{ticket.status&&<StatusTag status={ticket.status}/>}<Link className="btn" to={back}><Icon name="arrow" size={15}/>返回列表</Link></div></header>
       <QueryState query={q}>
         <div className="ticket-layout ticket-detail">
           <div className="ticket-main">
-            <div className="panel">
+            <div className="panel ticket-conversation">
+              <div className="ticket-thread-head"><div><span className="ticket-section-icon"><Icon name="messages" size={20}/></span><div><h2>沟通记录</h2><p>{messages.length?`${messages.length} 条后续消息`:'等待进一步沟通'} · {admin?'与提交人共同跟进问题':'补充信息与处理回复都在这里'}</p></div></div><a className="link-btn" href="#ticket-reply">{admin?'回复工单':'补充信息'}<Icon name="edit" size={14}/></a></div>
               <div className="thread">
                 <div className="thread-message">
                   <div className="message-meta">
-                    <b>初始提交</b>
+                    <span className="ticket-message-avatar"><Icon name="profile" size={16}/></span><b>初始提交</b>
                     <time>{time(ticket.created_at)}</time>
                   </div>
                   <div className="bubble details-text">
@@ -301,7 +304,7 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                     className={`thread-message ${m.sender_type === "admin" ? "official" : ""} ${isInternalMessage(m) ? "internal" : ""}`}
                   >
                     <div className="message-meta">
-                      <b>{messageSenderLabel(m)}</b>
+                      <span className="ticket-message-avatar"><Icon name={isInternalMessage(m)?'lock':m.sender_type==='admin'?'admin':'profile'} size={16}/></span><b>{messageSenderLabel(m)}</b>
                       {isInternalMessage(m) && <span className="tag">内部备注</span>}
                       <time>{time(m.created_at)}</time>
                     </div>
@@ -310,7 +313,8 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                   </div>
                 ))}
               </div>
-              <div className="reply-form">
+              <div id="ticket-reply" className={`reply-form${admin&&(replyScope==='internal'||closedForAdmin)?' is-internal':''}`} onChange={e=>{const input=e.target;if(input instanceof HTMLSelectElement&&input.name==='scope')setReplyScope(input.value);}}>
+                <div className="ticket-reply-head"><h3>{admin?'回复与备注':'补充信息'}</h3><span><Icon name={admin&&(replyScope==='internal'||closedForAdmin)?'lock':'eye'} size={14}/>{admin&&(replyScope==='internal'||closedForAdmin)?'仅管理员可见':admin?'回复对提交人可见':'仅你和处理人员可见'}</span></div>
                 {closedForUser ? (
                   <div className="panel panel-pad">
                     <b>该工单已关闭</b>
@@ -324,7 +328,7 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                   {closedForAdmin && <p className="muted">该工单已关闭，请先修改处理状态，再公开回复。内部备注仍可保存。</p>}
                   <Form
                     // 表单非受控：消息数变化即发送成功，换 key 清空输入，避免重复发送同一条回复。
-                    key={`${messages.length}:${closedForAdmin}`}
+                    key={`${id}:${messages.length}:${closedForAdmin}`}
                     fields={[
                       ...(admin
                         ? [
@@ -345,43 +349,37 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                         type: "textarea",
                         required: true,
                       },
-                      {
-                        name: "images",
-                        label: "附件图片",
-                        type: "file",
-                        multiple: true,
-                        accept: attachmentAccept,
-                        help: attachmentHelp,
-                      },
                     ]}
                     submit={closedForAdmin ? "保存备注" : "发送"}
                     onSubmit={async (data, fd) => {
-                      const image_ids = await uploadIDs(
-                        fd,
-                        ticketAttachmentLimits,
-                      );
-                      await write(`${base}/tickets/${id}/messages`, {
-                        content: data.content,
-                        image_ids,
-                        ...(admin
-                          ? { visible_to_user: data.scope === "public" }
-                          : {}),
-                      });
-                      await q.refetch();
-                      ui.notify("回复已发送");
+                      setReplyBusy(true);
+                      const isCurrent=captureAuthSession();
+                      try{
+                        const image_ids = await uploadIDs(fd,ticketAttachmentLimits);
+                        if(!isCurrent())throw new Error('账号已切换，请重新确认回复');
+                        await write(`${base}/tickets/${id}/messages`, {
+                          content: data.content,image_ids,
+                          ...(admin?{visible_to_user:data.scope==='public'}:{}),
+                        });
+                        if(!isCurrent())return;
+                        await q.refetch();
+                        setReplyScope(closedForAdmin?'internal':'public');
+                        ui.notify("回复已发送");
+                      }finally{setReplyBusy(false);}
                     }}
-                  />
+                  ><div className="ticket-reply-upload"><span>附件图片</span><MediaUploadPicker compact maxCount={ticketAttachmentLimits.maxCount} disabled={replyBusy}/><small>{attachmentHelp}</small></div></Form>
                   </>
                 )}
               </div>
             </div>
           </div>
           <aside className="ticket-aside">
-            <div className="panel panel-pad">
+            <div className="panel panel-pad ticket-progress-panel">
               <div className="ticket-aside-head">
                 <h3>处理进度</h3>
                 <StatusTag status={ticket.status} />
               </div>
+              <p className="ticket-progress-copy">{({pending:'尚未开始处理，可以先回复确认收到问题。',accepted:'已受理，正在安排排查。',waiting_user:'等待提交人补充信息后继续处理。',investigating:'正在定位问题原因。',fixing:'正在修复，进展会在这里更新。',testing:'修复正在验证中。',resolved:'已标记解决，等待提交人确认。',closed:'工单已关闭，历史沟通仍可查看。'} as Record<string,string>)[ticket.status]||'处理状态以当前工单记录为准。'}</p>
               {admin ? (
                 <Form
                   key={`${ticket.status}:${history.length}`}
@@ -456,7 +454,7 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
               )}
             </div>
             {admin && <TicketFacts ticket={ticket} />}
-            <div className="panel panel-pad">
+            <div className="panel panel-pad ticket-history-panel">
               <h3>操作记录</h3>
               <ol className="event-list ticket-timeline">
                 {history.map((h) => (
@@ -520,48 +518,32 @@ export function Notifications() {
     nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const q = useApi(auth.user ? "/api/user/notifications" : null);
+  const qc=useQueryClient(),inFlight=useRef(new Set<number>());
+  const [readingAll,setReadingAll]=useState(false);
+  const refresh=()=>qc.invalidateQueries({predicate:q=>q.queryKey[0]==='api'&&String(q.queryKey[1]).startsWith('/api/user/notifications')});
   const unread = params.get("unread") === "1";
   const values = rows(q.data, "notifications").filter(
     (x) => !unread || !x.is_read,
   );
-  async function open(n: Entity) {
-    if (
-      !(await ui.act(
-        () => write("/api/user/notifications/read-selected", { ids: [n.id] }),
-        "已读状态已更新",
-      ))
-    )
-      return;
-    if (n.post_id) nav(`/post/${n.post_id}`);
-    else if (n.type?.startsWith("feedback"))
-      nav(
-        n.type === "feedback_admin_update"
-          ? `/admin/feedback/${n.related_id}`
-          : `/feedback/${n.related_id}`,
-      );
-    else if(n.type==='course_evaluation_result') nav(`/profile?tab=evaluations`);
-    else if(n.type==='canteen_pending'||n.type==='canteen_review_result') nav('/canteen?tab=mine');
-    else if(n.type==='competition_award_verification') nav('/competition?tab=awards');
-    else
-      ui.open(
-        "通知详情",
-        <>
-          <p className="details-text">{n.content}</p>
-          <p className="muted">
-            此通知的目标类型尚未接入网页详情，请在 App 中查看。
-          </p>
-        </>,
-      );
+  function open(n: Entity) {
+    const target=notificationTarget(n,auth.user?.role);
+    if(target.to)nav(target.to);
+    else ui.open('通知详情',<div className="notification-detail"><span className="tag">{target.kind}</span><p className="details-text">{n.content}</p><time className="muted">{time(n.created_at)}</time><p className="muted">{String(n.type||'').startsWith('feedback')?'关联工单不可用，或当前账号没有访问权限。':'这条通知的完整内容已展示在这里。'}</p></div>);
+    // 打开内容与回执独立；慢网或回执失败都不阻塞用户查看目标。
+    if(n.is_read||inFlight.current.has(n.id))return;
+    const isCurrent=captureAuthSession();
+    inFlight.current.add(n.id);
+    void request('/api/user/notifications/read-selected',{method:'POST',body:JSON.stringify({ids:[n.id]}),signal:AbortSignal.timeout(10000)}).then(()=>{if(isCurrent())void refresh();}).catch(()=>{if(isCurrent())ui.notify('内容已打开，已读状态同步失败；可在通知中心重试');}).finally(()=>inFlight.current.delete(n.id));
   }
   return (
     <>
       <Head title="通知中心" description="评论、审核结果与工单进展">
         <button
           className="btn"
-          disabled={!auth.user}
-          onClick={() => ui.act(() => write("/api/user/notifications/read"))}
+          disabled={!auth.user||readingAll||!rows(q.data,'notifications').some(n=>!n.is_read)}
+          onClick={async()=>{const isCurrent=captureAuthSession();setReadingAll(true);try{await request('/api/user/notifications/read',{method:'POST',body:'{}',signal:AbortSignal.timeout(10000)});if(isCurrent()){void refresh();ui.notify('全部通知已标为已读');}}catch(e){if(isCurrent())ui.notify(errorText(e));}finally{setReadingAll(false);}}}
         >
-          全部已读
+          {readingAll?'正在更新…':'全部已读'}
         </button>
       </Head>
       <Tabs
@@ -579,21 +561,23 @@ export function Notifications() {
           </button>
         </Empty>
       ) : (
-        <div className="panel">
+        <div className="panel notification-list">
           <QueryState query={q}>
-            {values.map((n) => (
+            {values.map((n) => {const target=notificationTarget(n,auth.user?.role);return (
               <button
                 key={n.id}
                 className={`notification-row ${n.is_read ? "" : "unread"}`}
                 onClick={() => open(n)}
               >
+                <span className={`notification-icon kind-${target.icon}`}><Icon name={target.icon} size={21}/></span>
                 <div className="notification-copy">
+                  <span className="notification-kind">{target.kind}{!n.is_read&&<span className="notification-unread">未读</span>}</span>
                   <b>{n.content}</b>
-                  <p>{time(n.created_at)}</p>
+                  <time dateTime={n.created_at}>{time(n.created_at)}</time>
                 </div>
-                {!n.is_read && <span className="tag brand">未读</span>}
+                <span className="notification-open">{target.to?target.label:'查看详情'}<Icon name="chevron" size={17}/></span>
               </button>
-            ))}
+            );})}
             {!values.length && <Empty title="没有新的通知" />}
           </QueryState>
         </div>

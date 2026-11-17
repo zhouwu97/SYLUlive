@@ -1,16 +1,38 @@
-import {useState,type ReactNode} from 'react';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {Link} from 'react-router-dom';
 import {useQueryClient} from '@tanstack/react-query';
 import {DISH_DIMENSIONS,MAX_REVIEW_DISHES,formatScore,preservedReviewData,readReviewDishes,reviewTime,stringList} from './canteen-data';
-import {asset,entity,errorText,request,rows,useApi,write,type Entity} from './api';
+import {asset,captureAuthSession,entity,errorText,request,rows,useApi,write,type Entity} from './api';
 import {useAuth} from './auth';
-import {Empty,Form,QueryState,useUI,type Field} from './ui';
+import {Empty,Form,Icon,QueryState,useUI,type Field} from './ui';
+import {ServerAvatar} from './server-avatar';
+import {MediaGallery} from './media';
+import './canteen-detail.css';
 
 /** 1–5 分统一用下拉选择，避免数字框误输入；文案与 App 的分值按钮一致。 */
 const SCORE_OPTIONS:[string,string][]=[['5','5 · 很满意'],['4','4 · 满意'],['3','3 · 一般'],['2','2 · 较差'],['1','1 · 很差']];
 const DISH_SCORE_OPTIONS:[string,string][]=[['','不打分'],...SCORE_OPTIONS];
 const VISIT_DIMENSIONS={taste_score:'口味',value_score:'性价比',queue_score:'排队体验',hygiene_score:'卫生',service_score:'服务'};
-export const OFFLINE_READONLY_TEXT='该商家已下架，评价和图片仅供查看；如需修改或删除请联系管理员。';
+export const OFFLINE_READONLY_TEXT='该商家已下架，评价和图片仅供查看；食堂资料仅超级管理员可维护。';
+
+/** 怀旧资料沿用管理接口；角色撤销或在途状态变化由服务端再次校验。 */
+export function CanteenArchiveManagement({id,item,onSaved}:{id:string;item:Entity;onSaved:()=>void}){
+  const auth=useAuth(),ui=useUI(),qc=useQueryClient();
+  if(auth.user?.role!=='super_admin')return null;
+  return <button className="btn" onClick={()=>{const isCurrent=captureAuthSession();ui.open('维护怀旧食堂',<>
+    <p className="muted">修改名称和位置会保留原有评价与图片。</p>
+    <Form fields={[
+      {name:'name',label:'食堂名称',value:item.name,required:true},
+      {name:'location_area',label:'食堂区域',value:item.location_area||'',options:[['','未设置'],['一食堂','一食堂'],['二食堂','二食堂']]},
+      {name:'location_floor',label:'楼层',value:item.location_floor||'',options:[['','未设置'],['一楼','一楼'],['二楼','二楼']]},
+    ]} onSubmit={async data=>{
+      if(!isCurrent())throw new Error('账号已切换，请关闭表单并重新确认操作');
+      await write(`/api/canteens/${id}`,data,'PATCH');
+      await qc.invalidateQueries({predicate:q=>q.queryKey[0]==='api'&&String(q.queryKey[1]).startsWith('/api/canteens')});
+      onSaved();ui.close();ui.notify('怀旧食堂资料已保存');
+    }}/>
+  </>)}}>维护怀旧食堂</button>;
+}
 
 function DishRows(){
   return <fieldset className="canteen-dish-rows">
@@ -59,34 +81,40 @@ function CanteenReviewEditor({id,reviewId,onSaved}:{id:string;reviewId:number;on
 
 function ReviewScores({review}:{review:Entity}){
   const parts=Object.entries(VISIT_DIMENSIONS).filter(([key])=>Number(review[key])>0).map(([key,label])=>`${label} ${review[key]}`);
-  return parts.length?<small className="muted canteen-review-dims">{parts.join(' · ')}</small>:null;
+  return parts.length?<div className="canteen-review-dims">{parts.map(part=><span key={part}>{part}</span>)}</div>:null;
 }
 
 /** 店铺评价：按服务端游标分页；商家下架后只读，不再显示编辑和删除。 */
 export function CanteenReviews({id,offline=false}:{id:string;offline?:boolean}){
   const first=useApi(`/api/canteens/${id}/reviews`),ui=useUI(),auth=useAuth(),qc=useQueryClient();
   const [more,setMore]=useState<Entity[]>([]),[cursor,setCursor]=useState<string|undefined>(),[loading,setLoading]=useState(false),[error,setError]=useState('');
+  const pending=useRef<AbortController|null>(null);
+  useEffect(()=>()=>{pending.current?.abort();pending.current=null;},[]);
   const nextCursor=cursor??(typeof first.data?.next_cursor==='string'?first.data.next_cursor:undefined);
   const items=[...rows(first.data,'reviews'),...more];
-  async function refresh(){setMore([]);setCursor(undefined);await qc.invalidateQueries({queryKey:['api',`/api/canteens/${id}/reviews`]});}
+  async function refresh(){pending.current?.abort();pending.current=null;setLoading(false);setMore([]);setCursor(undefined);await qc.invalidateQueries({queryKey:['api',`/api/canteens/${id}/reviews`]});}
   async function loadMore(){
     if(!nextCursor||loading)return;
+    const controller=new AbortController();pending.current=controller;
     setLoading(true);setError('');
     try{
-      const page=await request<Entity>(`/api/canteens/${id}/reviews?cursor=${encodeURIComponent(nextCursor)}`);
+      const page=await request<Entity>(`/api/canteens/${id}/reviews?cursor=${encodeURIComponent(nextCursor)}`,{signal:controller.signal});
+      if(pending.current!==controller||controller.signal.aborted)return;
       setMore(prev=>[...prev,...rows(page,'reviews')]);
       setCursor(typeof page.next_cursor==='string'?page.next_cursor:'');
-    }catch(err){setError(errorText(err))}finally{setLoading(false)}
+    }catch(err){if(!controller.signal.aborted)setError(errorText(err))}finally{if(pending.current===controller){pending.current=null;setLoading(false)}}
   }
   return <QueryState query={first}>
-    {offline&&<p className="notice">{OFFLINE_READONLY_TEXT}</p>}
-    {items.map(r=><article className="comment-row" key={r.id||r.review_id}>
-      <b>{r.user_name||r.user?.nickname||'同学'} · {formatScore(r.overall_score||r.star)} 分</b>
+    <div className="canteen-review-list">{items.map(r=><article className="canteen-review-card" key={r.id||r.review_id}>
+      <header className="canteen-review-header">
+        <span className="canteen-review-avatar"><ServerAvatar src={r.user_avatar||r.user?.avatar} name={r.user_name||r.user?.nickname||'同学'}/></span>
+        <div className="canteen-review-author"><b>{r.user_name||r.user?.nickname||'同学'}</b><time>{reviewTime(r)}</time></div>
+        <span className="canteen-review-score"><i aria-hidden="true">★</i>{formatScore(r.overall_score||r.star)} 分</span>
+      </header>
       <ReviewScores review={r}/>
-      <p>{r.comment}</p>
-      {stringList(r.recommended_dishes).length>0&&<p className="muted">吃了：{stringList(r.recommended_dishes).join('、')}</p>}
-      <div className="post-images">{stringList(r.images).map((url:string)=><a key={url} href={asset(url)} target="_blank" rel="noreferrer"><img src={asset(url)} alt={`${r.user_name||'同学'}的就餐实拍`}/></a>)}</div>
-      <small>{reviewTime(r)}</small>
+      {r.comment&&<p className="canteen-review-text">{r.comment}</p>}
+      {stringList(r.recommended_dishes).length>0&&<p className="canteen-review-dishes"><Icon name="canteen" size={14}/>吃了：{stringList(r.recommended_dishes).join('、')}</p>}
+      <MediaGallery items={stringList(r.images).map(url=>({url}))} title={`${r.user_name||'同学'}的就餐实拍`} className="canteen-review-media"/>
       {!offline&&r.user_id===auth.user?.id&&<div className="form-actions">
         <button className="btn" onClick={()=>ui.open('编辑我的评价',<CanteenReviewEditor id={id} reviewId={r.id} onSaved={()=>void refresh()}/>)}>编辑</button>
         <button className="btn" onClick={()=>ui.open('删除评价',<><p>删除后这条评价、菜品打分和实拍都会撤下。</p><button className="btn" onClick={async()=>{if(await ui.act(()=>write(`/api/canteens/reviews/${r.id}`,{},'DELETE'),'评价已删除')){ui.close();await refresh();}}}>确认删除</button></>)}>删除</button>
@@ -94,7 +122,8 @@ export function CanteenReviews({id,offline=false}:{id:string;offline?:boolean}){
     </article>)}
     {!items.length&&<Empty title="还没有就餐评价"/>}
     {error&&<p className="error" role="alert">{error}</p>}
-    {nextCursor?<button className="btn" disabled={loading} aria-busy={loading} onClick={()=>void loadMore()}>{loading?'正在加载…':error?'重试加载更多':'加载更多评价'}</button>:null}
+    {nextCursor?<button className="btn canteen-review-more" disabled={loading} aria-busy={loading} onClick={()=>void loadMore()}>{loading?'正在加载…':error?'重试加载更多':'加载更多评价'}</button>:null}
+    </div>
   </QueryState>;
 }
 
@@ -119,8 +148,8 @@ export function CanteenDetailActions({id,name,favorite}:{id:string;name:string;f
     catch{ui.open('分享商家',<p className="details-text">{url}</p>);}
   }
   return <>
-    <button className="btn" aria-pressed={on} disabled={busy} onClick={()=>void toggle()}>{on?'已收藏':'收藏'}</button>
-    <button className="btn" onClick={()=>void share()}>分享</button>
+    <button type="button" className="btn" aria-pressed={on} disabled={busy} onClick={()=>void toggle()}><Icon name="heart" size={16}/>{on?'已收藏':'收藏'}</button>
+    <button type="button" className="btn" onClick={()=>void share()}><Icon name="share" size={16}/>分享</button>
   </>;
 }
 
@@ -152,7 +181,7 @@ export function DishDetail({canteenId,id}:{canteenId:string;id:number}){
   return <QueryState query={q}>
     <h3>{d.name}</h3>{d.canteen_name&&<p className="muted">{d.canteen_name}</p>}
     <p>{rated>0?<>综合 <b>{formatScore(scores.average)}</b> 分 · {DISH_DIMENSIONS.map(([key,label])=>`${label} ${formatScore(scores[key])}`).join(' · ')}（{rated} 人打分）</>:'还没有同学给这道菜打分'}</p>
-    <div className="post-images">{rows(q.data,'photos').map(p=><img key={p.id} src={asset(p.image)} alt={`${d.name}实拍`}/>)}</div>
+    <MediaGallery items={rows(q.data,'photos').map(p=>({id:p.id,url:p.image}))} title={`${d.name}实拍`}/>
     <QueryState query={reviews}>{rows(reviews.data,'reviews').map(r=><div className="comment-row" key={`${r.review_source||''}:${r.id}`}>
       <b>{r.user_name||r.user?.nickname||'同学'}</b>
       {Number(r.portion_score)>0&&<small className="muted canteen-review-dims">{DISH_DIMENSIONS.map(([key,label])=>`${label} ${r[`${key}_score`]}`).join(' · ')}</small>}

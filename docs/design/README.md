@@ -3,6 +3,7 @@
 2026-11-06 按维护者要求撤下旧版全局前端设计规范、专用设计 skill 和一次性视觉验收记录；旧品牌 ADR 的冻结约束已明确撤销。此目录不再约束全局配色、圆角、排版、布局或动效数值，具体设计以当前任务要求为准。
 
 - [Emoji 资源契约](./emoji-resource-contract.md)
+- [Web 图文发帖与草稿契约](./post-composer-contract.md)
 - [表情导入与投稿初版背景](./emoji-import-review-plan.md)
 - [免费表情商城与创作者流程](./emoji-creator-store-plan.md)
 - [主题商城实施计划](./theme-store-plan.md)、[主题包格式契约](./theme-pack-contract.md)、[主题制作与审核细则](./theme-creation-guide.md)（决策见 [ADR-005](./adr/005-theme-package-and-store.md)）

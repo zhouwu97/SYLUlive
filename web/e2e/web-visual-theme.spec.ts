@@ -98,37 +98,32 @@ for (const theme of ["light", "dark"]) {
       if (width === 1440 || width === 375) {
         const publish = page.getByRole("button", { name: "发布闲置", exact: true });
         await publish.click();
-        const dialog = page.getByRole("dialog", { name: "发布闲置", exact: true });
+        const dialog = page.locator('.post-editor-page');
         await expect(dialog).toBeVisible();
-        await expect(dialog.getByRole("button", { name: "关闭", exact: true })).toBeFocused();
+        await expect(page).toHaveURL(/\/compose\?board=2$/);
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect(dialog.getByLabel("物品名称", {exact: true})).toBeFocused();
         await expect(dialog).toHaveCSS("opacity", "1");
-        await expect(page.locator(".overlay")).toHaveCSS("opacity", "1");
         const presentation = await dialog.evaluate((el) => {
-          const ctx = document.createElement("canvas").getContext("2d")!;
-          const luminance = (color: string) => {
-            ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = color; ctx.fillRect(0, 0, 1, 1);
-            const [r, g, b] = Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3).map((c) => c / 255).map((c) => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4);
-            return .2126 * r + .7152 * g + .0722 * b;
-          };
           return {
             overflow: document.documentElement.scrollWidth > innerWidth,
-            controlContrast: Array.from(el.querySelectorAll<HTMLElement>("input, select, textarea, .btn.primary")).map((control) => {
-              const style = getComputedStyle(control), ink = luminance(style.color), surface = luminance(style.backgroundColor);
-              return (Math.max(ink, surface) + .05) / (Math.min(ink, surface) + .05);
-            }),
             primaryBackground: getComputedStyle(el.querySelector(".btn.primary")!).backgroundImage,
           };
         });
+        // 标题与正文是透明背景，沿用页面同一套背景合成测量；隐藏的原生选图输入不展示文字。
+        const controlContrast = await dialog.locator('input:not([type="file"]), select, textarea, .btn.primary').evaluateAll(measureTextContrast);
         expect(presentation.overflow).toBe(false);
-        expect(presentation.controlContrast.every((ratio) => ratio >= 4.5)).toBe(true);
+        expect(controlContrast.filter(item => item.ratio < 4.5)).toEqual([]);
         expect(presentation.primaryBackground).toBe("none");
         await dialog.getByLabel("物品名称", { exact: true }).focus();
         expect(await dialog.getByLabel("物品名称", { exact: true }).evaluate((el) => getComputedStyle(el).outlineWidth)).toBe("2px");
-        await page.screenshot({ path: `artifacts/web-content-ui-2026-10-09/${theme}-${width}-publish-dialog.png` });
-        await page.keyboard.press("Escape");
+        await page.screenshot({ path: `artifacts/web-content-ui-2026-10-09/${theme}-${width}-publish-page.png` });
+        await dialog.getByRole('button', {name: '返回上一页', exact: true}).click();
         await expect(dialog).toHaveCount(0);
-        await expect(publish).toBeFocused();
+        await expect(publish).toBeVisible();
       }
+      // 返回现在通过页面按钮完成；先进入键盘操作模式，再验证 :focus-visible。
+      await page.keyboard.press('Tab');
       await page.getByRole("button", { name: "发布闲置", exact: true }).focus();
       expect(await page.getByRole("button", { name: "发布闲置", exact: true }).evaluate(el => getComputedStyle(el).outlineWidth)).toBe("2px");
       expect(errors).toEqual([]);

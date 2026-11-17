@@ -173,7 +173,7 @@ test("桌面帖子卡片空白区可进入详情，互动按钮不误触导航",
   expect(state.errors).toEqual([]);
 });
 
-test("关闭发布弹窗后，迟到的上传不能继续发布帖子", async ({ page }) => {
+test("离开发帖页后，迟到的上传不能继续发布帖子", async ({ page }) => {
   const state = await setup(page);
   let releaseUpload!: () => void;
   await page.route("**/api/water/sections", (route) => route.fulfill({ json: { sections: [{ id: 1, slug: "chat", name: "日常" }] } }));
@@ -183,18 +183,19 @@ test("关闭发布弹窗后，迟到的上传不能继续发布帖子", async ({
   });
   await page.goto("community");
   await page.getByRole("button", { name: "发布", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.locator('.post-editor-page');
   await dialog.getByLabel("内容", { exact: true }).fill("取消后不应发布");
   await dialog.getByRole("combobox", { name: "分区", exact: true }).selectOption("chat");
   await dialog.getByLabel("选择图片", { exact: true }).setInputFiles({ name: "one.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64") });
   await dialog.getByRole("button", { name: "发布", exact: true }).click();
   await expect.poll(() => !!releaseUpload).toBe(true);
-  await dialog.getByRole("button", { name: "关闭", exact: true }).click();
+  const cancelled = page.waitForEvent('requestfailed', {predicate: request => new URL(request.url()).pathname === '/api/upload_multiple'});
+  await dialog.getByRole("button", { name: "停止上传并返回", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  const uploaded = page.waitForResponse("**/api/upload_multiple");
+  await expect(page).toHaveURL(/\/community$/);
+  await cancelled;
   releaseUpload();
-  await uploaded;
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await page.waitForLoadState('networkidle');
   expect(state.writes.filter((write) => write.path === "/api/posts")).toEqual([]);
   await expect(page.locator(".toast")).not.toContainText("内容已保存");
   expect(state.errors).toEqual([]);

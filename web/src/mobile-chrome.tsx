@@ -1,7 +1,7 @@
 import { Link, NavLink, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "./auth";
-import { PostForm } from "./community";
-import { Icon, Tabs, useUI } from "./ui";
+import {usePostEditor} from './post-editor-page';
+import { Icon, Tabs } from "./ui";
 
 const destinations = [
   ["/", "首页", "home"],
@@ -41,11 +41,11 @@ export function MobileHeader({ menu, onMenu }: { menu: boolean; onMenu: () => vo
 }
 
 export function MobileNavigation() {
-  const location = useLocation(), auth = useAuth(), ui = useUI();
+  const location = useLocation(), openPostEditor = usePostEditor();
   if (!destinations.some(([path]) => path === location.pathname)) return null;
   const market = location.pathname === "/market";
   return <>
-    {["/", "/market"].includes(location.pathname) && <button className={`mobile-publish ${market ? "mobile-market-publish" : ""}`} aria-label={market ? "发布闲置" : "发布校园内容"} onClick={() => auth.requireUser() && ui.open(market ? "发布闲置" : "发布内容", <PostForm market={market} />)}>{market ? <Icon name="plus" size={23} /> : <svg width="23" height="23" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m16 3 5 5-12 12H4v-5L16 3Zm2-2a2 2 0 0 1 3 0l2 2a2 2 0 0 1 0 3l-1 1-5-5 1-1Z" /></svg>}{market && <span>发布</span>}</button>}
+    {["/", "/market"].includes(location.pathname) && <button className={`mobile-publish ${market ? "mobile-market-publish" : ""}`} aria-label={market ? "发布闲置" : "发布校园内容"} onClick={() => openPostEditor({market})}>{market ? <Icon name="plus" size={23} /> : <svg width="23" height="23" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m16 3 5 5-12 12H4v-5L16 3Zm2-2a2 2 0 0 1 3 0l2 2a2 2 0 0 1 0 3l-1 1-5-5 1-1Z" /></svg>}{market && <span>发布</span>}</button>}
     <nav className="mobile-bottom-nav" aria-label="底部导航">
       {destinations.map(([path, label, icon]) => <NavLink key={path} to={path} end><MobileNavIcon name={icon} /><span>{label}</span></NavLink>)}
     </nav>

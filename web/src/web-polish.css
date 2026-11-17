@@ -202,7 +202,7 @@ html, body { overflow-x: clip; color: var(--text); background: var(--bg); font-f
   :is(.social-shell, .modal) .btn.primary:not(:disabled):hover, .social-shell .market-page .filter-row form .btn:not(:disabled):hover { background: var(--color-accent-hover); color: var(--color-accent-ink); }
   .social-shell .nav-item:not(.active):hover { background: var(--surface-3); color: var(--text); }
   .social-shell .compact-quick .quick:hover { background: var(--surface-2); box-shadow: none; transform: none; }
-  .social-shell .community-feed .feed-card:hover, .social-shell .dashboard-feed .feed-card:hover { background: var(--surface-2); border-radius: var(--radius-card); }
+  .social-shell .community-feed .feed-card:hover, .social-shell .dashboard-feed .feed-card:hover { background: var(--surface-2); }
   .social-shell .compact-quick .quick:hover .quick-copy b, .social-shell .rail-item:hover b, .social-shell .post-context-item:hover b { color: var(--brand-strong); }
   .social-shell .post-author .author-follow:not(:disabled):hover { border-color: var(--brand); color: var(--brand-strong); background: var(--brand-soft); }
   .social-shell .post-interaction:not(:disabled):hover { background: var(--surface-2); color: var(--text); }

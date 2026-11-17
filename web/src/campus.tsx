@@ -1,5 +1,6 @@
 import {Link,useSearchParams} from 'react-router-dom';
-import {query,rows,useApi,time,entity,asset} from './api';
+import {query,rows,useApi} from './api';
+import {SchoolCalendar} from './school-calendar';
 import {Empty,Head,Icon,Pagination,QueryState,useUI} from './ui';
 import {CampusMap} from './campus-map';
 import { mobileTermLabel, useMobile } from './mobile';
@@ -16,7 +17,7 @@ function DesktopCampus(){
   const page=Number(params.get('page'))||1;
   const q=useApi(query('/api/campus/articles',{page,page_size:20,q:params.get('q')}));
   const map=`${import.meta.env.BASE_URL}assets/campus-map.png`;
-  function search(value:string){setParams(value?{q:value}:{})}
+  function search(value:string){const next=new URLSearchParams(params);next.delete('page');if(value.trim())next.set('q',value.trim());else next.delete('q');setParams(next)}
   const openMap=()=>ui.open('校园地图',<CampusMap/>);
   // 桌面「校园」是侧栏与顶栏的一级入口，承接原「发现」里的竞赛、评价、AI 和工具箱；手机「查看全部资讯」仍只保留原四项。
   const services:[string,string,(()=>void)|string][]=[['file','校园公告',()=>search('')],['schedule','校历',()=>ui.open('学校校历',<SchoolCalendar/>)],['campus','校园地图',openMap],['canteen','食堂','/canteen'],...(mobile?[]:[['competition','竞赛中心','/competition'],['ratings','教师评价','/ratings'],['ai','AI 助手','/ai'],['toolbox','工具箱','/toolbox']] as [string,string,string][])];
@@ -61,4 +62,3 @@ function MobileCampus() {
     </QueryState>
   </div>;
 }
-function SchoolCalendar(){const q=useApi('/api/campus-calendars/current'),d=entity(q.data,'calendar','data');return <QueryState query={q}><h3>{d.academic_year||'当前校历'}</h3><p>{d.description}</p>{(d.image_url||d.url)&&<a href={asset(d.image_url||d.url)} target="_blank" rel="noreferrer"><img className="full-width" src={asset(d.image_url||d.url)} alt="学校校历"/></a>}<p>{time(d.updated_at)}</p></QueryState>}

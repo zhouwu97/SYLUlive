@@ -1,0 +1,238 @@
+/* 首页与社区共用的组件细节。保留原有三栏、卡片边界和手机布局。 */
+.follow-sign { display: none; }
+@media (min-width: 601px) {
+  /* 小面积标签区分作者资料和正文，不添加额外图章。 */
+  .social-shell .post-author .author-level,
+  .social-shell .profile-rail-card .profile-rail-head .profile-level {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    height: 21px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 5px;
+    background: var(--brand-soft);
+    box-shadow: none;
+    color: var(--brand-strong);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 18px;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  /* 信息流按列表排：同一列帖子连成一块面板，条目之间只留一条分隔线，不再每条单独成卡。 */
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) { gap: 0; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > :is(.feed-card, .poll-card, .feed-dismissed) {
+    margin: 0;
+    border: 1px solid var(--line);
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > :is(.feed-card, .poll-card, .feed-dismissed) + :is(.feed-card, .poll-card, .feed-dismissed) { border-top-width: 0; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > :is(.feed-card, .poll-card, .feed-dismissed):not(:is(.feed-card, .poll-card, .feed-dismissed) + *) { border-top-left-radius: var(--radius-card); border-top-right-radius: var(--radius-card); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > :is(.feed-card, .poll-card, .feed-dismissed):not(:has(+ :is(.feed-card, .poll-card, .feed-dismissed))) { border-bottom-left-radius: var(--radius-card); border-bottom-right-radius: var(--radius-card); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > :not(.feed-card, .poll-card, .feed-dismissed) + *,
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > * + :not(.feed-card, .poll-card, .feed-dismissed) { margin-top: 16px; }
+
+  /* 加载骨架和信息流保持同一种列表形态，加载完成时不跳成另一套卡片。 */
+  .social-shell .loading-skeleton { gap: 0; }
+  .social-shell .loading-skeleton .skeleton-card { border-radius: 0; }
+  .social-shell .loading-skeleton .skeleton-card + .skeleton-card { border-top-width: 0; }
+  .social-shell .loading-skeleton .skeleton-card:first-of-type { border-top-left-radius: var(--radius-card); border-top-right-radius: var(--radius-card); }
+  .social-shell .loading-skeleton .skeleton-card:last-child { border-bottom-left-radius: var(--radius-card); border-bottom-right-radius: var(--radius-card); }
+
+  /* 头像单独占左列，作者行、正文和操作行共用同一条左边线。 */
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card { position: relative; padding: 12px 16px 2px 66px; background: var(--surface); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .post-avatar { position: absolute; top: 12px; left: 16px; width: 40px; height: 40px; flex-basis: 40px; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .post-author { gap: 8px; min-height: 28px; margin: 0 0 2px; align-items: center; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-meta { display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; min-width: 0; line-height: 20px; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-name-line { flex: 0 1 auto; flex-wrap: nowrap; column-gap: 6px; min-width: 0; }
+  /* 长昵称在一行内截断，不把作者行撑成多行。 */
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-name-line b { min-width: 0; overflow: hidden; font-size: var(--text-base); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-meta > span:last-child { margin: 0; color: var(--text-3); font-size: var(--text-caption); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-meta > span:last-child::before { content: "·"; margin-right: 6px; }
+  /* 等级在作者行里只做弱标签，品牌色留给关注和当前状态。 */
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-level { height: 18px; padding: 0 5px; border-radius: 4px; background: var(--surface-2); color: var(--text-2); line-height: 18px; }
+  .social-shell .post-author .author-name-line { column-gap: 8px; row-gap: 4px; align-items: center; }
+  .social-shell .post-author .author-name-line b { font-size: var(--text-base); font-weight: 600; }
+  .social-shell .post-author .author-meta > span { display: block; margin-top: 3px; color: var(--text-3); }
+
+  .social-shell .feed-card .post-title { margin: 2px 0 2px; font-size: var(--text-md, 16px); font-weight: 600; line-height: 1.5; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .post-body { color: var(--text-2); line-height: 1.65; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .post-read-more { margin-top: 4px; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .media-gallery { margin-top: 10px; }
+
+  /* 关注是无描边的浅色胶囊；外层仍保留 44px 点击范围，靠负外边距不撑高作者行。 */
+  .social-shell .post-author .author-follow .follow-control {
+    gap: 4px;
+    min-width: 76px;
+    min-height: 34px;
+    padding: 4px 12px;
+    border: 1px solid var(--color-accent-border);
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: none;
+    color: var(--brand-strong);
+    font-size: var(--text-caption);
+    font-weight: 600;
+    transition: none;
+  }
+  .follow-sign { display: inline-flex; align-items: center; }
+  .social-shell .post-author .author-follow.active .follow-control {
+    background: transparent;
+    border-color: var(--line);
+    color: var(--text-3);
+    box-shadow: none;
+  }
+  .social-shell .post-author .author-follow:active .follow-control { transform: none; }
+  .social-shell .post-author .author-follow:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: 12px; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-follow { min-width: 0; margin-block: -8px; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-follow .follow-control { min-width: 0; min-height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--brand-soft); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-follow .follow-sign { display: none; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-follow.active .follow-control { background: var(--surface-2); color: var(--text-3); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .post-card-menu { margin-block: -8px; }
+
+  /* 操作行：无框无底，只留图标和计数；文字标签保留给读屏。按钮仍是 44px 高的点击区域。 */
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-toolbar {
+    margin: 0 0 0 -8px;
+    padding: 0;
+    border: 0;
+  }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interactions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction {
+    justify-self: start;
+    flex-wrap: nowrap;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-3);
+    font-size: var(--text-caption);
+    font-weight: 500;
+    line-height: 20px;
+    white-space: nowrap;
+    transition: color var(--dur-short, 160ms) var(--ease-out, ease);
+    transform: none;
+  }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction:last-child { justify-self: end; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-action-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-action-count {
+    min-width: 0;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font-size: var(--text-caption);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 悬停色圈画在图标上，不放大整行按钮的视觉面积。 */
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction .social-action-icon {
+    border-radius: 50%;
+    transition: background-color var(--dur-short, 160ms) var(--ease-out, ease), box-shadow var(--dur-short, 160ms) var(--ease-out, ease);
+  }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-like { --action-tint: var(--danger); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction:nth-child(2) { --action-tint: var(--brand-strong); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction:nth-child(3) { --action-tint: var(--icon-amber); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction:nth-child(4) { --action-tint: var(--text); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction[aria-pressed="true"] { background: transparent; color: var(--action-tint); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction[aria-pressed="true"] .social-action-icon { fill: currentColor; }
+  .social-shell .post-interaction:active .svg-icon,
+  .social-shell .post-interaction .social-action-icon { transform: none; animation: none; }
+  /* 点下去的那一下才回弹；页面加载时已点赞的帖子不跟着动。 */
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction[aria-pressed="true"]:focus .social-action-icon { animation: action-pop .22s var(--ease-out, ease-out); }
+  @keyframes action-pop { 50% { transform: scale(1.18); } }
+  /* 卡片内可用宽度不足时，四个操作均分，避免长计数挤出边界。 */
+  @container feed-card (max-width: 470px) {
+    .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interactions { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; }
+    .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction { flex-wrap: wrap; gap: 4px; padding-inline: 4px; white-space: normal; }
+    .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction:last-child { justify-self: stretch; }
+  }
+
+  .home-feed-more {
+    gap: 8px;
+    padding-inline: 8px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-3);
+    font-weight: 400;
+    white-space: nowrap;
+    box-shadow: none;
+  }
+  /* 日期像一页小日历；通知标题与来源各自保留稳定的阅读行。 */
+  .campus-event { align-items: flex-start; gap: 12px; padding-block: 11px; }
+  .campus-event .event-date {
+    flex: 0 0 42px;
+    gap: 0;
+    height: 54px;
+    overflow: hidden;
+    border-color: var(--line);
+    border-radius: 9px;
+    background: var(--surface);
+    box-shadow: 0 2px 3px -2px rgb(20 24 33 / .14);
+  }
+  .campus-event .event-month {
+    align-self: stretch;
+    padding-block: 1px;
+    border-bottom: 1px solid var(--line-2);
+    background: var(--surface-2);
+    color: var(--text-3);
+    font-size: 11px;
+    line-height: 17px;
+    text-align: center;
+  }
+  .campus-event .event-day { padding-block: 3px; font-size: 20px; font-weight: 600; line-height: 26px; letter-spacing: -.5px; }
+  .campus-event .event-copy { padding-top: 1px; }
+  .campus-event b { color: var(--text-2); font-size: var(--text-caption); line-height: 20px; text-wrap: pretty; }
+  .campus-event .event-source { gap: 5px; margin-top: 5px; font-size: 12px; }
+  .campus-event .event-source > span { min-width: 0; flex: 1; }
+  .campus-event .event-source > .svg-icon { opacity: .8; }
+  .campus-event.is-today .event-date { border-color: var(--color-accent-border); }
+  .campus-event.is-today .event-month { background: var(--brand-soft); color: var(--brand-strong); border-bottom-color: var(--color-accent-border); }
+  .campus-event.is-today .event-day { color: var(--brand-strong); }
+  .campus-event .event-new {
+    flex: 0 0 auto;
+    padding: 0 5px;
+    border: 1px solid var(--color-accent-border);
+    border-radius: 5px;
+    background: var(--brand-soft);
+    color: var(--brand-strong);
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 14px;
+  }
+  :root[data-theme="dark"] .social-shell .profile-rail-card .profile-rail-head .profile-level { color: var(--brand-strong); }
+}
+
+@media (min-width: 601px) and (hover: hover) and (pointer: fine) {
+  .social-shell .post-author .author-follow:not(:disabled):hover .follow-control { background: var(--brand-soft); color: var(--brand-strong); text-decoration: none; }
+  .social-shell .post-author .author-follow.active:not(:disabled):hover .follow-control { background: transparent; color: var(--text-2); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction:not(:disabled):hover { background: transparent; color: var(--action-tint); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction:not(:disabled):hover .social-action-icon { background: color-mix(in oklab, var(--action-tint) 12%, transparent); box-shadow: 0 0 0 7px color-mix(in oklab, var(--action-tint) 12%, transparent); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-card-menu-trigger:hover { background: var(--surface-2); }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card-clickable:hover { border-color: var(--line); background: color-mix(in oklab, var(--surface-2) 60%, var(--surface)); box-shadow: none; }
+  .home-feed-more:hover { background: transparent; color: var(--brand-strong); }
+  .campus-event:hover b { color: var(--brand-strong); }
+  .campus-event:hover .event-date { border-color: var(--color-accent-border); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .social-shell .post-author .author-follow .follow-control,
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction { transition: none; }
+  .social-shell .post-author .author-follow:active .follow-control,
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction:active:not(:disabled) { transform: none; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction[aria-pressed="true"]:focus .social-action-icon { animation: none; }
+}

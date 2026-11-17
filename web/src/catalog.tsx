@@ -1,7 +1,9 @@
 import { CompetitionPersonal } from "./competition-personal";
 import {CampusMap} from './campus-map';
-import {CanteenDetailActions,CanteenReviewForm,CanteenReviews,CanteenContributions,DishDetail,OFFLINE_READONLY_TEXT} from './canteen';
+import {SchoolCalendar} from './school-calendar';
+import {CanteenDetailActions,CanteenReviewForm,CanteenReviews,CanteenContributions,CanteenArchiveManagement,DishDetail,OFFLINE_READONLY_TEXT} from './canteen';
 import {formatScore} from './canteen-data';
+import {CanteenDetailPage} from './canteen-detail';
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { entity, query, rows, time, useApi, write, asset } from "./api";
 import { Empty, Form, Head, Pagination, QueryState, Tabs, useUI } from "./ui";
@@ -58,7 +60,7 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
         {kind === "campus" && (
           <button
             className="btn"
-            onClick={() => ui.open("学校校历", <Calendar />)}
+            onClick={() => ui.open("学校校历", <SchoolCalendar />)}
           >
             查看校历
           </button>
@@ -145,22 +147,6 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
     </>
   );
 }
-function Calendar() {
-  const q = useApi("/api/campus-calendars/current");
-  const d = entity(q.data, "calendar", "data");
-  return (
-    <QueryState query={q}>
-      <h3>{d.academic_year || "当前校历"}</h3>
-      <p>{d.term_start || d.start_date || d.description}</p>
-      {(d.image_url || d.url) && (
-        <a href={asset(d.image_url || d.url)} target="_blank" rel="noreferrer">
-          打开学校校历
-        </a>
-      )}
-      <p>{d.updated_at ? `更新时间：${time(d.updated_at)}` : ""}</p>
-    </QueryState>
-  );
-}
 function Plans() {
   const q = useApi("/api/user/competition-calendar");
   return (
@@ -176,6 +162,9 @@ function Plans() {
   );
 }
 export function CatalogDetail({ kind }: { kind: CatalogKind }) {
+  return kind === 'canteen' ? <CanteenDetailPage/> : <CatalogRecordDetail kind={kind}/>;
+}
+function CatalogRecordDetail({ kind }: { kind: CatalogKind }) {
   const { id } = useParams(),
     [params] = useSearchParams(),
     ui = useUI(),
@@ -206,7 +195,7 @@ export function CatalogDetail({ kind }: { kind: CatalogKind }) {
   return (
     <>
       <Head title={d.title || d.name || "详情"}>
-        <Link className="btn" to={`/${kind}`}>
+        <Link className="btn" to={canteenOffline?'/canteen?tab=nostalgia':`/${kind}`}>
           返回列表
         </Link>
         {kind === "competition" && (
@@ -228,6 +217,7 @@ export function CatalogDetail({ kind }: { kind: CatalogKind }) {
         {kind === "canteen" && q.data && (
           <CanteenDetailActions id={id!} name={String(d.name || "")} favorite={q.data.is_favorite === true} />
         )}
+        {canteenOffline&&<CanteenArchiveManagement id={id!} item={d} onSaved={()=>void q.refetch()}/>}
         {(kind === "ratings" || (kind === "canteen" && !canteenOffline)) && (
           <button
             className="btn primary"

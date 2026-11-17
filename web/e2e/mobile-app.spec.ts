@@ -189,12 +189,17 @@ test("游客手机发布与个人入口先登录，桌面恢复既有三栏与�
   await page.goto('community?sort=bookmarks');
   await expect(page.getByRole('heading', { name: '登录后查看我的收藏' })).toBeVisible();
   await expect(page.locator('.loading-state')).toHaveCount(0);
+  const desktopStart = state.queries.length;
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("./");
   await expect(page.locator(".campus-composer")).toBeVisible();
   await expect(page.locator(".mobile-bottom-nav, .mobile-header, .mobile-app-feed")).toHaveCount(0);
   await expect(page.locator(".sidebar")).toHaveCSS("width", "214px");
   await expect(page.locator(".right-rail")).toBeVisible();
-  expect(state.queries.at(-1)?.searchParams.has("feed_version")).toBe(false);
+  // 热榜、集市和首页会并发读取，不能用最后一个响应判断桌面信息流协议。
+  const desktopFeed = () => state.queries.slice(desktopStart).find(url => url.searchParams.get('board') === '1' && url.searchParams.get('sort') === 'all' && url.searchParams.get('limit') === '20');
+  await expect.poll(() => desktopFeed()?.searchParams.get('feed_version')).toBe('3');
+  expect(desktopFeed()!.searchParams.get('capabilities')?.split(',')).toEqual(expect.arrayContaining(['feed_pagination_meta_v1', 'poll_v1']));
   expect(state.votes).toEqual([]);
+  expect(state.errors).toEqual([]);
 });

@@ -1,4 +1,4 @@
-import { StrictMode, Suspense, lazy, useEffect, useLayoutEffect, useState } from "react";
+import { StrictMode, Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import {
@@ -32,7 +32,9 @@ import { isDetailPath, useReportedDetailOrigin } from "./detail-origin";
 import { type CatalogKind } from "./catalog";
 import {Polls} from './polls';
 import {AppScanLanding} from './phone-scan';
-import { Community, PostDetail, PostForm } from "./community";
+import { Community, PostDetail } from "./community";
+import {PostEditorPage, usePostEditor} from './post-editor-page';
+import {clearPostDrafts} from './post-drafts';
 import { AcademicProvider, Schedule, Grades } from "./academic";
 import "./commons.css";
 import { useMobile } from "./mobile";
@@ -41,6 +43,7 @@ import "./mobile-app.css";
 import "./auth.css";
 import "./desktop-refresh.css";
 import "./motion.css";
+import "./component-finish.css";
 import { LoadingBar, PageLoading } from "./loading-bar";
 import { AppearanceButton, applyAppearance, readAppearance } from "./appearance";
 import { mountCollapsedTooltips, mountSlidingIndicator, revealTheme } from "./desktop-motion";
@@ -92,28 +95,54 @@ export const navigation = [
 ];
 function Search() {
   const [value, setValue] = useState("");
+  const results = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const ui = useUI();
   const matches = navigation.filter(([, name]) => name.toLowerCase().includes(value.trim().toLowerCase()));
+  function open(id: string) {
+    navigate(id === "dashboard" ? "/" : `/${id}`);
+    ui.close();
+  }
   return (
     <>
       <input
         className="full-width"
-        autoFocus
+        data-autofocus
         aria-label="搜索功能"
         placeholder="搜索功能，例如课表、工单、竞赛…"
         value={value}
         onChange={(e) => setValue(e.target.value)}
+        onKeyDown={event => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            if (matches[0]) open(matches[0][0]);
+          } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const buttons = results.current?.querySelectorAll<HTMLButtonElement>("button");
+            (event.key === "ArrowDown" ? buttons?.[0] : buttons?.[buttons.length - 1])?.focus();
+          }
+        }}
       />
-      <div className="palette-results">
+      <div className="palette-results" ref={results} onKeyDown={event => {
+        const buttons = Array.from(results.current?.querySelectorAll<HTMLButtonElement>("button") || []);
+        const index = buttons.indexOf(event.target as HTMLButtonElement);
+        if (index < 0) return;
+        let next: number;
+        switch (event.key) {
+          case "ArrowDown": next = (index + 1) % buttons.length; break;
+          case "ArrowUp": next = (index - 1 + buttons.length) % buttons.length; break;
+          case "Home": next = 0; break;
+          case "End": next = buttons.length - 1; break;
+          default: return;
+        }
+        event.preventDefault();
+        buttons[next].focus();
+      }}>
         {matches.map(([id, name]) => (
             <button
               className="palette-result"
               key={id}
-              onClick={() => {
-                navigate(id === "dashboard" ? "/" : `/${id}`);
-                ui.close();
-              }}
+              onClick={() => open(id)}
             >
               <Icon name={id} />
               <b>{name}</b>
@@ -144,7 +173,10 @@ function Shell() {
     auth = useAuth(),
     location = useLocation(),
     navigate = useNavigate();
+  useEffect(() => () => clearPostDrafts(), [auth.user?.id]);
   const active = location.pathname.split("/")[1] || "dashboard";
+  const composing = active === 'compose' || /^\/post\/[^/]+\/edit$/.test(location.pathname);
+  const openPostEditor = usePostEditor();
   // 详情页沿用来源分区：从集市进入的闲置详情保持集市的收起侧栏与分区色，从首页进入的帖子保持首页选中
   const detail = isDetailPath(location.pathname);
   const statedFrom = typeof (location.state as { from?: unknown } | null)?.from === "string" ? (location.state as { from: string }).from : "";
@@ -233,7 +265,7 @@ function Shell() {
     </NavLink>
   ); };
   return (
-    <div data-mobile-page={active} data-zone={zoneOf(section)} className={`app-shell social-shell ${section === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${adminConsole ? "admin-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
+    <div data-mobile-page={active} data-zone={zoneOf(section)} className={`app-shell social-shell ${composing ? 'compose-shell' : ''} ${section === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${adminConsole ? "admin-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
       <a className="skip-link" href="#mainContent">
         跳到主要内容
       </a>
@@ -294,7 +326,7 @@ function Shell() {
               <Icon name="messages" />
               {Number(messageUnread.data?.unread_count || messageUnread.data?.count) > 0 && <span className="notification-count">{messageUnread.data?.unread_count || messageUnread.data?.count}</span>}
             </button>
-            <button className="btn primary header-publish" aria-label="发布校园内容" onClick={() => auth.requireUser() && ui.open("发布内容", <PostForm />)}><Icon name="plus" size={16} />发布</button>
+            {!composing && <button className="btn primary header-publish" aria-label="发布校园内容" onClick={() => openPostEditor()}><Icon name="plus" size={16} />发布</button>}
             <button
               className={auth.user ? 'avatar' : 'btn primary login-button'}
               aria-label={auth.user ? "我的账号" : "登录"}
@@ -305,7 +337,7 @@ function Shell() {
           </div>
         </div>
       </header>
-      {mobile && <MobileHeader menu={menu} onMenu={() => setMenu(!menu)} />}
+      {mobile && !composing && <MobileHeader menu={menu} onMenu={() => setMenu(!menu)} />}
       <div className="frame">
         <button
           className="nav-mask"
@@ -313,7 +345,7 @@ function Shell() {
           aria-label="收起导航"
           onClick={() => setMenu(false)}
         />
-        {!standaloneProfile && !adminConsole && <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航">
+        {!composing && !standaloneProfile && !adminConsole && <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航">
           <div className="sidebar-scroll">
             {mobile && <div className="mobile-drawer-title"><b>校园服务</b><button className="mobile-icon-button" aria-label="切换主题" onClick={() => setDark(!dark)}><Icon name={dark ? "sun" : "moon"} /></button></div>}
             <ProfileSummary />
@@ -377,6 +409,8 @@ function Shell() {
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/community" element={<Community />} />
                   <Route path="/market" element={<Community market />} />
+                  <Route path="/compose" element={<PostEditorPage />} />
+                  <Route path="/post/:id/edit" element={<PostEditorPage />} />
                   <Route path="/messages" element={<Messages />} />
                   <Route path="/post/:id" element={<PostDetail />} />
                   <Route path="/polls/:id" element={<PostDetail poll />} />
@@ -435,7 +469,7 @@ function Shell() {
           </div>
         </main>
       </div>
-      {mobile && <MobileNavigation />}
+      {mobile && !composing && <MobileNavigation />}
     </div>
   );
 }

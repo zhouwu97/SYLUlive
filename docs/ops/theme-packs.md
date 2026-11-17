@@ -12,6 +12,14 @@
 
 投稿处理在 `UPLOAD_DIR/.theme-packs/.stage-<uuid>` 暂存目录内完成，计算一次规范包 SHA-256 后原子 `rename` 到正式目录，再在同一数据库事务中写入 `theme_packs`；事务回滚立即删除目标目录。该子目录与数据库必须在同一备份批次中保全，且禁止通过 Nginx 静态别名、CDN 或对象存储直接暴露 `/uploads/.theme-packs/*`。
 
+## 网关与反向代理
+
+`nginx/docker.conf` 与 `web/deploy/nginx.conf` 须同步保留以下两条路由规则：
+
+- `/api/themes/submissions`：单独设置 `client_max_body_size 49m`（承载最大 48MB `.sltheme` 文件及 multipart 表单头），高于通用 `/api/` 的请求体上限；其余接口体积上限保持不变。
+- `/theme/`：转发到 Go 服务（校验 UUID 后 `302` 跳转至 `/web/theme/:id`），避免被静态站点根路径兜底吞没。
+- 公开版本包与预览图接口（`GET /api/themes/:familyId/versions/:version/package` 与 `/preview/:mode`）返回 `Cache-Control: public, no-cache` 并携带 `ETag` 与 `Range` 支持：正常状态下客户端缓存经 `If-None-Match` 命中 `304`，一旦作品被作者撤回或管理员下架，带 `If-None-Match` 的再验证请求也立即返回 `404`。
+
 ## 商城开关
 
 `system_configs` 表中的 `theme_store_enabled` 控制在线商城可用性（未配置时默认开启；设为 `false`、`0` 或 `off` 时关闭）：

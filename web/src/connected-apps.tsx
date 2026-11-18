@@ -522,14 +522,16 @@ function BotPanel({ active, onConnect }: { active: boolean; onConnect: () => voi
 function ConnectionStatus({ query: q, nickname, onManage, purpose }: { query: ConnectionsQuery; nickname: string; onManage: () => void; purpose: AssistantPurpose }) {
   const known = !q.error && Array.isArray(q.data?.bindings);
   const active = Array.isArray(q.data?.bindings) ? q.data.bindings.filter(binding => binding.state === "active") : [];
+  const hasPersonalScope = active.some(binding => binding.scopes.split(/\s+/).some(scope => personalScopes.includes(scope)));
+  const connectedLabel = purpose === "bot" ? "已连接 AstrBot" : hasPersonalScope ? "已绑定 QQ 机器人" : "已有授权连接";
   return <section className="connection-status" aria-label="当前连接状态" aria-live="polite" aria-busy={q.isFetching}>
     <Icon name="monitor" size={22} />
     <div>
-      <strong>{q.isPending ? "正在核对连接状态…" : !known ? "连接状态未确认" : q.isFetching ? "正在更新连接状态…" : active.length ? purpose === "personal" ? "已绑定 QQ 机器人" : "已连接 AstrBot" : "当前没有有效连接"}</strong>
+      <strong>{q.isPending ? "正在核对连接状态…" : !known ? "连接状态未确认" : q.isFetching ? "正在更新连接状态…" : active.length ? connectedLabel : "当前没有有效连接"}</strong>
       {q.isPending ? <p>正在读取当前账号的授权，不需要输入连接码。</p> : !known
         ? <p>读取失败不能判断为未绑定。请先重试，不要重复生成连接或撤销已有授权。</p>
         : active.length ? <><p>{nickname} 已授权给 {active.map(binding => binding.installation_name).join("、")}。{purpose === "bot" && active.some(binding => missingBotScopes(binding).length > 0) ? "现有权限继续有效；如需自动参与，请在「管理连接」核对并补充缺少的权限。" : "无需再填连接码。"}</p><p>{purpose === "personal" ? "签到和查询以你批准的本人权限为准。需要调整时，在下方修改权限即可。" : "后台是否正在执行，请查看「机器人设置与运行」中的启用状态与心跳。"}</p></>
-        : <p>在与 QQ 机器人的原聊天发送 /sylu-connect，再用它返回的链接绑定自己的校园账号。</p>}
+        : <p>{purpose === "personal" ? "在与 QQ 机器人的原聊天发送 /sylu-connect，再用它返回的链接绑定自己的校园账号。" : "在「连接 AstrBot」核对执行端连接码，授权机器人参与社区。"}</p>}
     </div>
     {!known && !q.isPending ? <button className="btn" type="button" disabled={q.isFetching} onClick={() => void q.refetch()}>重试读取连接状态</button>
       : <button className="btn" type="button" disabled={q.isPending} onClick={onManage}>{active.length ? "管理连接" : "开始连接"}</button>}
@@ -630,14 +632,24 @@ export function ConnectedApps() {
   const [params] = useSearchParams();
   const purpose: AssistantPurpose = params.get("purpose") === "bot" || (params.get("purpose") !== "personal" && params.get("guide") === "astrbot") ? "bot" : "personal";
   return (
-    <IntegrationFrame title={purpose === "personal" ? "QQ 账号绑定与签到查询" : "社区机器人管理"} subtitle={purpose === "personal" ? "把自己的校园账号授权给 QQ 机器人，用于本人签到和资料查询。" : "设置独立机器人，授权它在社区自动浏览、评论和发帖。"}>
-      <nav className="integration-purposes" aria-label="选择使用目的">
-        <Link to={purposeLink(params, "personal")} aria-current={purpose === "personal" ? "page" : undefined}><Icon name="profile" size={22} /><span><strong>用户绑定 · 签到查询</strong><small>使用已有 QQ 机器人，绑定自己的账号</small></span></Link>
-        <Link to={purposeLink(params, "bot")} aria-current={purpose === "bot" ? "page" : undefined}><Icon name="ai" size={22} /><span><strong>社区机器人</strong><small>设置独立机器人，自动浏览、评论和发帖</small></span></Link>
+    <IntegrationFrame title="QQ 助手与社区机器人">
+      <nav className="integration-purposes" aria-label="管理分类">
+        <Link to={purposeLink(params, "personal")} aria-current={purpose === "personal" ? "true" : undefined}>
+          <Icon name="profile" size={22} />
+          <span><strong id="assistant-category-personal">绑定我的 QQ</strong><small>用 QQ 助手签到、查自己的成绩和二课</small></span>
+        </Link>
+        <Link to={purposeLink(params, "bot")} aria-current={purpose === "bot" ? "true" : undefined}>
+          <Icon name="ai" size={22} />
+          <span><strong id="assistant-category-bot">管理社区机器人</strong><small>设置自己的 AstrBot，管理社区互动和运行</small></span>
+        </Link>
       </nav>
-      {auth.user ? <AssistantWorkspace key={`${auth.user.id}-${purpose}`} purpose={purpose} nickname={auth.user.nickname} /> : purpose === "bot" && params.get("guide") === "astrbot"
-        ? <AstrBotConnectionGuide onConnect={auth.login} onBot={auth.login} />
-        : <><p className="integration-description">{purpose === "personal" ? "请登录自己的校园账号，核对原 QQ 聊天中的连接码，再选择签到或查询权限。不要使用他人转发的链接，学校密码不要发给机器人。" : "登录后可管理自己创建的社区机器人及其参与权限。"}</p><SignIn /></>}
+      <section aria-labelledby={`assistant-category-${purpose}`}>
+        {auth.loading ? <p className="integration-description" role="status">正在核对校园账号…</p>
+          : auth.user ? <AssistantWorkspace key={`${auth.user.id}-${purpose}`} purpose={purpose} nickname={auth.user.nickname} />
+          : purpose === "bot" && params.get("guide") === "astrbot"
+            ? <AstrBotConnectionGuide onConnect={auth.login} onBot={auth.login} />
+            : <><p className="integration-description">{purpose === "personal" ? "请登录自己的校园账号，核对原 QQ 聊天中的连接码，再选择签到或查询权限。不要使用他人转发的链接，学校密码不要发给机器人。" : "登录后可管理自己创建的社区机器人及其参与权限。"}</p><SignIn /></>}
+      </section>
     </IntegrationFrame>
   );
 }

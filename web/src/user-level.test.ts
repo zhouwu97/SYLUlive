@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { userLevel } from "./user-level";
+import { displayName, userHref, userLevel } from "./user-level";
 
 describe("与 Android App 一致的经验等级", () => {
   it.each([
@@ -24,5 +24,32 @@ describe("与 Android App 一致的经验等级", () => {
     for (const value of [undefined, null, -1, 0, NaN, Infinity, 2.5, "7"]) {
       expect(userLevel({ level: value })).toBe(1);
     }
+  });
+});
+
+describe("昵称清洗与公开主页链接", () => {
+  it.each([
+    ["纯合子", "纯合子"],
+    ["  晨光熹微  ", "晨光熹微"],
+    ["☀️逐光👨‍💻", "☀️逐光👨‍💻"],
+    ["", "校园同学"],
+    ["   ", "校园同学"],
+    ["\u3000\u200B\u3164\u2800", "校园同学"],
+    ["\u115F\u1160\uFFA0", "校园同学"],
+    ["\u200D\uFE0F", "校园同学"],
+    [undefined, "校园同学"],
+  ])("昵称 %j 展示为 %s", (raw, expected) => {
+    expect(displayName(raw)).toBe(expected);
+  });
+
+  it.each([
+    [7, 991, "测试同学", "/user/7"],
+    [991, 991, "纯合子", "/profile"],
+    [7, 991, "已注销用户", null],
+    [0, 991, "测试", null],
+    [-3, undefined, "测试", null],
+    ["8", undefined, "测试", "/user/8"],
+  ])("目标 %j（本人 %j，昵称 %j）解析为 %j", (targetId, selfId, name, expected) => {
+    expect(userHref(targetId, selfId, name)).toBe(expected);
   });
 });

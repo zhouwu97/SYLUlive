@@ -6,6 +6,7 @@ import {asset,captureAuthSession,entity,errorText,request,rows,useApi,write,type
 import {useAuth} from './auth';
 import {Empty,Form,Icon,QueryState,useUI,type Field} from './ui';
 import {ServerAvatar} from './server-avatar';
+import {displayName,userHref} from './user-level';
 import {MediaGallery} from './media';
 import './canteen-detail.css';
 
@@ -105,21 +106,24 @@ export function CanteenReviews({id,offline=false}:{id:string;offline?:boolean}){
     }catch(err){if(!controller.signal.aborted)setError(errorText(err))}finally{if(pending.current===controller){pending.current=null;setLoading(false)}}
   }
   return <QueryState query={first}>
-    <div className="canteen-review-list">{items.map(r=><article className="canteen-review-card" key={r.id||r.review_id}>
+    <div className="canteen-review-list">{items.map(r=>{
+      const reviewer=displayName(r.user_name||r.user?.nickname,'同学');
+      const href=r.is_anonymous?null:userHref(r.user_id||r.user?.id,auth.user?.id);
+      return <article className="canteen-review-card" key={r.id||r.review_id}>
       <header className="canteen-review-header">
-        <span className="canteen-review-avatar"><ServerAvatar src={r.user_avatar||r.user?.avatar} name={r.user_name||r.user?.nickname||'同学'}/></span>
-        <div className="canteen-review-author"><b>{r.user_name||r.user?.nickname||'同学'}</b><time>{reviewTime(r)}</time></div>
+        {href?<Link className="canteen-review-avatar" to={href} aria-label={`查看 ${reviewer} 的主页`}><ServerAvatar src={r.user_avatar||r.user?.avatar} name={reviewer}/></Link>:<span className="canteen-review-avatar"><ServerAvatar src={r.user_avatar||r.user?.avatar} name={reviewer}/></span>}
+        <div className="canteen-review-author">{href?<Link className="author-name-link" to={href}><b>{reviewer}</b></Link>:<b>{reviewer}</b>}<time>{reviewTime(r)}</time></div>
         <span className="canteen-review-score"><i aria-hidden="true">★</i>{formatScore(r.overall_score||r.star)} 分</span>
       </header>
       <ReviewScores review={r}/>
       {r.comment&&<p className="canteen-review-text">{r.comment}</p>}
       {stringList(r.recommended_dishes).length>0&&<p className="canteen-review-dishes"><Icon name="canteen" size={14}/>吃了：{stringList(r.recommended_dishes).join('、')}</p>}
-      <MediaGallery items={stringList(r.images).map(url=>({url}))} title={`${r.user_name||'同学'}的就餐实拍`} className="canteen-review-media"/>
+      <MediaGallery items={stringList(r.images).map(url=>({url}))} title={`${reviewer}的就餐实拍`} className="canteen-review-media"/>
       {!offline&&r.user_id===auth.user?.id&&<div className="form-actions">
         <button className="btn" onClick={()=>ui.open('编辑我的评价',<CanteenReviewEditor id={id} reviewId={r.id} onSaved={()=>void refresh()}/>)}>编辑</button>
         <button className="btn" onClick={()=>ui.open('删除评价',<><p>删除后这条评价、菜品打分和实拍都会撤下。</p><button className="btn" onClick={async()=>{if(await ui.act(()=>write(`/api/canteens/reviews/${r.id}`,{},'DELETE'),'评价已删除')){ui.close();await refresh();}}}>确认删除</button></>)}>删除</button>
       </div>}
-    </article>)}
+    </article>;})}
     {!items.length&&<Empty title="还没有就餐评价"/>}
     {error&&<p className="error" role="alert">{error}</p>}
     {nextCursor?<button className="btn canteen-review-more" disabled={loading} aria-busy={loading} onClick={()=>void loadMore()}>{loading?'正在加载…':error?'重试加载更多':'加载更多评价'}</button>:null}
@@ -162,16 +166,33 @@ export function CanteenFavorites({render}:{render:(items:Entity[])=>ReactNode}){
 }
 
 const CONTRIBUTION_LABELS:Record<string,string>={canteen:'商家',dish:'菜品',dish_photo:'实拍',dish_review:'菜品评价',pending:'待审核',active:'已展示',approved:'已通过',rejected:'未通过',merged:'已合并',offline:'已下架'};
+const CONTRIBUTION_TONES:Record<string,string>={pending:'warn',approved:'is-resolved',active:'is-resolved',rejected:'danger',merged:'brand'};
 
 export function CanteenContributions(){
   const q=useApi('/api/user/canteen-contributions');
   const items=rows(q.data,'items');
-  return <QueryState query={q}>{items.map((x,i)=><article className="list-row" key={`${x.type}:${x.canteen_id??''}:${x.dish_id??''}:${x.photo_id??''}:${i}`}>
-    <div className="list-main"><b>{x.type==='canteen'?x.canteen_name:x.dish_name}</b><p>{x.type==='canteen'?'':`${x.canteen_name} · `}{CONTRIBUTION_LABELS[x.type]||x.type} · {CONTRIBUTION_LABELS[x.status]||x.status}</p>
-      {x.reject_reason&&<p>{x.reject_reason}</p>}{x.merged_into_dish_name&&<p>已合并至：{x.merged_into_dish_name}</p>}
-      {x.image&&<div className="post-images"><a href={asset(x.image)} target="_blank" rel="noreferrer"><img src={asset(x.image)} alt={`${x.dish_name||x.canteen_name}实拍`}/></a></div>}
-      <small>{reviewTime({created_at:x.submitted_at})}</small>{x.canteen_id&&<Link to={`/canteen/${x.canteen_id}`}>查看食堂</Link>}
-    </div></article>)}{!items.length&&<Empty title="暂无食堂贡献"/>}</QueryState>;
+  return <QueryState query={q}>
+    {items.length>0&&<div className="panel canteen-contributions">{items.map((x,i)=>{
+      const typeLabel=CONTRIBUTION_LABELS[x.type]||x.type,statusLabel=CONTRIBUTION_LABELS[x.status]||x.status;
+      const summary=`${x.type!=='canteen'&&x.canteen_name?`${x.canteen_name} · `:''}${typeLabel} · ${statusLabel}`;
+      const submitted=reviewTime({created_at:x.submitted_at});
+      return <article className="canteen-contribution-row" key={`${x.type}:${x.canteen_id??''}:${x.dish_id??''}:${x.photo_id??''}:${i}`}>
+        {x.image?<a className="canteen-contribution-thumb" href={asset(x.image)} target="_blank" rel="noreferrer"><img src={asset(x.image)} alt={`${x.dish_name||x.canteen_name}实拍`} loading="lazy"/></a>:<span className="canteen-contribution-icon" aria-hidden="true"><Icon name="canteen" size={18}/></span>}
+        <div className="canteen-contribution-main">
+          <div className="canteen-contribution-head">
+            <b>{x.type==='canteen'?x.canteen_name:x.dish_name}</b>
+            <span className={`tag ${CONTRIBUTION_TONES[x.status]||''}`}>{statusLabel}</span>
+          </div>
+          <p className="canteen-contribution-sub">{summary}</p>
+          {x.reject_reason&&<p className="canteen-contribution-reason">{x.reject_reason}</p>}
+          {x.merged_into_dish_name&&<p className="canteen-contribution-merged">已合并至：{x.merged_into_dish_name}</p>}
+          {submitted&&<time className="canteen-contribution-time">{submitted}</time>}
+        </div>
+        {x.canteen_id&&<Link className="btn canteen-contribution-open" to={`/canteen/${x.canteen_id}`}>查看食堂</Link>}
+      </article>;
+    })}</div>}
+    {!items.length&&<Empty title="暂无食堂贡献"/>}
+  </QueryState>;
 }
 
 /** 菜品详情：实拍、三维评分与同学评价（含每条评价的菜品打分）。 */

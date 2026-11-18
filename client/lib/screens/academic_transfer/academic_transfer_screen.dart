@@ -331,12 +331,10 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen>
 
   void _onDetect(BarcodeCapture capture) {
     if (_phase != _Phase.scanning || _pasting || _pickingImage) return;
-    for (final barcode in capture.barcodes) {
-      final link = AcademicTransferLink.tryParse(barcode.rawValue);
-      if (link != null) {
-        unawaited(_start(link));
-        return;
-      }
+    final link = _transferLink(capture);
+    if (link != null) {
+      unawaited(_start(link));
+      return;
     }
     final now = DateTime.now();
     if (_lastInvalidCode != null &&
@@ -344,6 +342,18 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen>
       return;
     }
     _lastInvalidCode = now;
+    _showInvalidCode();
+  }
+
+  AcademicTransferLink? _transferLink(BarcodeCapture capture) {
+    for (final barcode in capture.barcodes) {
+      final link = AcademicTransferLink.tryParse(barcode.rawValue);
+      if (link != null) return link;
+    }
+    return null;
+  }
+
+  void _showInvalidCode() {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(const SnackBar(
@@ -365,15 +375,19 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen>
       final image = await ImagePicker().pickImage(source: ImageSource.gallery);
       if (image == null || !mounted) return;
       final capture = await scanner.analyzeImage(image.path);
-      if (!mounted) return;
+      if (!mounted || _phase != _Phase.scanning) return;
       if (capture == null || capture.barcodes.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('图片里没有识别到二维码')),
         );
         return;
       }
-      _pickingImage = false;
-      _onDetect(capture);
+      final link = _transferLink(capture);
+      if (link == null) {
+        _showInvalidCode();
+      } else {
+        unawaited(_start(link));
+      }
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

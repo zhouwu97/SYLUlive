@@ -650,8 +650,8 @@ test("移动网页主题：目录分页与筛选取消旧请求、详情按 ID �
   });
   await page.getByRole("tab", { name: "热门", exact: true }).click();
   await expect(page.getByText("正在加载主题列表…")).toBeVisible();
-  // 立即切到“官方”，旧“热门”请求应被取消且不能覆盖“官方”结果
-  await page.getByRole("tab", { name: "官方", exact: true }).click();
+  // 立即切回“最新”，旧“热门”请求应被取消且不能覆盖“最新”首页结果
+  await page.getByRole("tab", { name: "最新", exact: true }).click();
   await expect(page.getByText("海盐蓝")).toBeVisible();
   state.holdPopularCatalog = null;
   releasePopularCatalog();

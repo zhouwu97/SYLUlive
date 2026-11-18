@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:material_color_utilities/material_color_utilities.dart';
@@ -9,6 +11,7 @@ import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/features/theme_pack/theme_contrast.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_codec.dart';
+import 'package:shenliyuan/features/theme_pack/theme_manifest.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_store.dart';
 import 'package:shenliyuan/features/theme_pack/theme_resolver.dart';
 import 'package:shenliyuan/features/theme_pack/theme_workshop_samples.dart';
@@ -18,9 +21,19 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/post_card.dart';
 
-import '../helpers/emoji_flow_qa.dart' show settleEmojiQAImages;
+import '../helpers/emoji_flow_qa.dart' show settleEmojiQAImages, waitForEmojiWork;
 import '../helpers/load_test_fonts.dart';
 import 'theme_pack_test.dart' show themeImage;
+
+class _WorkshopPreferences extends MemoryPreferencesStore {
+  bool failAppearanceWrite = false;
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    if (failAppearanceWrite && key == ThemeProvider.appearanceKey) return false;
+    return super.setString(key, value);
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -35,12 +48,14 @@ void main() {
   late Directory temp;
   late ThemePackStore store;
   late ThemeProvider provider;
+  late _WorkshopPreferences prefs;
 
   setUp(() async {
     temp = await Directory.systemTemp.createTemp('sltheme-workshop-');
     store =
         ThemePackStore(directory: Directory(path.join(temp.path, 'themes')));
-    AppPreferencesStore.setCustomInstance(MemoryPreferencesStore());
+    prefs = _WorkshopPreferences();
+    AppPreferencesStore.setCustomInstance(prefs);
     provider = ThemeProvider(loadOnStart: false, themePackStore: store);
     await provider.loadThemeForTesting();
   });
@@ -195,7 +210,7 @@ void main() {
     );
   });
 
-  testWidgets('工坊交互：360×800 1.5x 十个 Tab 无溢出、点选预览定位、复制后独立编辑、贴纸调层与重置、保存失败重试',
+  testWidgets('主题设置：360×800 1.5x 分类与全屏预览无溢出、点选预览定位、复制后独立编辑、贴纸调层与重置、保存失败重试',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -247,15 +262,19 @@ void main() {
       ],
     };
 
+    final previewBoundary = GlobalKey();
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: provider,
         child: MaterialApp(
           theme: provider.buildAppTheme(Brightness.light),
-          builder: (ctx, child) => MediaQuery(
-            data: MediaQuery.of(ctx)
-                .copyWith(textScaler: const TextScaler.linear(1.5)),
-            child: child!,
+          builder: (ctx, child) => RepaintBoundary(
+            key: previewBoundary,
+            child: MediaQuery(
+              data: MediaQuery.of(ctx)
+                  .copyWith(textScaler: const TextScaler.linear(1.5)),
+              child: child!,
+            ),
           ),
           home: ThemeWorkshopScreen(
             initialState: initial,
@@ -273,7 +292,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    // 1. 修改种子色后，上半屏预览组件的主题主色立即跟随变化
+    await _captureWorkshop(tester, previewBoundary, 'theme-settings');
+
+    // 修改种子色后，预览组件的主题主色立即跟随变化。
+    await tester.ensureVisible(find.byKey(const ValueKey('workshop-seed-hex-input')));
     await tester.enterText(
       find.byKey(const ValueKey('workshop-seed-hex-input')),
       '#C9617E',
@@ -286,41 +308,57 @@ void main() {
       isNot(const Color(0xFF147C72)),
     );
 
-    // 2. 在 360×800、1.5x 字号下依次访问全部 10 个 Tab，均无溢出
-    for (final tab in WorkshopTab.values) {
-      final chip = find.byKey(ValueKey('workshop-tab-${tab.name}'));
+    Future<void> category(String name, [String? tab]) async {
+      final chip = find.byKey(ValueKey('workshop-category-$name'));
       await tester.ensureVisible(chip);
       await tester.tap(chip);
       await tester.pumpAndSettle();
+      if (tab != null) {
+        final child = find.byKey(ValueKey('workshop-tab-$tab'));
+        await tester.ensureVisible(child);
+        await tester.tap(child);
+        await tester.pumpAndSettle();
+      }
       expect(tester.takeException(), isNull);
     }
 
-    // 3. 点选预览区页头信息卡与帖子卡片自动定位到“布局”与“材质”编辑区
+    for (final (name, tab) in [
+      ('colors', 'courses'),
+      ('wallpapers', null),
+      ('cards', 'layout'),
+      ('cards', 'decoration'),
+      ('navigation', null),
+      ('typography', 'launcherIcon'),
+      ('typography', 'widgets'),
+      ('packages', null),
+    ]) {
+      await category(name, tab);
+    }
+
+    final thumbnail = find.byKey(const ValueKey('workshop-preview-thumbnail'));
+    await tester.ensureVisible(thumbnail);
+    await tester.tap(thumbnail);
+    await tester.pumpAndSettle();
+    expect(find.text('全屏预览'), findsOneWidget);
+    for (final label in ['加载', '空态', '失败', '权限']) {
+      final state = find.widgetWithText(ChoiceChip, label);
+      await tester.ensureVisible(state);
+      await tester.tap(state);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    }
+    await tester.ensureVisible(find.widgetWithText(ChoiceChip, '正常'));
+    await tester.tap(find.widgetWithText(ChoiceChip, '正常'));
+    await tester.pumpAndSettle();
+    await _captureWorkshop(tester, previewBoundary, 'fullscreen-preview');
     await tester.tap(find.byKey(const ValueKey('home-themed-header-info')));
     await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('workshop-editor-layout')),
-      findsOneWidget,
-    );
-    // 切换到“集市”样例并点选商品卡片，自动定位到“材质”编辑区
-    await tester.tap(find.text('集市').first);
-    await tester.pumpAndSettle();
-    await tester.tapAt(
-      tester.getTopLeft(find.byType(ThemeWorkshopSampleStage)) +
-          const Offset(80, 70),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('workshop-editor-material')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('workshop-editor-layout')), findsOneWidget);
 
-    // 4. 切换到深色模式执行“复制浅色壁纸设置”，随后修改深色模糊值不影响浅色（一次性复制无隐藏联动）
-    await tester.tap(find.text('深色'));
-    await tester.pumpAndSettle();
-    final wallTab = find.byKey(const ValueKey('workshop-tab-wallpapers'));
-    await tester.ensureVisible(wallTab);
-    await tester.tap(wallTab);
+    await category('wallpapers');
+    final darkMode = find.widgetWithText(ChoiceChip, '深色');
+    await tester.ensureVisible(darkMode);
+    await tester.tap(darkMode);
     await tester.pumpAndSettle();
     final copyBtn = find.byKey(const ValueKey('workshop-copy-light-wallpapers'));
     await tester.ensureVisible(copyBtn);
@@ -331,12 +369,11 @@ void main() {
     expect(initial.light.wallpapers['global']!['blur'], 2.0);
 
     // 5. 切回浅色“装饰”Tab：调整贴纸前后层次，重置贴纸 1 不影响贴纸 2
-    await tester.tap(find.text('浅色'));
+    final lightMode = find.widgetWithText(ChoiceChip, '浅色');
+    await tester.ensureVisible(lightMode);
+    await tester.tap(lightMode);
     await tester.pumpAndSettle();
-    final decoTab = find.byKey(const ValueKey('workshop-tab-decoration'));
-    await tester.ensureVisible(decoTab);
-    await tester.tap(decoTab);
-    await tester.pumpAndSettle();
+    await category('cards', 'decoration');
 
     final upBtn = find.text('上移一层');
     await tester.ensureVisible(upBtn);
@@ -363,10 +400,8 @@ void main() {
 
     // 6. 模拟草稿保存失败：编辑内容保留、顶栏出现“未保存 · 重试”，恢复后点击重试成功落盘
     shouldFailSave = true;
-    final colorsTab = find.byKey(const ValueKey('workshop-tab-colors'));
-    await tester.ensureVisible(colorsTab);
-    await tester.tap(colorsTab);
-    await tester.pumpAndSettle();
+    await category('colors');
+    await tester.ensureVisible(find.byKey(const ValueKey('workshop-seed-hex-input')));
     await tester.enterText(
       find.byKey(const ValueKey('workshop-seed-hex-input')),
       '#3E6B4F',
@@ -399,5 +434,67 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 60)));
+  });
+
+  testWidgets('主题直接应用与保存失败重试，保留设备壁纸和其他主题组', (tester) async {
+    await provider.setBackgroundImage('morenbeijing.jpeg');
+    final draftStore = ThemeWorkshopDraftStore(
+      themesDirectory: Directory(path.join(temp.path, 'themes')),
+    );
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: provider,
+        child: MaterialApp(
+          theme: provider.buildAppTheme(Brightness.light),
+          home: ThemeWorkshopScreen(draftStore: draftStore, appVersion: '1.7.12'),
+        ),
+      ),
+    );
+    final apply = find.byKey(const ValueKey('workshop-apply'));
+    expect(tester.widget<FilledButton>(apply).onPressed, isNull);
+    final preset = find.widgetWithText(ActionChip, '海盐蓝');
+    await tester.ensureVisible(preset);
+    await tester.tap(preset);
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(apply).onPressed, isNotNull);
+
+    Future<void> applyAndWait() async {
+      await tester.runAsync(() async {
+        await tester.tap(apply);
+        await tester.pump();
+      });
+      await waitForEmojiWork(tester);
+    }
+
+    prefs.failAppearanceWrite = true;
+    await applyAndWait();
+    expect(find.text('主题应用失败，编辑内容已保留，请重试。'), findsOneWidget);
+    expect(provider.hasThemeColors, isFalse);
+    expect(tester.widget<FilledButton>(apply).onPressed, isNotNull);
+    prefs.failAppearanceWrite = false;
+    await applyAndWait();
+    expect(find.text('主题已应用'), findsOneWidget);
+    expect(provider.appearance.group(ThemeGroup.colors)?['light']['seedColor'],
+        '#2F7FD8');
+    expect(provider.appearance.group(ThemeGroup.wallpapers), isNull);
+    expect(provider.backgroundImage, 'morenbeijing.jpeg');
+    expect(provider.appearance.group(ThemeGroup.widgets), isNull);
+    expect(tester.widget<FilledButton>(apply).onPressed, isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+}
+
+Future<void> _captureWorkshop(
+    WidgetTester tester, GlobalKey key, String name) async {
+  final directory = Platform.environment['THEME_WORKSHOP_QA_DIR'];
+  if (directory == null) return;
+  await tester.runAsync(() async {
+    final render = key.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    final image = await render.toImage();
+    final png = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    final folder = await Directory(directory).create(recursive: true);
+    await File(path.join(folder.path, '$name.png'))
+        .writeAsBytes(png!.buffer.asUint8List());
   });
 }

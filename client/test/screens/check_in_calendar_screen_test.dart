@@ -21,6 +21,7 @@ class _CheckInAdapter implements HttpClientAdapter {
   _CheckInAdapter({this.checkedIn = true});
 
   String? makeupDate;
+  String? compensationDate;
   bool checkedIn;
   int checkInRequestCount = 0;
   final Map<String, int> calendarRequestCounts = {};
@@ -89,6 +90,13 @@ class _CheckInAdapter implements HttpClientAdapter {
           'month': requestedMonth,
           'longest_streak': 17,
           'records': [
+            if (requestedMonth == '2026-07' && compensationDate != null)
+              {
+                'check_in_date': compensationDate,
+                'streak_days': 16,
+                'exp_earned': 0,
+                'is_compensation': true,
+              },
             if (requestedMonth == '2026-06')
               {
                 'check_in_date': '2026-06-30',
@@ -459,6 +467,33 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('补偿日显示标记并且不能再使用补签卡', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final adapter = _CheckInAdapter()..compensationDate = '2026-07-16';
+    final auth =
+        AuthProvider(Dio()..httpClientAdapter = adapter, loadStoredAuth: false);
+    addTearDown(auth.dispose);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AuthProvider>.value(
+        value: auth,
+        child: MaterialApp(
+          home: CheckInCalendarScreen(now: () => DateTime(2026, 7, 17)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('补偿'), findsOneWidget);
+    final compensatedDay = find.bySemanticsLabel('7月16日，已补偿');
+    await tester.ensureVisible(compensatedDay);
+    await tester.pumpAndSettle();
+    await tester.tap(compensatedDay);
+    await tester.pumpAndSettle();
+    expect(find.text('7 月 16 日已补偿'), findsOneWidget);
+    expect(find.textContaining('使用补签卡补签'), findsNothing);
+    expect(tester.takeException(), isNull);
+    semantics.dispose();
+  });
+
   testWidgets('历史月份日期按签到状态显示反馈', (tester) async {
     final semantics = tester.ensureSemantics();
     final dio = Dio()..httpClientAdapter = _CheckInAdapter();
@@ -544,6 +579,7 @@ void main() {
     await tester.tap(find.text('使用补签卡补签 7 月 16 日'));
     await tester.pumpAndSettle();
     expect(find.text('使用补签卡'), findsOneWidget);
+    expect(find.textContaining('补签卡到账满一个月自动过期'), findsOneWidget);
     final confirmButton = tester.widget<FilledButton>(
       find.ancestor(
         of: find.text('确认补签'),

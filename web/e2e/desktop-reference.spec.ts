@@ -287,6 +287,7 @@ test("桌面按参考呈现三栏、公共帖子与真实筛选，并保留详�
   await expect(page.getByRole("button", { name: "分享校园日常", exact: true })).toBeVisible();
   await page.goto("community");
   await expect(publicPosts).toContainText(state.posts[0].title);
+  await expect(page.locator(".sidebar-scroll > .nav-ind")).toHaveCSS("opacity", "0");
   await page.screenshot({ path: ".codex-captures/desktop-white-blue/community-1480.png" });
   await page.locator(".sidebar-more summary").click();
   const grades = page.getByLabel("主导航").getByRole("link", { name: "成绩与学业", exact: true });

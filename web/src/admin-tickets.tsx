@@ -142,6 +142,8 @@ function AdminTicketPane({ id }: { id: string }) {
   const queryClient = useQueryClient();
   const base = "/api/admin/feedback";
   const q = useApi(`${base}/tickets/${id}`);
+  const assignees = useApi(`${base}/assignees`);
+  const assigneeList = rows(assignees.data, "assignees", "items");
   const ticket = entity(q.data, "ticket");
   const messages = rows(q.data, "messages");
   const [mode, setMode] = useState<"public" | "internal">("public");
@@ -222,6 +224,21 @@ function AdminTicketPane({ id }: { id: string }) {
               <input value={statusNote} onChange={e => setStatusNote(e.target.value)} placeholder="进度说明（选填，会通知用户）" aria-label="进度说明" />
               <button className="btn sm">更新状态</button>
             </>}
+            {assigneeList.length > 0 && (
+              <label>负责人
+                <select
+                  aria-label="指派负责人"
+                  value={ticket.assignee_admin?.id || ticket.assignee_id || ""}
+                  onChange={e => {
+                    const val = e.target.value;
+                    void ui.act(() => write(`${base}/tickets/${id}/assignee`, { assignee_user_id: val ? Number(val) : null }, "PATCH"), "负责人已更新");
+                  }}
+                >
+                  <option value="">未指派</option>
+                  {assigneeList.map(a => <option key={a.id} value={a.id}>{a.nickname || `管理员 #${a.id}`}</option>)}
+                </select>
+              </label>
+            )}
           </form>
         </header>
         <div className="admin-thread thread">

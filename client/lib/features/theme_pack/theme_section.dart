@@ -18,15 +18,16 @@ import 'theme_import_screen.dart';
 import 'theme_layout_decoration_screen.dart';
 import 'theme_store_screen.dart';
 import 'theme_submission_screen.dart';
-import 'theme_workshop_screen.dart';
 
 class ThemeSection extends StatefulWidget {
   const ThemeSection({
     super.key,
+    this.onEditTheme,
     this.saveExportFile,
     this.shareExportFile,
   });
 
+  final VoidCallback? onEditTheme;
   final Future<String?> Function(String fileName, Uint8List bytes)?
       saveExportFile;
   final Future<void> Function(String fileName, Uint8List bytes, Rect? origin)?
@@ -230,18 +231,13 @@ class _ThemeSectionState extends State<ThemeSection> {
                             ),
                           ),
                 ),
-                _actionButton(
-                  context: context,
-                  icon: Icons.construction_outlined,
-                  label: '主题工坊',
-                  onPressed: _busy
-                      ? null
-                      : () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const ThemeWorkshopScreen(),
-                            ),
-                          ),
-                ),
+                if (widget.onEditTheme != null)
+                  _actionButton(
+                    context: context,
+                    icon: Icons.construction_outlined,
+                    label: '编辑主题',
+                    onPressed: _busy ? null : widget.onEditTheme,
+                  ),
                 _actionButton(
                   context: context,
                   icon: Icons.palette_outlined,

@@ -24,7 +24,7 @@ export function CanteenList({items,ranking=false,sort='composite',showHeading=tr
   const podium=ranking&&sort!=='rating'?items.filter((c,i)=>ranked(c)&&(Number(c.rank)||i+1)<=3):[];
   const remaining=items.filter(c=>!podium.includes(c));
   return <section className={`canteen-discovery${ranking?' is-ranking':''}`} aria-label={ranking?'食堂榜单':'店铺列表'}>
-    {showHeading&&<div className="canteen-list-heading"><div><span className="canteen-list-eyebrow"><Icon name={ranking?'competition':'canteen'} size={15}/>{ranking?'来自同学的真实评价':archived?'怀旧食堂 · 历史存档':'同学真实评价 · 校园店铺'}</span><h2>{ranking?(sort==='rating'?'低分关注榜':sort==='review_count'?'校园点评人气榜':'校园食堂口碑榜'):archived?'记忆里的校园味道':'每一餐，都有好去处'}</h2><p>{ranking?'评分与评价人数一起看，找到适合自己的那一口。':archived?'已下架店铺的评价与实拍，留住那些年吃过的味道。':'看看店铺实景，参考同学评价，再决定今天吃什么。'}</p></div><span className="canteen-list-total">本页 <b>{items.length}</b> 家店铺</span></div>}
+    {showHeading&&<div className="canteen-list-heading"><h2>{ranking?(sort==='rating'?'低分关注榜':sort==='review_count'?'点评人气榜':'食堂口碑榜'):archived?'已下架存档':'全部营业店铺'}</h2><span className="canteen-list-total">本页 <b>{items.length}</b> 家</span></div>}
     {podium.length>0&&<div className="canteen-podium">{podium.map((c,i)=>{
       const rank=Number(c.rank)||i+1;
       return <Link className={`canteen-podium-card podium-${rank}`} key={c.id} to={`/canteen/${c.id}`}>

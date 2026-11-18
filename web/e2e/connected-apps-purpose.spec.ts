@@ -23,7 +23,7 @@ async function fixture(page: Page, options: { connected?: boolean; failed?: bool
 test("QQ 临时链接直达用户绑定，普通用户看不到机器人设置和部署后台", async ({ page }) => {
   const { requests, writes } = await fixture(page);
   await page.goto("./connected-apps?user_code=ABCD-1234");
-  await expect(page.getByRole("heading", { name: "QQ 账号绑定与签到查询", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "QQ 助手与社区机器人", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "一次性连接码" })).toHaveValue("ABCD-1234");
   await expect(page.locator("#new-astrbot-connection")).toContainText("连接和签到无需教务核验");
   await expect(page.getByRole("region", { name: "AstrBot 插件后台" })).toHaveCount(0);
@@ -44,7 +44,7 @@ for (const [theme, width] of [["light", 375], ["dark", 1440]] as const) {
     await expect(checkin).not.toBeChecked();
     await expect(page.getByRole("checkbox", { name: /独立AI机器人自动发帖/ })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "选择自动评论和发帖所需权限" })).toHaveCount(0);
-    if (width === 375) await expect(page.locator(".mobile-header-title")).toHaveText("QQ 绑定与签到查询");
+    if (width === 375) await expect(page.locator(".mobile-header-title")).toHaveText("QQ 助手与社区机器人");
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: test.info().outputPath(`personal-request-${theme}.png`), fullPage: true });
     await checkin.check();
@@ -77,11 +77,19 @@ test("个人权限编辑保留已有社区授权，且不要求补充机器人�
   expect(writes[0].body.scopes).not.toContain("checkin:write");
 });
 
-test("社区机器人有独立入口，切换用途不会自动授权，后台仅在部署区出现", async ({ page }) => {
+test("同一管理页切换类别不自动授权，部署工具归入社区机器人", async ({ page }) => {
   const { writes } = await fixture(page);
   await page.goto("./connected-apps?user_code=ABCD-1234");
-  await page.getByRole("link", { name: /社区机器人.*自动浏览/ }).click();
+  const navigation = page.getByRole("navigation", { name: "管理分类" });
+  const personalCategory = navigation.getByRole("link", { name: /^绑定我的 QQ/ });
+  const botCategory = navigation.getByRole("link", { name: /^管理社区机器人/ });
+  await expect(personalCategory).toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("region", { name: "绑定我的 QQ", exact: true })).toBeVisible();
+  await botCategory.click();
   await expect(page).toHaveURL(/purpose=bot/);
+  await expect(page.getByRole("heading", { name: "QQ 助手与社区机器人", exact: true })).toBeVisible();
+  await expect(botCategory).toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("region", { name: "管理社区机器人", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "一次性连接码" })).toHaveValue("ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: /查看本人签到状态/ })).toHaveCount(0);
@@ -93,6 +101,24 @@ test("社区机器人有独立入口，切换用途不会自动授权，后台�
   expect(writes.map(value => value.path)).toEqual(["/api/connected-apps/device-requests/lookup"]);
 });
 
+for (const width of [390, 1440]) {
+  test(`个人主页只有一个助手管理入口，${width}px`, async ({ page }) => {
+    await fixture(page);
+    await page.setViewportSize({ width, height: 950 });
+    await page.goto("./profile");
+    const entry = page.getByRole("link", { name: /^QQ 助手与社区机器人/ });
+    await expect(entry).toHaveCount(1);
+    await expect(entry).toHaveAttribute("href", "/web/connected-apps");
+    await entry.click();
+    const navigation = page.getByRole("navigation", { name: "管理分类" });
+    await expect(navigation.getByRole("link")).toHaveCount(2);
+    await expect(navigation.getByText("用 QQ 助手签到、查自己的成绩和二课")).toBeVisible();
+    await expect(navigation.getByText("设置自己的 AstrBot，管理社区互动和运行")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath("assistant-management.png") });
+  });
+}
+
 test("读取失败可以重试，用户绑定不会因失败跳转机器人设置", async ({ page }) => {
   const { recover, writes } = await fixture(page, { failed: true });
   await page.goto("./connected-apps");
@@ -101,14 +127,14 @@ test("读取失败可以重试，用户绑定不会因失败跳转机器人设�
   recover();
   await status.getByRole("button", { name: "重试读取连接状态", exact: true }).click();
   await expect(status).toContainText("当前没有有效连接");
-  await expect(page.getByRole("heading", { name: "QQ 账号绑定与签到查询", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "QQ 助手与社区机器人", exact: true })).toBeVisible();
   expect(writes).toHaveLength(0);
 });
 
 test("未登录的 QQ 链接保留连接码并解释本人绑定用途", async ({ page }) => {
   await fixture(page, { signedOut: true });
   await page.goto("./connected-apps?user_code=ABCD-1234");
-  await expect(page.getByRole("heading", { name: "QQ 账号绑定与签到查询", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "QQ 助手与社区机器人", exact: true })).toBeVisible();
   await expect(page.locator(".integration-workspace").getByRole("button", { name: "登录", exact: true })).toBeVisible();
   await expect(page.getByLabel("机器人名称", { exact: true })).toHaveCount(0);
   expect(new URL(page.url()).searchParams.get("user_code")).toBe("ABCD-1234");
@@ -156,9 +182,9 @@ test("切换用途取消旧核对，迟到请求不会串入社区机器人表�
   const started = page.waitForRequest("**/api/connected-apps/device-requests/lookup");
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
   await started;
-  await page.getByRole("link", { name: /社区机器人.*自动浏览/ }).click();
+  await page.getByRole("link", { name: /^管理社区机器人/ }).click();
   release();
-  await expect(page.getByRole("heading", { name: "社区机器人管理", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "管理社区机器人", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "授权此助手", exact: true })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "一次性连接码" })).toHaveValue("ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click();

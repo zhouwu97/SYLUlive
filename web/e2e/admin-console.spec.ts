@@ -85,6 +85,53 @@ test('待受理工单首次公开回复自动受理后仍可设为待补充', as
   expect(state.writes.filter(x => x.path.endsWith('/messages'))).toHaveLength(1);
 });
 
+test('表情包审核使用投稿 ID，按最新状态提供审核操作', async ({page}) => {
+  const state = await setup(page);
+  const pack = {id: '8f3a174f40b34d638ce5e2175087420f', user_id: 7, name: '合成表情包', status: 'pending'};
+  const path = `/api/admin/emoji-packs/${pack.id}`;
+  let conflict = false;
+  await page.route('**/api/admin/emoji-packs**', async route => {
+    const request = route.request(), url = new URL(request.url());
+    if (url.pathname === '/api/admin/emoji-packs') {
+      return route.fulfill({json: {items: url.searchParams.get('status') === pack.status ? [pack] : []}});
+    }
+    if (url.pathname === path) return route.fulfill({json: pack});
+    if (url.pathname === `${path}/review`) {
+      const body = request.postDataJSON();
+      state.writes.push({path: url.pathname, body});
+      pack.status = body.action === 'approve' ? 'published' : 'unpublished';
+      if (conflict) return route.fulfill({status: 409, json: {code: 'emoji_pack_conflict', error: '状态已变化，请刷新后重试'}});
+      return route.fulfill({json: {message: '处理成功'}});
+    }
+    return route.fulfill({status: 404, json: {error: '表情包不存在'}});
+  });
+  await page.goto('admin?tab=emoji');
+  await page.getByRole('button', {name: '查看与审核'}).click();
+  const drawer = page.getByRole('dialog', {name: /审核表情包/});
+  const operation = drawer.getByLabel('审核操作');
+  await expect(operation.locator('option')).toHaveText(['通过并上架', '驳回修改']);
+  await operation.selectOption('reject');
+  await expect(drawer.getByRole('textbox', {name: /审核说明/})).toHaveAttribute('required', '');
+  await operation.selectOption('approve');
+  await drawer.getByRole('button', {name: '提交审核结果'}).click();
+  await expect(operation.locator('option')).toHaveText(['下架已发布包']);
+  expect(state.writes.at(-1)?.body).toEqual({action: 'approve', reason: ''});
+
+  conflict = true;
+  await drawer.getByRole('textbox', {name: /审核说明/}).fill('合成下架说明');
+  await drawer.getByRole('button', {name: '提交审核结果'}).click();
+  await expect(drawer).toContainText('状态已变化，已刷新');
+  await expect(operation).toHaveCount(0);
+  await expect(drawer).toContainText('已下架');
+
+  pack.user_id = 900;
+  pack.status = 'pending';
+  await page.reload();
+  await page.getByRole('button', {name: '查看详情'}).click();
+  await expect(drawer).toContainText('请交由其他管理员完成审核');
+  await expect(operation).toHaveCount(0);
+});
+
 test('回复发送成功但状态失败时不保留可重复发送的正文', async ({page}) => {
   const state = await setup(page);
   state.failStatus = true;
@@ -145,4 +192,43 @@ test('浏览器标签页使用站点图标且资源不会回退为 HTML', async 
   expect(response.headers()['content-type']).toContain('image/png');
   const brand = await page.locator('.brand-mark img').getAttribute('src');
   expect(icon).toBe(brand);
+});
+
+test('食堂审核与商户菜品运营、安全中心告警处置及获奖核验备注契约完整可用', async ({page}, info) => {
+  const writes: {path: string; method: string; body: any}[] = [];
+  await page.route('**/api/**', async route => {
+    const req = route.request(), url = new URL(req.url()), path = url.pathname;
+    if (req.method() !== 'GET') writes.push({path, method: req.method(), body: req.postDataJSON()});
+    if (path === '/api/user/profile') return route.fulfill({json: {id: 900, nickname: '超级管理员', role: 'super_admin'}});
+    if (path === '/api/canteens/pending') return route.fulfill({json: {items: [{id: 21, name: '新开牛肉面', location_area: '一食堂', location_floor: '二楼', description: '手工拉面', created_at: '2026-11-16T08:00:00Z'}]}} );
+    if (path === '/api/canteens/admin-list') return route.fulfill({json: {items: [{id: 5, name: '馋熙椒麻鸡', location_area: '二食堂', location_floor: '一楼', operating_status: 'open', average_star: 4.7, rating_count: 18}]}});
+    if (path === '/api/canteens/5/admin-dishes') return route.fulfill({json: {items: [{id: 301, name: '招牌椒麻鸡', status: 'active', average_score: 4.8, photos: []}]}});
+    if (path === '/api/admin/security/overview') return route.fulfill({json: {actionable_high_count: 1, open_high_count: 1, total_events: 4, active_blocks_count: 0}});
+    if (path === '/api/admin/security/events') return route.fulfill({json: {items: [{id: 88, severity: 'high', status: 'open', title: '高频登录尝试', route: '/api/login', source_key: 'abcdef1234567890abcdef1234567890', created_at: '2026-11-17T06:00:00Z'}]}} );
+    if (path === '/api/admin/competition-awards/verifications') return route.fulfill({json: {items: [{id: 66, award_name: '省一等奖', competition_title: '蓝桥杯'}]}} );
+    if (path === '/api/admin/competition-awards/verifications/66') return route.fulfill({json: {id: 66, award_name: '省一等奖', competition_title: '蓝桥杯', evidence_file_ids: []}});
+    return route.fulfill({json: {items: []}});
+  });
+
+  await page.setViewportSize({width: 1440, height: 960});
+  await page.goto('admin?tab=canteens');
+  await expect(page.getByText('新开牛肉面', {exact: true})).toBeVisible();
+  await page.getByRole('button', {name: '通过上架'}).click();
+  expect(writes.some(w => w.path === '/api/canteens/21/approve' && w.method === 'POST')).toBe(true);
+  await page.getByRole('button', {name: '全部商户与菜品'}).click();
+  await expect(page.getByText('馋熙椒麻鸡', {exact: true})).toBeVisible();
+  await page.screenshot({path: info.outputPath('admin-canteen-ops.png'), fullPage: true});
+
+  await page.goto('admin?tab=security');
+  await expect(page.getByText('高频登录尝试', {exact: true})).toBeVisible();
+  await page.getByRole('button', {name: '已处理', exact: true}).click();
+  expect(writes.some(w => w.path === '/api/admin/security/events/88/resolve')).toBe(true);
+  await page.screenshot({path: info.outputPath('admin-security.png'), fullPage: true});
+
+  await page.goto('admin?tab=awards');
+  await page.getByRole('button', {name: '处理', exact: true}).click();
+  const dialog = page.getByRole('dialog', {name: '获奖核验'});
+  await dialog.getByLabel('处理说明', {exact: false}).fill('证书编号核验一致');
+  await dialog.getByRole('button', {name: '保存', exact: true}).click();
+  expect(writes.find(w => w.path === '/api/admin/competition-awards/verifications/66/approve')?.body).toEqual({note: '证书编号核验一致'});
 });

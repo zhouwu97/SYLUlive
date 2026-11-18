@@ -49,13 +49,16 @@
   .social-shell .admin-back { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: var(--radius-sm); color: var(--text-3); font-size: 13px; text-decoration: none; }
   .social-shell .admin-back .svg-icon { transform: rotate(90deg); }
   .social-shell .admin-back:hover { color: var(--text); background: var(--surface-2); }
-  .social-shell .admin-who { display: flex; align-items: center; gap: 10px; margin: 12px 0 18px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
-  .social-shell .admin-who .avatar, .social-shell .admin-who img, .social-shell .admin-who > :first-child { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; }
+  .social-shell .admin-who { display: flex; align-items: center; gap: 10px; margin: 12px 0 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-card); background: linear-gradient(180deg, color-mix(in oklab, var(--brand-soft) 65%, var(--surface)) 0, var(--surface) 100%); box-shadow: var(--shadow-card); }
+  .social-shell .admin-who .avatar, .social-shell .admin-who img, .social-shell .admin-who > :first-child { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
   .social-shell .admin-who span { display: grid; min-width: 0; }
   .social-shell .admin-who b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .social-shell .admin-who small { color: var(--text-3); font-size: 12px; }
+  .social-shell .admin-who small { color: var(--brand-strong); font-size: 11.5px; font-weight: 600; }
+  .social-shell .admin-nav-groups { position: relative; }
   .social-shell .admin-nav .nav-section { margin-bottom: 14px; }
-  .social-shell .admin-nav .nav-item { display: flex; align-items: center; gap: 10px; min-height: 40px; text-decoration: none; }
+  .social-shell .admin-nav .nav-item { position: relative; display: flex; align-items: center; gap: 10px; min-height: 40px; text-decoration: none; transition: color .15s ease, background-color .15s ease; }
+  .social-shell .admin-nav .nav-item .nav-icon { background: transparent; color: var(--text-3); }
+  .social-shell .admin-nav .nav-item.active .nav-icon { color: var(--brand-strong); }
   .social-shell .admin-badge { margin-left: auto; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 999px; display: grid; place-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; background: var(--surface-2); color: var(--text-3); box-shadow: inset 0 0 0 1px var(--line); }
   .social-shell .admin-badge.is-hot { background: var(--danger); color: var(--color-accent-ink, #fff); box-shadow: none; }
   :root[data-theme="dark"] .social-shell .admin-badge.is-hot { color: #2a0d0d; }
@@ -74,8 +77,59 @@
 
 /* ---------- 工作台 ---------- */
 .social-shell .admin-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-.social-shell .admin-kpi { display: grid; gap: 6px; padding: 16px 18px; text-align: left; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); color: var(--text); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
-.social-shell .admin-kpi:hover { border-color: var(--color-accent-border); box-shadow: var(--shadow-hover); }
+.social-shell .admin-kpi { display: grid; gap: 6px; padding: 16px 18px; text-align: left; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); color: var(--text); cursor: pointer; transition: border-color .18s var(--ease-out), box-shadow .22s var(--ease-out), transform .22s var(--ease-out); }
+.social-shell .admin-kpi:hover { border-color: var(--color-accent-border); box-shadow: var(--shadow-hover); transform: translateY(-2px); }
+
+/* 工作台快捷入口矩阵 */
+.social-shell .admin-feature-matrix { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.social-shell .admin-feature-tile { --tile-tone: var(--icon-blue); display: flex; align-items: center; gap: 12px; padding: 13px 15px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color .18s var(--ease-out), box-shadow .22s var(--ease-out), transform .22s var(--ease-out); }
+.social-shell .admin-feature-tile:nth-child(4n+2) { --tile-tone: var(--icon-teal); }
+.social-shell .admin-feature-tile:nth-child(4n+3) { --tile-tone: var(--icon-amber); }
+.social-shell .admin-feature-tile:nth-child(4n+4) { --tile-tone: var(--icon-violet); }
+.social-shell .admin-feature-tile:hover { border-color: var(--color-accent-border); box-shadow: var(--shadow-hover); transform: translateY(-2px); }
+.social-shell .admin-feature-icon { flex: 0 0 40px; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 11px; background: color-mix(in oklab, var(--tile-tone) 11%, var(--surface)); color: var(--tile-tone); }
+.social-shell .admin-feature-copy { display: grid; gap: 2px; min-width: 0; }
+.social-shell .admin-feature-copy b { font-size: 14px; font-weight: 600; transition: color .15s ease; }
+.social-shell .admin-feature-tile:hover .admin-feature-copy b { color: var(--brand-strong); }
+.social-shell .admin-feature-copy small { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 模块内部分段开关（不占用 ARIA tablist 角色，避免与移动端顶部分区标签冲突） */
+.admin-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface); }
+.admin-seg button { min-height: 32px; padding: 0 12px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-2); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; transition: background-color .15s ease, color .15s ease; }
+.admin-seg button:hover { color: var(--text); }
+.admin-seg button[aria-pressed="true"] { background: var(--brand-soft); color: var(--brand-strong); font-weight: 600; }
+
+/* 管理列表扩展布局：缩略图行、标签行、抽屉堆叠、双栏治理、表情网格 */
+.admin-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.admin-row-actions, .admin-inline-actions, .admin-inline-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.admin-row-actions { flex-shrink: 0; justify-content: flex-end; }
+.admin-inline-filters select { min-height: 36px; padding-inline: 12px 28px; }
+.admin-store-row { align-items: center; }
+.admin-store-thumb { flex: 0 0 52px; width: 52px; height: 52px; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface-2); color: var(--text-3); }
+.admin-store-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.admin-canteen-pending-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px; }
+.admin-canteen-pending-img { flex: 0 0 112px; width: 112px; height: 84px; overflow: hidden; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface-2); }
+.admin-canteen-pending-img img { width: 100%; height: 100%; object-fit: cover; }
+.admin-canteen-pending-copy { flex: 1; min-width: 200px; display: grid; gap: 4px; }
+.admin-canteen-pending-copy p { margin: 0; font-size: 13.5px; line-height: 1.6; }
+.admin-canteen-pending-copy small { color: var(--text-3); font-size: 12px; }
+.admin-drawer-stack { display: grid; gap: 14px; }
+.admin-fieldset { display: grid; gap: 10px; margin: 4px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface-2); }
+.admin-fieldset legend { padding: 0 6px; color: var(--text-2); font-size: 12px; font-weight: 600; }
+.admin-dish-card { display: grid; gap: 10px; }
+.admin-merge-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.admin-merge-bar select { flex: 1 1 180px; min-height: 34px; }
+.admin-photo-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.admin-photo-item { display: grid; gap: 4px; width: 84px; }
+.admin-photo-item img { width: 84px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line-2); }
+.admin-photo-btns { display: flex; justify-content: space-between; font-size: 11.5px; }
+.admin-two-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.admin-emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; }
+.admin-emoji-cell { margin: 0; padding: 8px 6px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface-2); text-align: center; }
+.admin-emoji-cell img { width: 52px; height: 52px; object-fit: contain; }
+.admin-emoji-cell figcaption { margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 11px; }
+@media (max-width: 1180px) { .social-shell .admin-feature-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); } .admin-two-cards { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .social-shell .admin-feature-matrix { grid-template-columns: minmax(0, 1fr); } .admin-store-row { flex-wrap: wrap; } .admin-row-actions { width: 100%; justify-content: flex-start; } }
 .social-shell .admin-kpi-top { display: flex; align-items: center; justify-content: space-between; color: var(--text-2); font-size: 13px; }
 .social-shell .admin-kpi-icon { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: color-mix(in oklab, var(--kpi) 12%, var(--surface)); color: var(--kpi); }
 .social-shell .admin-kpi.tone-danger { --kpi: var(--danger); }

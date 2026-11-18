@@ -164,7 +164,7 @@ func (s *CheckInCompensationService) ListForUser(userID uint) ([]CheckInCompensa
 	return items, nil
 }
 
-// Claim 按活动和补偿日期领取经验。用户行锁和唯一索引共同保证重复请求不重复发放。
+// Claim 在同一事务发放补偿经验并恢复签到事实，沿用签到操作的用户行锁。
 func (s *CheckInCompensationService) Claim(userID, campaignID uint, checkInDate, now time.Time) (CheckInCompensationClaimResult, error) {
 	result := CheckInCompensationClaimResult{}
 	checkInDate = checkInDateOnly(checkInDate)
@@ -194,11 +194,36 @@ func (s *CheckInCompensationService) Claim(userID, campaignID uint, checkInDate,
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+		if checkInDate.After(today) {
+			return errors.New("当前不可领取：补偿签到日期未到")
+		}
 		claim := models.CheckInCompensationClaim{
 			CampaignID: campaignID, UserID: userID, CheckInDate: checkInDate, ExpReward: eligibility.ExpReward, ClaimedAt: now,
 		}
 		if err := tx.Create(&claim).Error; err != nil {
 			return err
+		}
+		fact := tx.Model(&models.CheckIn{}).Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}, {Name: "check_in_date"}}, DoNothing: true,
+		}).Create(map[string]interface{}{
+			"user_id": userID, "check_in_date": checkInDate, "streak_days": 1,
+			"exp_earned": 0, "is_compensation": true, "created_at": now,
+		})
+		if fact.Error != nil {
+			return fact.Error
+		}
+		if fact.RowsAffected != 0 {
+			var before models.UserCheckInStat
+			if err := tx.Select("makeup_cards_earned").Where("user_id = ?", userID).Find(&before).Error; err != nil {
+				return err
+			}
+			stat, _, err := models.RecomputeCheckInStreaks(tx, userID)
+			if err != nil {
+				return err
+			}
+			if err := models.GrantCheckInMakeupCards(tx, userID, today, stat.MakeupCardsEarned-before.MakeupCardsEarned); err != nil {
+				return err
+			}
 		}
 		if err := tx.Create(&models.UserExperienceLedger{
 			UserID: userID, SourceType: "checkin_compensation", SourceID: claim.ID, Delta: eligibility.ExpReward,

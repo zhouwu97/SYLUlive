@@ -621,3 +621,79 @@ test("详情失败仍可返回，闲置详情使用集市上下文，窄屏侧�
   }
   expect(state.writes).toEqual([]); expect(state.errors).toEqual([]);
 });
+
+test("三点菜单对齐 App：填充符昵称清洗、匿名帖不提供不看 TA、屏蔽管理恢复及详情版主/精华/删评契约完整", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const state = await setup(page);
+  state.post.author.nickname = "\u1160\u3164\uFFA0";
+  state.post.post_type = "campus_life";
+  state.root.author_id = 3;
+  let pendingFeatured = false;
+  let hiddenAuthors = [{ author_id: 7, nickname: "\u1160\u3164", hidden_at: "2026-11-18T00:00:00Z" }];
+
+  await page.route("**/api/water/sections/campus_life/my-permission", (route) =>
+    route.fulfill({ json: { permission: { is_moderator: true, can_pin_post: true, can_delete_post: true, can_mute_user: true } } }),
+  );
+  await page.route("**/api/posts/675/featured-application-status", (route) =>
+    route.fulfill({ json: { has_pending: pendingFeatured } }),
+  );
+  await page.route("**/api/posts/675/featured-applications", (route) => {
+    pendingFeatured = true;
+    state.writes.push({ path: "/api/posts/675/featured-applications", method: route.request().method(), body: route.request().postData() || "" });
+    return route.fulfill({ status: 201, json: { id: 1 } });
+  });
+  await page.route("**/api/water/sections/campus_life/posts/675/pin", (route) => {
+    state.writes.push({ path: "/api/water/sections/campus_life/posts/675/pin", method: route.request().method(), body: route.request().postData() || "" });
+    state.post.water_section_pinned = true;
+    return route.fulfill({ json: { message: "ok" } });
+  });
+  await page.route("**/api/replies/101", (route) => {
+    state.writes.push({ path: "/api/replies/101", method: route.request().method(), body: "" });
+    state.root.status = "deleted";
+    return route.fulfill({ json: { message: "删除成功" } });
+  });
+  await page.route("**/api/feed/hidden-authors", (route) => route.fulfill({ json: { authors: hiddenAuthors } }));
+  await page.route("**/api/feed/authors/7/hidden", (route) => {
+    state.writes.push({ path: "/api/feed/authors/7/hidden", method: route.request().method(), body: "" });
+    if (route.request().method() === "DELETE") hiddenAuthors = [];
+    return route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto("community");
+  await page.locator(".community-feed .feed-card").first().getByRole("button", { name: "帖子更多操作", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: /不看 TA/ })).toContainText("首页不再展示 校园同学 的帖子");
+
+  state.post.is_anonymous = true;
+  await page.reload();
+  await page.locator(".community-feed .feed-card").first().getByRole("button", { name: "帖子更多操作", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: /不看 TA/ })).toHaveCount(0);
+  state.post.is_anonymous = false;
+
+  await page.goto("post/675");
+  await page.locator(".post-toolbar .post-more summary").click();
+  await expect(page.getByRole("button", { name: "设为版块置顶", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "设为版块精华", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "版主删除", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "禁言作者", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "申请精华", exact: true }).click();
+  await page.getByLabel("推荐/自荐加精理由").fill("干货详实，值得全站推荐");
+  await page.getByRole("button", { name: "提交精华申请", exact: true }).click();
+  await page.locator(".post-toolbar .post-more summary").click();
+  await expect(page.getByRole("button", { name: "精华申请待审核", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
+
+  const commentRow = page.getByRole("article", { name: "林同学的评论" });
+  await commentRow.locator(".post-comment-more summary").click();
+  await commentRow.getByRole("button", { name: "删除评论", exact: true }).click();
+  await page.getByRole("dialog", { name: "删除评论" }).getByRole("button", { name: "确认删除", exact: true }).click();
+  expect(state.writes.some((item) => item.path === "/api/replies/101" && item.method === "DELETE")).toBe(true);
+
+  await page.goto("profile");
+  await page.getByRole("button", { name: "屏蔽管理", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "屏蔽管理（不看 TA）" });
+  await expect(dialog).toContainText("校园同学");
+  await dialog.getByRole("button", { name: "恢复显示", exact: true }).click();
+  await expect(dialog).toContainText("没有屏蔽的同学");
+  expect(state.writes.some((item) => item.path === "/api/feed/authors/7/hidden" && item.method === "DELETE")).toBe(true);
+  expect(state.errors).toEqual([]);
+});

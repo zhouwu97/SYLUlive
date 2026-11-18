@@ -5,6 +5,9 @@ import { captureAuthSession, entity, errorText, query, rows, time, useApi, write
 import { Empty, Form, Icon, QueryState, Tabs, useUI } from "./ui";
 import { useAuth } from "./auth";
 import { ServerAvatar } from "./server-avatar";
+import { displayName, userHref } from "./user-level";
+import { PostCardMenu } from "./post-menu";
+import type { FeedSource } from "./feed-feedback";
 import { MediaGallery } from "./media";
 import { mobilePostTime, useMobile } from "./mobile";
 import "./polls.css";
@@ -111,12 +114,14 @@ export function Polls() {
   );
 }
 // 列表卡片（首页信息流、投票列表）需要进入详情；详情页内复用时不再自链接。
-export function PollCard({ post, compact = false, linked = compact }: { post: Entity; compact?: boolean; linked?: boolean }) {
+export function PollCard({ post, compact = false, linked = compact, feedSource }: { post: Entity; compact?: boolean; linked?: boolean; feedSource?: FeedSource }) {
   const ui = useUI(), auth = useAuth(), qc = useQueryClient();
   const mobile = useMobile();
   const location = useLocation(), navigate = useNavigate();
   const poll = post.poll_meta || {};
-  const authorName = post.author?.nickname || "匿名用户";
+  const authorName = displayName(post.author?.nickname, "匿名用户");
+  const rawAuthorHref = post.is_anonymous ? null : userHref(post.author_id || post.author?.id, auth.user?.id, post.author?.nickname);
+  const authorHref = rawAuthorHref && rawAuthorHref !== location.pathname ? rawAuthorHref : null;
   const options: Entity[] = poll.options || [];
   const savedChoices = options.filter(option => option.is_chosen).map(option => option.id as number);
   const [draft, setDraft] = useState<number[] | null>(null);
@@ -141,7 +146,7 @@ export function PollCard({ post, compact = false, linked = compact }: { post: En
   // 与普通帖子卡片一致：点卡片空白处进入详情；选项、按钮、图片等交互区保持原行为。
   function openDetail(event: MouseEvent<HTMLElement>) {
     if (!linked || event.defaultPrevented || event.button !== 0) return;
-    if ((event.target as Element).closest("a, button, input, label, select, textarea, fieldset, .poll-media, [role='button']")) return;
+    if ((event.target as Element).closest("a, button, input, label, select, textarea, fieldset, .poll-media, .post-card-menu, [role='button']")) return;
     if (window.getSelection()?.toString()) return;
     navigate(detailPath, { state: detailState });
   }
@@ -179,9 +184,10 @@ export function PollCard({ post, compact = false, linked = compact }: { post: En
     <article className={`panel poll-card ${compact ? "mobile-feed-poll" : ""} ${linked ? "poll-card-linked" : ""} ${active ? "poll-card-active" : "poll-card-closed"}`} aria-labelledby={titleId} aria-busy={busy} onClick={openDetail}>
       <div className="participation-heading">
         <div className="poll-author">
-          <span className="poll-avatar"><ServerAvatar src={post.author?.avatar} name={authorName} /></span>
-          <div className="poll-author-copy"><b>{authorName}</b>{post.created_at && <time dateTime={post.created_at} title={time(post.created_at)}>{compact || mobile ? mobilePostTime(post.created_at) : time(post.created_at)}</time>}</div>
+          {authorHref ? <Link className="poll-avatar" to={authorHref} state={detailState} aria-label={`查看 ${authorName} 的主页`}><ServerAvatar src={post.author?.avatar} name={authorName} /></Link> : <span className="poll-avatar"><ServerAvatar src={post.author?.avatar} name={authorName} /></span>}
+          <div className="poll-author-copy">{authorHref ? <Link className="author-name-link" to={authorHref} state={detailState}><b>{authorName}</b></Link> : <b>{authorName}</b>}{post.created_at && <time dateTime={post.created_at} title={time(post.created_at)}>{compact || mobile ? mobilePostTime(post.created_at) : time(post.created_at)}</time>}</div>
           <span className="poll-type-label">校园投票</span>
+          {compact && <PostCardMenu post={post} feedSource={feedSource} />}
         </div>
       <h3 id={titleId}>{linked ? <Link to={detailPath} state={detailState}>{post.title}</Link> : post.title}</h3>
       {post.content && <p className="participation-description">{post.content}</p>}
@@ -420,7 +426,7 @@ function TeamDetail({ id }: { id: number }) {
           {rows(applications.data, "applications").map((a) => (
             <div className="list-row" key={a.id}>
               <div className="list-main">
-                <b>{a.user?.nickname || a.applicant?.nickname}</b>
+                <b>{displayName(a.user?.nickname || a.applicant?.nickname)}</b>
                 <p>{a.message}</p>
                 <span>{a.status}</span>
               </div>

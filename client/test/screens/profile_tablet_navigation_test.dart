@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shenliyuan/features/theme_pack/theme_workshop_screen.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
@@ -537,7 +538,8 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
     expect(tester.takeException(), isNull);
     await _tapEntry(tester, '个性主题');
-    expect(find.byType(AppearanceSettingsScreen), findsOneWidget);
+    expect(find.byType(ThemeWorkshopScreen), findsOneWidget);
+    expect(tester.getTopLeft(find.byType(ThemeWorkshopScreen)).dx, 492);
     expect(tester.takeException(), isNull);
   });
 }

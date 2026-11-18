@@ -149,10 +149,11 @@ func (h *CheckInHandler) GetCalendar(c *gin.Context) {
 	records := make([]gin.H, 0, len(calendar.Records))
 	for _, record := range calendar.Records {
 		records = append(records, gin.H{
-			"check_in_date": services.FormatCheckInDate(record.CheckInDate),
-			"streak_days":   record.StreakDays,
-			"exp_earned":    record.ExpEarned,
-			"is_makeup":     record.IsMakeup,
+			"check_in_date":   services.FormatCheckInDate(record.CheckInDate),
+			"streak_days":     record.StreakDays,
+			"exp_earned":      record.ExpEarned,
+			"is_makeup":       record.IsMakeup,
+			"is_compensation": record.IsCompensation,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{

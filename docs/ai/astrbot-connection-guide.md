@@ -1,17 +1,17 @@
 # SYLUlive 接入 AstrBot：使用、部署和排查
 
-官网将「用户绑定 · 签到查询」与「社区机器人」分开。`/web/connected-apps` 以及旧的 `?user_code=...` QQ 链接默认进入本人绑定；`/web/connected-apps?purpose=bot` 进入独立社区机器人管理。部署接入教程仍可从 `/web/connected-apps?guide=astrbot` 直达，未登录也能阅读。插件各项权限与维护操作的权威入口仍为 [插件 README](../../astrbot_plugin_sylulive/README.md)、[接口契约](../../server/API.md)和[运维手册](../ops/astrbot-integrations.md)。
+官网个人主页的「QQ 助手与社区机器人」进入统一管理页。选择「绑定我的 QQ」使用本人签到、成绩和二课，选择「管理社区机器人」配置机器人、核对 AstrBot 授权和查看运行状态。`/web/connected-apps` 与旧 QQ 连接码链接定位到本人绑定，`?purpose=bot` 定位到社区机器人，`?guide=astrbot` 定位到接入教程。接入教程可在未登录时阅读。插件权限与维护操作见 [插件 README](../../astrbot_plugin_sylulive/README.md)、[接口契约](../../server/API.md)和[运维手册](../ops/astrbot-integrations.md)。
 
 ## 只需在 QQ 签到或查询本人资料
 
 QQ 连接与本站签到无需学校核验。学校连接失败、没有成绩或二课资料，都只影响对应查询；基础连接继续有效。资料修复入口为 `/web/connected-apps?purpose=personal&view=data`，在网页处理学校登录和同步后重试，无需重绑 QQ。功能边界见 [ADR 004](../design/adr/004-qq-connection-independent-of-academics.md)。
 
 1. 在原 QQ 聊天发送 `/sylu-connect`，打开属于本人的临时链接，登录自己的校园账号并核对连接码。
-2. 在「用户绑定 · 签到查询」按需勾选本人签到、成绩或二课权限，再核对并授权。签到不需要同步成绩，也不需要创建机器人或打开 AstrBot 后台。
+2. 在「绑定我的 QQ」按需勾选本人签到、成绩或二课权限，再核对并授权。本站登录即可使用签到，教务资料由本人查询功能单独同步。
 3. 回原聊天发送 `/sylu-status` 核对绑定；`/sylu-checkin` 签到，`/sylu-checkin-status` 查询签到状态。绑定不会开启每日自动签到。
 4. 成绩与二课需先在「个人资料同步」同步摘要，再使用 `/sylu-grades`、`/sylu-erke`，结果不是学校实时查询。功能及群入口还受部署者规则控制。
 
-两种用途目前复用同一执行端连接。各自页面只编辑当前用途的权限，并保留另一用途已批准的权限；切换用途不会自动授权。替换或断开连接会撤销该连接全部权限，必须按页面影响说明确认。无需更换执行端时，直接修改已有连接权限，不重新绑定。
+同一执行端可支持两种用途。修改当前分类的权限会保留另一类已批准权限。替换或断开连接会撤销该连接的全部权限，按页内说明确认。已有执行端可直接修改连接权限。
 
 ## 先看懂当前状态
 

@@ -73,6 +73,10 @@ go run ./cmd
 
 签到补签卡规则见 [用户接口说明](API.md#2-用户与个人中心-user)。迁移 `20261025_04_checkin_makeup_card_schedule` 在启动时按历史签到事实重建「每段连续签到第 7 天首张、之后每隔 14 天再发一张」的汇总，保留额外发放数量并按补签事实保留已使用数量，不修改用户经验或经验流水。迁移 `20261109_05_checkin_streak_reconciliation` 在启动时自动校验全量账号的连续签到事实与汇总一致性，对不一致的账号重算修正并写入审计流水；也可通过超级管理员接口 `POST /api/admin/checkin/rebuild-all` 或命令行 `go run ./cmd/reconcile_checkin_streaks [--inspect|--apply]` 随时执行对账与修复。若旧规则或补签合并前已经发放的奖励多于重建结果，差额转入 `makeup_cards_granted` 保留，后续重建不重复补发。整批重建与迁移标记在同一事务内，可失败重试；也兼容已存在 `20261025_03_checkin_weekly_makeup_cards` 标记的数据。升级期间应停止旧版实例写入签到；回退旧版前应同步恢复备份中的签到事实和汇总，避免旧版周期与新版余额混用。
 
+迁移 `20261118_06_checkin_compensation_streak` 为已领取补偿且缺少当日签到记录的用户补写零经验事实，重算连续天数和补签卡汇总，保留既有签到和经验流水。迁移只回填升级时已经到达的业务日，与版本标记在同一事务内。新请求从补偿日当天起可领取。发布前将 `INTEGRATION_TEST_POSTGRES_DSN` 指向本机回环地址上的可丢弃库 `sylulive_integration_test`，运行 `go test ./internal/services -run 'TestCheckInCompensationRestoresStreak|TestIntegrationCheckIn'`，核对领取、重复运行和已有签到。单独回退本次版本时，旧版沿用已补齐的签到记录，补偿标记需要新版接口返回。
+
+迁移 `20261118_07_checkin_makeup_card_expiry` 新增 `check_in_makeup_card_grants`，根据近期签到奖励日和累计已用量回填仍有效的卡。缺少发放日的历史保留额度从升级业务日计一个月。迁移标记和账本在同一事务中写入，重试或重建签到汇总不会续期。升级时停止旧版签到写入。旧版 Go 服务只维护累计数量，回退期间暂停签到、补签和补偿写入，保留批次表与迁移标记。恢复新版 Go 服务后再恢复写入。
+
 ## 测试
 
 ~~~bash

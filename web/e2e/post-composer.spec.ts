@@ -219,6 +219,7 @@ test('独立发帖页返回原筛选与阅读位置，长正文自动增高而�
   await setup(page);
   await page.route('**/api/posts?**', route => route.fulfill({json: {posts: Array.from({length: 20}, (_, i) => ({id: i + 100, title: `阅读位置测试${i}`, content: '保留当前筛选与阅读位置。', author: {nickname: '合成同学'}})), has_more: false}}));
   await page.goto('community?type=study&q=test');
+  await expect(page.getByRole('button', {name: '我的账号', exact: true})).toBeVisible();
   await expect(page.locator('.community-feed .feed-card')).toHaveCount(20);
   // 让首次路由的滚动恢复和布局先完成，再建立用户的阅读位置。
   await page.locator('.community-feed .feed-card').nth(3).scrollIntoViewIfNeeded();
@@ -300,7 +301,7 @@ test('发布请求已发送时浏览器后退仍保留待核对状态，重开�
   } finally {release();}
 });
 
-for (const width of [390, 1440]) test(`评论继续使用原来的输入弹框，不进入发帖页 ${width}`, async ({page}, info) => {
+for (const width of [390, 1440]) test(`评论在手机使用输入弹框、桌面原地展开，不进入发帖页 ${width}`, async ({page}, info) => {
   await setup(page);
   await page.setViewportSize({width, height: 900});
   let comment = '';
@@ -311,14 +312,24 @@ for (const width of [390, 1440]) test(`评论继续使用原来的输入弹框�
   });
   await page.goto('post/77');
   await page.locator('.post-comment-start').click();
-  const dialog = page.getByRole('dialog', {name: '发表评论', exact: true});
-  await expect(dialog.locator('.reply-emoji-composer')).toHaveCount(1);
-  await expect(dialog.locator('.post-composer')).toHaveCount(0);
-  await expect(dialog.locator('.media-upload-picker-compact')).toHaveCount(0);
-  await dialog.getByLabel('写下你的回复', {exact: true}).fill('继续用原来的评论框');
-  await page.screenshot({path: info.outputPath(`comment-original-${width}.png`), animations: 'disabled'});
-  await dialog.getByRole('button', {name: '发布评论', exact: true}).click();
-  await expect(dialog).toHaveCount(0);
+  if (width <= 600) {
+    const dialog = page.getByRole('dialog', {name: '发表评论', exact: true});
+    await expect(dialog.locator('.reply-emoji-composer')).toHaveCount(1);
+    await expect(dialog.locator('.post-composer')).toHaveCount(0);
+    await expect(dialog.locator('.media-upload-picker-compact')).toHaveCount(0);
+    await dialog.getByLabel('写下你的回复', {exact: true}).fill('继续用原来的评论框');
+    await page.screenshot({path: info.outputPath(`comment-original-${width}.png`), animations: 'disabled'});
+    await dialog.getByRole('button', {name: '发布评论', exact: true}).click();
+    await expect(dialog).toHaveCount(0);
+  } else {
+    const inline = page.locator('.post-comment-input .reply-inline-composer');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(inline).toHaveCount(1);
+    await expect(page.locator('.post-composer')).toHaveCount(0);
+    await inline.getByLabel('写下你的回复', {exact: true}).fill('继续用原来的评论框');
+    await page.screenshot({path: info.outputPath(`comment-original-${width}.png`), animations: 'disabled'});
+    await inline.getByRole('button', {name: '发布评论', exact: true}).click();
+  }
   await expect(page).toHaveURL(/\/post\/77$/);
   expect(comment).toContain('继续用原来的评论框');
 });

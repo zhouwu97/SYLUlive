@@ -232,11 +232,13 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
           {!rows(q.data, "tickets").length && <Empty />}
         </QueryState>
       </div>
-      <Pagination
-        page={page}
-        hasMore={rows(q.data, "tickets").length === 20}
-        onChange={(page) => setParams({ status, page: String(page) })}
-      />
+      {(page > 1 || rows(q.data, "tickets").length === 20) && (
+        <Pagination
+          page={page}
+          hasMore={rows(q.data, "tickets").length === 20}
+          onChange={(page) => setParams({ status, page: String(page) })}
+        />
+      )}
     </>
   );
 }

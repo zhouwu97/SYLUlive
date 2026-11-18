@@ -46,7 +46,7 @@ export function CanteenDetailPage() {
             <span className="canteen-cover-caption"><Icon name="image" size={14}/>店铺实景</span>
           </div>
           <div className="canteen-detail-overview">
-            <span className="canteen-detail-badge"><Icon name={offline?'clock':'canteen'} size={15}/>{offline?'怀旧存档 · 已下架':'同学真实评价'}</span>
+            {offline&&<span className="canteen-detail-badge"><Icon name="clock" size={14}/>怀旧存档 · 已下架</span>}
             <h1>{shop.name || '食堂详情'}</h1>
             <p className="canteen-detail-location"><Icon name="campus" size={16}/>{location || '位置暂未设置'}</p>
             <div className="canteen-detail-rating">
@@ -63,14 +63,14 @@ export function CanteenDetailPage() {
             </div>
           </div>
         </section>
-        {offline&&<div className="canteen-detail-notice"><Icon name="clock" size={19}/><div><b>留住记忆里的味道</b><p>{OFFLINE_READONLY_TEXT}{shop.offline_reason?`下架原因：${shop.offline_reason}`:''}</p></div></div>}
+        {offline&&<div className="canteen-detail-notice"><Icon name="clock" size={18}/><div><b>已下架只读存档</b><p>{OFFLINE_READONLY_TEXT}{shop.offline_reason?`下架原因：${shop.offline_reason}`:''}</p></div></div>}
         <div className="canteen-detail-columns">
           <section className="canteen-detail-reviews" aria-labelledby="canteen-reviews-title">
-            <div className="canteen-detail-section-head"><div><h2 id="canteen-reviews-title">就餐评价</h2><p>看看同学们吃过之后怎么说</p></div>{!offline&&<button className="link-btn" onClick={compose}>写下我的体验<Icon name="edit" size={15}/></button>}</div>
+            <div className="canteen-detail-section-head"><h2 id="canteen-reviews-title">就餐评价</h2>{!offline&&<button className="link-btn" onClick={compose}>写评价<Icon name="edit" size={14}/></button>}</div>
             <CanteenReviews key={`${id}:${auth.user?.id??'guest'}`} id={id} offline={offline}/>
           </section>
           <section className={`canteen-detail-dishes${dishItems.length?'':' is-empty'}`} aria-labelledby="canteen-dishes-title">
-            <div className="canteen-detail-section-head"><div><h2 id="canteen-dishes-title">店铺菜品</h2><p>{offline?'存档里的菜品与实拍':'从同学的实拍里发现好味道'}</p></div>{!dishes.isPending&&!dishes.error&&<span className="canteen-dish-count">{dishItems.length} 道</span>}</div>
+            <div className="canteen-detail-section-head"><h2 id="canteen-dishes-title">店铺菜品</h2>{!dishes.isPending&&!dishes.error&&<span className="canteen-dish-count">{dishItems.length} 道</span>}</div>
             <QueryState query={dishes}>
               {dishItems.length?<div className="canteen-detail-dish-list">{dishItems.map(dish=><button type="button" className="canteen-detail-dish" key={dish.id} onClick={()=>ui.open(dish.name,<DishDetail key={`${id}:${dish.id}`} canteenId={id} id={dish.id}/>)} aria-label={`查看菜品 ${dish.name}`}>
                 <DishImage src={dish.cover_image||dish.image} name={dish.name}/>

@@ -234,7 +234,7 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
   const writes = await fixture(page);
   await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await expect(
-    page.getByRole("heading", { name: "社区机器人管理", exact: true }),
+    page.getByRole("region", { name: "管理社区机器人", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "当前没有有效连接" }),

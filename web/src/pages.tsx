@@ -1,6 +1,7 @@
 import { useAcademic } from "./academic";
 import { PublicPosts, isPublicPost } from "./campus-chrome";
 import { ServerAvatar } from "./server-avatar";
+import { displayName } from "./user-level";
 import { useMobile } from "./mobile";
 import { MobileHome } from "./mobile-home";
 import { useDesktopHomeFeed } from "./desktop-home-feed";
@@ -117,11 +118,11 @@ function DesktopDashboard() {
   return <div className="campus-home">
     <section className="home-hero" aria-label="今日">
       <div className="home-hero-top">
-        <div><h1>{greeting}，{auth.user?.nickname || "同学"}。</h1><p>看看同学们的新鲜事，也分享你的校园日常。</p></div>
+        <h1>{greeting}，{auth.user ? displayName(auth.user.nickname, "同学") : "同学"}</h1>
         <Link className="home-week" to="/campus" aria-label={`${dayLabel(academic.data.termStart)}，查看校园通知与服务`}><Icon name="schedule" size={14} />{dayLabel(academic.data.termStart)}</Link>
       </div>
       <nav className="home-quick" aria-label="常用入口">
-        {HOME_QUICK.map(([id, label]) => <Link key={id} to={`/${id}`}><span className={`home-quick-icon tone-${id}`}><Icon name={id} size={20} /></span>{label}</Link>)}
+        {HOME_QUICK.map(([id, label]) => <Link key={id} to={`/${id}`}><span className={`home-quick-icon tone-${id}`}><Icon name={id} size={17} /></span>{label}</Link>)}
       </nav>
     </section>
     <section className="campus-composer" aria-label="分享校园日常">
@@ -142,7 +143,6 @@ function DesktopDashboard() {
           : posts.hasNextPage ? <button className="btn" disabled={posts.isFetching} onClick={() => posts.fetchNextPage()}>{posts.isFetching ? "正在加载…" : "加载更多"}</button>
             : feed.length > 0 && <span>已经看完啦</span>)}
     </div>
-    <Link className="browse-community" to="/community">查看全部动态 <span aria-hidden="true">→</span></Link>
   </div>;
 }
 

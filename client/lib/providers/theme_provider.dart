@@ -1601,7 +1601,10 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> applyInstalledTheme(
-      InstalledTheme theme, Set<ThemeGroup> groups) {
+    InstalledTheme theme,
+    Set<ThemeGroup> groups, {
+    bool resetMissingGroups = false,
+  }) {
     final selected = Set<ThemeGroup>.of(groups)
         .intersection(ThemeGroup.applicable)
         .intersection(theme.manifest.groups);
@@ -1615,8 +1618,13 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       _trialGeneration++;
       _trial = null;
       final snapshot = _snapshotAppearance(prefs);
-      final next =
-          _appearance.apply(theme.manifest, selected, theme.directory);
+      var next = _appearance.apply(theme.manifest, selected, theme.directory);
+      if (resetMissingGroups) {
+        // 本机编辑时，移除草稿里的最后一个资源也属于一次修改。
+        for (final group in groups.difference(selected)) {
+          next = next.without(group);
+        }
+      }
       await ThemeFontRegistry.ensureLoaded(next.group(ThemeGroup.font));
       if (selected.contains(ThemeGroup.widgets)) {
         await _recordManualWidgetThemesBeforeThemeApply(prefs);

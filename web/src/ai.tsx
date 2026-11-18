@@ -139,7 +139,7 @@ export function AiPage() {
       </Head>
       <div className={`ai-shell${historyOpen?' history-open':''}`}>
         <aside className="ai-side">
-          <div className="ai-side-title"><Icon name="ai" size={20}/><b>校园问答</b><span>AI</span></div>
+          <div className="ai-side-title"><Icon name="ai" size={18}/><b>校园问答</b></div>
           <button
             className="btn primary full-width"
             disabled={busy}
@@ -179,14 +179,13 @@ export function AiPage() {
           <p className="ai-side-note"><Icon name="info" size={14}/>回答仅供参考，请核对官方信息。</p>
         </aside>
         <div className="ai-main">
-          <div className="ai-conversation-heading"><Icon name="ai" size={18}/><b>{conversations.find(c=>String(c.id)===conversation)?.title||'新的校园问答'}</b><span>{busy?'正在生成':historyLoading?'读取中':'校园公共信息'}</span></div>
+          <div className="ai-conversation-heading"><b>{conversations.find(c=>String(c.id)===conversation)?.title||'新的校园问答'}</b><span>{busy?'正在生成':historyLoading?'读取中':'公共信息会话'}</span></div>
           <div className="ai-content" aria-busy={historyLoading || busy}>
             {historyLoading && <p role="status">正在读取历史会话…</p>}
             {!answer && !busy ? (
               <div className="ai-welcome">
-                <span className="ai-welcome-symbol"><Icon name="ai" size={34}/></span>
-                <h2 className="ai-title">有什么校园问题？</h2>
-                <p className="muted">可以问校园服务、活动与公开信息。</p>
+                <h2 className="ai-title">提问校园公开信息</h2>
+                <p className="muted">查询学校通知、办事流程、竞赛安排或课程复习规划。</p>
                 <div className="ai-suggest">
                   {[
                     "如何查询学校通知？",
@@ -195,7 +194,7 @@ export function AiPage() {
                     "如何高效安排复习？",
                   ].map((s) => (
                     <button type="button" key={s} onClick={() => setQuestion(s)}>
-                      <Icon name="community" size={17}/><span>{s}</span><Icon name="chevron" size={14}/>
+                      <span>{s}</span>
                     </button>
                   ))}
                 </div>

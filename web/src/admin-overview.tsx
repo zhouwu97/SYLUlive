@@ -9,9 +9,13 @@ export const adminSources = {
   ticketStats: "/api/admin/feedback/tickets/stats",
   pendingTickets: query("/api/admin/feedback/tickets", { status_filter: "pending", page: 1, limit: 20 }),
   pendingReports: "/api/reports?status=pending",
-  papers: "/api/admin/exam-papers",
+  papers: "/api/admin/exam-papers?status=pending",
   canteens: "/api/canteens/pending",
   teachers: "/api/teachers/pending",
+  featured: "/api/admin/featured-applications?status=pending&page=1&limit=20",
+  appeals: "/api/admin/appeals/review",
+  emoji: "/api/admin/emoji-packs?status=pending&page=1&limit=20",
+  security: "/api/admin/security/overview?range=24h",
   awards: "/api/admin/competition-awards/verifications",
   metrics: query("/api/admin/ai/metrics", { days: 7, page: 1, limit: 50 }),
   integrations: "/api/admin/integrations?state=active&page=1",
@@ -26,18 +30,27 @@ export function useAdminCounts() {
   const papers = useApi(adminSources.papers);
   const canteens = useApi(adminSources.canteens);
   const teachers = useApi(adminSources.teachers);
+  const featured = useApi(adminSources.featured);
+  const appeals = useApi(adminSources.appeals);
+  const emoji = useApi(adminSources.emoji);
+  const security = useApi(adminSources.security);
   const awards = useApi(role === "super_admin" ? adminSources.awards : null);
   const integrations = useApi(adminSources.integrations);
   const len = (q: { data?: unknown; error: Error | null }, ...keys: string[]) => (q.data !== undefined && !q.error ? rows(q.data, ...keys).length : undefined);
   const pendingTickets = !stats.error && stats.data ? Number(stats.data.pending_count) || 0 : undefined;
+  const secHigh = !security.error && security.data && typeof security.data.actionable_high_count === "number" ? Number(security.data.actionable_high_count) : undefined;
   return {
     feedback: pendingTickets,
     unviewed: !stats.error && stats.data ? Number(stats.data.unviewed_count) || 0 : undefined,
     reports: len(reports, "reports"),
-    papers: len(papers, "papers"),
-    canteens: len(canteens, "canteens"),
-    teachers: len(teachers, "teachers"),
-    awards: role === "super_admin" ? len(awards, "verifications") : undefined,
+    papers: len(papers, "papers", "items"),
+    canteens: len(canteens, "canteens", "items"),
+    teachers: len(teachers, "teachers", "items"),
+    featured: len(featured, "items", "applications"),
+    appeals: len(appeals, "appeals", "items"),
+    emoji: len(emoji, "items", "packs"),
+    security: secHigh,
+    awards: role === "super_admin" ? len(awards, "verifications", "items") : undefined,
     // 助手授权接口缺失（线上后端版本落后）时侧栏打一个提醒点。
     integrationsDown: integrations.error instanceof ApiError ? integrations.error.status === 404 : false,
   };
@@ -55,10 +68,11 @@ export function AdminOverview({ open }: { open: (tab: string, extra?: Record<str
   const papers = useApi(adminSources.papers);
   const canteens = useApi(adminSources.canteens);
   const teachers = useApi(adminSources.teachers);
+  const security = useApi(adminSources.security);
   const metrics = useApi(adminSources.metrics);
   const integrations = useApi(adminSources.integrations);
   const logs = useApi(superAdmin ? adminSources.logs : null);
-  const sources = [stats, tickets, reports, papers, canteens, teachers, metrics, integrations, ...(superAdmin ? [logs] : [])];
+  const sources = [stats, tickets, reports, papers, canteens, teachers, security, metrics, integrations, ...(superAdmin ? [logs] : [])];
 
   const todo: Todo[] = [
     ...rows(tickets.data, "tickets").map(t => ({ kind: "工单", tone: "danger", title: t.title, sub: `${t.ticket_no || ""}${t.user?.nickname ? ` · ${t.user.nickname}` : ""}`, since: t.created_at, tab: "feedback", extra: { ticket: String(t.id) } })),
@@ -84,9 +98,29 @@ export function AdminOverview({ open }: { open: (tab: string, extra?: Record<str
       <div className="admin-kpis">
         <Kpi label="待受理工单" value={counts.feedback} icon="feedback" tone="danger" sub={stats.error ? "读取失败，请刷新重试" : counts.feedback === undefined ? "读取中" : oldestTicket ? `最久等待 ${waitText(oldestTicket)}` : counts.feedback ? "进入工单查看" : "没有待受理工单"} onClick={() => open("feedback")} />
         <Kpi label="待处理举报" value={counts.reports} icon="info" tone="warn" sub={reports.error ? "读取失败，请刷新重试" : counts.reports === undefined ? "读取中" : lateReports ? `${lateReports} 条超过 3 天` : "没有积压"} onClick={() => open("reports")} />
-        <Kpi label="待审核" value={reviewTotal} icon="file" tone="violet" sub={`试卷 ${counts.papers ?? "—"} · 食堂 ${counts.canteens ?? "—"} · 教师 ${counts.teachers ?? "—"}`} onClick={() => open(counts.canteens ? "canteens" : counts.papers ? "papers" : "teachers")} quiet />
-        <Kpi label="AI 成功率" value={m ? `${((Number(m.success_rate) || 0) * 100).toFixed(1)}%` : undefined} icon="trending" tone="success" sub={m ? `近 7 天 ${Number(m.requests || 0).toLocaleString("zh-CN")} 次请求` : metrics.error ? "读取失败" : "读取中"} onClick={() => open("metrics")} quiet />
+        <Kpi label="待审核" value={reviewTotal} icon="file" tone="violet" sub={`试卷 ${counts.papers ?? "—"} · 食堂 ${counts.canteens ?? "—"} · 教评 ${counts.teachers ?? "—"}`} onClick={() => open(counts.canteens ? "canteens" : counts.papers ? "papers" : "teachers")} quiet />
+        <Kpi label="安全与 AI" value={counts.security ? `${counts.security} 高危` : (m && m.success_rate != null ? `${((Number(m.success_rate) || 0) * 100).toFixed(1)}%` : counts.security === 0 ? "正常" : undefined)} icon={counts.security ? "lock" : "trending"} tone={counts.security ? "danger" : "success"} sub={counts.security ? "24h 内有高危事件待处置" : m && m.requests != null ? `近 7 天 ${Number(m.requests || 0).toLocaleString("zh-CN")} 次 AI 请求` : security.error && metrics.error ? "读取失败" : "系统运行平稳"} onClick={() => open(counts.security ? "security" : "metrics")} quiet={!counts.security} />
       </div>
+      <section className="admin-feature-matrix" aria-label="快捷治理入口">
+        {([
+          ["canteens", "食堂管理", "档口审核、标签、菜品与实拍", "canteen"],
+          ["appeals", "法庭与复审", "申诉终审裁决与隐藏帖整改", "flag"],
+          ["featured", "精华与置顶", "加精审核、全站置顶与版块图标", "bookmark"],
+          ["teachers", "教评与资料", "教师、专业、课评与重名归并", "profile"],
+          ["emoji", "表情审核", "表情包上架与创作者资质", "palette"],
+          ["sections", "水帖版块", "版块资料、标签、称号与版主", "community"],
+          ["security", "安全中心", "高危告警处置与临时来源封禁", "lock"],
+          ["team", "管理员协作", "团队名录、候选提权与投票", "admin"],
+        ] as const).map(([id, title, desc, icon]) => (
+          <button key={id} type="button" className="admin-feature-tile" onClick={() => open(id)}>
+            <span className="admin-feature-icon"><Icon name={icon} size={20} /></span>
+            <span className="admin-feature-copy">
+              <b>{title}</b>
+              <small>{desc}</small>
+            </span>
+          </button>
+        ))}
+      </section>
       <div className="admin-dash">
         <section className="panel admin-card" aria-labelledby="admin-queue-title">
           <div className="admin-card-head"><h3 id="admin-queue-title">处理队列</h3><span>按等待时间排序，最久的在前</span></div>

@@ -175,3 +175,33 @@ test('账号切换时旧内容不能覆盖新账号的资料与等级', async ({
     await expect(page.getByRole('heading', { name: '还没有发布帖子', exact: true })).toBeVisible();
   } finally { release(); }
 });
+
+test('点击帖子头像与昵称进入他人主页，空白昵称不塌空，支持关注与返回原帖', async ({ page }) => {
+  await setup(page);
+  let followed = false;
+  const peer = { id: 77, nickname: '晨光熹微', exp: 1200, credit_score: 100, total_likes_received: 58, following_count: 6, followers_count: 19, background: '/uploads/profile-portrait.svg' };
+  await page.route('**/api/posts/501', route => route.fulfill({ json: { post: { id: 501, board_id: 1, title: '点击头像进主页验证', content: '详情页正文。', author_id: 77, author: { ...peer, nickname: '   \u3164  ' }, created_at: '2026-11-16T09:00:00+08:00' } } }));
+  await page.route('**/api/posts/501/replies**', route => route.fulfill({ json: { replies: [{ id: 91, author_id: 88, author: { id: 88, nickname: '评论同学', exp: 200 }, content: '点击评论头像也能进主页', created_at: '2026-11-16T09:10:00+08:00' }], total: 1 } }));
+  await page.route('**/api/user/77', route => route.fulfill({ json: { ...peer, nickname: '   ', is_following: followed } }));
+  await page.route('**/api/user/77/posts**', route => route.fulfill({ json: [{ id: 601, board_id: 1, title: 'TA 的校园动态', content: '公开动态内容', author_id: 77, author: peer, created_at: '2026-11-15T10:00:00+08:00' }] }));
+  await page.route('**/api/user/77/market-posts**', route => route.fulfill({ json: { items: [{ id: 602, board_id: 2, post_type: 'marketplace_sell', title: 'TA 的闲置台灯', price: 25, status: 'normal', author_id: 77, author: peer, created_at: '2026-11-14T10:00:00+08:00' }], total: 1, sold: 0 } }));
+  await page.route('**/api/user/77/follow', route => { followed = route.request().method() === 'POST'; return route.fulfill({ json: { message: 'ok' } }); });
+
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.goto('post/501');
+  // 空白与填充字符昵称回退为“校园同学”，作者行与右栏标题不塌空
+  await expect(page.locator('.post-full .author-name-line b')).toHaveText('校园同学');
+  await expect(page.locator('.post-context-name b')).toHaveText('校园同学');
+  await page.locator('.post-full .post-avatar-link').click();
+  await expect(page).toHaveURL(/\/user\/77$/);
+  await expect(page.getByRole('heading', { name: '校园同学', exact: true })).toBeVisible();
+  await expect(page.getByText('TA 的校园动态', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'TA 的闲置', exact: true }).click();
+  await expect(page.getByText('TA 的闲置台灯', { exact: true })).toBeVisible();
+  const followBtn = page.getByRole('button', { name: '关注 TA', exact: true });
+  await followBtn.click();
+  await expect(page.getByRole('button', { name: '已关注', exact: true })).toBeVisible();
+  await page.screenshot({ path: '.codex-captures/profile/public-user-1440.png', fullPage: true });
+  await page.getByRole('button', { name: '返回', exact: true }).click();
+  await expect(page).toHaveURL(/\/post\/501$/);
+});

@@ -10,28 +10,29 @@ import {Management,managementTabs} from './management';
 import {IntegrationManagement} from './integration-management';
 import {AdminTickets} from './admin-tickets';
 import {AdminOverview,useAdminCounts} from './admin-overview';
+import {AdminCanteenModule} from './admin-canteen';
+import {AdminAcademicReviews,AdminAppealsAndRectification,AdminCompetitionsModule,AdminEmojiModeration,AdminFeaturedAndPins,AdminLotteryModule,AdminSecurityCenter,AdminTeamCollaboration} from './admin-governance';
 import {useMobile} from './mobile';
 import {ServerAvatar} from './server-avatar';
+import { useSlidingIndicator } from './desktop-motion';
 import {waitLevel,waitText} from './admin-time';
 import {canteenGovernanceReasons,governanceReasonPresets,reportHandlePayload,reportNote,reportPreview,reportReasonLabel,reportSnapshot,reportStatuses,reportTargetHref,reportTargetLabel} from './report-labels';
 // 审核队列：[标签名, 列表接口, 分区说明]
 const queues:Record<string,[string,string,string]>={
   reports:['举报处理','/api/reports','核对被举报内容的快照后忽略或确认违规，每条举报只能处理一次。'],
-  papers:['试卷审核','/api/admin/exam-papers','核对试卷信息和预览后通过或驳回。'],
-  awards:['获奖核验','/api/admin/competition-awards/verifications','核对获奖材料后通过或驳回。'],
-  canteens:['食堂审核','/api/canteens/pending','审核用户提交的食堂信息。'],
-  teachers:['教师审核','/api/teachers/pending','审核用户提交的教师信息。'],
+  papers:['试卷审核','/api/admin/exam-papers','核对试卷信息和预览后通过、驳回或管理已上架试卷。'],
+  awards:['获奖核验','/api/admin/competition-awards/verifications','核对获奖证明材料后通过或驳回（超级管理员专属）。'],
 };
 const reportFilters:[string,string][]=[['pending','待处理'],['handled','已处理'],['ignored','已忽略'],['all','全部']];
-const superOnly=new Set(['awards','bots','users','releases','logs']);
-// 桌面端分组导航：[分组名, [模块 id, 名称, 图标]]；超级管理员专属模块对普通管理员不显示。
+const superOnly=new Set(['awards','bots','users','releases','logs','lottery']);
+// 桌面端分组导航：[分组名, [模块 id, 名称, 图标]]；对照 App 管理处与超级管理员完整能力矩阵。
 const groups:[string,[string,string,string][]][]=[
   ['',[['overview','工作台','dashboard']]],
-  ['待处理',[['feedback','工单','feedback'],['reports','举报','info']]],
-  ['内容审核',[['papers','试卷审核','file'],['canteens','食堂审核','canteen'],['teachers','教师审核','profile'],['awards','获奖核验','competition']]],
-  ['站点运营',[['notices','公告','bell'],['sections','版块','community'],['metrics','AI 指标','trending']]],
+  ['待处理',[['feedback','工单','feedback'],['reports','举报','info'],['appeals','法庭与复审','flag'],['security','安全中心','lock']]],
+  ['内容审核',[['canteens','食堂管理','canteen'],['papers','试卷审核','file'],['teachers','教评与资料','profile'],['emoji','表情审核','palette'],['featured','精华与置顶','bookmark'],['awards','获奖核验','competition']]],
+  ['站点运营',[['notices','公告','bell'],['sections','水帖版块','community'],['competitions','竞赛管理','competition'],['team','管理员协作','admin'],['metrics','AI 指标','trending']]],
   ['集成',[['integrations','助手授权','monitor']]],
-  ['超级管理员',[['users','用户','admin'],['bots','所属 AI','ai'],['releases','版本发布','phone'],['logs','操作日志','clock']]],
+  ['超级管理员',[['users','用户管理','admin'],['bots','所属 AI','ai'],['lottery','抽奖管理','polls'],['releases','版本发布','phone'],['logs','操作日志','clock']]],
 ];
 const allModules=groups.flatMap(([,items])=>items);
 export function Admin(){
@@ -67,10 +68,19 @@ export function Admin(){
     :tab==='integrations'?<IntegrationManagement key={auth.user.id}/>
     :tab==='feedback'?(mobile?<Feedback admin/>:<AdminTickets/>)
     :!visible(tab)?<Empty icon="lock" title="此模块需要超级管理员权限"/>
+    :tab==='canteens'?<AdminCanteenModule/>
+    :tab==='security'?<AdminSecurityCenter/>
+    :tab==='appeals'?<AdminAppealsAndRectification/>
+    :tab==='featured'?<AdminFeaturedAndPins/>
+    :tab==='teachers'?<AdminAcademicReviews/>
+    :tab==='emoji'?<AdminEmojiModeration/>
+    :tab==='team'?<AdminTeamCollaboration/>
+    :tab==='competitions'?<AdminCompetitionsModule/>
+    :tab==='lottery'?<AdminLotteryModule/>
     :queues[tab]?<Queue kind={tab}/>
     :managementTabs.some(([id])=>id===tab)?<Management kind={tab}/>
     :<Empty title="管理模块不存在"/>;
-  const tabs:[string,string][]=[["integrations","助手授权"],["feedback","工单"],...Object.entries(queues).filter(([id])=>visible(id)).map(([id,[name]])=>[id,name] as [string,string]),...managementTabs.filter(([id])=>visible(id))];
+  const tabs:[string,string][]=allModules.filter(([id])=>id!=='overview'&&visible(id)).map(([id,label])=>[id,label]);
   const name=allModules.find(([id])=>id===tab)?.[1];
   // 内容保留同一父节点，窗口跨断点时不卸载正在编辑的表单。
   return <div className={mobile?'admin-page':'admin-console'}>
@@ -86,37 +96,45 @@ export function Admin(){
 }
 function AdminNav({tab,isSuper,visible,navRef}:{tab:string;isSuper:boolean;visible:(id:string)=>boolean;navRef:RefObject<HTMLDivElement|null>}){
   const auth=useAuth(),counts=useAdminCounts() as Record<string,number|boolean|undefined>;
+  const slidingRef=useSlidingIndicator<HTMLDivElement>('.nav-item.active');
   return <aside className="admin-nav" aria-label="管理模块" ref={navRef}>
     <Link className="admin-back" to="/"><Icon name="chevron" size={14}/>返回校园</Link>
     <div className="admin-who">
       <ServerAvatar key={auth.user?.id} src={auth.user?.avatar} name={auth.user?.nickname||'管理员'}/>
       <span><b>{auth.user?.nickname||'管理员'}</b><small>{isSuper?'超级管理员':'管理员'}</small></span>
     </div>
-    {groups.map(([label,items])=>{
-      const shown=items.filter(([id])=>visible(id));
-      if(!shown.length)return null;
-      return <div className="nav-section" key={label||'home'}>
-        {label&&<div className="nav-label">{label}</div>}
-        {shown.map(([id,text,icon])=>{
-          const n=counts[id];
-          return <Link key={id} to={`/admin?tab=${id}`} className={`nav-item ${tab===id?'active':''}`} aria-current={tab===id?'page':undefined}>
-            <span className="nav-icon"><Icon name={icon}/></span>
-            <span className="nav-text">{text}</span>
-            {typeof n==='number'&&<span className={`admin-badge ${n>0&&(id==='feedback'||id==='reports')?'is-hot':''}`} aria-label={`${n} 项待处理`}>{n}</span>}
-            {id==='integrations'&&counts.integrationsDown&&<span className="admin-dot" title="接口未部署" aria-label="接口异常"/>}
-          </Link>;
-        })}
-      </div>;
-    })}
+    <div className="admin-nav-groups sidebar-scroll" ref={slidingRef}>
+      {groups.map(([label,items])=>{
+        const shown=items.filter(([id])=>visible(id));
+        if(!shown.length)return null;
+        return <div className="nav-section" key={label||'home'}>
+          {label&&<div className="nav-label">{label}</div>}
+          {shown.map(([id,text,icon])=>{
+            const n=counts[id];
+            return <Link key={id} to={`/admin?tab=${id}`} className={`nav-item ${tab===id?'active':''}`} aria-current={tab===id?'page':undefined}>
+              <span className="nav-icon"><Icon name={icon}/></span>
+              <span className="nav-text">{text}</span>
+              {typeof n==='number'&&<span className={`admin-badge ${n>0&&(id==='feedback'||id==='reports'||id==='security')?'is-hot':''}`} aria-label={`${n} 项待处理`}>{n}</span>}
+              {id==='integrations'&&counts.integrationsDown&&<span className="admin-dot" title="接口未部署" aria-label="接口异常"/>}
+            </Link>;
+          })}
+        </div>;
+      })}
+    </div>
   </aside>;
 }
 function Queue({kind}:{kind:string}){
   const meta=queues[kind],ui=useUI(),[params,setParams]=useSearchParams();
-  // 举报默认只看待处理：已处理的举报再次提交会被服务端拒绝。
-  const filter=kind==='reports'?(params.get('status')||'pending'):'';
-  const q=useApi(kind==='reports'&&filter!=='all'?`${meta[1]}?status=${encodeURIComponent(filter)}`:meta[1]);
-  const list=rows(q.data,'reports','verifications','canteens','teachers','papers');
-  // 同一目标的待处理举报：处理其中一条后服务端会把其余几条一并结案，这里提前提示。
+  // 举报默认只看待处理；试卷支持切换待审核与已上架。
+  const filter=kind==='reports'?(params.get('status')||'pending'):kind==='papers'?(params.get('status')||'pending'):'';
+  const keyword=params.get('keyword')||'';
+  const apiPath=kind==='reports'&&filter!=='all'
+    ?`${meta[1]}?status=${encodeURIComponent(filter)}`
+    :kind==='papers'
+      ?`${meta[1]}?status=${encodeURIComponent(filter)}${keyword?`&keyword=${encodeURIComponent(keyword)}`:''}`
+      :meta[1];
+  const q=useApi(apiPath);
+  const list=rows(q.data,'reports','verifications','papers','items');
   const sameTarget=(x:Entity)=>list.filter(r=>r.status==='pending'&&r.target_type===x.target_type&&r.target_id===x.target_id).length;
   const open=(x:Entity)=>ui.open(meta[0],<Review kind={kind} item={x}/>);
   return <>
@@ -125,10 +143,20 @@ function Queue({kind}:{kind:string}){
       <button className="btn" disabled={q.isFetching} onClick={()=>void q.refetch()}>刷新</button>
     </Head>
     {kind==='reports'&&<div className="admin-filter"><Tabs value={filter} tabs={reportFilters} onChange={status=>setParams({tab:kind,status})}/></div>}
+    {kind==='papers'&&<div className="admin-toolbar">
+      <div className="admin-seg" role="group" aria-label="试卷状态">
+        <button type="button" aria-pressed={filter==='pending'} onClick={()=>setParams({tab:kind,status:'pending'})}>待审核</button>
+        <button type="button" aria-pressed={filter==='published'} onClick={()=>setParams({tab:kind,status:'published'})}>已上架试卷</button>
+      </div>
+      <form className="admin-search" onSubmit={e=>{e.preventDefault();setParams({tab:kind,status:filter,keyword:String(new FormData(e.currentTarget).get('keyword')||'').trim()});}}>
+        <input name="keyword" aria-label="搜索课程或试卷" defaultValue={keyword} placeholder="搜索课程名称" />
+        <button className="btn">搜索</button>
+      </form>
+    </div>}
     <QueryState query={q}><div className={kind==='reports'?'admin-reports':'panel admin-list'} aria-busy={q.isFetching}>
       {list.map(x=>kind==='reports'?<ReportRow key={x.id} item={x} same={sameTarget(x)}/>:<div className="list-row admin-row" key={x.id}>
-        <div className="list-main"><b>{x.title||x.name||x.award_name||`#${x.id}`}</b>{(x.reason||x.description||x.comment||x.status)&&<p>{x.reason||x.description||x.comment||x.status}</p>}<small>{time(x.created_at)}</small></div>
-        <button className="btn" onClick={()=>open(x)}>处理</button>
+        <div className="list-main"><b>{x.title||x.course_name||x.name||x.award_name||`#${x.id}`}</b>{(x.reason||x.description||x.academic_year||x.comment||x.status)&&<p>{[x.academic_year,x.semester,x.exam_type,x.reason||x.description||x.comment||x.status].filter(Boolean).join(' · ')}</p>}<small>{time(x.created_at)}</small></div>
+        <button className="btn" onClick={()=>open(x)}>{kind==='papers'&&filter==='published'?'维护':'处理'}</button>
       </div>)}
       {!list.length&&<div className={kind==='reports'?'panel':''}><Empty title={kind==='reports'&&filter==='pending'?'没有待处理的举报':'当前队列为空'}/></div>}
     </div></QueryState>
@@ -200,19 +228,33 @@ function Review({kind,item}:{kind:string;item:Entity}){
 }
 function ReviewForm({kind,item}:{kind:string;item:Entity}){
   const ui=useUI();
+  const publishedPaper=kind==='papers'&&item.status==='published';
+  if(publishedPaper){
+    return <div className="admin-drawer-stack">
+      <a className="btn" href={`/api/exam-papers/${item.id}/preview`} target="_blank" rel="noreferrer">预览 PDF 试卷</a>
+      <Form fields={paperFields(item)} submit="保存试卷元数据" onSubmit={async data=>{
+        await write(`/api/admin/exam-papers/${item.id}`,{course_name:data.course_name,academic_year:data.academic_year,semester:data.semester,exam_type:data.exam_type},'PATCH');
+        await ui.act(async()=>{},'试卷资料已更新');ui.close();
+      }}/>
+      <Form fields={[{name:'reason',label:'下架说明（必填）',type:'textarea',required:true}]} submit="下架该试卷" onSubmit={async data=>{
+        await write(`/api/admin/exam-papers/${item.id}/unpublish`,{reason:data.reason});
+        await ui.act(async()=>{},'试卷已下架');ui.close();
+      }}/>
+    </div>;
+  }
   const fields:Field[]=[...(kind==='papers'?paperFields(item):[]),
     {name:'decision',label:'处理决定',options:[['approve','通过'],['reject','驳回']]},
-    {name:'reason',label:'处理说明',type:'textarea',required:true}];
-  const summary=[item.title||item.name||item.competition_title,item.reason||item.description||item.award_name].filter(Boolean).join(' · ');
+    {name:'reason',label:'处理说明（驳回必填，通过选填）',type:'textarea'}];
+  const summary=[item.title||item.course_name||item.name||item.competition_title,item.reason||item.description||item.award_name].filter(Boolean).join(' · ');
   return <><p className="details-text">{summary}</p>
     {kind==='papers'&&<a className="btn" href={`/api/exam-papers/${item.id}/preview`} target="_blank" rel="noreferrer">授权预览试卷</a>}
     {kind==='awards'&&(item.evidence_file_ids||[]).map((fileId:number)=><a className="btn" key={fileId} href={`/api/admin/competition-awards/verifications/${item.id}/evidence/${fileId}`} target="_blank" rel="noreferrer">核验材料 #{fileId}</a>)}
     <Form fields={fields} onSubmit={async data=>{
-      let path='',body:Entity={reason:data.reason},method='POST';
-      if(kind==='papers'){path=`/api/admin/exam-papers/${item.id}/${data.decision}`;body={reason:data.reason,course_name:data.course_name,academic_year:data.academic_year,semester:data.semester,exam_type:data.exam_type};}
-      else if(kind==='awards')path=`/api/admin/competition-awards/verifications/${item.id}/${data.decision}`;
-      else if(kind==='canteens'){path=`/api/canteens/${item.id}/${data.decision==='approve'?'approve':'pending'}`;method=data.decision==='approve'?'POST':'DELETE';}
-      else if(kind==='teachers'){path=`/api/teachers/${item.id}/${data.decision==='approve'?'verify':'reject'}`;method=data.decision==='approve'?'PUT':'DELETE';}
+      const reason=String(data.reason||'').trim();
+      if(data.decision==='reject'&&!reason)throw new Error('驳回时请填写处理说明');
+      let path='',body:Entity={reason},method='POST';
+      if(kind==='papers'){path=`/api/admin/exam-papers/${item.id}/${data.decision}`;body={reason,course_name:data.course_name,academic_year:data.academic_year,semester:data.semester,exam_type:data.exam_type};}
+      else if(kind==='awards'){path=`/api/admin/competition-awards/verifications/${item.id}/${data.decision}`;body=data.decision==='approve'?{note:reason}:{reason};}
       await write(path,body,method);await ui.act(async()=>{},'处理结果已保存');ui.close();
     }}/>
   </>;

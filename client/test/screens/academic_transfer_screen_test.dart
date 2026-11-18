@@ -30,6 +30,7 @@ class _Camera extends MobileScannerPlatform {
   final frames = StreamController<BarcodeCapture?>.broadcast(sync: true);
   StartOptions? options;
   bool permissionDenied = false;
+  BarcodeCapture? galleryCapture;
   String? last;
   @override
   Stream<BarcodeCapture?> get barcodesStream => frames.stream;
@@ -58,6 +59,13 @@ class _Camera extends MobileScannerPlatform {
   Future<void> stop() async {}
   @override
   Future<void> dispose() async {}
+
+  @override
+  Future<BarcodeCapture?> analyzeImage(
+    String path, {
+    List<BarcodeFormat> formats = const <BarcodeFormat>[],
+  }) async =>
+      galleryCapture;
 
   void detect(String raw, {required bool inWindow}) {
     if (options?.detectionSpeed == DetectionSpeed.noDuplicates) {
@@ -364,6 +372,52 @@ void main() {
     await tester.tap(find.text('核对同步资料'));
     await tester.pumpAndSettle();
     expect(find.text('已连接到网页'), findsOneWidget);
+    expect(server.uploaded, isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('连续从相册选错二维码时每次都显示错误提示', (tester) async {
+    final previous = MobileScannerPlatform.instance;
+    final camera = _Camera()
+      ..galleryCapture = const BarcodeCapture(barcodes: [
+        Barcode(
+          rawValue: 'https://example.invalid/other',
+          format: BarcodeFormat.qrCode,
+        ),
+      ]);
+    MobileScannerPlatform.instance = camera;
+    const gallery = MethodChannel('plugins.flutter.io/image_picker');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(gallery, (_) async => 'fixture.png');
+    addTearDown(() async {
+      messenger.setMockMethodCallHandler(gallery, null);
+      MobileScannerPlatform.instance = previous;
+      await camera.frames.close();
+    });
+    final server = _Server();
+    await _mount(tester, server, _Loader(_bundle), camera: true);
+    final message = find.textContaining('这不是网页课表的同步二维码');
+    for (var attempt = 0; attempt < 2; attempt++) {
+      await tester.tap(find.byTooltip('从相册识别'));
+      await tester.pumpAndSettle();
+      expect(message, findsOneWidget);
+      final view =
+          tester.state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger));
+      view.removeCurrentSnackBar();
+      await tester.pumpAndSettle();
+    }
+    expect(server.requests, isEmpty);
+    camera.galleryCapture = const BarcodeCapture(barcodes: [
+      Barcode(
+        rawValue: 'https://sylulive.online/web/app-scan#v=1&s=$_session&k=$_webPublic',
+        format: BarcodeFormat.qrCode,
+      ),
+    ]);
+    await tester.tap(find.byTooltip('从相册识别'));
+    await tester.pumpAndSettle();
+    expect(find.text('已连接到网页'), findsOneWidget);
+    expect(server.requests.where((r) => r.path.endsWith('/claim')).length, 1);
     expect(server.uploaded, isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();

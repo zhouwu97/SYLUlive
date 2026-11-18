@@ -1,13 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as path;
@@ -19,6 +20,7 @@ import '../../theme/app_palette.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_dialog.dart';
+import '../../widgets/global_background_wrapper.dart';
 import 'launcher_icon_service.dart';
 import 'theme_appearance.dart';
 import 'theme_appearance_exporter.dart';
@@ -30,6 +32,7 @@ import 'theme_pack_codec.dart';
 import 'theme_pack_store.dart';
 import 'theme_presentation.dart';
 import 'theme_resolver.dart';
+import 'theme_section.dart';
 import 'theme_submission_screen.dart';
 import 'theme_workshop_samples.dart';
 
@@ -43,10 +46,27 @@ enum WorkshopTab {
   icons('图标'),
   font('字体'),
   launcherIcon('桌面图标'),
-  widgets('小部件');
+  widgets('小部件'),
+  packages('主题包');
 
   const WorkshopTab(this.label);
   final String label;
+}
+
+enum _WorkshopCategory {
+  colors('颜色', Icons.colorize_outlined, [WorkshopTab.colors, WorkshopTab.courses]),
+  wallpapers('背景', Icons.wallpaper_outlined, [WorkshopTab.wallpapers]),
+  cards('卡片与页头', Icons.dashboard_customize_outlined,
+      [WorkshopTab.material, WorkshopTab.layout, WorkshopTab.decoration]),
+  navigation('底栏', Icons.space_bar_rounded, [WorkshopTab.icons]),
+  typography('图标与字体', Icons.text_fields_rounded,
+      [WorkshopTab.font, WorkshopTab.launcherIcon, WorkshopTab.widgets]),
+  packages('主题包', Icons.inventory_2_outlined, [WorkshopTab.packages]);
+
+  const _WorkshopCategory(this.label, this.icon, this.tabs);
+  final String label;
+  final IconData icon;
+  final List<WorkshopTab> tabs;
 }
 
 class ThemeWorkshopContrastException implements Exception {
@@ -553,6 +573,20 @@ class ThemeWorkshopStateData {
     Uint8List? renderedLightPng,
     Uint8List? renderedDarkPng,
     bool requireContrastPass = true,
+  }) async =>
+      (await _exportPack(
+        appVersion: appVersion,
+        renderedLightPng: renderedLightPng,
+        renderedDarkPng: renderedDarkPng,
+        requireContrastPass: requireContrastPass,
+      )).$1;
+
+  Future<(Uint8List, PreparedThemePack)> _exportPack({
+    required String appVersion,
+    Uint8List? renderedLightPng,
+    Uint8List? renderedDarkPng,
+    required bool requireContrastPass,
+    Set<ThemeGroup> applying = const {},
   }) async {
     final issues = checkAllContrast();
     if (requireContrastPass && issues.isNotEmpty) {
@@ -562,6 +596,8 @@ class ThemeWorkshopStateData {
     final rawFiles = <String, Uint8List>{};
     final localToArchive = <String, String>{};
     var seq = 0;
+    bool includes(ThemeGroup group) =>
+        applying.isEmpty || applying.contains(group);
 
     Future<String> registerAsset(
       String localPath,
@@ -570,26 +606,18 @@ class ThemeWorkshopStateData {
     }) async {
       final key = '$folder::$localPath';
       if (localToArchive.containsKey(key)) return localToArchive[key]!;
-      var bytes = await File(localPath).readAsBytes();
+      var bytes = isWallpaper && ThemeProvider.isBundledAssetBackground(localPath)
+          ? Uint8List.sublistView(await rootBundle.load(
+              ThemeProvider.resolveBundledAssetPath(localPath)))
+          : await File(localPath).readAsBytes();
       var ext = path.extension(localPath).toLowerCase().replaceFirst('.', '');
       if (ext == 'jpeg') ext = 'jpg';
       if (ext.isEmpty) ext = folder == 'fonts' ? 'ttf' : 'png';
 
       if (isWallpaper) {
-        final processed = await Isolate.run(() {
-          final decoded = img.decodeImage(bytes);
-          if (decoded == null) return null;
-          if (decoded.width <= 2560 && decoded.height <= 2560) return null;
-          final scale = 2560 / math.max(decoded.width, decoded.height);
-          final resized = img.copyResize(
-            decoded,
-            width: math.max(1, (decoded.width * scale).round()),
-            height: math.max(1, (decoded.height * scale).round()),
-          );
-          return Uint8List.fromList(img.encodeJpg(resized, quality: 88));
-        });
-        if (processed != null) {
-          bytes = processed;
+        final resized = await _resizeWallpaper(bytes);
+        if (resized != null) {
+          bytes = resized;
           ext = 'jpg';
         }
       }
@@ -603,7 +631,9 @@ class ThemeWorkshopStateData {
     Future<Map<String, dynamic>> buildManifestVariant(Brightness b) async {
       final v = variant(b);
       Map<String, dynamic>? wallsOut;
-      if (v.wallpapers.values.any((w) => w != null)) {
+      if (includes(ThemeGroup.wallpapers) &&
+          (applying.contains(ThemeGroup.wallpapers) ||
+              v.wallpapers.values.any((w) => w != null))) {
         wallsOut = {};
         for (final slot in const ['global', 'home', 'schedule', 'me']) {
           final item = v.wallpapers[slot];
@@ -636,7 +666,8 @@ class ThemeWorkshopStateData {
       }
 
       Map<String, dynamic>? decosOut;
-      if (v.decorations.values.any((d) => d != null)) {
+      if (includes(ThemeGroup.decoration) &&
+          v.decorations.values.any((d) => d != null)) {
         decosOut = {};
         for (final slot in const ['home', 'campus', 'me']) {
           final item = v.decorations[slot];
@@ -674,14 +705,18 @@ class ThemeWorkshopStateData {
         'tokens': v.effectiveTokens(b),
         'coursePalette': v.coursePalette,
         if (wallsOut != null) 'wallpapers': wallsOut,
-        if (v.componentOpacity < 1.0 || v.frostedEnabled) ...{
+        if (includes(ThemeGroup.material) &&
+            (applying.contains(ThemeGroup.material) ||
+                v.componentOpacity < 1.0 ||
+                v.frostedEnabled)) ...{
           'componentOpacity': v.componentOpacity,
           'frostedGlass': {
             'enabled': v.frostedEnabled,
             'strength': v.frostedEnabled ? v.frostedStrength : 0.0,
           },
         },
-        if (v.cardStyle != null && v.cardStyle!.isNotEmpty)
+        if (includes(ThemeGroup.material) &&
+            v.cardStyle != null && v.cardStyle!.isNotEmpty)
           'cardStyle': v.cardStyle,
         if (decosOut != null) 'decorations': decosOut,
       };
@@ -692,7 +727,8 @@ class ThemeWorkshopStateData {
 
     Map<String, dynamic>? bottomNavOut;
     final hasAnyNavIcon = navIcons.values.any((pair) => pair != null);
-    if (bottomNavStyle != null || hasAnyNavIcon) {
+    if (includes(ThemeGroup.navigation) &&
+        (bottomNavStyle != null || hasAnyNavIcon)) {
       final iconsOut = <String, dynamic>{};
       for (final slot in const ['home', 'market', 'schedule', 'campus', 'me']) {
         final pair = navIcons[slot];
@@ -713,7 +749,7 @@ class ThemeWorkshopStateData {
     }
 
     Map<String, dynamic>? fontOut;
-    if (font != null && font!['regular'] != null) {
+    if (includes(ThemeGroup.font) && font != null && font!['regular'] != null) {
       fontOut = {
         'name': font!['name'] as String? ?? '自定义字体',
         'regular': await registerAsset(font!['regular'] as String, 'fonts'),
@@ -724,7 +760,8 @@ class ThemeWorkshopStateData {
     }
 
     Map<String, dynamic>? launcherOut;
-    if (builtinLauncherIcon != null || customLauncherIconPath != null) {
+    if (includes(ThemeGroup.launcherIcon) &&
+        (builtinLauncherIcon != null || customLauncherIconPath != null)) {
       launcherOut = {
         if (builtinLauncherIcon != null) 'builtin': builtinLauncherIcon,
         if (customLauncherIconPath != null)
@@ -767,13 +804,44 @@ class ThemeWorkshopStateData {
       if (bottomNavOut != null) 'bottomNav': bottomNavOut,
       if (fontOut != null) 'font': fontOut,
       if (launcherOut != null) 'launcherIcon': launcherOut,
-      if (layout.isNotEmpty) 'layout': layout,
+      if (includes(ThemeGroup.layout) && layout.isNotEmpty) 'layout': layout,
     };
 
     final manifest = ThemeManifest.parse(manifestJson, appVersion: safeVersion);
     final encoded = await ThemePackCodec.encode(manifest, rawFiles);
-    await ThemePackCodec.decode(encoded, appVersion: safeVersion);
-    return encoded;
+    final prepared = await ThemePackCodec.decode(encoded, appVersion: safeVersion);
+    return (encoded, prepared);
+  }
+
+  static Future<Uint8List?> _resizeWallpaper(Uint8List bytes) async {
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    ui.ImageDescriptor? descriptor;
+    ui.Codec? codec;
+    ui.Image? image;
+    try {
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      final longest = math.max(descriptor.width, descriptor.height);
+      if (longest <= 2560) return null;
+      final scale = 2560 / longest;
+      codec = await descriptor.instantiateCodec(
+        targetWidth: math.max(1, (descriptor.width * scale).round()),
+        targetHeight: math.max(1, (descriptor.height * scale).round()),
+      );
+      image = (await codec.getNextFrame()).image;
+      final pixels = (await image.toByteData(format: ui.ImageByteFormat.rawStraightRgba))!;
+      final width = image.width;
+      final height = image.height;
+      return Isolate.run(() => Uint8List.fromList(img.encodeJpg(
+            img.Image.fromBytes(width: width, height: height, bytes: pixels.buffer,
+                bytesOffset: pixels.offsetInBytes, numChannels: 4),
+            quality: 88,
+          )));
+    } finally {
+      image?.dispose();
+      codec?.dispose();
+      descriptor?.dispose();
+      buffer.dispose();
+    }
   }
 
   static Future<Uint8List> _fallbackPreviewPng(Map<String, dynamic> variant) =>
@@ -858,6 +926,7 @@ class ThemeWorkshopScreen extends StatefulWidget {
     this.saveExportFile,
     this.shareExportFile,
     this.appVersion,
+    this.deviceSettingsBuilder,
   });
 
   final ThemeWorkshopStateData? initialState;
@@ -868,6 +937,7 @@ class ThemeWorkshopScreen extends StatefulWidget {
   final Future<void> Function(String fileName, Uint8List bytes, Rect? origin)?
       shareExportFile;
   final String? appVersion;
+  final WidgetBuilder? deviceSettingsBuilder;
 
   @override
   State<ThemeWorkshopScreen> createState() => _ThemeWorkshopScreenState();
@@ -903,6 +973,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
 
   late ThemeWorkshopDraftStore _draftStore;
   late ThemeWorkshopStateData _state;
+  late Map<ThemeGroup, String> _appliedGroups;
   Brightness _brightness = Brightness.light;
   WorkshopSamplePage _samplePage = WorkshopSamplePage.home;
   WorkshopSampleState _sampleState = WorkshopSampleState.normal;
@@ -930,10 +1001,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
         ThemeWorkshopDraftStore(
           themesDirectory: null,
         );
-    _state = widget.initialState ??
-        (provider != null && provider.appearance.data.isNotEmpty
-            ? ThemeWorkshopStateData.fromAppearance(provider.appearance)
-            : ThemeWorkshopStateData.fromDefault());
+    _state = widget.initialState ?? _currentDraft(provider);
+    _appliedGroups = _groupValues(_state.buildAppearance());
     _brightness = provider?.effectiveBrightness ?? Brightness.light;
     _seedHexController = TextEditingController(
       text: _state.variant(_brightness).seedColor,
@@ -949,6 +1018,52 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
   }
 
   WorkshopVariantDraft get _currentVariant => _state.variant(_brightness);
+
+  static Map<ThemeGroup, String> _groupValues(ThemeAppearance appearance) => {
+        for (final group in ThemeGroup.applicable)
+          if (group != ThemeGroup.launcherIcon && group != ThemeGroup.widgets)
+            group: jsonEncode({...?appearance.group(group)}..remove('source')),
+      };
+
+  ThemeWorkshopStateData _currentDraft(ThemeProvider? provider, {String? draftId}) {
+    if (provider == null) {
+      return ThemeWorkshopStateData.fromDefault(draftId: draftId);
+    }
+    final appearance = provider.persistedAppearance;
+    final draft = ThemeWorkshopStateData.fromAppearance(appearance, draftId: draftId);
+    draft.bottomNavStyle ??= provider.bottomNavStyle.storageValue;
+    String? usablePath(String? raw) {
+      if (raw == null) return null;
+      if (ThemeProvider.isBundledAssetBackground(raw)) return raw;
+      if (!ThemeProvider.isLocalFileBackground(raw)) return null;
+      return raw.startsWith('file://') ? File.fromUri(Uri.parse(raw)).path : raw;
+    }
+
+    if (!provider.usesThemeWallpapers && provider.shouldShowCustomBackground) {
+      final portrait = usablePath(provider.backgroundImage);
+      final landscape = usablePath(provider.landscapeBackgroundImage);
+      if (portrait != null || landscape != null) {
+        for (final variant in [draft.light, draft.dark]) {
+          variant.wallpapers['global'] = {
+            'portrait': portrait ?? landscape,
+            if (landscape != null && portrait != null) 'landscape': landscape,
+            'fit': 'cover',
+            'blur': provider.backgroundBlur.clamp(0.0, 20.0),
+            'scrim': variant == draft.dark ? 0.35 : 0.25,
+          };
+        }
+      }
+    }
+    final material = appearance.group(ThemeGroup.material);
+    if (material == null || material['legacy'] == true) {
+      for (final variant in [draft.light, draft.dark]) {
+        variant.componentOpacity = provider.effectiveComponentOpacity;
+        variant.frostedEnabled = provider.frostedGlass;
+        variant.frostedStrength = provider.frostedGlassStrength;
+      }
+    }
+    return draft;
+  }
 
   void _mutate(VoidCallback fn) {
     setState(() {
@@ -998,6 +1113,9 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
 
   ImageProvider? _resolveLocalImage(String rawPath) {
     if (rawPath.isEmpty) return null;
+    if (ThemeProvider.isBundledAssetBackground(rawPath)) {
+      return AssetImage(ThemeProvider.resolveBundledAssetPath(rawPath));
+    }
     return FileImage(File(rawPath));
   }
 
@@ -1055,9 +1173,17 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
 
   Future<void> _showStartPointMenu() async {
     final provider = context.read<ThemeProvider?>();
-    final installed =
-        provider == null ? const <InstalledTheme>[] : await provider.installedThemes();
-    final drafts = await _draftStore.list();
+    late final List<InstalledTheme> installed;
+    late final List<Map<String, dynamic>> drafts;
+    try {
+      installed = provider == null ? const [] : await provider.installedThemes();
+      drafts = await _draftStore.list();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _bannerMessage = '无法读取本机主题和草稿，请重试。');
+      }
+      return;
+    }
     if (!mounted) return;
 
     final chosen = await showModalBottomSheet<Object>(
@@ -1118,10 +1244,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
       if (chosen == 'default') {
         _state = ThemeWorkshopStateData.fromDefault(draftId: _state.draftId);
       } else if (chosen == 'current' && provider != null) {
-        _state = ThemeWorkshopStateData.fromAppearance(
-          provider.appearance,
-          draftId: _state.draftId,
-        );
+        _state = _currentDraft(provider, draftId: _state.draftId);
+        _appliedGroups = _groupValues(_state.buildAppearance());
       } else if (chosen is InstalledTheme) {
         _state = ThemeWorkshopStateData.fromInstalled(
           chosen,
@@ -1132,6 +1256,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
       }
       _seedHexController.text = _currentVariant.seedColor;
       _highlightedToken = null;
+      _bannerMessage = null;
     });
     _ensureFontLoadedIfAny();
     _scheduleAutosave();
@@ -1310,10 +1435,6 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
               onPressed: () => Navigator.of(dialogCtx).pop('submit'),
               child: const Text('投稿到商城'),
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogCtx).pop('apply'),
-              child: const Text('安装并应用'),
-            ),
           ],
         ),
       ),
@@ -1335,29 +1456,54 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
       _state.tags = selectedTags.toList();
     });
 
+    await _runPackAction(action);
+  }
+
+  Set<ThemeGroup> _editedGroups(ThemeAppearance appearance) => {
+        for (final entry in _groupValues(appearance).entries)
+          if (_appliedGroups[entry.key] != entry.value) entry.key,
+      };
+
+  Future<void> _runPackAction(String action) async {
+    if (_exporting) return;
+    final applying = action == 'apply';
+    final appearance = _state.buildAppearance();
+    final groups = applying ? _editedGroups(appearance) : <ThemeGroup>{};
+    if (applying && groups.isEmpty) return;
+
+    _autosaveTimer?.cancel();
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _exporting = true;
       _bannerMessage = null;
     });
 
     try {
+      final provider = context.read<ThemeProvider>();
+      if (applying) {
+        final previous = (await provider.installedThemes())
+            .where((theme) => theme.manifest.id == _state.themeId)
+            .firstOrNull;
+        if (previous != null && previous.manifest.version >= _state.version) {
+          _state.version = previous.manifest.version + 1;
+        }
+      }
       await _saveDraftNow();
       final appVer = widget.appVersion ?? await _resolveAppVersion();
-      final appearance = _state.buildAppearance();
+      if (!mounted) return;
       final (lightPng, darkPng) = await _captureOffscreenPreviews(appearance);
-      final bytes = await _state.exportPack(
+      final (bytes, prepared) = await _state._exportPack(
         appVersion: appVer,
         renderedLightPng: lightPng,
         renderedDarkPng: darkPng,
+        requireContrastPass: !applying,
+        applying: groups,
       );
       if (!mounted) return;
 
       final fileName =
           '${ThemeAppearanceExporter.sanitizeFileName(_state.name)}.sltheme';
       if (action == 'submit') {
-        final prepared =
-            await ThemePackCodec.decode(bytes, appVersion: appVer);
-        if (!mounted) return;
         await Navigator.of(context).push<void>(
           MaterialPageRoute<void>(
             builder: (_) => ThemeSubmissionScreen(
@@ -1366,32 +1512,17 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
             ),
           ),
         );
-      } else if (action == 'apply') {
-        final provider = context.read<ThemeProvider>();
-        final prepared =
-            await ThemePackCodec.decode(bytes, appVersion: appVer);
-        final existing = await provider.themePacks.findInstalledVersion(
-          prepared.manifest.id,
-          prepared.manifest.version,
+      } else if (applying) {
+        final installed = await provider.installTheme(prepared);
+        await provider.applyInstalledTheme(
+          installed,
+          groups,
+          resetMissingGroups: true,
         );
-        if (existing != null) {
-          _state.version++;
-          final bumpedBytes = await _state.exportPack(
-            appVersion: appVer,
-            renderedLightPng: lightPng,
-            renderedDarkPng: darkPng,
-          );
-          final bumpedPack =
-              await ThemePackCodec.decode(bumpedBytes, appVersion: appVer);
-          final installed = await provider.installTheme(bumpedPack);
-          await provider.applyInstalledTheme(installed, ThemeGroup.applicable);
-        } else {
-          final installed = await provider.installTheme(prepared);
-          await provider.applyInstalledTheme(installed, ThemeGroup.applicable);
-        }
         if (mounted) {
+          _appliedGroups = _groupValues(_state.buildAppearance());
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('已安装并应用《${_state.name}》')),
+            const SnackBar(content: Text('主题已应用')),
           );
         }
       } else if (action == 'share') {
@@ -1437,7 +1568,11 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     } on ThemePackError catch (e) {
       if (mounted) setState(() => _bannerMessage = e.message);
     } catch (_) {
-      if (mounted) setState(() => _bannerMessage = '导出主题包失败，请检查素材后重试。');
+      if (mounted) {
+        setState(() => _bannerMessage = applying
+            ? '主题应用失败，编辑内容已保留，请重试。'
+            : '导出主题包失败，请检查素材后重试。');
+      }
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -1492,11 +1627,236 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     }
   }
 
+
+  void _selectBrightness(Brightness brightness) {
+    setState(() {
+      _brightness = brightness;
+      _seedHexController.text = _currentVariant.seedColor;
+    });
+  }
+
+  Widget _sample(
+    ThemeAppearance appearance, {
+    ValueChanged<WorkshopFocusTarget>? onFocusTarget,
+  }) =>
+      ThemeWorkshopSampleStage(
+        appearance: appearance,
+        brightness: _brightness,
+        assetResolver: _resolveLocalImage,
+        page: _samplePage,
+        sampleState: _sampleState,
+        showDialogOverlay: _showDialogOverlay,
+        onFocusTarget: onFocusTarget,
+      );
+
+  Widget _scaledSample(ThemeAppearance appearance) => FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: 360,
+          height: 570,
+          child: _sample(appearance),
+        ),
+      );
+
+  Future<void> _showFullscreenPreview(ThemeAppearance appearance) =>
+      Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (_) => StatefulBuilder(
+            builder: (routeContext, updatePreview) => Scaffold(
+              appBar: AppBar(title: const Text('全屏预览')),
+              body: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final page in WorkshopSamplePage.values)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: ChoiceChip(
+                                  label: Text(page.label),
+                                  selected: _samplePage == page,
+                                  onSelected: (_) =>
+                                      updatePreview(() => _samplePage = page),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final state in WorkshopSampleState.values)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: ChoiceChip(
+                                  label: Text(state.label),
+                                  selected: _sampleState == state,
+                                  onSelected: (_) => updatePreview(
+                                      () => _sampleState = state),
+                                ),
+                              ),
+                            FilterChip(
+                              label: const Text('弹窗层'),
+                              selected: _showDialogOverlay,
+                              onSelected: (selected) => updatePreview(
+                                  () => _showDialogOverlay = selected),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (_, constraints) =>
+                              constraints.maxHeight < 230
+                                  ? _scaledSample(appearance)
+                                  : _sample(
+                                      appearance,
+                                      onFocusTarget: (target) {
+                                        Navigator.of(routeContext).pop();
+                                        _handlePreviewFocus(target);
+                                      },
+                                    ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ).then((_) {
+        if (mounted) setState(() {});
+      });
+
+  Widget _buildPreviewCard(ThemeAppearance appearance) {
+    final tokens = AppThemeTokens.of(context);
+    final preview = appearance.buildTheme(_brightness).colorScheme;
+    final provider = context.watch<ThemeProvider?>();
+    return AppCardSurface(
+      decoration: BoxDecoration(
+        color: tokens.card,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 112,
+              height: 170,
+              child: Semantics(
+                button: true,
+                label: '打开全屏主题预览',
+                child: InkWell(
+                  key: const ValueKey('workshop-preview-thumbnail'),
+                  onTap: () => _showFullscreenPreview(appearance),
+                  child: ExcludeSemantics(
+                    child: IgnorePointer(child: _scaledSample(appearance)),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('实时预览', style: Theme.of(context).textTheme.titleMedium),
+                  if (provider != null)
+                    Text(
+                      '当前外观 · ${provider.currentAppearanceSummary}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: tokens.textSecondary),
+                    ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final color in [
+                        preview.primary,
+                        preview.secondaryContainer,
+                        preview.tertiaryContainer,
+                        preview.surfaceContainerHighest,
+                      ])
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: color,
+                            border: Border.all(color: tokens.divider),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const SizedBox.square(dimension: 20),
+                        ),
+                    ],
+                  ),
+                  TextButton(
+                    onPressed: () => _showFullscreenPreview(appearance),
+                    child: const Text('全屏预览'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategories(_WorkshopCategory category) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = 6.0;
+        final columns = constraints.maxWidth >= 320 ? 3 : 2;
+        final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final item in _WorkshopCategory.values)
+              SizedBox(
+                width: width,
+                child: ChoiceChip(
+                  key: ValueKey('workshop-category-${item.name}'),
+                  selected: item == category,
+                  showCheckmark: false,
+                  label: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 52),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(item.icon, size: 20),
+                        const SizedBox(height: 3),
+                        Text(item.label, textAlign: TextAlign.center),
+                      ],
+                    ),
+                  ),
+                  onSelected: (_) => setState(() => _activeTab = item.tabs.first),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final appearance = _state.buildAppearance();
-    final viewportHeight = MediaQuery.sizeOf(context).height;
-    final stageHeight = (viewportHeight * 0.34).clamp(185.0, 290.0);
+    final category = _WorkshopCategory.values
+        .firstWhere((item) => item.tabs.contains(_activeTab));
+    final canApply = context.watch<ThemeProvider?>() != null &&
+        !_exporting && !_savingDraft &&
+        _editedGroups(appearance).isNotEmpty;
 
     return PopScope(
       canPop: _forceAllowPop || (!_draftSaveFailed && !_exporting),
@@ -1506,212 +1866,136 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
           unawaited(_confirmDiscardOnSaveFailure());
         }
       },
-      child: Scaffold(
-        appBar: AppBar(
-          titleSpacing: 8,
-          title: const Text('主题工坊'),
-          actions: [
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              tooltip: '切换起点',
-              onPressed: _exporting ? null : _showStartPointMenu,
-              icon: const Icon(Icons.folder_open_outlined),
-            ),
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              tooltip: '制作指南',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const ThemeCreationGuideScreen(),
+      child: GlobalBackgroundWrapper(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            titleSpacing: 8,
+            title: const Text('主题设置'),
+            actions: [
+              FilledButton(
+                key: const ValueKey('workshop-apply'),
+                onPressed: canApply ? () => _runPackAction('apply') : null,
+                child: const Text('应用'),
+              ),
+              PopupMenuButton<String>(
+                enabled: !_exporting,
+                tooltip: '主题设置选项',
+                onSelected: (action) {
+                  if (action == 'start') {
+                    _showStartPointMenu();
+                  } else {
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: action == 'settings'
+                          ? widget.deviceSettingsBuilder!
+                          : (_) => const ThemeCreationGuideScreen(),
+                    ));
+                  }
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'start', child: Text('切换起点')),
+                  const PopupMenuItem(value: 'guide', child: Text('制作指南')),
+                  if (widget.deviceSettingsBuilder != null)
+                    const PopupMenuItem(value: 'settings', child: Text('设备外观偏好')),
+                ],
+              ),
+            ],
+          ),
+          body: SafeArea(
+            top: false,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: Column(
+                  children: [
+                    if (_exporting)
+                      const LinearProgressIndicator(
+                        semanticsLabel: '正在处理主题',
+                      ),
+                    if (_draftSaveFailed || _bannerMessage != null)
+                      Material(
+                        color: Theme.of(context).colorScheme.errorContainer,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Semantics(
+                                  liveRegion: true,
+                                  child: Text(_bannerMessage ?? '草稿未保存'),
+                                ),
+                              ),
+                              if (_draftSaveFailed)
+                                TextButton(
+                                  key: const ValueKey('workshop-draft-retry'),
+                                  onPressed: _savingDraft ? null : _saveDraftNow,
+                                  child: const Text('重试'),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    Expanded(
+                      child: AbsorbPointer(
+                        absorbing: _exporting,
+                        child: SingleChildScrollView(
+                          key: const ValueKey('workshop-scroll'),
+                          padding: const EdgeInsets.fromLTRB(14, 6, 14, 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildPreviewCard(appearance),
+                              const SizedBox(height: 10),
+                              _buildCategories(category),
+                              const SizedBox(height: 10),
+                              if (category != _WorkshopCategory.packages)
+                                Wrap(
+                                  spacing: 6,
+                                  children: [
+                                    for (final mode in Brightness.values)
+                                      ChoiceChip(
+                                        label: Text(mode == Brightness.light
+                                            ? '浅色'
+                                            : '深色'),
+                                        selected: _brightness == mode,
+                                        onSelected: (_) => _selectBrightness(mode),
+                                      ),
+                                  ],
+                                ),
+                              if (category.tabs.length > 1)
+                                Wrap(
+                                  spacing: 6,
+                                  children: [
+                                    for (final tab in category.tabs)
+                                      ChoiceChip(
+                                        key: ValueKey('workshop-tab-${tab.name}'),
+                                        label: Text(tab.label),
+                                        selected: _activeTab == tab,
+                                        onSelected: (_) =>
+                                            setState(() => _activeTab = tab),
+                                      ),
+                                  ],
+                                ),
+                              const SizedBox(height: 8),
+                              AppCardSurface(
+                                key: ValueKey('workshop-editor-${_activeTab.name}'),
+                                decoration: BoxDecoration(
+                                  color: AppThemeTokens.of(context).card,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(14),
+                                  child: _buildActiveTabEditor(appearance),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              icon: const Icon(Icons.menu_book_outlined),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilledButton.tonal(
-                key: const ValueKey('workshop-export-button'),
-                onPressed: _exporting ? null : _openExportSheet,
-                child: Text(_exporting ? '打包中…' : '导出'),
-              ),
-            ),
-          ],
-        ),
-        body: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (_draftSaveFailed)
-                  Container(
-                    color: Theme.of(context).colorScheme.errorContainer,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.warning_amber_rounded,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.onErrorContainer,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '草稿未保存',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onErrorContainer,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          key: const ValueKey('workshop-draft-retry'),
-                          onPressed: _savingDraft ? null : _saveDraftNow,
-                          child: const Text('重试'),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (_bannerMessage != null)
-                  Container(
-                    color: Theme.of(context).colorScheme.errorContainer,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    child: Semantics(
-                      liveRegion: true,
-                      child: Text(
-                        _bannerMessage!,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color:
-                              Theme.of(context).colorScheme.onErrorContainer,
-                        ),
-                      ),
-                    ),
-                  ),
-                // 预览控制栏（横向滚动适配窄屏与 1.5x 大字号）
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: Row(
-                    children: [
-                      ChoiceChip(
-                        label: const Text('浅色'),
-                        selected: _brightness == Brightness.light,
-                        onSelected: (_) => setState(() {
-                          _brightness = Brightness.light;
-                          _seedHexController.text = _currentVariant.seedColor;
-                        }),
-                      ),
-                      const SizedBox(width: 6),
-                      ChoiceChip(
-                        label: const Text('深色'),
-                        selected: _brightness == Brightness.dark,
-                        onSelected: (_) => setState(() {
-                          _brightness = Brightness.dark;
-                          _seedHexController.text = _currentVariant.seedColor;
-                        }),
-                      ),
-                      const SizedBox(width: 10),
-                      FilterChip(
-                        label: const Text('弹窗层'),
-                        selected: _showDialogOverlay,
-                        onSelected: (v) =>
-                            setState(() => _showDialogOverlay = v),
-                      ),
-                      const SizedBox(width: 10),
-                      for (final st in WorkshopSampleState.values)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: ChoiceChip(
-                            label: Text(st.label),
-                            selected: _sampleState == st,
-                            onSelected: (_) =>
-                                setState(() => _sampleState = st),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    children: [
-                      for (final pg in WorkshopSamplePage.values)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: ChoiceChip(
-                            label: Text(pg.label),
-                            selected: _samplePage == pg,
-                            onSelected: (_) =>
-                                setState(() => _samplePage = pg),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-                  child: SizedBox(
-                    height: stageHeight,
-                    child: ThemeWorkshopSampleStage(
-                      appearance: appearance,
-                      brightness: _brightness,
-                      assetResolver: _resolveLocalImage,
-                      page: _samplePage,
-                      sampleState: _sampleState,
-                      showDialogOverlay: _showDialogOverlay,
-                      onFocusTarget: _handlePreviewFocus,
-                    ),
-                  ),
-                ),
-                // 下半屏十个分组 Tab 栏（窄屏横向滚动）
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(
-                        color: AppThemeTokens.of(context).divider,
-                      ),
-                      bottom: BorderSide(
-                        color: AppThemeTokens.of(context).divider,
-                      ),
-                    ),
-                  ),
-                  child: SingleChildScrollView(
-                    key: const ValueKey('workshop-tab-bar'),
-                    scrollDirection: Axis.horizontal,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    child: Row(
-                      children: [
-                        for (final tab in WorkshopTab.values)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: ChoiceChip(
-                              key: ValueKey('workshop-tab-${tab.name}'),
-                              label: Text(tab.label),
-                              selected: _activeTab == tab,
-                              onSelected: (_) =>
-                                  setState(() => _activeTab = tab),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
-                    key: ValueKey('workshop-editor-${_activeTab.name}'),
-                    padding: const EdgeInsets.all(14),
-                    children: [_buildActiveTabEditor(appearance)],
-                  ),
-                ),
-              ],
             ),
           ),
         ),
@@ -1741,7 +2025,33 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
         return _buildLauncherIconEditor();
       case WorkshopTab.widgets:
         return ThemeWorkshopWidgetPreviewPanel(appearance: appearance);
+      case WorkshopTab.packages:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            OutlinedButton.icon(
+              key: const ValueKey('workshop-export-button'),
+              onPressed: _exporting ? null : _openExportSheet,
+              icon: const Icon(Icons.ios_share_outlined),
+              label: const Text('导出编辑中的主题'),
+            ),
+            const ThemeSection(),
+          ],
+        );
     }
+  }
+
+  void _changePalette(VoidCallback change) {
+    final variant = _currentVariant;
+    final defaults = AppPalette.defaults(_brightness).toJson();
+    final before = variant.effectiveTokens(_brightness);
+    _mutate(() {
+      // 默认外观以完整色板进入预览。第一次换色时交给种子色重新推导。
+      if (defaults.entries.every((entry) => before[entry.key] == entry.value)) {
+        variant.overrides.clear();
+      }
+      change();
+    });
   }
 
   Widget _buildColorsEditor() {
@@ -1784,7 +2094,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                 label: Text(preset.$2),
                 onPressed: () {
                   _seedHexController.text = preset.$1;
-                  _mutate(() => v.seedColor = preset.$1);
+                  _changePalette(() => v.seedColor = preset.$1);
                 },
               ),
           ],
@@ -1805,7 +2115,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                   if (parsed != null) {
                     final hex = ThemeResolver.formatHex(parsed);
                     _seedHexController.text = hex;
-                    _mutate(() => v.seedColor = hex);
+                    _changePalette(() => v.seedColor = hex);
                   }
                 },
               ),
@@ -1818,7 +2128,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                 if (parsed != null) {
                   final hex = ThemeResolver.formatHex(parsed);
                   _seedHexController.text = hex;
-                  _mutate(() => v.seedColor = hex);
+                  _changePalette(() => v.seedColor = hex);
                 }
               },
               child: const Text('应用种子色'),
@@ -1842,7 +2152,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                 label: Text(variantName),
                 selected: v.schemeVariant == variantName,
                 onSelected: (_) =>
-                    _mutate(() => v.schemeVariant = variantName),
+                    _changePalette(() => v.schemeVariant = variantName),
               ),
           ],
         ),
@@ -2713,6 +3023,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const Text('此处编辑随主题包分享的图标。本机桌面图标可在主题包分类中单独设置。'),
+        const SizedBox(height: 8),
         const Text('内置备选桌面图标'),
         const SizedBox(height: 6),
         Wrap(

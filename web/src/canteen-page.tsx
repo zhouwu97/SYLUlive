@@ -1,9 +1,10 @@
 import type {CSSProperties} from 'react';
-import {Link,useSearchParams} from 'react-router-dom';
+import {Link,useNavigate,useSearchParams} from 'react-router-dom';
 import {asset,query,rows,useApi,type Entity} from './api';
 import {useAuth} from './auth';
 import {useMobile} from './mobile';
 import {ServerAvatar} from './server-avatar';
+import {displayName,userHref} from './user-level';
 import {Empty,Head,Icon,Pagination,QueryState,Tabs,useUI} from './ui';
 import {CanteenContributions,CanteenFavorites,DishDetail} from './canteen';
 import {formatScore} from './canteen-data';
@@ -56,7 +57,7 @@ function MobileHome({data,change}:HomeProps){
 
 /** 桌面食堂主页：推荐店铺大卡 + 今日热门榜，下方实拍卡片流与点评卡片。 */
 function DesktopHome({data,change}:HomeProps){
-  const ui=useUI();
+  const ui=useUI(),auth=useAuth(),navigate=useNavigate();
   const hero=data?.hero as Entity|undefined;
   const hot=rows(data,'hot_dishes'),feed=rows(data,'feed'),reviews=rows(data,'recent_reviews');
   const total=Number(data?.ranking_entry?.total)||0;
@@ -124,15 +125,17 @@ function DesktopHome({data,change}:HomeProps){
 
     <section className="section food-section">
       <div className="section-head"><h2>最新点评</h2>{Number(data?.recent_effective_review_count)>0&&<small className="food-muted">近 7 天新增 {data!.recent_effective_review_count} 条</small>}</div>
-      {reviews.length?<div className="food-reviews">{reviews.map((r,i)=><Link className="food-review" key={`review:${r.review_id??r.id??''}:${r.canteen_id??''}:${r.created_at??''}:${i}`} to={`/canteen/${r.canteen_id}`}>
+      {reviews.length?<div className="food-reviews">{reviews.map((r,i)=>{
+        const reviewer=displayName(r.user_name,'同学'),href=r.is_anonymous?null:userHref(r.user_id,auth.user?.id);
+        return <Link className="food-review" key={`review:${r.review_id??r.id??''}:${r.canteen_id??''}:${r.created_at??''}:${i}`} to={`/canteen/${r.canteen_id}`}>
         <span className="food-review-head">
-          <span className="food-review-avatar"><ServerAvatar src={r.user_avatar} name={r.user_name||'同学'}/></span>
-          <span className="food-review-who"><b>{r.user_name||'同学'}</b><small>{shortTime(r.updated_at&&Date.parse(r.updated_at)-Date.parse(r.created_at)>1000?r.updated_at:r.created_at)}</small></span>
+          <span className="food-review-avatar" onClick={href?e=>{e.preventDefault();e.stopPropagation();navigate(href);}:undefined}><ServerAvatar src={r.user_avatar} name={reviewer}/></span>
+          <span className="food-review-who"><b onClick={href?e=>{e.preventDefault();e.stopPropagation();navigate(href);}:undefined}>{reviewer}</b><small>{shortTime(r.updated_at&&Date.parse(r.updated_at)-Date.parse(r.created_at)>1000?r.updated_at:r.created_at)}</small></span>
           <span className="food-review-score"><i aria-hidden="true">★</i>{formatScore(r.overall_score)}</span>
         </span>
         <span className="food-review-store"><Icon name="canteen" size={14}/>{r.canteen_name}</span>
         <span className="food-review-text">{r.comment}</span>
-      </Link>)}</div>:<Empty title="暂无点评"/>}
+      </Link>;})}</div>:<Empty title="暂无点评"/>}
     </section>
   </div>;
 }

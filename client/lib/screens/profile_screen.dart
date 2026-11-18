@@ -1,5 +1,6 @@
 import '../widgets/app_page_background.dart';
 import '../features/theme_pack/theme_presentation.dart';
+import '../features/theme_pack/theme_workshop_screen.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
@@ -1541,7 +1542,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           onTap: () {
             _openProfilePage(
               MaterialPageRoute(
-                builder: (_) => const AppearanceSettingsScreen(),
+                builder: (_) => ThemeWorkshopScreen(
+                  deviceSettingsBuilder: (_) => const AppearanceSettingsScreen(),
+                ),
               ),
             );
           },

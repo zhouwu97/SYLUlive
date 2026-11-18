@@ -12,20 +12,20 @@
 .canteen-image-fallback .svg-icon{color:var(--canteen-ink)}
 .canteen-cover-caption{position:absolute;bottom:16px;left:16px;display:flex;align-items:center;gap:5px;padding:5px 9px;border-radius:8px;background:rgb(17 24 39 / .65);color:white;font-size:11px;pointer-events:none}
 .canteen-detail-hero.is-offline .canteen-detail-cover img{filter:saturate(.5)}
-.canteen-detail-overview{display:flex;flex-direction:column;align-items:flex-start;gap:12px;min-width:0;padding:26px 28px}
-.canteen-detail-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 10px;background:color-mix(in srgb,var(--canteen-star) 12%,var(--surface));color:var(--canteen-ink);font-size:12px;font-weight:600}
-.canteen-detail-overview h1{margin:0;color:var(--text);font-size:clamp(24px,2.2vw,32px);line-height:1.3;overflow-wrap:anywhere}
+.canteen-detail-overview{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-width:0;padding:24px 28px}
+.canteen-detail-badge{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:6px;padding:3px 9px;background:var(--surface-2);color:var(--text-2);font-size:12px;font-weight:600}
+.canteen-detail-overview h1{margin:0;color:var(--text);font-size:clamp(22px,2vw,28px);line-height:1.3;overflow-wrap:anywhere}
 .canteen-detail-location{display:flex;align-items:center;gap:5px;margin:0;color:var(--text-3);font-size:13px}
 .canteen-detail-rating{display:flex;align-items:center;gap:14px;margin:4px 0 2px;font-variant-numeric:tabular-nums}
-.canteen-detail-rating>strong{font-size:46px;line-height:1;font-weight:750;letter-spacing:-1.5px}
-.canteen-detail-rating>div{display:grid;gap:7px;font-size:12px;color:var(--text-3)}
-.canteen-detail-stars{position:relative;display:inline-block;width:5.5em;height:1em;font-size:17px;line-height:1;letter-spacing:.1em}
+.canteen-detail-rating>strong{font-size:38px;line-height:1;font-weight:700;letter-spacing:-1px}
+.canteen-detail-rating>div{display:grid;gap:6px;font-size:12px;color:var(--text-3)}
+.canteen-detail-stars{position:relative;display:inline-block;width:5.5em;height:1em;font-size:15px;line-height:1;letter-spacing:.1em}
 .canteen-detail-stars::before,.canteen-detail-stars::after{content:'★★★★★';position:absolute;inset:0;white-space:nowrap;overflow:hidden}
 .canteen-detail-stars::before{color:var(--line)}.canteen-detail-stars::after{width:var(--fill,0%);color:var(--canteen-star)}
 .canteen-detail-dimensions{display:grid;gap:7px;width:100%;max-width:380px;margin:4px 0}
 .canteen-detail-dimensions>div{display:grid;grid-template-columns:4.7em minmax(0,1fr) 2em;align-items:center;gap:10px;font-size:12px}
-.canteen-detail-dimensions dt{color:var(--text-2)}.canteen-detail-dimensions dd{height:6px;margin:0;overflow:hidden;border-radius:99px;background:var(--surface-2)}
-.canteen-detail-dimensions dd>span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#ffd490,var(--canteen-star))}
+.canteen-detail-dimensions dt{color:var(--text-2)}.canteen-detail-dimensions dd{height:5px;margin:0;overflow:hidden;border-radius:99px;background:var(--surface-2)}
+.canteen-detail-dimensions dd>span{display:block;height:100%;border-radius:inherit;background:var(--canteen-star)}
 .canteen-detail-dimensions b{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
 .canteen-detail-description,.canteen-detail-muted{margin:0;font-size:13px;line-height:1.7;color:var(--text-2);overflow-wrap:anywhere}
 .canteen-detail-muted{color:var(--text-3)}
@@ -52,13 +52,28 @@
 .canteen-review-list{display:grid;gap:14px;min-width:0}.canteen-review-card{padding:20px;border:1px solid var(--line);border-radius:var(--radius-card,18px);background:var(--surface);min-width:0}
 .canteen-review-header{display:flex;align-items:center;gap:10px}.canteen-review-avatar{display:block;flex:none;overflow:hidden;width:38px;height:38px;border-radius:50%;background:var(--surface-2);color:var(--text-2)}
 .canteen-review-author{display:grid;gap:3px;min-width:0;flex:1}.canteen-review-author b{font-size:13px;overflow-wrap:anywhere}.canteen-review-author time{color:var(--text-3);font-size:11px}
-.canteen-review-score{display:inline-flex;align-items:center;gap:4px;padding:4px 9px;border-radius:99px;background:color-mix(in srgb,var(--canteen-star,#efa329) 12%,var(--surface));font-size:13px;font-weight:650;white-space:nowrap}.canteen-review-score i{color:var(--canteen-star,#efa329);font-style:normal}
+.canteen-review-score{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:6px;background:var(--surface-2);font-size:13px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}.canteen-review-score i{color:var(--canteen-star,#efa329);font-style:normal}
 .canteen-review-dims{display:flex;flex-wrap:wrap;gap:6px 12px;margin:13px 0 0;font-size:11px;color:var(--text-3)}
 .canteen-review-text{margin:12px 0 0;color:var(--text);font-size:14px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}
 .canteen-review-dishes{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:12px 0 0;color:var(--text-2);font-size:12px}
 .canteen-review-media{display:grid;width:100%;max-width:600px;margin-top:14px;grid-auto-rows:170px}.canteen-review-media.media-gallery-1{max-width:300px;grid-auto-rows:210px}.canteen-review-media .media-tile,.canteen-review-media .media-tile img{width:100%;height:100%;min-height:0;max-height:100%;object-fit:cover}.canteen-review-media .media-tile{border-radius:10px}
 .canteen-review-card .form-actions{justify-content:flex-start;margin-top:14px}.canteen-review-card .form-actions .btn{min-height:32px;height:auto;padding:5px 10px;font-size:12px}
 .canteen-review-more{justify-self:center;min-width:180px;margin:4px 0}
+.canteen-contributions{overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-card,16px);background:var(--surface);box-shadow:var(--shadow-card)}
+.canteen-contribution-row{display:flex;align-items:center;gap:14px;padding:16px 20px;transition:background-color .15s ease}
+.canteen-contribution-row+.canteen-contribution-row{border-top:1px solid var(--line-2)}
+.canteen-contribution-row:hover{background:var(--surface-2)}
+.canteen-contribution-icon,.canteen-contribution-thumb{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;overflow:hidden;border:1px solid var(--line-2);border-radius:var(--radius-control,10px);background:color-mix(in oklab,var(--icon-amber,#aa650e) 10%,var(--surface));color:var(--icon-amber,#aa650e)}
+.canteen-contribution-thumb img{width:100%;height:100%;object-fit:cover}
+.canteen-contribution-main{display:grid;gap:4px;flex:1;min-width:0}
+.canteen-contribution-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.canteen-contribution-head b{font-size:15px;font-weight:600;color:var(--text);overflow-wrap:anywhere}
+.canteen-contribution-sub{margin:0;color:var(--text-2);font-size:13px}
+.canteen-contribution-reason{margin:2px 0 0;padding:6px 10px;border-radius:8px;background:color-mix(in oklab,var(--danger) 8%,var(--surface));color:var(--danger);font-size:12px;line-height:1.5}
+.canteen-contribution-merged{margin:2px 0 0;color:var(--brand-strong);font-size:12px}
+.canteen-contribution-time{color:var(--text-3);font-size:12px;font-variant-numeric:tabular-nums}
+.canteen-contribution-open{flex-shrink:0;min-height:34px;height:auto;padding:6px 14px;font-size:13px;white-space:nowrap}
+@media(max-width:600px){.canteen-contribution-row{align-items:flex-start;flex-wrap:wrap;padding:14px 16px}.canteen-contribution-open{margin-left:58px}}
 .canteen-detail-dish:focus-visible,.canteen-detail-back a:focus-visible{outline:2px solid var(--brand);outline-offset:3px;border-radius:8px}
 @media(hover:hover) and (pointer:fine){.canteen-detail-dish:hover .canteen-dish-copy b{color:var(--brand-strong)}}
 @media(max-width:1199px){.canteen-detail-columns{grid-template-columns:minmax(0,1fr)}.canteen-detail-dish-list{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:20px}.canteen-detail-dishes{order:-1}.canteen-detail-dishes.is-empty{order:0}.canteen-detail-overview{padding:22px}}

@@ -72,7 +72,7 @@ export function MobileThemeBackdrop() {
 
 export function MobileThemesPage() {
   const runtime = useMobileThemeRuntime();
-  const [sort, setSort] = useState<"official" | "latest" | "popular">("latest");
+  const [sort, setSort] = useState<"latest" | "popular">("latest");
   const [selectedTag, setSelectedTag] = useState<string>("");
   const [searchInput, setSearchInput] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
@@ -222,7 +222,6 @@ export function MobileThemesPage() {
       <div role="tablist" aria-label="主题排序" style={{ display: "flex", gap: 8, margin: "8px 0" }}>
         {([
           ["latest", "最新"],
-          ["official", "官方"],
           ["popular", "热门"],
         ] as const).map(([key, label]) => (
           <button

@@ -29,9 +29,6 @@ import {
 } from "./api";
 import { useAuth } from "./auth";
 import { PostActions, retryInterruptedRead } from "./post-actions";
-import { LevelBadge } from "./level-badge";
-import { EmojiText } from "./inline-emoji";
-import { truncateGraphemes } from "./emoji-text";
 import { DismissedPost, PostCardMenu, ReportPostForm } from "./post-menu";
 import { dismissalFor, feedSourceOf, useDismissals, type FeedSource } from "./feed-feedback";
 import {
@@ -50,8 +47,8 @@ import { messageEmojiFields } from "./emoji-selection";
 import { isDetailPath, useReportDetailOrigin } from "./detail-origin";
 import "./community.css";
 import "./market.css";
-import {usePostEditor} from './post-editor-page';
-export {uploadIDs} from "./media";
+import { usePostEditor } from './post-editor-page';
+export { uploadIDs } from "./media";
 function PostAvatar({ author }: { author?: Entity }) {
   return <span className="post-avatar"><ServerAvatar src={author?.avatar} name={author?.nickname || "校园同学"} /></span>;
 }
@@ -114,6 +111,7 @@ function PostAuthor({
   onToggleFollow?: () => Promise<void>;
 }) {
   const auth = useAuth();
+  const mobile = useMobile();
   const author = authorOverride || post.author;
   const authorId = Number(post.author_id || author?.id) || 0;
   const localFollow = useAuthorFollow(authorId, Boolean(author?.is_following || post.is_following), `${post.id}:${auth.user?.id ?? ""}`);
@@ -124,12 +122,12 @@ function PostAuthor({
     <div className="author post-author">
       <PostAvatar author={author} />
       <div className="author-meta">
-        <div className="author-name-line"><b>{author?.nickname || "校园同学"}</b><LevelBadge className="author-level" level={userLevel(author, post.author_level)} />{badges}</div>
+        <div className="author-name-line"><b>{author?.nickname || "校园同学"}</b><span className="author-level">Lv.{userLevel(author, post.author_level)}</span>{badges}</div>
         <AiBotIdentity user={author} />
         <span>{meta ?? <><PostTime value={post.created_at} />{author?.followers_count != null ? ` · ${author.followers_count} 位关注者` : ""}</>}</span>
       </div>
       {auth.user && authorId > 0 && authorId !== auth.user.id && (
-        <button className={`author-follow ${followed ? "active" : ""}`} type="button" disabled={pending} aria-pressed={followed} aria-busy={pending} onClick={toggleFollow}><span className="follow-control"><span className="follow-sign" aria-hidden="true"><Icon name={followed ? "check" : "plus"} size={13} /></span>{followed ? "已关注" : "关注"}</span></button>
+        <button className={`author-follow ${followed ? "active" : ""}`} type="button" disabled={pending} aria-pressed={followed} aria-busy={pending} onClick={toggleFollow}><span className="follow-control">{!mobile && <Icon name={pending ? "clock" : followed ? "check" : "plus"} size={13} />}<span>{followed ? "已关注" : "关注"}</span></span></button>
       )}
       {menu}
     </div>
@@ -162,15 +160,12 @@ export function PostCard({
   const auth = useAuth(), openPostEditor = usePostEditor();
   const mobile = useMobile();
   useDismissals();
-  // 桌面信息流的作者行显示所在板块，和侧栏板块共用同一份缓存；手机端保持 App 的作者行。
-  const sections = useApi(market || mobile ? null : "/api/water/sections");
-  const sectionLabel = rows(sections.data, "sections").find((item) => String(item.slug ?? item.id ?? "") === String(post.post_type ?? ""));
   const marketType = post.post_type || post.type;
   const marketLabel = ({ sell: "出售", buy: "求购", lost: "寻物", found: "招领", proxy: "办事", marketplace_sell: "出售", marketplace_buy: "求购" } as Record<string, string>)[marketType] || "出售";
   const marketStateLabel = ({ sold: "已售出", closed: "已结束" } as Record<string, string>)[post.status]
     || (post.status === "normal" && ["sell", "marketplace_sell"].includes(marketType) ? "出售中" : "");
-  const location=useLocation(), navigate=useNavigate();
-  const back={from:location.pathname+location.search};
+  const location = useLocation(), navigate = useNavigate();
+  const back = { from: location.pathname + location.search };
   if (market)
     return (
       <Link className={`market-card ${post.status === "sold" ? "market-sold" : ""}`} to={`/post/${post.id}`} state={back}>
@@ -185,7 +180,7 @@ export function PostCard({
           </span>
         </div>
         <div className="market-info">
-          <h3><EmojiText text={post.title || post.content || ""} /></h3>
+          <h3>{post.title || post.content}</h3>
           <div className="market-price-row">
             {mobile && ["lost", "found"].includes(marketType) ? <span className="mobile-market-type">{marketStateLabel || marketLabel}</span> : <>
               {!mobile && post.price === 0 ? <strong className="price is-free">免费送</strong> : <strong className="price"><small>¥</small> {post.price ?? "待议"}</strong>}
@@ -204,8 +199,7 @@ export function PostCard({
   if (dismissal.mode === "hidden") return null;
   if (dismissal.mode === "placeholder") return <DismissedPost dismissal={dismissal.dismissal} />;
   if (post.poll_meta) return <PollCard key={`${post.id}:${auth.user?.id}`} post={post} compact />;
-  const menu = <PostCardMenu post={post} feedSource={feedSource} onEdit={() => openPostEditor({postId: Number(post.id)})} />;
-  const summary = truncateGraphemes(post.content || "", 220);
+  const menu = <PostCardMenu post={post} feedSource={feedSource} onEdit={() => openPostEditor({ postId: Number(post.id) })} />;
   const openPostFromCard = (event: ReactMouseEvent<HTMLElement>) => {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest("a,button,input,textarea,select,details,summary,[role=\"button\"],.post-author,.post-toolbar,.media-gallery")) return;
@@ -218,11 +212,11 @@ export function PostCard({
   };
   return (
     <article className="feed-card feed-card-clickable" tabIndex={0} aria-label={`打开帖子：${post.title || post.content?.slice(0, 40) || "无标题"}`} onClick={openPostFromCard} onKeyDown={openPostFromKeyboard}>
-      <PostAuthor key={`author:${post.id}:${auth.user?.id}`} post={post} menu={menu} meta={mobile ? undefined : <>{sectionLabel && <>{sectionLabel.title || sectionLabel.name} · </>}<PostTime value={post.created_at} /></>} />
+      <PostAuthor key={`author:${post.id}:${auth.user?.id}`} post={post} menu={menu} />
       <Link className="post-summary" to={`/post/${post.id}`} state={back}>
-        {post.title && <h3 className="post-title"><EmojiText text={post.title} /></h3>}
-        {post.content && <p className={`post-body ${post.title ? "" : "post-text-only"}`}><EmojiText text={summary.text} />{summary.truncated && "…"}</p>}
-        {summary.truncated && <span className="post-read-more">查看全文 <span aria-hidden="true">→</span></span>}
+        {post.title && <h3 className="post-title">{post.title}</h3>}
+        {post.content && <p className={`post-body ${post.title ? "" : "post-text-only"}`}>{post.content.slice(0, 220)}{post.content.length > 220 && "…"}</p>}
+        {post.content?.length > 220 && <span className="post-read-more">查看全文 <span aria-hidden="true">→</span></span>}
       </Link>
       <MediaGallery items={post.images} title={post.title || "帖子图片"} />
       <PostActions key={`actions:${post.id}:${auth.user?.id}`} post={post} from={back.from} />
@@ -236,10 +230,10 @@ export function Community({ market = false }: { market?: boolean }) {
   const marketTypes = useSlidingIndicator<HTMLDivElement>("button[aria-pressed=\"true\"]");
   const page = Number(params.get("page")) || 1,
     sort = params.get("sort") || (market ? "time" : "all");
-  const personal=sort==='mine'||sort==='bookmarks';
+  const personal = sort === 'mine' || sort === 'bookmarks';
   const sections = useApi(market ? null : "/api/water/sections");
   const q = useApi(
-    personal&&!auth.user?null:query(sort==='bookmarks'?'/api/user/bookmarks':sort==='mine'?`/api/user/${auth.user?.id}/${market?'market-posts':'posts'}`:"/api/posts", {
+    personal && !auth.user ? null : query(sort === 'bookmarks' ? '/api/user/bookmarks' : sort === 'mine' ? `/api/user/${auth.user?.id}/${market ? 'market-posts' : 'posts'}` : "/api/posts", {
       board: market ? 2 : 1,
       page,
       limit: 20,
@@ -275,7 +269,7 @@ export function Community({ market = false }: { market?: boolean }) {
       >
         <button
           className="btn primary"
-          onClick={() => openPostEditor({market})}
+          onClick={() => openPostEditor({ market })}
         >
           <Icon name="plus" size={18} />{market ? "发布闲置" : "发布"}
         </button>
@@ -389,7 +383,7 @@ const TEAM_STATUS_LABELS: Record<string, string> = {
 export function PostDetail({ poll = false }: { poll?: boolean }) {
   const mobile = useMobile();
   const openPostEditor = usePostEditor();
-  const location=useLocation(),navigate=useNavigate();
+  const location = useLocation(), navigate = useNavigate();
   const commentRef = useRef<HTMLElement>(null);
   const [commentSort, setCommentSort] = useState("hot");
   const { id: routeId } = useParams(),
@@ -447,70 +441,70 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
   }
   const moreActions = (
     <PostMore>
-            {p.images?.[0] && (
-              <button type="button" onClick={async () => { if (!auth.requireUser()) return; const path = mediaURL(p.images[0], "origin"); if (!path) return; await ui.act(() => favoritePublicImage(path), "图片已收藏为表情"); }}>
-                收藏首图为表情
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => auth.requireUser() && ui.open("举报内容", <ReportPostForm postId={Number(id)} />)}
-            >
-              举报
-            </button>
-            {p.viewer_permissions?.can_edit && (
-              <button
-                type="button"
-                onClick={() => openPostEditor({postId: Number(id)})}
-              >
-                编辑
-              </button>
-            )}
-            {p.author_id === auth.user?.id && p.board_id === 2 && (
-              <button
-                type="button"
-                onClick={() =>
-                  ui.act(() =>
-                    write(
-                      `/api/posts/${id}/status`,
-                      { status: p.status === "sold" ? "normal" : "sold" },
-                      "PATCH",
-                    ),
-                  )
-                }
-              >
-                {p.status === "sold" ? "恢复在售" : "标记售出"}
-              </button>
-            )}
-            {p.viewer_permissions?.can_delete && (
-              <button
-                type="button" className="post-danger-action"
-                onClick={() =>
-                  ui.open(
-                    "删除内容",
-                    <>
-                      <p>删除后帖子将不再公开显示。</p>
-                      <button
-                        className="btn"
-                        onClick={async () => {
-                          if (
-                            await ui.act(() =>
-                              request(`/api/posts/${id}`, { method: "DELETE" }),
-                            )
-                          )
-                            ui.close();
-                        }}
-                      >
-                        确认删除
-                      </button>
-                    </>,
-                  )
-                }
-              >
-                删除
-              </button>
-            )}
-          </PostMore>
+      {p.images?.[0] && (
+        <button type="button" onClick={async () => { if (!auth.requireUser()) return; const path = mediaURL(p.images[0], "origin"); if (!path) return; await ui.act(() => favoritePublicImage(path), "图片已收藏为表情"); }}>
+          收藏首图为表情
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => auth.requireUser() && ui.open("举报内容", <ReportPostForm postId={Number(id)} />)}
+      >
+        举报
+      </button>
+      {p.viewer_permissions?.can_edit && (
+        <button
+          type="button"
+          onClick={() => openPostEditor({ postId: Number(id) })}
+        >
+          编辑
+        </button>
+      )}
+      {p.author_id === auth.user?.id && p.board_id === 2 && (
+        <button
+          type="button"
+          onClick={() =>
+            ui.act(() =>
+              write(
+                `/api/posts/${id}/status`,
+                { status: p.status === "sold" ? "normal" : "sold" },
+                "PATCH",
+              ),
+            )
+          }
+        >
+          {p.status === "sold" ? "恢复在售" : "标记售出"}
+        </button>
+      )}
+      {p.viewer_permissions?.can_delete && (
+        <button
+          type="button" className="post-danger-action"
+          onClick={() =>
+            ui.open(
+              "删除内容",
+              <>
+                <p>删除后帖子将不再公开显示。</p>
+                <button
+                  className="btn"
+                  onClick={async () => {
+                    if (
+                      await ui.act(() =>
+                        request(`/api/posts/${id}`, { method: "DELETE" }),
+                      )
+                    )
+                      ui.close();
+                  }}
+                >
+                  确认删除
+                </button>
+              </>,
+            )
+          }
+        >
+          删除
+        </button>
+      )}
+    </PostMore>
   );
   // 返回目标跟随入口：从首页、投票列表、收藏等进入时回到原页（保留滚动位置），直接打开时按内容类型兜底。
   const from = typeof location.state?.from === "string" ? location.state.from as string : "";
@@ -571,81 +565,81 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
       {mobile && p.poll_meta && <p className="mobile-poll-notice">非官方用户投票，结果仅代表参与用户的选择。</p>}
       <QueryState query={q} skeleton="post">
         <div className="post-detail-layout">
-        <div className="post-detail-main">
-        <article className="panel post-full">
-          {p.poll_meta ? <PollCard key={`${p.id}:${auth.user?.id}`} post={p} /> : <>
-          <PostAuthor
-            key={`author:${p.id}:${auth.user?.id}`}
-            post={p}
-            authorOverride={authorInfo}
-            badges={postBadges}
-            meta={postMeta}
-            followed={followState.followed}
-            followPending={followState.pending}
-            onToggleFollow={followState.toggle}
-          />
-          {p.title && <h1><EmojiText text={p.title} /></h1>}
-          {p.board_id === 2 && (
-            <div className="post-market-summary">
-              {!mobile && p.price === 0 ? <strong className="post-market-price is-free">免费送</strong> : <strong className="post-market-price"><small>¥</small> {p.price ?? "待议"}</strong>}
-              <span>{p.status === "sold" ? "已售出" : p.status === "closed" ? "已结束" : "交易中"}</span>
-              {marketTags.map((tag: string) => <span className="post-market-tag" key={tag}>{tag}</span>)}
-            </div>
-          )}
-          {p.content && <div className="post-body details-text"><EmojiText text={p.content} /></div>}
-          {Array.isArray(p.topics) && p.topics.length > 0 && (
-            <div className="post-detail-topics" aria-label="帖子话题">
-              {p.topics.map((topic: Entity | string, index: number) => {
-                const label = (typeof topic === "string" ? topic : topic?.name || topic?.title || "").replace(/^#+/, "").trim();
-                if (!label) return null;
-                return (
-                  <Link key={(typeof topic === "object" && topic?.id) || `${label}-${index}`} className="post-topic-tag" to={`/community?q=${encodeURIComponent(label)}`}>
-                    #{label}
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-          {teamMeta && (
-            <div className="post-team-box">
-              <div className="post-team-box-head">
-                <span className={`post-team-status ${(teamMeta.effective_status || teamMeta.status) === "recruiting" ? "is-active" : ""}`}>
-                  {TEAM_STATUS_LABELS[teamMeta.effective_status || teamMeta.status] || "组队招募"}
-                </span>
-                {teamMeta.remaining_count != null && <b>还需 {teamMeta.remaining_count} 人</b>}
-                {teamMeta.deadline && <small>截止 <PostTime value={teamMeta.deadline} /></small>}
-              </div>
-              {Array.isArray(teamMeta.roles) && teamMeta.roles.length > 0 && (
-                <div className="post-team-roles">
-                  {teamMeta.roles.map((role: string, index: number) => <span key={`${role}-${index}`}>{role}</span>)}
-                </div>
-              )}
-              <Link className="post-team-link" to="/polls?tab=team">前往组队广场查看详情 <span aria-hidden="true">→</span></Link>
-            </div>
-          )}
-          <MediaGallery items={p.images} title={p.title || "帖子图片"} className="post-detail-gallery" maxVisible={9} variant="detail" />
-          {p.board_id === 2 && (
-            <div className="info-box">
-              <p>
-                {p.contact_type}：{p.contact || "请通过评论联系"}
-              </p>
-            </div>
-          )}
-          </>}
-          <PostActions key={`actions:${p.id}:${auth.user?.id}`} post={p} onComment={focusComments} more={mobile ? undefined : moreActions} />
-        </article>
-        <section className="panel post-comments section" id="post-comments" ref={commentRef} tabIndex={-1} aria-label="评论区">
-          <div className="post-comments-head"><h2>全部评论 <span>{comments.data?.pages[0]?.total ?? p.reply_count ?? 0}</span></h2><select aria-label="评论排序" value={commentSort} onChange={(event) => setCommentSort(event.target.value)}><option value="hot">热门</option><option value="latest">最新</option></select></div>
-          {mobile ? <div className="post-comment-prompt"><button className="mobile-icon-button" aria-label="添加图片或表情回复" onClick={() => replyTo()}><Icon name="plus" size={24} /></button><button type="button" className="post-comment-start" onClick={() => replyTo()}><span>{auth.user ? "写下你的想法…" : "登录后参与讨论…"}</span><Icon name="community" size={19} /></button></div> : <InlineCommentPrompt key={`${id}:${auth.user?.id}`} postId={Number(id)} />}
-          <QueryState query={{ ...comments, error: comments.data ? null : comments.error }}>
-            {!replies.length && <Empty icon="community" title="还没有评论" description="分享你的想法，开启这段讨论。" />}
-            {roots.map((reply) => <CommentThread key={`${reply.id}:${auth.user?.id}`} postId={Number(id)} postAuthorId={authorId} reply={reply} preview={replies.filter((child) => Number(child.parent_reply_id) === Number(reply.id))} onReply={replyTo} />)}
-            {comments.data && comments.error && <div className="post-comments-error" role="alert"><span>{comments.error.message}</span><button type="button" className="btn" disabled={comments.isFetching} onClick={() => comments.isFetchNextPageError ? comments.fetchNextPage() : comments.refetch()}>重试</button></div>}
-            {comments.hasNextPage && <button type="button" className="btn post-load-more" disabled={comments.isFetchingNextPage} onClick={() => comments.fetchNextPage()}>{comments.isFetchingNextPage ? "正在加载…" : "加载更多评论"}</button>}
-          </QueryState>
-        </section>
-        </div>
-        <PostDetailRail post={p} author={authorInfo} follow={followState} onComment={focusComments} />
+          <div className="post-detail-main">
+            <article className="panel post-full">
+              {p.poll_meta ? <PollCard key={`${p.id}:${auth.user?.id}`} post={p} /> : <>
+                <PostAuthor
+                  key={`author:${p.id}:${auth.user?.id}`}
+                  post={p}
+                  authorOverride={authorInfo}
+                  badges={postBadges}
+                  meta={postMeta}
+                  followed={followState.followed}
+                  followPending={followState.pending}
+                  onToggleFollow={followState.toggle}
+                />
+                {p.title && <h1>{p.title}</h1>}
+                {p.board_id === 2 && (
+                  <div className="post-market-summary">
+                    {!mobile && p.price === 0 ? <strong className="post-market-price is-free">免费送</strong> : <strong className="post-market-price"><small>¥</small> {p.price ?? "待议"}</strong>}
+                    <span>{p.status === "sold" ? "已售出" : p.status === "closed" ? "已结束" : "交易中"}</span>
+                    {marketTags.map((tag: string) => <span className="post-market-tag" key={tag}>{tag}</span>)}
+                  </div>
+                )}
+                {p.content && <div className="post-body details-text">{p.content}</div>}
+                {Array.isArray(p.topics) && p.topics.length > 0 && (
+                  <div className="post-detail-topics" aria-label="帖子话题">
+                    {p.topics.map((topic: Entity | string, index: number) => {
+                      const label = (typeof topic === "string" ? topic : topic?.name || topic?.title || "").replace(/^#+/, "").trim();
+                      if (!label) return null;
+                      return (
+                        <Link key={(typeof topic === "object" && topic?.id) || `${label}-${index}`} className="post-topic-tag" to={`/community?q=${encodeURIComponent(label)}`}>
+                          #{label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+                {teamMeta && (
+                  <div className="post-team-box">
+                    <div className="post-team-box-head">
+                      <span className={`post-team-status ${(teamMeta.effective_status || teamMeta.status) === "recruiting" ? "is-active" : ""}`}>
+                        {TEAM_STATUS_LABELS[teamMeta.effective_status || teamMeta.status] || "组队招募"}
+                      </span>
+                      {teamMeta.remaining_count != null && <b>还需 {teamMeta.remaining_count} 人</b>}
+                      {teamMeta.deadline && <small>截止 <PostTime value={teamMeta.deadline} /></small>}
+                    </div>
+                    {Array.isArray(teamMeta.roles) && teamMeta.roles.length > 0 && (
+                      <div className="post-team-roles">
+                        {teamMeta.roles.map((role: string, index: number) => <span key={`${role}-${index}`}>{role}</span>)}
+                      </div>
+                    )}
+                    <Link className="post-team-link" to="/polls?tab=team">前往组队广场查看详情 <span aria-hidden="true">→</span></Link>
+                  </div>
+                )}
+                <MediaGallery items={p.images} title={p.title || "帖子图片"} className="post-detail-gallery" maxVisible={9} variant="detail" />
+                {p.board_id === 2 && (
+                  <div className="info-box">
+                    <p>
+                      {p.contact_type}：{p.contact || "请通过评论联系"}
+                    </p>
+                  </div>
+                )}
+              </>}
+              <PostActions key={`actions:${p.id}:${auth.user?.id}`} post={p} onComment={focusComments} more={mobile ? undefined : moreActions} />
+            </article>
+            <section className="panel post-comments section" id="post-comments" ref={commentRef} tabIndex={-1} aria-label="评论区">
+              <div className="post-comments-head"><h2>全部评论 <span>{comments.data?.pages[0]?.total ?? p.reply_count ?? 0}</span></h2><select aria-label="评论排序" value={commentSort} onChange={(event) => setCommentSort(event.target.value)}><option value="hot">热门</option><option value="latest">最新</option></select></div>
+              {mobile ? <div className="post-comment-prompt"><button className="mobile-icon-button" aria-label="添加图片或表情回复" onClick={() => replyTo()}><Icon name="plus" size={24} /></button><button type="button" className="post-comment-start" onClick={() => replyTo()}><span>{auth.user ? "写下你的想法…" : "登录后参与讨论…"}</span><Icon name="community" size={19} /></button></div> : <InlineCommentPrompt key={`${id}:${auth.user?.id}`} postId={Number(id)} />}
+              <QueryState query={{ ...comments, error: comments.data ? null : comments.error }}>
+                {!replies.length && <Empty icon="community" title="还没有评论" description="分享你的想法，开启这段讨论。" />}
+                {roots.map((reply) => <CommentThread key={`${reply.id}:${auth.user?.id}`} postId={Number(id)} postAuthorId={authorId} reply={reply} preview={replies.filter((child) => Number(child.parent_reply_id) === Number(reply.id))} onReply={replyTo} />)}
+                {comments.data && comments.error && <div className="post-comments-error" role="alert"><span>{comments.error.message}</span><button type="button" className="btn" disabled={comments.isFetching} onClick={() => comments.isFetchNextPageError ? comments.fetchNextPage() : comments.refetch()}>重试</button></div>}
+                {comments.hasNextPage && <button type="button" className="btn post-load-more" disabled={comments.isFetchingNextPage} onClick={() => comments.fetchNextPage()}>{comments.isFetchingNextPage ? "正在加载…" : "加载更多评论"}</button>}
+              </QueryState>
+            </section>
+          </div>
+          <PostDetailRail post={p} author={authorInfo} follow={followState} onComment={focusComments} />
         </div>
       </QueryState>
     </div>
@@ -780,8 +774,8 @@ function PostDetailRail({
       </div>
       {more.isPending ? <p className="post-context-state" role="status">正在加载更多帖子…</p> : more.error ? <div className="post-context-state" role="alert"><p>暂时无法加载更多帖子</p><button type="button" className="btn" disabled={more.isFetching} onClick={() => more.refetch()}>{more.isFetching ? "正在重试…" : "重试"}</button></div> : posts.length ? <div className="post-context-list">{posts.map((item) => <Link key={item.id} className="post-context-item" to={`/post/${item.id}`} state={{ from: location.pathname + location.search }}>
         <div className="post-context-copy"><b>{item.title || item.content?.slice(0, 80) || (market ? "校园闲置" : "校园讨论")}</b>
-        {item.title && item.content && <p>{item.content.slice(0, 100)}</p>}
-        <span>{market && item.price != null ? <strong>¥ {item.price}</strong> : <span>{item.author?.nickname || "校园同学"}</span>}<span><Icon name="community" size={13} />{item.reply_count || 0}</span></span><AiBotIdentity user={item.author} /></div>
+          {item.title && item.content && <p>{item.content.slice(0, 100)}</p>}
+          <span>{market && item.price != null ? <strong>¥ {item.price}</strong> : <span>{item.author?.nickname || "校园同学"}</span>}<span><Icon name="community" size={13} />{item.reply_count || 0}</span></span><AiBotIdentity user={item.author} /></div>
         {!!item.images?.length && <PostThumbnail key={item.id} post={item} className="post-context-thumb" />}
       </Link>)}</div> : <p className="post-context-state">暂时没有其他帖子</p>}
       <Link className="post-context-browse" to={browse}>继续逛逛{market ? "二手集市" : "校园社区"}<Icon name="arrow" size={15} /></Link>
@@ -849,7 +843,7 @@ function CommentRow({ postId, postAuthorId, reply, onReply }: { postId: number; 
       </div>
       <AiBotIdentity user={author} />
       {deleted ? <p className="post-comment-deleted">该评论已删除</p> : <>
-        {reply.content && reply.content !== "[表情]" && <p className="details-text"><EmojiText text={reply.content} /></p>}
+        {reply.content && reply.content !== "[表情]" && <p className="details-text">{reply.content}</p>}
         {reply.sticker_id && <StickerRenderer stickerId={reply.sticker_id} assetKey={reply.asset_key} packId={reply.pack_id} />}
         {(reply.images || reply.attachments)?.length > 0 && <MediaGallery items={reply.images || reply.attachments} title="评论图片" maxVisible={4} />}
       </>}
@@ -960,17 +954,17 @@ function ReplyComposer({ postId, parentReplyId, replyToReplyId, replyToUserId, r
       if (isCurrent()) { await onSent(); ui.notify("回复已发布"); }
     } finally { if (isCurrent()) setSending(false); }
   }}>
-    {inline && <>
-      {replyToName && <div className="reply-target">回复 <b>{replyToName}</b></div>}
-      <label className="field reply-text-field"><span className="sr-only">写下你的回复</span><textarea name="content" rows={2} value={content} placeholder={replyToName ? `回复 ${replyToName}…` : "说说你的想法，一起聊聊…"} onChange={(event) => { setContent(event.target.value); const input = event.currentTarget; input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight, 200)}px`; }} /></label>
-    </>}
-    <div className={inline ? "reply-attachments" : undefined}><MediaUploadPicker maxCount={4} compact={inline} disabled={sending || !!sticker} onFilesChange={(files) => setFileCount(files.length)} /></div>
-    <div className={inline ? "reply-inline-tools" : "reply-emoji-row"}>
-      <button ref={emojiTrigger} type="button" className={inline ? "reply-tool" : "btn"} aria-label={inline ? "添加表情" : undefined} title={inline ? "添加表情" : undefined} aria-expanded={showStickers} disabled={fileCount > 0} onClick={() => setShowStickers((value) => !value)}>{inline ? <span className="reply-smile" aria-hidden="true">☺</span> : <>☺ {showStickers ? "收起表情" : "添加表情"}</>}</button>
-      {inline && <><button type="button" className="reply-tool" aria-label="添加图片" title={sticker ? "移除表情后可添加图片" : "添加图片 · 最多 4 张，可粘贴"} disabled={!!sticker || fileCount >= 4} onClick={() => editor.current?.querySelector<HTMLInputElement>('input[name="images"]')?.click()}><Icon name="image" size={20} /></button><span className="reply-shortcut">{fileCount ? `${fileCount}/4 张图片` : "Ctrl / ⌘ + Enter 发布"}</span><button type="button" className="reply-collapse" onClick={onCancel}>收起</button></>}
-      {!inline && sticker && <span className="sticker-inline"><EmojiSelectionPreview selection={sticker} /><button type="button" className="link-btn" onClick={() => setSticker(null)}>移除</button></span>}
-    </div>
-    {inline && sticker && <div className="reply-selected-sticker"><EmojiSelectionPreview selection={sticker} /><button type="button" className="link-btn" onClick={() => setSticker(null)}>移除表情</button></div>}
-    {showStickers && <div className={inline ? "reply-emoji-popover" : undefined} role={inline ? "region" : undefined} aria-label={inline ? "选择评论表情" : undefined}><StickerPicker compact disabled={sending} onSelect={(value) => { setSticker(value); setShowStickers(false); if (inline) editor.current?.querySelector("textarea")?.focus({ preventScroll: true }); }} /></div>}
-  </Form></fieldset>;
+      {inline && <>
+        {replyToName && <div className="reply-target">回复 <b>{replyToName}</b></div>}
+        <label className="field reply-text-field"><span className="sr-only">写下你的回复</span><textarea name="content" rows={2} value={content} placeholder={replyToName ? `回复 ${replyToName}…` : "说说你的想法，一起聊聊…"} onChange={(event) => { setContent(event.target.value); const input = event.currentTarget; input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight, 200)}px`; }} /></label>
+      </>}
+      <div className={inline ? "reply-attachments" : undefined}><MediaUploadPicker maxCount={4} compact={inline} disabled={sending || !!sticker} onFilesChange={(files) => setFileCount(files.length)} /></div>
+      <div className={inline ? "reply-inline-tools" : "reply-emoji-row"}>
+        <button ref={emojiTrigger} type="button" className={inline ? "reply-tool" : "btn"} aria-label={inline ? "添加表情" : undefined} title={inline ? "添加表情" : undefined} aria-expanded={showStickers} disabled={fileCount > 0} onClick={() => setShowStickers((value) => !value)}>{inline ? <span className="reply-smile" aria-hidden="true">☺</span> : <>☺ {showStickers ? "收起表情" : "添加表情"}</>}</button>
+        {inline && <><button type="button" className="reply-tool" aria-label="添加图片" title={sticker ? "移除表情后可添加图片" : "添加图片 · 最多 4 张，可粘贴"} disabled={!!sticker || fileCount >= 4} onClick={() => editor.current?.querySelector<HTMLInputElement>('input[name="images"]')?.click()}><Icon name="image" size={20} /></button><span className="reply-shortcut">{fileCount ? `${fileCount}/4 张图片` : "Ctrl / ⌘ + Enter 发布"}</span><button type="button" className="reply-collapse" onClick={onCancel}>收起</button></>}
+        {!inline && sticker && <span className="sticker-inline"><EmojiSelectionPreview selection={sticker} /><button type="button" className="link-btn" onClick={() => setSticker(null)}>移除</button></span>}
+      </div>
+      {inline && sticker && <div className="reply-selected-sticker"><EmojiSelectionPreview selection={sticker} /><button type="button" className="link-btn" onClick={() => setSticker(null)}>移除表情</button></div>}
+      {showStickers && <div className={inline ? "reply-emoji-popover" : undefined} role={inline ? "region" : undefined} aria-label={inline ? "选择评论表情" : undefined}><StickerPicker compact disabled={sending} onSelect={(value) => { setSticker(value); setShowStickers(false); if (inline) editor.current?.querySelector("textarea")?.focus({ preventScroll: true }); }} /></div>}
+    </Form></fieldset>;
 }

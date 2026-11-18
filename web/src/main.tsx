@@ -23,7 +23,7 @@ import {
   Exams,
 } from "./pages";
 import {Toolbox} from './toolbox';
-import {Profile} from './profile';
+import {Profile, PublicProfile} from './profile';
 import "./styles.css";
 import "./social-shell.css";
 import "./web-polish.css";
@@ -193,7 +193,7 @@ function Shell() {
   const feedSearch = originPath ? originSearch : location.search.slice(1);
   const mobile = useMobile();
   const mobileTheme = useMobileThemeRuntime(dark, location.pathname);
-  const standaloneProfile = active === "profile" && !mobile;
+  const standaloneProfile = (active === "profile" || active === "user") && !mobile;
   // 管理中心在桌面端是独立工作台：用自己的分组导航替换社区侧栏；手机端仍对照 App 保留原导航。
   const adminConsole = active === "admin" && !mobile;
   const workspace = useWorkspaceMotion(location.pathname, navigationMotion);
@@ -304,7 +304,7 @@ function Shell() {
           <div className="crumb">
             <span>校园</span>
             <span>›</span>
-            <b>{navigation.find(([id]) => id === active)?.[1] || "详情"}</b>
+            <b>{navigation.find(([id]) => id === active)?.[1] || (active === "user" ? "同学主页" : "详情")}</b>
           </div>
           <button
             className="search-trigger"
@@ -468,6 +468,7 @@ function Shell() {
                   <Route path="/ai" element={<AiPage />} />
                   <Route path="/toolbox" element={<Toolbox />} />
                   <Route path="/profile" element={<Profile />} />
+                  <Route path="/user/:id" element={<PublicProfile />} />
                   <Route path="/agreements" element={<AgreementsPage />} />
                   <Route path="/connected-apps" element={<ConnectedApps />} />
                   <Route path="/connected-apps/actions/:id" element={<ConnectedAction />} />

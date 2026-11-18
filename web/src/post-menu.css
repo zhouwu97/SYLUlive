@@ -19,7 +19,8 @@
 .post-card-menu-trigger:focus-visible { outline: 2px solid var(--color-focus, var(--brand)); outline-offset: 2px; }
 
 /* 卡片入场动画会让每张卡片成为独立层叠上下文；打开菜单的卡片需要压在后面的卡片之上。 */
-.feed-card:has(.post-card-menu.is-open) { position: relative; z-index: 6; }
+.feed-card:has(.post-card-menu.is-open),
+.poll-card:has(.post-card-menu.is-open) { position: relative; z-index: 6; }
 
 .post-card-menu-list {
   position: absolute;

@@ -21,6 +21,7 @@ import 'frosted_glass_settings_screen.dart';
 import '../../widgets/app_card.dart';
 import '../../features/theme_pack/theme_layout_decoration_screen.dart';
 import '../../features/theme_pack/theme_section.dart';
+import '../../features/theme_pack/theme_workshop_screen.dart';
 import '../../features/theme_pack/themed_wallpaper_layer.dart';
 
 /// 界面设置二级页
@@ -347,7 +348,13 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
       children: [
         // 智能实时自适应微缩预览卡片
         _buildLivePreviewCard(context, themeProvider),
-        const ThemeSection(),
+        ThemeSection(
+          onEditTheme: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const ThemeWorkshopScreen(),
+            ),
+          ),
+        ),
 
         // 主题模式段落
         SettingsSection(

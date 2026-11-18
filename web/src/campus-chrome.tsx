@@ -22,14 +22,14 @@ export function ProfileSummary() {
       <span className="profile-rail-go" aria-hidden="true"><Icon name="chevron" size={15} /></span>
     </Link> : <div className="profile-rail-head">
       <div className="profile-rail-avatar"><ServerAvatar src={undefined} name="沈理校园" /></div>
-      <div><b>{auth.loading ? "正在读取账号…" : "欢迎来到沈理校园"}</b><p>分享日常，发现同频的校园生活</p></div>
+      <div><b>{auth.loading ? "正在读取账号…" : "欢迎来到沈理校园"}</b><p>登录后管理收藏、课表与互动</p></div>
     </div>}
     {/* 只展示用户自己写的简介；没写就不显示，不用占位文案冒充 */}
     {auth.user && person.bio && <p className="profile-bio">{person.bio}</p>}
     {auth.user && <div className="profile-rail-stats">
-      <span><b>{person.total_likes_received ?? person.like_count ?? 0}</b><small>获赞</small></span>
-      <span><b>{person.followers_count ?? person.follower_count ?? 0}</b><small>粉丝</small></span>
-      <span><b>{person.following_count ?? person.following ?? 0}</b><small>关注</small></span>
+      <Link to="/profile" title="查看我的主页"><b>{person.total_likes_received ?? person.like_count ?? 0}</b><small>获赞</small></Link>
+      <Link to="/profile?view=followers" title="查看我的粉丝"><b>{person.followers_count ?? person.follower_count ?? 0}</b><small>粉丝</small></Link>
+      <Link to="/profile?view=following" title="查看我的关注"><b>{person.following_count ?? person.following ?? 0}</b><small>关注</small></Link>
     </div>}
     {!auth.user && <button className="btn primary full-width" disabled={auth.loading} onClick={auth.login}>登录并参与讨论</button>}
   </section>;
@@ -58,7 +58,7 @@ export function TodaySchedule() {
     <div className="rail-title"><b><span className="rail-heading-icon"><Icon name="schedule" size={16} /></span>{week ? `今日课表 · 第 ${week} 周` : "今日课表"}</b><Link to="/schedule">完整课表 <span aria-hidden="true">→</span></Link></div>
     <div className="today-copy">
       <h2>{today[0]?.name || (hasSchedule ? "今天没有课程" : "课表尚未连接")}</h2>
-      <p>{today[0] ? `${today[0].room} · ${today[0].teacher} · 第 ${today[0].periods.join("、")} 节` : hasSchedule ? "留点时间，发现校园里的小美好。" : "连接后这里会显示今天的课程和教室。"}</p>
+      <p>{today[0] ? `${today[0].room} · ${today[0].teacher} · 第 ${today[0].periods.join("、")} 节` : hasSchedule ? "今日无排课安排，可查看完整周课表。" : "连接后这里会显示今天的课程和教室。"}</p>
     </div>
     {hasSchedule ? <div className="today-side"><div className="today-time">{today.length}</div><span>今日课程</span></div>
       : <ol className="today-slots" aria-label="接下来的上课时间">{PERIODS.slice(upcoming, upcoming + 3).map(([name, start, end]) => <li key={name} className={now >= minutes(start) && now < minutes(end) ? "is-now" : ""}><b>{name} 节</b><span>{start} – {end}</span></li>)}</ol>}

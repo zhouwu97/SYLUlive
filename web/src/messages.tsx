@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, asset, captureAuthSession, errorText, rows, time, useApi, write, type Entity } from "./api";
 import { useAuth } from "./auth";
+import { displayName, userHref } from "./user-level";
 import { uploadImageFiles } from "./media";
 import { EmojiSelectionPreview, StickerPicker, StickerRenderer, type StickerPayload } from "./emoji";
 import { messageEmojiFields } from "./emoji-selection";
@@ -78,7 +80,7 @@ export function Messages() {
         })}
       </aside>
       <section className="chat-main">
-        <div className="chat-head"><div><b>{peer?.nickname || "会话"}</b><small>私密消息</small></div><span className="tag" role="status">{realtime === 'live' ? '实时已连接' : realtime === 'connecting' ? '正在连接' : '实时连接已断开'}</span>{realtime === 'offline' && <button className="link-btn" onClick={() => { void messages.refetch(); setStreamAttempt(value => value + 1); }}>重新连接</button>}</div>
+        <div className="chat-head"><div>{peer?.id ? <Link className="author-name-link" to={userHref(peer.id, auth.user?.id) || "/messages"}><b>{displayName(peer?.nickname, "会话")}</b></Link> : <b>{displayName(peer?.nickname, "会话")}</b>}<small>私密消息</small></div><span className="tag" role="status">{realtime === 'live' ? '实时已连接' : realtime === 'connecting' ? '正在连接' : '实时连接已断开'}</span>{realtime === 'offline' && <button className="link-btn" onClick={() => { void messages.refetch(); setStreamAttempt(value => value + 1); }}>重新连接</button>}</div>
         <QueryState query={messages} empty={!rows(messages.data, "messages").length}>
           <div className="chat-messages">
             {rows(messages.data, "messages").map((message) => <MessageBubble key={message.id || message.client_message_id} message={message} mine={Number(message.sender_id) === auth.user?.id} />)}

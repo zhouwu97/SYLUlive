@@ -568,7 +568,11 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
   const fallback = isPoll ? "/polls" : p.board_id === 2 ? "/market" : "/community";
   const origin = detailOrigin(from || fallback);
   useReportDetailOrigin(from && !isDetailPath(from) ? from : q.data ? fallback : "");
-  const goBack = () => from ? navigate(-1) : navigate(fallback);
+  const goBack = () => {
+    if ((mobile || from) && window.history.state?.idx > 0) return navigate(-1);
+    // 手机直达分享帖时用首页替换详情，避免返回键在详情与列表间往返。
+    return navigate(mobile ? "/" : fallback, { replace: true });
+  };
   return (
     <div className="post-detail-page">
       {mobile ? <header className="mobile-header mobile-detail-header page-head post-detail-head">

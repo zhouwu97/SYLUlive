@@ -19,6 +19,7 @@ import '../theme/app_text_styles.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_clipboard.dart';
 import '../utils/post_media_access.dart';
+import '../utils/post_share_link.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
 import 'post_content_link_text.dart';
@@ -26,7 +27,6 @@ import 'post_media/post_media_view.dart';
 import 'feed/feed_post_action_menu.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'app_card.dart';
 
 const _ignoredLegacyTopicLabels = {'其他', '其它', '默认', '未分类', '综合'};
@@ -657,7 +657,7 @@ class _PostCardState extends State<PostCard>
             icon: Icons.ios_share_outlined,
             label: '',
             color: secondary,
-            onTap: () => _sharePost(post),
+            onTap: () => sharePostLink(context, post),
             alignEnd: true,
           ),
         ),
@@ -706,14 +706,6 @@ class _PostCardState extends State<PostCard>
         ),
       ),
     );
-  }
-
-  Future<void> _sharePost(Post post) async {
-    final text = [
-      if (post.title.trim().isNotEmpty) post.title.trim(),
-      post.content.trim(),
-    ].where((item) => item.isNotEmpty).join('\n');
-    await Share.share(text.isEmpty ? '分享一条校园帖子' : text, subject: 'SYLUlive 帖子');
   }
 
   Widget _buildCategoryTag(BuildContext context, bool isDark, Post post) {

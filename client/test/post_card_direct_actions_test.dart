@@ -3,14 +3,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shenliyuan/models/poll.dart';
 import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
+import 'package:shenliyuan/models/water_section.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/post_detail_screen.dart';
 import 'package:shenliyuan/widgets/post_card.dart';
+import 'package:shenliyuan/widgets/water_section/section_post_card.dart';
 
 class _CardAuthProvider extends ChangeNotifier implements AuthProvider {
   _CardAuthProvider({required this.client, required this.loggedIn});
@@ -55,6 +58,66 @@ Post _post({int likeCount = 12, bool isLiked = false, int replyCount = 3}) {
 }
 
 void main() {
+  testWidgets('首页和版块分享只发送对应详情链接，分享面板失败后可再次点击', (tester) async {
+    const channel = MethodChannel('dev.fluttercommunity.plus/share');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    final shared = <String>[];
+    var failShare = true;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (failShare) throw PlatformException(code: 'unavailable');
+      shared.add(call.arguments['text'] as String);
+      return '';
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    final dio = Dio();
+    final post = _post();
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>(
+          create: (_) => _CardAuthProvider(client: dio, loggedIn: false),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => PostProvider(dio, enableCache: false),
+        ),
+        ChangeNotifierProvider(create: (_) => ThemeProvider(loadOnStart: false)),
+        ChangeNotifierProvider(create: (_) => WaterSectionProvider(null)),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          body: ListView(
+            children: [
+              PostCard(post: post, variant: PostCardVariant.homeFeed),
+              SectionPostCard(
+                post: post.copyWith(
+                  contentKind: 'poll',
+                  pollMeta: PollMeta.fromJson({'id': 42, 'post_id': post.id}),
+                ),
+                section: const WaterSection(id: 1, slug: 'general', title: '综合讨论'),
+                accentColor: Colors.teal,
+              ),
+            ],
+          ),
+        ),
+      ),
+    ));
+    final homeShare = find.byIcon(Icons.ios_share_outlined);
+    await tester.tap(homeShare);
+    await tester.pumpAndSettle();
+    expect(find.text('分享失败，请稍后重试'), findsOneWidget);
+
+    failShare = false;
+    await tester.tap(homeShare);
+    final sectionShare = find.byIcon(Icons.ios_share_rounded);
+    await tester.ensureVisible(sectionShare);
+    await tester.tap(sectionShare);
+    await tester.pumpAndSettle();
+    expect(shared, [
+      'https://sylulive.online/web/post/1',
+      'https://sylulive.online/web/polls/42',
+    ]);
+  });
+
   testWidgets('点击点赞立即 +1 且不进入详情', (tester) async {
     var onTapCount = 0;
     final dio = Dio();

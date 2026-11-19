@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../ai_bot_identity.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../config/api_constants.dart';
 import '../../models/post.dart';
@@ -16,6 +15,7 @@ import '../../theme/app_text_styles.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/post_clipboard.dart';
 import '../../utils/post_media_access.dart';
+import '../../utils/post_share_link.dart';
 import '../cached_avatar.dart';
 import '../post_content_link_text.dart';
 import '../post_media/post_media_view.dart';
@@ -356,7 +356,7 @@ class SectionPostCard extends StatelessWidget {
           button: true,
           label: '分享帖子',
           child: InkWell(
-            onTap: () => _sharePost(context),
+            onTap: () => sharePostLink(context, post),
             customBorder: const CircleBorder(),
             child: const SizedBox(
               width: 44,
@@ -381,27 +381,6 @@ class SectionPostCard extends StatelessWidget {
   }
 
   String _formatCount(int count) => count > 999 ? '999+' : '$count';
-
-  Future<void> _sharePost(BuildContext context) async {
-    final title = post.title.trim();
-    final body = post.content.trim();
-    final excerpt = body.length > 180 ? '${body.substring(0, 180)}…' : body;
-    // 使用 App 自定义 scheme，避免把 /api 接口地址当成可浏览网页分享。
-    // 已登录的 App 会由深链处理器直接打开帖子详情。
-    final link = 'sylulive://post/${post.id}';
-    final text = [
-      if (title.isNotEmpty) title,
-      if (excerpt.isNotEmpty) excerpt,
-      link,
-    ].join('\n');
-    try {
-      await Share.share(text, subject: title.isEmpty ? 'SYLUlive 帖子' : title);
-    } catch (error) {
-      if (context.mounted) {
-        AppFeedback.error('分享失败，请稍后重试', context: context);
-      }
-    }
-  }
 
   Future<void> _copyPostContent(BuildContext context) async {
     final copied = await PostClipboard.copy(post);

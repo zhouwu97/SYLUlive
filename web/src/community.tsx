@@ -511,7 +511,11 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
   const fallback = isPoll ? "/polls" : p.board_id === 2 ? "/market" : "/community";
   const origin = detailOrigin(from || fallback);
   useReportDetailOrigin(from && !isDetailPath(from) ? from : q.data ? fallback : "");
-  const goBack = () => from ? navigate(-1) : navigate(fallback);
+  const goBack = () => {
+    if ((mobile || from) && window.history.state?.idx > 0) return navigate(-1);
+    // 手机直达分享帖时用首页替换详情，避免返回键在详情与列表间往返。
+    return navigate(mobile ? "/" : fallback, { replace: true });
+  };
   const postBadges = (isPublicPost(p) || p.is_featured || p.water_section_featured) ? (
     <>
       {isPublicPost(p) && <span className="post-badge is-pinned">置顶</span>}

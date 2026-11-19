@@ -313,6 +313,28 @@ test("分享复制成功，拒绝剪贴板时提供可选中链接且不发送 A
   expect(state.writes).toEqual([]); expect(state.errors).toEqual([]);
 });
 
+test.describe("手机分享入口", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+  test("手机直接打开分享帖后，左上角一次返回 Web 首页", async ({ page }) => {
+    const state = await setup(page, { guest: true });
+    await page.route("**/shared-entry", route => route.fulfill({
+      contentType: "text/html; charset=utf-8",
+      body: '<title>分享来源</title><a href="/web/post/675">打开帖子</a>',
+    }));
+    await page.goto("/shared-entry");
+    await page.getByRole("link", { name: "打开帖子" }).tap();
+    await expect(page.locator(".post-full")).toContainText(state.post.title);
+    await page.getByRole("button", { name: "返回上一页", exact: true }).tap();
+    await expect(page).toHaveURL(/\/web\/$/);
+    await expect(page.getByRole("navigation", { name: "底部导航" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "打开导航" })).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(/\/shared-entry$/);
+    expect(state.errors).toEqual([]);
+  });
+});
+
 test("评论入口定位讨论区，返回保留列表筛选；更多操作支持键盘关闭与权限", async ({ page }) => {
   const state = await setup(page);
   await page.goto("community?sort=time&q=校园");

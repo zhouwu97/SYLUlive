@@ -45,10 +45,25 @@ export function Messages() {
   const peer = conversationPeer(active || {}, auth.user?.id);
   const messages = useApi(selected ? `/api/messages/conversations/${selected}` : null);
 
+  const displayedMessages = rows(messages.data, "messages");
+  const currentUserId = auth.user?.id;
+  const latestIncomingId = displayedMessages.reduce((latest, message) =>
+    Number(message.sender_id) === currentUserId ? latest : Math.max(latest, Number(message.id) || 0), 0);
+
   useEffect(() => {
-    if (!selected || !active || conversations.isPending || conversations.error) return;
-    write(`/api/messages/conversations/${selected}/read`, {}).then(() => qc.invalidateQueries({ queryKey: ["api", "/api/messages/conversations"] })).catch(() => undefined);
-  }, [selected, active?.id, conversations.isPending, conversations.error, qc]);
+    if (!currentUserId || !selected || !active?.id || !messages.isSuccess || conversations.error) return;
+    // 会话正文完成渲染后推进回执；后台标签页等待用户回到对话。
+    const markRead = () => {
+      if (document.visibilityState !== "visible") return;
+      void write(`/api/messages/conversations/${selected}/read`, {}).then(() => Promise.all([
+        qc.invalidateQueries({ queryKey: ["api", "/api/messages/conversations"] }),
+        qc.invalidateQueries({ queryKey: ["api", "/api/messages/unread_count"] }),
+      ])).catch(() => undefined);
+    };
+    markRead();
+    document.addEventListener("visibilitychange", markRead);
+    return () => document.removeEventListener("visibilitychange", markRead);
+  }, [currentUserId, selected, active?.id, messages.isSuccess, conversations.error, latestIncomingId, qc]);
 
   useEffect(() => {
     if (!auth.user || conversations.isPending || conversations.error) return;
@@ -81,9 +96,9 @@ export function Messages() {
       </aside>
       <section className="chat-main">
         <div className="chat-head"><div>{peer?.id ? <Link className="author-name-link" to={userHref(peer.id, auth.user?.id) || "/messages"}><b>{displayName(peer?.nickname, "会话")}</b></Link> : <b>{displayName(peer?.nickname, "会话")}</b>}<small>私密消息</small></div><span className="tag" role="status">{realtime === 'live' ? '实时已连接' : realtime === 'connecting' ? '正在连接' : '实时连接已断开'}</span>{realtime === 'offline' && <button className="link-btn" onClick={() => { void messages.refetch(); setStreamAttempt(value => value + 1); }}>重新连接</button>}</div>
-        <QueryState query={messages} empty={!rows(messages.data, "messages").length}>
+        <QueryState query={messages} empty={!displayedMessages.length}>
           <div className="chat-messages">
-            {rows(messages.data, "messages").map((message) => <MessageBubble key={message.id || message.client_message_id} message={message} mine={Number(message.sender_id) === auth.user?.id} />)}
+            {displayedMessages.map((message) => <MessageBubble key={message.id || message.client_message_id} message={message} mine={Number(message.sender_id) === auth.user?.id} />)}
           </div>
         </QueryState>
         {peer?.id && <MessageComposer key={`${auth.user.id}:${peer.id}`} targetId={Number(peer.id)} onSent={() => { qc.invalidateQueries({ queryKey: ["api", `/api/messages/conversations/${selected}`] }); qc.invalidateQueries({ queryKey: ["api", "/api/messages/conversations"] }); }} />}

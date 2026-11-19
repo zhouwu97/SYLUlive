@@ -52,6 +52,41 @@ test('正常私信仍能读取已有会话和消息', async ({page}) => {
   await expect(page.getByText('这是已有的私信内容', {exact: true})).toBeVisible();
 });
 
+test('停留在私信会话时对新消息回执，其他会话仍未读', async ({page}) => {
+  await syntheticUser(page);
+  let arrived = false, readThrough = 0;
+  const receipts: string[] = [];
+  let deliver!: () => void;
+  const event = new Promise<void>(resolve => { deliver = resolve; });
+  await page.route('**/api/messages/events', async route => {
+    await event;
+    await route.fulfill({contentType: 'text/event-stream', body: 'event: message.created\ndata: {"conversation_id":51}\n\n'});
+  });
+  await page.route('**/api/messages/conversations', route => route.fulfill({json: [51, 52].map(id => ({
+    id, user1_id: 991, user2_id: id, user2: {id, nickname: id === 51 ? '当前同学' : '其他同学'},
+    unread_count: id === 52 ? 1 : Number(arrived && readThrough < 2),
+  }))}));
+  await page.route('**/api/messages/conversations/51', route => route.fulfill({json: [
+    {id: 1, sender_id: 51, content: '先前消息'},
+    ...(arrived ? [{id: 2, sender_id: 51, content: '新收到的消息'}] : []),
+  ]}));
+  await page.route('**/api/messages/conversations/*/read', route => {
+    receipts.push(new URL(route.request().url()).pathname);
+    readThrough = arrived ? 2 : 1;
+    return route.fulfill({json: {}});
+  });
+  await page.goto('messages');
+  await expect(page.getByText('先前消息', {exact: true})).toBeVisible();
+  await expect.poll(() => readThrough).toBe(1);
+  arrived = true;
+  deliver();
+  await expect(page.getByText('新收到的消息', {exact: true})).toBeVisible();
+  await expect.poll(() => readThrough).toBe(2);
+  await expect(page.locator('.chat-row.active em')).toHaveCount(0);
+  await expect(page.locator('.chat-row').filter({hasText: '其他同学'}).locator('em')).toHaveText('1');
+  expect(receipts.every(path => path.endsWith('/51/read'))).toBe(true);
+});
+
 test('GPA 缺字段不产生结果，明确的零绩点和多行加权可以计算', async ({page}) => {
   await syntheticUser(page);
   await page.goto('toolbox');

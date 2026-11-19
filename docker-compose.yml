@@ -23,11 +23,14 @@ services:
       context: ./python-edu-service
       dockerfile: Dockerfile
     environment:
+      - DATABASE_URL=sqlite+aiosqlite:////var/lib/sylulive-edu/edu.db
       - INTERNAL_SERVICE_TOKEN=${EDU_SERVICE_TOKEN:-}
       - EDU_CREDENTIAL_ENCRYPTION_KEY=${EDU_CREDENTIAL_ENCRYPTION_KEY:-}
       - JWC_CRAWLER_CONTACT=${JWC_CRAWLER_CONTACT:-}
       - SCHOOL_AUTHORITY_RETIRED=${SCHOOL_AUTHORITY_RETIRED:?set SCHOOL_AUTHORITY_RETIRED=false in .env}
       - SCHOOL_LEGACY_SECRETS_FROZEN=${SCHOOL_LEGACY_SECRETS_FROZEN:-true}
+    volumes:
+      - edu_database:/var/lib/sylulive-edu
     expose:
       - "8000"
     restart: unless-stopped
@@ -229,6 +232,7 @@ services:
       - shenliyuan_network
 
 volumes:
+  edu_database:
   server_data:
   exam_paper_data:
   competition_award_evidence_data:

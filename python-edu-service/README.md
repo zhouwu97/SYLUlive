@@ -25,8 +25,10 @@ python main.py
 | --- | --- | --- |
 | `HOST` | `0.0.0.0` | 监听地址 |
 | `PORT` | `8081` | 直接运行时的端口；Compose 使用 `8000` |
-| `DATABASE_URL` | SQLite 本地文件 | 仅兼容模式初始化教务数据库 |
+| `DATABASE_URL` | SQLite 本地文件 | 仅兼容模式初始化；Compose 使用独立的 `edu_database` 命名卷 |
 | `SCHOOL_AUTHORITY_RETIRED` | 未设置时 fail-closed | 是否退役个人教务能力 |
+
+已有 Compose 实例在首次重建前，按[迁移期教务运维](../docs/ops/legacy-edu.md)将旧容器数据库迁入命名卷。
 
 直接运行时访问 `http://localhost:8081/docs`；容器内部服务地址通常为 `http://python-edu-service:8000`。
 

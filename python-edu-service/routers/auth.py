@@ -452,11 +452,15 @@ async def revoke_edu_authorization(
     user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """仅撤销指定代次的授权，旧任务不会删除重绑后的凭据。"""
+    """主动撤销覆盖已发出的代次，单次提交补偿仅匹配该次请求。"""
+    generation = (
+        EduUser.credential_generation <= input.expected_generation if input.through_generation
+        else EduUser.credential_generation == input.expected_generation
+    )
     if input.delete_identity:
         result = await db.execute(delete(EduUser).where(
             EduUser.user_id == user_id,
-            EduUser.credential_generation == input.expected_generation,
+            generation,
         ))
         if result.rowcount != 1:
             await db.rollback()
@@ -469,8 +473,9 @@ async def revoke_edu_authorization(
     result = await db.execute(
         update(EduUser).where(
             EduUser.user_id == user_id,
-            EduUser.credential_generation == input.expected_generation,
+            generation,
         ).values(
+            credential_generation=input.expected_generation,
             encrypted_password=None, raw_password=None, cookie=None, bound=False,
             authorized=False, session_state="revoked", auto_relogin=False, revoked_at=datetime.now(),
         )

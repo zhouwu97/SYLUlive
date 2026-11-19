@@ -265,10 +265,13 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误", "code": "INVALID_PASSWORD"})
 		return
 	}
-	needsEduCredentialCleanup := user.IsEduAuthorized()
 	now := time.Now()
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+			return err
+		}
+		needsEduCredentialCleanup := hasEduCredentialsToRevoke(user)
+		updates := map[string]interface{}{
 			"legal_consent_revoked_at":     &now,
 			"device_token":                 "",
 			"push_data_processing_enabled": false,
@@ -282,7 +285,9 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 			"edu_session_state":            "revoked",
 			"edu_auto_relogin":             false,
 			"edu_cleanup_pending":          needsEduCredentialCleanup,
-		}).Error; err != nil {
+		}
+		generation := invalidatePendingEduBinding(user, updates)
+		if err := tx.Model(&user).Updates(updates).Error; err != nil {
 			return err
 		}
 		if err := services.InvalidateUserIntegrations(tx, userID, now); err != nil {
@@ -305,7 +310,7 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 			return err
 		}
 		if needsEduCredentialCleanup {
-			return h.eduCredentialCleanupJobs.Enqueue(tx, userID, user.EduAuthorizationGeneration, now, false)
+			return h.eduCredentialCleanupJobs.Enqueue(tx, userID, generation, now, false)
 		}
 		return nil
 	}); err != nil {
@@ -325,14 +330,14 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 func (h *PrivacyHandler) UnbindEdu(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-		return
-	}
-	needsCleanup := user.IsEduAuthorized() || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
+	var needsCleanup bool
 	now := time.Now()
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+			return err
+		}
+		needsCleanup = hasEduCredentialsToRevoke(user)
+		updates := map[string]interface{}{
 			"edu_password":        "",
 			"edu_cookie":          "",
 			"edu_bound":           false,
@@ -340,14 +345,20 @@ func (h *PrivacyHandler) UnbindEdu(c *gin.Context) {
 			"edu_session_state":   "revoked",
 			"edu_auto_relogin":    false,
 			"edu_cleanup_pending": needsCleanup,
-		}).Error; err != nil {
+		}
+		generation := invalidatePendingEduBinding(user, updates)
+		if err := tx.Model(&user).Updates(updates).Error; err != nil {
 			return err
 		}
 		if needsCleanup {
-			return h.eduCredentialCleanupJobs.Enqueue(tx, userID, user.EduAuthorizationGeneration, now, false)
+			return h.eduCredentialCleanupJobs.Enqueue(tx, userID, generation, now, false)
 		}
 		return nil
 	}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "解除教务绑定失败"})
 		return
 	}
@@ -463,8 +474,12 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "处理账号注销失败"})
 		return
 	}
-	needsEduCredentialCleanup := accountCancellationNeedsEduCleanup(user)
+	var needsEduCredentialCleanup bool
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("role <> ? AND password_hash = ?", models.RoleSuperAdmin, user.PasswordHash).First(&user, userID).Error; err != nil {
+			return err
+		}
+		needsEduCredentialCleanup = hasEduCredentialsToRevoke(user)
 		return h.cancelAccountTx(tx, user, randomPassword, "用户通过密码确认发起账号注销", now)
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "账号注销失败"})
@@ -479,8 +494,8 @@ func cancelledPasswordHash(userID uint, now time.Time) (string, error) {
 	return string(hash), err
 }
 
-func accountCancellationNeedsEduCleanup(user models.User) bool {
-	return user.IsEduAuthorized() || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
+func hasEduCredentialsToRevoke(user models.User) bool {
+	return user.EduBindingPendingGeneration > 0 || user.EduCleanupPending || user.IsEduAuthorized() || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
 }
 
 // RetireSuperAdmin 仅用于运维交接命令。先完成服务种子切换，才能注销原管理员。
@@ -517,7 +532,7 @@ func (h *PrivacyHandler) RetireSuperAdmin(ctx context.Context, keeperID, retireI
 		if err := tx.Model(&models.User{}).Where("id = ?", target.ID).UpdateColumn("role", models.RoleUser).Error; err != nil {
 			return err
 		}
-		needsCleanup = accountCancellationNeedsEduCleanup(target)
+		needsCleanup = hasEduCredentialsToRevoke(target)
 		if err := h.cancelAccountTx(tx, target, hash, "生产运维完成超管交接后注销", now); err != nil {
 			return err
 		}
@@ -537,8 +552,8 @@ func (h *PrivacyHandler) RetireSuperAdmin(ctx context.Context, keeperID, retireI
 
 func (h *PrivacyHandler) cancelAccountTx(tx *gorm.DB, user models.User, randomPassword, detail string, now time.Time) error {
 	userID := user.ID
-	needsEduCredentialCleanup := accountCancellationNeedsEduCleanup(user)
-	if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+	needsEduCredentialCleanup := hasEduCredentialsToRevoke(user)
+	updates := map[string]interface{}{
 		"student_id":                   "",
 		"student_verified_at":          nil,
 		"email":                        "",
@@ -568,7 +583,9 @@ func (h *PrivacyHandler) cancelAccountTx(tx *gorm.DB, user models.User, randomPa
 		"edu_college":                  "",
 		"edu_major":                    "",
 		"token_version":                gorm.Expr("token_version + 1"),
-	}).Error; err != nil {
+	}
+	generation := invalidatePendingEduBinding(user, updates)
+	if err := tx.Model(&user).Updates(updates).Error; err != nil {
 		return err
 	}
 	if err := services.InvalidateUserIntegrations(tx, userID, now); err != nil {
@@ -605,7 +622,7 @@ func (h *PrivacyHandler) cancelAccountTx(tx *gorm.DB, user models.User, randomPa
 		return err
 	}
 	if needsEduCredentialCleanup {
-		if err := h.eduCredentialCleanupJobs.Enqueue(tx, userID, user.EduAuthorizationGeneration, now, true); err != nil {
+		if err := h.eduCredentialCleanupJobs.Enqueue(tx, userID, generation, now, true); err != nil {
 			return err
 		}
 	}

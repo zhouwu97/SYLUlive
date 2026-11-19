@@ -26,8 +26,9 @@ const (
 type Report struct {
 	ID                uint         `gorm:"primaryKey" json:"id"`
 	ReporterID        uint         `gorm:"not null;index" json:"reporter_id"`
-	TargetType        string       `gorm:"size:20;not null;index" json:"target_type"` // post/reply/teacher_rating/major_rating
+	TargetType        string       `gorm:"size:20;not null;index" json:"target_type"` // post/reply/teacher_rating/major_rating/theme
 	TargetID          uint         `gorm:"not null;index" json:"target_id"`
+	TargetKey         string       `gorm:"size:64;not null;default:'';index" json:"target_key,omitempty"`
 	ReasonCode        string       `gorm:"size:50;index" json:"reason_code"`
 	Reason            string       `gorm:"type:text;not null" json:"reason"`
 	TargetAuthorID    *uint        `gorm:"index" json:"target_author_id"`

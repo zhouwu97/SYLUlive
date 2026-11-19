@@ -71,10 +71,42 @@ func NewReportHandler(db *gorm.DB) *ReportHandler {
 
 // CreateReportInput 创建举报输入
 type CreateReportInput struct {
-	TargetType string `json:"target_type" binding:"required"` // post/reply/teacher_rating/major_rating/canteen_review/canteen_rating/canteen_dish_review/canteen_dish_photo
-	TargetID   uint   `json:"target_id" binding:"required"`
+	TargetType string `json:"target_type" binding:"required"` // post/reply/teacher_rating/major_rating/canteen_review/canteen_rating/canteen_dish_review/canteen_dish_photo/theme
+	TargetID   uint   `json:"target_id"`
+	TargetKey  string `json:"target_key"`
 	ReasonCode string `json:"reason_code"`
 	Reason     string `json:"reason" binding:"required"`
+}
+
+func (in *CreateReportInput) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		TargetType string          `json:"target_type"`
+		TargetID   json.RawMessage `json:"target_id"`
+		TargetKey  string          `json:"target_key"`
+		ReasonCode string          `json:"reason_code"`
+		Reason     string          `json:"reason"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	in.TargetType = raw.TargetType
+	in.TargetKey = strings.TrimSpace(raw.TargetKey)
+	in.ReasonCode = raw.ReasonCode
+	in.Reason = raw.Reason
+	if len(raw.TargetID) > 0 && string(raw.TargetID) != "null" {
+		var numID uint
+		if err := json.Unmarshal(raw.TargetID, &numID); err == nil {
+			in.TargetID = numID
+		} else {
+			var strID string
+			if err := json.Unmarshal(raw.TargetID, &strID); err == nil {
+				in.TargetKey = strings.TrimSpace(strID)
+			} else {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 type reportCreateError struct {
@@ -105,8 +137,20 @@ func (h *ReportHandler) Create(c *gin.Context) {
 // createReport 是统一举报写入逻辑，供新接口和旧兼容接口共同使用。
 // 兼容接口只负责解析 HTTP 输入，不直接调用另一个 Gin Handler。
 func createReport(db *gorm.DB, userID uint, input CreateReportInput) (models.Report, error) {
-	if input.TargetType != "post" && input.TargetType != "reply" && input.TargetType != "teacher_rating" && input.TargetType != "major_rating" && input.TargetType != "canteen_review" && input.TargetType != "canteen_rating" && input.TargetType != "canteen_dish_review" && input.TargetType != "canteen_dish_photo" {
+	if input.TargetType != "post" && input.TargetType != "reply" && input.TargetType != "teacher_rating" && input.TargetType != "major_rating" && input.TargetType != "canteen_review" && input.TargetType != "canteen_rating" && input.TargetType != "canteen_dish_review" && input.TargetType != "canteen_dish_photo" && input.TargetType != "theme" {
 		return models.Report{}, &reportCreateError{status: http.StatusBadRequest, code: "invalid_target_type", message: "不支持的 target_type"}
+	}
+	if input.TargetType == "theme" {
+		input.TargetKey = strings.ToLower(strings.TrimSpace(input.TargetKey))
+		if input.TargetKey == "" {
+			return models.Report{}, &reportCreateError{status: http.StatusBadRequest, code: "invalid_target_id", message: "缺少主题 ID"}
+		}
+		input.TargetID = 0
+	} else {
+		input.TargetKey = ""
+		if input.TargetID == 0 {
+			return models.Report{}, &reportCreateError{status: http.StatusBadRequest, code: "invalid_target_id", message: "缺少 target_id"}
+		}
 	}
 	if reasonLength := len([]rune(strings.TrimSpace(input.Reason))); reasonLength < 2 || reasonLength > 500 {
 		return models.Report{}, &reportCreateError{status: http.StatusBadRequest, code: "invalid_report_reason", message: "举报理由长度需在 2 到 500 个字符之间"}
@@ -215,12 +259,31 @@ func createReport(db *gorm.DB, userID uint, input CreateReportInput) (models.Rep
 			return models.Report{}, err
 		}
 		snapshot = string(payload)
+	case "theme":
+		var pack models.ThemePack
+		if err := db.Where("family_id = ? AND status = ?", input.TargetKey, models.ThemeStatusApproved).First(&pack).Error; err != nil {
+			return models.Report{}, &reportCreateError{status: http.StatusNotFound, code: "target_not_found", message: "主题不存在或已下架"}
+		}
+		var root models.ThemePack
+		if err := db.Select("id", "status").First(&root, "id = ?", input.TargetKey).Error; err != nil || root.Status == models.ThemeStatusRemoved || root.Status == models.ThemeStatusWithdrawn {
+			return models.Report{}, &reportCreateError{status: http.StatusNotFound, code: "target_not_found", message: "主题不存在或已下架"}
+		}
+		targetOwner = pack.AuthorUserID
+		payload, err := json.Marshal(gin.H{
+			"family_id": pack.FamilyID,
+			"version":   pack.Version,
+			"name":      pack.Name,
+		})
+		if err != nil {
+			return models.Report{}, err
+		}
+		snapshot = string(payload)
 	}
 	if targetOwner == userID {
 		return models.Report{}, &reportCreateError{status: http.StatusBadRequest, code: "self_report_forbidden", message: "不能举报自己的内容"}
 	}
 	var existing models.Report
-	if err := db.Where("reporter_id = ? AND target_type = ? AND target_id = ? AND status = ?", userID, input.TargetType, input.TargetID, models.ReportStatusPending).First(&existing).Error; err == nil {
+	if err := db.Where("reporter_id = ? AND target_type = ? AND target_id = ? AND target_key = ? AND status = ?", userID, input.TargetType, input.TargetID, input.TargetKey, models.ReportStatusPending).First(&existing).Error; err == nil {
 		return models.Report{}, &reportCreateError{status: http.StatusConflict, code: "report_already_pending", message: "请勿重复举报"}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return models.Report{}, err
@@ -230,6 +293,7 @@ func createReport(db *gorm.DB, userID uint, input CreateReportInput) (models.Rep
 		ReporterID:     userID,
 		TargetType:     input.TargetType,
 		TargetID:       input.TargetID,
+		TargetKey:      input.TargetKey,
 		ReasonCode:     input.ReasonCode,
 		Reason:         input.Reason,
 		TargetAuthorID: &targetOwner,
@@ -562,6 +626,23 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 				if err := services.ReconcileFilePublicAccess(tx, photo.FileID); err != nil {
 					return err
 				}
+			case "theme":
+				var root models.ThemePack
+				if err := tx.First(&root, "id = ?", report.TargetKey).Error; err != nil {
+					return err
+				}
+				targetUserID = root.AuthorUserID
+				if input.Action != models.ReportActionWarn {
+					reasonCode := input.ConfirmedReasonCode
+					if _, ok := services.ThemeReviewReasonMessages[reasonCode]; !ok {
+						reasonCode = "content"
+					}
+					var handlerUser models.User
+					_ = tx.Select("nickname").First(&handlerUser, userID.(uint)).Error
+					if err := services.RemoveThemeFamilyInTx(tx, report.TargetKey, userID.(uint), handlerUser.Nickname, reasonCode, input.DeleteReason); err != nil {
+						return err
+					}
+				}
 			default:
 				return fmt.Errorf("invalid_target_type")
 			}
@@ -597,7 +678,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 			}
 			// 同一目标的其他待处理举报不能再次触发删除、计数或申诉。
 			if err := tx.Model(&models.Report{}).
-				Where("target_type = ? AND target_id = ? AND status = ? AND id <> ?", report.TargetType, report.TargetID, models.ReportStatusPending, report.ID).
+				Where("target_type = ? AND target_id = ? AND target_key = ? AND status = ? AND id <> ?", report.TargetType, report.TargetID, report.TargetKey, models.ReportStatusPending, report.ID).
 				Updates(map[string]interface{}{
 					"status":     models.ReportStatusIgnored,
 					"handler_id": userID.(uint),

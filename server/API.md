@@ -586,3 +586,23 @@ FEED-H1 加固：
 公开帖子和正常评论新增 `author.nickname`、`like_count`、`images`；帖子含 `reply_count`。图片只包含当前可见内容关联且 public/active 的图片 URL、MIME、尺寸与序号，不返回上传者、存储元数据或私有文件。详情正文上限 10000 字；列表仍为 600 字摘要，评论分页不变。新增展示字段不参与草稿 source_version，统计／改名不使草稿失效。删除评论仍只留墓碑；所有路径保留 scope、当前资格和授权复核，不增加浏览量。
 
 AstrBot 食堂工具直接匿名复用现有 `/api/canteens/rankings`、`/search`、`/:id/dishes`、`/:id/dishes/:dishId`；不新增私有资料、学校登录或私信 scope。
+
+## 主题商城投稿与审核
+
+错误响应统一为 `{"error": "...", "code": "theme_*"}`（字段校验错误附带 `"field"`）。`POST /api/reports` 新增 `target_type="theme"`，`target_id` 传版本族 `familyId`（UUID）。
+
+| 方法与路径 | 权限 | 说明 |
+| --- | --- | --- |
+| `GET /api/themes` | 公开 | 查询参数：`sort`（`latest`/`popular`/`official`）、`tag`、`q`、`ids`（最多 50 个，批量检查更新）、`cursor`；每页 20 条，支持 `ETag` / `304` |
+| `GET /api/themes/:familyId` | 公开 | 已上架主题详情及规范化 `manifest`，支持 `ETag` / `304` |
+| `GET /api/themes/:familyId/versions/:version/package` | 公开 | 指定版本规范包，支持 `Range`、`ETag`（规范包 SHA-256）、`Cache-Control: public, no-cache`；仅版本为 `approved`/`superseded` 且根记录非 `removed`/`withdrawn` 时可下载，无 `Range` 或 `Range: bytes=0-*` 时根记录 `downloads` 加 1 |
+| `GET /api/themes/:familyId/versions/:version/preview/:mode` | 公开 | 指定版本 `light`/`dark` 预览图，支持 `Range`、`ETag` 与 `Cache-Control: public, no-cache`，访问条件同上 |
+| `GET /api/users/:id/themes` | 公开 | 指定作者已上架的主题列表 |
+| `POST /api/themes/submissions` | 登录 | `multipart/form-data`（上限 49MB）：`package`（`.sltheme`）、`idempotencyKey`，可选 `familyId`、`source`（仅管理员可指定 `official`）及元数据覆盖；配额为待审不超过 3 个、24 小时不超过 5 个（超限返回 `429 theme_quota`） |
+| `GET /api/themes/submissions` | 登录 | 本人投稿列表（`Cache-Control: private, no-store`） |
+| `GET /api/themes/submissions/:id/package` | 作者或管理员 | 私有待审/历史包（他人或已撤回返回 `404`） |
+| `GET /api/themes/submissions/:id/preview/:mode` | 作者或管理员 | 私有 `light`/`dark` 预览图 |
+| `POST /api/themes/submissions/:id/withdraw` | 作者 | 撤回待审单版本，或撤回已上架整个版本族 |
+| `GET /api/admin/themes?status=` | 管理员 | 审核队列（默认 `pending`），每项附带规范 `manifest` 与同版本族当前 `currentApproved` 摘要 |
+| `POST /api/admin/themes/:id/review` | 管理员 | JSON `{approve, reasonCode, note}`；禁止自审，根记录加锁保证单 `approved` 且版本号只进不退 |
+| `POST /api/admin/themes/:familyId/remove` | 管理员 | JSON `{reasonCode, note}`；下架整个版本族 |

@@ -233,8 +233,13 @@ final class AcademicIdentityClient {
           'IDENTITY_MISMATCH', '本机学校会话身份已变化');
     }
     final cookies = artifact.opaqueProviderState['cookies'];
+    final prefix = artifact.opaqueProviderState['session_path_prefix'];
+    final hasSessionPath =
+        identity.providerId == AcademicProviderId.syluGraduate &&
+        prefix is String &&
+        prefix.isNotEmpty;
     if (cookies is! List ||
-        cookies.isEmpty ||
+        (cookies.isEmpty && !hasSessionPath) ||
         cookies.any((value) => value is! String)) {
       throw const AcademicIdentityApiException(
           'ACADEMIC_SESSION_MISSING', '学校会话尚未恢复');
@@ -248,8 +253,7 @@ final class AcademicIdentityClient {
             'school_session': {
               'cookies': cookies,
               if (identity.providerId == AcademicProviderId.syluGraduate)
-                'session_path_prefix':
-                    artifact.opaqueProviderState['session_path_prefix'] ?? ''
+                'session_path_prefix': prefix ?? ''
             }
           },
           options: Options(

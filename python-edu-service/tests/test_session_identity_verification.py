@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from models.schemas import SessionVerifyInput
 from routers import auth
 from services import security
-from services.crawler import EduCrawler, LoginFailedError
+from services.crawler import EduCrawler, LoginFailedError, NetworkError
 
 
 @pytest.mark.asyncio
@@ -42,6 +42,17 @@ def test_secret_session_is_redacted_and_extra_identity_is_rejected():
     assert "fixture-secret" not in repr(SessionVerifyInput(cookie="SID=fixture-secret"))
     with pytest.raises(ValueError):
         SessionVerifyInput(cookie="SID=fixture", student_id="forged")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("status", "code"), [(429, "RATE_LIMITED"), (503, "REMOTE_SYSTEM_UNAVAILABLE"), (408, "REMOTE_SYSTEM_UNAVAILABLE")])
+async def test_temporary_school_failure_does_not_reject_student_identity(status, code):
+    crawler = EduCrawler()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(status))) as client:
+        crawler.client = client
+        with pytest.raises(NetworkError) as error:
+            await crawler.verify_session_student_id("SID=fixture")
+        assert error.value.code == code
 
 
 def test_internal_session_endpoint_requires_service_token(monkeypatch):

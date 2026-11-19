@@ -610,6 +610,10 @@ class EduCrawler:
             params={"gnmkdm": "N100801", "layout": "default"},
             headers={"Cookie": cookie, "Connection": "close"},
         )
+        if resp.status_code == 429:
+            raise NetworkError("学校暂时限流", "RATE_LIMITED")
+        if resp.status_code >= 500 or resp.status_code == 408:
+            raise NetworkError("学校资料接口暂不可用")
         if resp.status_code != 200:
             raise CookieLapseError("学校会话已失效", "EDU_IDENTITY_UNVERIFIED")
         actual = self._parse_student_info_body(resp.text).school_verified_student_id

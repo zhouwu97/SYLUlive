@@ -352,7 +352,10 @@ final class GraduateProtocolClient implements GraduateProtocolGateway {
   Future<GraduateSessionArtifactState?> exportSession() async {
     _ensureOpen();
     if (!_authenticated) return null;
-    final cookies = await _cookieJar.loadForRequest(_baseUri);
+    // 资料页可以依赖仅对学生目录生效的 Cookie，根路径无法导出这些会话项。
+    final cookies = await _cookieJar.loadForRequest(
+      _baseUri.resolve(_portalPath('/student/default/getxscardinfo')),
+    );
     return GraduateSessionArtifactState(
       cookies: cookies.map((cookie) => cookie.toString()).toList(growable: false),
       sessionPathPrefix: _sessionPathPrefix,

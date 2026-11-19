@@ -88,6 +88,34 @@ void main() {
     });
   });
 
+  test('研究生 URL 会话可单独发起学校核验', () async {
+    const identity = AcademicIdentityKey(
+        appUserId: '493',
+        providerId: AcademicProviderId.syluGraduate,
+        studentId: 'G-001');
+    final adapter = _IdentityHttpAdapter()
+      ..responses.add((status: 200, body: {
+        'provider_id': identity.providerId.value,
+        'student_id': identity.studentId,
+        'verified': true,
+        'verification_method': 'school_profile',
+      }));
+    final artifact = ProviderSessionArtifact(
+        providerId: identity.providerId,
+        studentId: identity.studentId,
+        artifactVersion: 1,
+        createdAt: DateTime.now(),
+        validatedAt: null,
+        opaqueProviderState: {
+          'cookies': <String>[],
+          'session_path_prefix': '/(S(abc))',
+        });
+    final binding = await createClient(adapter).verifyLocalSession(identity, artifact);
+    expect(binding.isSchoolVerified, true);
+    expect(adapter.requests.single.data['school_session'],
+        artifact.opaqueProviderState);
+  });
+
   test('认证冻结明确说明连接不等于认证且不自动重试', () async {
     final adapter = _IdentityHttpAdapter()
       ..responses.add((

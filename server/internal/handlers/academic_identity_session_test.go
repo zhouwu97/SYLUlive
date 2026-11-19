@@ -134,6 +134,32 @@ func TestSessionBindingOnlyAcceptsFreshSchoolIdentity(t *testing.T) {
 	require.Equal(t, 2, p.calls)
 }
 
+func TestSchoolSessionProofAcceptsUsableCredentials(t *testing.T) {
+	undergrad, graduate := models.AcademicProviderUndergraduate, models.AcademicProviderGraduate
+	for _, tc := range []struct {
+		name, provider, prefix string
+		raw                    []string
+		wantCount              int
+	}{
+		{"同值跨路径和空辅助项", undergrad, "", []string{"SID=fixture; Path=/", "SID=fixture; Path=/student", "PREF="}, 1},
+		{"同名凭据冲突", undergrad, "", []string{"SID=one", "SID=two"}, -1},
+		{"本科仅有空值", undergrad, "", []string{"PREF="}, -1},
+		{"本科使用研究生路径", undergrad, "/(S(abc))", nil, -1},
+		{"研究生无会话", graduate, "", nil, -1},
+		{"研究生仅有路径", graduate, "/(S(abc))", nil, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cookies, err := sessionProofCookies(academicSessionProof{Cookies: tc.raw, SessionPrefix: tc.prefix}, tc.provider)
+			if tc.wantCount < 0 {
+				require.ErrorIs(t, err, ErrAcademicChallengeRejected)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, cookies, tc.wantCount)
+		})
+	}
+}
+
 func TestSessionBindingRejectsForgedBodiesAndWrongAppUser(t *testing.T) {
 	for _, body := range []string{
 		`{"provider_id":"sylu_graduate","student_id":"G20260001","verified":true,"school_session":{"cookies":["SID=fake"]}}`,
@@ -265,8 +291,12 @@ func TestSessionBindingUnbindAtomicallyPreventsLateAndSubsequentProof(t *testing
 }
 
 func TestGraduateSessionProofOnlyReadsFixedSchoolProfileAndDoesNotFollowRedirects(t *testing.T) {
-	for _, redirect := range []bool{false, true} {
-		t.Run(map[bool]string{false: "profile", true: "redirect"}[redirect], func(t *testing.T) {
+	for _, scenario := range []string{"profile", "prefix-only", "redirect"} {
+		t.Run(scenario, func(t *testing.T) {
+			cookies := []string{"SID=fixture; Domain=evil.invalid; Path=/elsewhere"}
+			if scenario == "prefix-only" {
+				cookies = nil
+			}
 			var leaked bool
 			foreign := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { leaked = true }))
 			defer foreign.Close()
@@ -274,8 +304,12 @@ func TestGraduateSessionProofOnlyReadsFixedSchoolProfileAndDoesNotFollowRedirect
 				require.Equal(t, "/(S(abc))/student/default/getxscardinfo", r.URL.Path)
 				require.Empty(t, r.URL.Query().Get("student_id"))
 				require.Empty(t, r.URL.Query().Get("su"))
-				require.Contains(t, r.Header.Get("Cookie"), "SID=fixture")
-				if redirect {
+				if len(cookies) > 0 {
+					require.Contains(t, r.Header.Get("Cookie"), "SID=fixture")
+				} else {
+					require.Empty(t, r.Header.Get("Cookie"))
+				}
+				if scenario == "redirect" {
 					http.Redirect(w, r, foreign.URL, http.StatusFound)
 					return
 				}
@@ -285,8 +319,8 @@ func TestGraduateSessionProofOnlyReadsFixedSchoolProfileAndDoesNotFollowRedirect
 			base, err := url.Parse(school.URL)
 			require.NoError(t, err)
 			provider := &GraduateAcademicIdentityProvider{baseURL: base, transport: school.Client().Transport}
-			profile, err := provider.VerifySchoolSession(context.Background(), "G20260001", academicSessionProof{Cookies: []string{"SID=fixture; Domain=evil.invalid; Path=/elsewhere"}, SessionPrefix: "/(S(abc))"})
-			if redirect {
+			profile, err := provider.VerifySchoolSession(context.Background(), "G20260001", academicSessionProof{Cookies: cookies, SessionPrefix: "/(S(abc))"})
+			if scenario == "redirect" {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)

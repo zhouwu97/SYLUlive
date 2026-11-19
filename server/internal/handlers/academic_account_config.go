@@ -78,7 +78,7 @@ func (h *AcademicAccountConfigHandler) Mutate(c *gin.Context) {
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		// 锁定所属用户，使同一用户的首次创建和幂等消费也有事务顺序。
 		var owner models.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&owner, userID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("account_status <> ?", "cancelled").Select("id").First(&owner, userID).Error; err != nil {
 			return err
 		}
 		var receipt models.AcademicConfigReceipt

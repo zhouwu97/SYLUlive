@@ -811,7 +811,7 @@ func persistAcademicIdentityBinding(db *gorm.DB, userID uint, providerID, studen
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		var integrationOwner models.User
-		if err := tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).Select("id").First(&integrationOwner, userID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).Where("account_status <> ?", "cancelled").Select("id").First(&integrationOwner, userID).Error; err != nil {
 			return err
 		}
 

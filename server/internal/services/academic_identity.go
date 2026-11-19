@@ -61,14 +61,30 @@ func reportUnknownAcademicVerificationMethods(db *gorm.DB) {
 	}
 }
 
+// DeleteCancelledAcademicRecords 仅删除已注销账号的教务标识及含学号的幂等回执。
+func DeleteCancelledAcademicRecords(tx *gorm.DB, owners *gorm.DB) error {
+	for _, model := range []any{&models.AcademicIdentityBinding{}, &models.AcademicAccountConfig{}, &models.AcademicConfigReceipt{}} {
+		if tx.Migrator().HasTable(model) {
+			if err := tx.Where("user_id IN (?)", owners).Delete(model).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // MigrateAcademicIdentities 在启动时回填旧认证；唯一键保证已有 Provider 事实优先。
 func MigrateAcademicIdentities(db *gorm.DB) error {
 	reportUnknownAcademicVerificationMethods(db)
 	var users []models.User
-	if err := db.Select("id", "student_id", "student_verified_at", "academic_provider_id").Where("student_verified_at IS NOT NULL AND student_id <> ''").Find(&users).Error; err != nil {
+	if err := db.Select("id", "student_id", "student_verified_at", "academic_provider_id").Where("account_status <> 'cancelled' AND student_verified_at IS NOT NULL AND student_id <> ''").Find(&users).Error; err != nil {
 		return err
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
+		cancelled := tx.Model(&models.User{}).Select("id").Where("account_status = ?", "cancelled")
+		if err := DeleteCancelledAcademicRecords(tx, cancelled); err != nil {
+			return err
+		}
 		for _, user := range users {
 			provider := string(user.AcademicProviderID)
 			if provider == "" {

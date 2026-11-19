@@ -315,7 +315,7 @@ function Shell() {
               <Icon name="search" />
             </span>
             <span className="search-label">搜索校园功能</span>
-            <kbd>Ctrl K</kbd>
+            <kbd>Ctrl + K</kbd>
           </button>
           <div className="top-actions">
             <button

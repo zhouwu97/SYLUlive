@@ -1194,6 +1194,10 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   ThemeTrialSession? get trial => _trial;
   bool get isInTrial => _trial != null;
   bool get hasPreviousAppearance => _previousAppearance != null;
+  bool get canApplyBetaDefault =>
+      _isLoaded &&
+      _trial == null &&
+      AppPreferencesStore.maybeInstance?.containsKey(appearanceKey) == false;
   bool get hasThemeColors => appearance.group(ThemeGroup.colors) != null;
   String? get themeStorageWarning => _themeStorageWarning;
   String get currentAppearanceSummary {
@@ -1595,9 +1599,19 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         return themePacks.list();
       });
 
-  Future<InstalledTheme> installTheme(PreparedThemePack pack) =>
+  Future<InstalledTheme> installTheme(
+    PreparedThemePack pack, {
+    bool reuseExisting = false,
+  }) =>
       _queueAppearanceOperation((prefs) async {
         await _initializeThemeFiles(prefs);
+        if (reuseExisting) {
+          final existing = await themePacks.findInstalledVersion(
+            pack.manifest.id,
+            pack.manifest.version,
+          );
+          if (existing != null) return existing;
+        }
         return themePacks.install(pack);
       });
 
@@ -1632,10 +1646,11 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     return activeId == themeId.toLowerCase() && src['version'] == version;
   }
 
-  Future<void> applyInstalledTheme(
+  Future<bool> applyInstalledTheme(
     InstalledTheme theme,
     Set<ThemeGroup> groups, {
     bool resetMissingGroups = false,
+    bool asBetaDefault = false,
   }) {
     final selected = Set<ThemeGroup>.of(groups)
         .intersection(ThemeGroup.applicable)
@@ -1646,6 +1661,10 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         _isLoaded = true;
       }
       await _initializeThemeFiles(prefs);
+      if (asBetaDefault &&
+          (_trial != null || prefs.containsKey(appearanceKey))) {
+        return false;
+      }
       final oldTrialStaging = _trial?.stagingDirectory;
       _trialGeneration++;
       _trial = null;
@@ -1672,6 +1691,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         await themePacks.removeStagingDirectory(oldTrialStaging);
       }
       await _cleanupThemeFiles();
+      return true;
     });
   }
 

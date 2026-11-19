@@ -352,13 +352,13 @@ func buildMinimalSFNTFont(runes []rune, copyrightText, licenseText string) []byt
 	copy(name[nameHdrLen+len(cBytes):], lBytes)
 
 	os2 := make([]byte, 96)
-	binary.BigEndian.PutUint16(os2[0:2], 2)       // version 2 (含 sxHeight 与 sCapHeight)
-	binary.BigEndian.PutUint16(os2[4:6], 400)     // usWeightClass Regular
-	binary.BigEndian.PutUint16(os2[6:8], 5)       // usWidthClass Medium
-	binary.BigEndian.PutUint16(os2[68:70], 800)   // sTypoAscender
+	binary.BigEndian.PutUint16(os2[0:2], 2)        // version 2 (含 sxHeight 与 sCapHeight)
+	binary.BigEndian.PutUint16(os2[4:6], 400)      // usWeightClass Regular
+	binary.BigEndian.PutUint16(os2[6:8], 5)        // usWidthClass Medium
+	binary.BigEndian.PutUint16(os2[68:70], 800)    // sTypoAscender
 	binary.BigEndian.PutUint16(os2[70:72], 0xFF38) // sTypoDescender (-200)
-	binary.BigEndian.PutUint16(os2[86:88], 500)   // sxHeight
-	binary.BigEndian.PutUint16(os2[88:90], 700)   // sCapHeight
+	binary.BigEndian.PutUint16(os2[86:88], 500)    // sxHeight
+	binary.BigEndian.PutUint16(os2[88:90], 700)    // sCapHeight
 
 	tables := []struct {
 		tag  string

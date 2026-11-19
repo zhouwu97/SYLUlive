@@ -23,7 +23,7 @@ func TestIntegrationBasicLifecycleDoesNotRequireAcademicIdentity(t *testing.T) {
 	for _, method := range []string{"none", models.AcademicVerificationMethodLocalDeclaration, models.AcademicVerificationMethodLegacyMigration} {
 		t.Run(method, func(t *testing.T) {
 			db := integrationTestDB(t)
-			require.NoError(t, db.AutoMigrate(&models.CheckIn{}, &models.UserCheckInStat{}, &models.UserExperienceLedger{}, &models.AIUserPermission{}, &models.AcademicSnapshot{}, &models.PersonalUploadedSnapshot{}))
+			require.NoError(t, db.AutoMigrate(&models.CheckIn{}, &models.UserCheckInStat{}, &models.CheckInMakeupCardGrant{}, &models.UserExperienceLedger{}, &models.AIUserPermission{}, &models.AcademicSnapshot{}, &models.PersonalUploadedSnapshot{}))
 			basicIntegrationUser(t, db, 1)
 			if method != "none" {
 				require.NoError(t, db.Create(&models.AcademicIdentityBinding{UserID: 1, ProviderID: models.AcademicProviderUndergraduate, StudentID: "synthetic-basic", VerifiedAt: time.Now(), VerificationMethod: method, VerificationVersion: "v1"}).Error)
@@ -91,7 +91,7 @@ func TestIntegrationAcademicRepairWorksWithoutRebindingBasicConnection(t *testin
 
 func TestIntegrationSchoolUnbindClearsPrivateDataButKeepsBasicAccess(t *testing.T) {
 	db, auth, first, second := personalIntegrationFixture(t)
-	require.NoError(t, db.AutoMigrate(&models.CheckIn{}, &models.UserCheckInStat{}, &models.UserExperienceLedger{}))
+	require.NoError(t, db.AutoMigrate(&models.CheckIn{}, &models.UserCheckInStat{}, &models.CheckInMakeupCardGrant{}, &models.UserExperienceLedger{}))
 	for _, binding := range []models.IntegrationBinding{first, second} {
 		require.NoError(t, db.Model(&models.IntegrationBinding{}).Where("id = ?", binding.ID).Update("scopes", binding.Scopes+" checkin:write").Error)
 	}

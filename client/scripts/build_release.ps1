@@ -24,7 +24,8 @@ param(
     # Server 侧有未提交改动时，manifest 里的 source_commit 就无法代表真实生产系统，
     # 因此必须显式承认，不能像 Web 那样默默放行。
     [switch] $AllowDirtyServer,
-    [switch] $AllowCandidateBuild
+    [switch] $AllowCandidateBuild,
+    [string] $BetaThemePackage
 )
 
 $ErrorActionPreference = 'Stop'
@@ -354,6 +355,17 @@ if (-not [System.IO.Path]::IsPathRooted($OutputDirectory)) {
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 if ([string]::IsNullOrWhiteSpace($ApiUrl)) { $ApiUrl = 'https://sylulive.online/api' }
 if ([string]::IsNullOrWhiteSpace($JPushAppKey)) { $JPushAppKey = 'fbbd87f741e919f39519afe6' }
+$betaAsset = Join-Path $clientRoot 'assets/beta-theme/mingfeng.sltheme'
+if (Test-Path -LiteralPath $betaAsset) {
+    throw 'A staged Beta theme already exists. Use a clean release worktree.'
+}
+$betaSource = $null
+if ($BetaThemePackage) {
+    $betaSource = Get-Item -LiteralPath $BetaThemePackage
+    if ($betaSource -isnot [System.IO.FileInfo] -or $betaSource.Extension -ne '.sltheme') {
+        throw 'BetaThemePackage must be an authorized .sltheme file.'
+    }
+}
 
 if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
     throw 'Flutter is required and must be available on PATH.'
@@ -384,15 +396,23 @@ if (-not [System.IO.Path]::IsPathRooted($storeFile)) { $storeFile = Join-Path $a
 if (-not (Test-Path -LiteralPath $storeFile -PathType Leaf)) { throw "Signing file does not exist: $storeFile" }
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
+$betaHash = $null
+$stagingBetaAsset = $false
 Push-Location $clientRoot
 try {
+    if ($betaSource) {
+        $stagingBetaAsset = $true
+        Copy-Item -LiteralPath $betaSource.FullName -Destination $betaAsset
+        $betaHash = (Get-FileHash -LiteralPath $betaAsset -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
     $apk = Join-Path $clientRoot 'build\app\outputs\flutter-apk\app-release.apk'
     if (Test-Path -LiteralPath $apk) { Remove-Item -LiteralPath $apk }
     flutter build apk --release --target-platform android-arm64 `
         --build-name="$versionName" `
         --build-number="$versionCode" `
         --dart-define="APP_API_URL=$ApiUrl" `
-        --dart-define="JPUSH_APP_KEY=$JPushAppKey"
+        --dart-define="JPUSH_APP_KEY=$JPushAppKey" `
+        --dart-define="BETA_THEME_DEFAULT=$($stagingBetaAsset.ToString().ToLowerInvariant())"
     if ($LASTEXITCODE -ne 0) { throw 'Flutter release build failed; no artifact will be delivered.' }
     if (-not (Test-Path -LiteralPath $apk -PathType Leaf)) { throw 'Flutter build completed but release APK was not found.' }
 
@@ -463,6 +483,7 @@ try {
         candidate = $script:isCandidateBuild
         sha256 = $hash
         version = $version
+        beta_theme_sha256 = $betaHash
         signed = $true
         signed_by_expected_release_certificate = $true
         signing_certificate_sha256 = $actualCertSha256
@@ -513,4 +534,7 @@ try {
     Write-Host "SHA-256: $hash"
 } finally {
     Pop-Location
+    if ($stagingBetaAsset -and (Test-Path -LiteralPath $betaAsset)) {
+        Remove-Item -LiteralPath $betaAsset
+    }
 }

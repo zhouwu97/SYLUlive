@@ -18,6 +18,7 @@ node_modules/
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
+/client/assets/beta-theme/mingfeng.sltheme
 .pub-cache/
 .pub/
 build/

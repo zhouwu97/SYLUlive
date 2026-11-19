@@ -10,10 +10,12 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/features/theme_pack/admin_theme_review_screen.dart';
 import 'package:shenliyuan/features/theme_pack/installed_themes_screen.dart';
+import 'package:shenliyuan/features/theme_pack/theme_beta_notice.dart';
 import 'package:shenliyuan/features/theme_pack/theme_manifest.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_codec.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_store.dart';
@@ -397,6 +399,79 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 60));
       }
     }
+  });
+
+  testWidgets('主题 Beta 默认应用、失败重试、跳转恢复与再次启动',
+      (tester) async {
+    PackageInfo.setMockInitialValues(
+      appName: '沈理校园',
+      packageName: 'com.shenliyuan.app',
+      version: '1.7.12',
+      buildNumber: '1722',
+      buildSignature: '',
+    );
+    final familyId = sharedPackManifest.id;
+    final dio = Dio(BaseOptions(baseUrl: 'https://fixture.test/api'));
+    final auth = _TestAuth(dio);
+    addTearDown(auth.dispose);
+    final firstRequest = Completer<void>();
+    var loads = 0;
+    final bundle = _BetaAssetBundle(() async {
+      if (++loads == 1) {
+        await firstRequest.future;
+        throw StateError('主题文件不可读');
+      }
+      return ByteData.sublistView(sharedPackBytes);
+    });
+
+    Widget app() => _wrapWithProviders(
+          auth: auth,
+          themeProvider: themeProvider,
+          home: DefaultAssetBundle(
+            bundle: bundle,
+            child: const ThemeBetaNotice(child: Scaffold(body: Text('首页'))),
+          ),
+        );
+
+    await tester.pumpWidget(app());
+    await _settleIo(tester, cycles: 2);
+    expect(find.text('正在加载「明风」主题…'), findsOneWidget);
+    expect(find.text('首页'), findsOneWidget);
+    firstRequest.complete();
+    await _settleIo(tester, cycles: 2);
+    expect(find.text('「明风」主题加载失败，仍在使用当前外观。'), findsOneWidget);
+    expect(themeProvider.hasThemeColors, isFalse);
+
+    await tester.tap(find.text('重试'));
+    for (var i = 0;
+        i < 55 && find.text('前往主题设置').evaluate().isEmpty;
+        i++) {
+      await _settleIo(tester, cycles: 2);
+    }
+    expect(themeProvider.isThemeVersionActive(familyId, 1), isTrue);
+    expect(find.textContaining('Beta 测试'), findsOneWidget);
+    expect(
+      await tester.runAsync(
+        () => themeProvider.applyInstalledTheme(
+          InstalledTheme(sharedPackManifest, temp.path, ''),
+          {ThemeGroup.colors},
+          asBetaDefault: true,
+        ),
+      ),
+      isFalse,
+    );
+    await tester.tap(find.text('前往主题设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('界面设置'), findsOneWidget);
+    await tester.tap(find.text('恢复上一个外观'));
+    await _settleIo(tester);
+    expect(themeProvider.hasThemeColors, isFalse);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(app());
+    await _settleIo(tester, cycles: 2);
+    expect(find.textContaining('Beta 测试'), findsNothing);
+    expect(loads, 2);
   });
 
   test('分享深链解析、游标分页、ETag 304 缓存命中与批量更新查询', () async {
@@ -1385,6 +1460,16 @@ void main() {
     await _settleIo(tester, cycles: 4);
     PaintingBinding.instance.imageCache.clear();
   });
+}
+
+class _BetaAssetBundle extends CachingAssetBundle {
+  _BetaAssetBundle(this.loadTheme);
+
+  final Future<ByteData> Function() loadTheme;
+
+  @override
+  Future<ByteData> load(String key) =>
+      key == ThemeBetaNotice.assetPath ? loadTheme() : rootBundle.load(key);
 }
 
 class _StreamStubAdapter implements HttpClientAdapter {

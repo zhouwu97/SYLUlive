@@ -48,7 +48,7 @@ func flowConsent(t *testing.T, f reauthenticationFixture, h *IntegrationHandler)
 func TestIntegrationUnverifiedUserConnectsAndChecksInHTTP(t *testing.T) {
 	f, h := integrationAuthFlowFixture(t)
 	require.NoError(t, f.db.Where("user_id = ?", f.user.ID).Delete(&models.AcademicIdentityBinding{}).Error)
-	require.NoError(t, f.db.AutoMigrate(&models.CheckIn{}, &models.UserCheckInStat{}, &models.UserExperienceLedger{}))
+	require.NoError(t, f.db.AutoMigrate(&models.CheckIn{}, &models.UserCheckInStat{}, &models.CheckInMakeupCardGrant{}, &models.UserExperienceLedger{}))
 	now := time.Now()
 	h.auth.Now = func() time.Time { return now }
 	device, err := h.auth.RequestDevice(context.Background(), uuid.NewString(), "普通 QQ 绑定", "profile:read_minimal checkin:write")

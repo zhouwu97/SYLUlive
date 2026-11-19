@@ -26,7 +26,9 @@ import '../../features/theme_pack/themed_wallpaper_layer.dart';
 
 /// 界面设置二级页
 class AppearanceSettingsScreen extends StatefulWidget {
-  const AppearanceSettingsScreen({super.key});
+  const AppearanceSettingsScreen({super.key, this.showThemeFirst = false});
+
+  final bool showThemeFirst;
 
   @override
   State<AppearanceSettingsScreen> createState() =>
@@ -343,18 +345,20 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
     final customBackgroundActive =
         themeProvider.isCustomBackgroundMode && themeProvider.hasAnyBackground;
 
+    final themeSection = ThemeSection(
+      onEditTheme: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const ThemeWorkshopScreen(),
+        ),
+      ),
+    );
     return SettingsPageScaffold(
       title: '界面设置',
       children: [
+        if (widget.showThemeFirst) themeSection,
         // 智能实时自适应微缩预览卡片
         _buildLivePreviewCard(context, themeProvider),
-        ThemeSection(
-          onEditTheme: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const ThemeWorkshopScreen(),
-            ),
-          ),
-        ),
+        if (!widget.showThemeFirst) themeSection,
 
         // 主题模式段落
         SettingsSection(

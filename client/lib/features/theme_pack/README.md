@@ -8,6 +8,8 @@
 
 “导出当前外观”基于当前最终生效的混搭参数与引用资源重新打包，生成新的主题 ID 与 1080×2340 明暗预览图，支持系统分享和保存文件，导出产物可直接重新导入。系统文件关联在信任边界限制 48MB 体积并复制到受管临时目录 `incoming-theme/`，完成读取、取消或被新请求取代后自动清理，迟到的旧异步结果不会覆盖当前页面或应用旧主题。
 
+主题商城 Beta 构建可由 Android 发布脚本打包授权的明风主题。首次启动时复用本机主题包校验与安装链路，为尚未保存主题外观的设备离线应用明风。加载失败时显示重试，应用成功后中文提醒可直达「界面设置 → 主题 → 恢复上一个外观」。恢复结果随外观保存，重启继续生效。自动应用仅保存 App 内外观。
+
 ZIP／JSON 在工作 isolate 读取，实际解压输出上限 96MB，读取条目执行 ZIP 原生 CRC 校验，不另加资源哈希。图片先查尺寸再完整解码，只允许静态 PNG／JPEG／WebP。壁纸槽位切换使用 200ms 淡入淡出，开启减少动态效果时直接切换；壁纸与页头背景按显示物理宽度缩放解码，亮度／对比度／饱和度在渲染时使用 `ColorFilter.matrix`，遮罩使用当前 `background` Token 透明度合成；正式页头装饰区包裹 `IgnorePointer` 与 `ExcludeSemantics`，不遮挡资料或按钮交互。字体在校验边界检查必需 SFNT 表并用临时家族名试加载，应用与冷启动首帧通过 `FontLoader` 注册 `theme_font_<id>_<version>`，等宽字体保持不变；桌面小部件通过 `widget_app_palette_v1` 与 `coursePalette` 跟随 App 主题明暗配色；Android 桌面图标通过后台 `activity-alias` 与 `MY_PACKAGE_REPLACED` 安全切换，支持自定义主题快捷方式及 MIUI／HyperOS 权限引导（维护者备选图标源图合入前仅打包 `default`），iOS 接入 `setAlternateIconName`。
 
 主题目录为应用 documents 下的 `themes/`。安装先写 `.staging/`，完成后 rename 到 `installed/<id>/<version>/`，索引只列每个 ID 的最新版本。所有写入复用 ThemeProvider 原有外观队列。当前外观、上一个外观、试用会话和手动壁纸偏好引用的文件均受保护；删除主题只移出列表，失去全部引用后清理旧版本。

@@ -104,6 +104,7 @@ import 'widgets/global_background_wrapper.dart';
 import 'widgets/app_scroll_behavior.dart';
 import 'widgets/startup_recovery_screen.dart';
 import 'widgets/required_legal_consent_dialog.dart';
+import 'features/theme_pack/theme_beta_notice.dart';
 import 'features/theme_pack/theme_font_registry.dart';
 import 'features/theme_pack/theme_import_screen.dart';
 import 'features/theme_pack/theme_store_screen.dart';
@@ -2378,10 +2379,11 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           _startupPlanReady = true;
         }
 
-        return HomeScreen(
+        final home = HomeScreen(
           initialTab: _startupPlan!.rootTabIndex,
           initialDeepPage: _startupPlan!.deepPage,
         );
+        return ThemeBetaNotice.enabled ? ThemeBetaNotice(child: home) : home;
       },
     );
   }

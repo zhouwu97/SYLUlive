@@ -34,6 +34,10 @@
 - **下架**：管理员调用 `POST /api/admin/themes/:familyId/remove` 或通过 `target_type=theme` 举报治理确认违规后，整个版本族置为 `removed` 并记录 `reasonCode` 与审计日志，目录、详情、所有版本包与预览图立即返回 `404`。用户已安装在本机的副本不会被远程擦除。
 - **孤儿清理**：启动和每小时执行 `CleanupOrphans`，仅清理超过 24 小时的 `.stage-*` 目录及无有效非 `withdrawn` 数据库记录的目录；数据库不可用时中止清理并记录 `theme pack maintenance unavailable`。
 
+## 明风 Beta 发布
+
+先按正式部署入口上线主题 API，并核对主题商城开关、公开目录和审核权限。由管理员提交官方来源作品，经另一位管理员审核。运行 Android 发布脚本时用 `-BetaThemePackage` 传入同一份获授权的源主题包，供 Android Beta 离线应用。发布清单记录内置包的 SHA-256。用户可在界面设置恢复上一个外观。商城下架会停止线上下载，已分发的 Beta 仍带有该版本的内置主题。
+
 ## 回退
 
 1. 先将 `system_configs.theme_store_enabled` 设为 `false`，停止新投稿与目录入口。

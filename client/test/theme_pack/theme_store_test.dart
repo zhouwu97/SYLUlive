@@ -652,6 +652,50 @@ void main() {
     await streamCtrl.close();
   });
 
+  testWidgets('分页期间切换排序后可继续翻页', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(800, 1400);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final delayed = Completer<void>();
+    final dio = Dio(BaseOptions(baseUrl: 'https://fixture.test/api'));
+    var oldPageRequested = false;
+    dio.httpClientAdapter = _StreamStubAdapter((options) async {
+      final sort = options.queryParameters['sort'];
+      final more = options.queryParameters.containsKey('cursor');
+      if (sort == 'latest' && more) {
+        oldPageRequested = true;
+        await delayed.future;
+      }
+      final name = more ? '$sort-next' : '$sort-first';
+      return ResponseBody.fromString(jsonEncode({
+        'items': sort == 'official' ? [] : [{'familyId': name, 'name': name}],
+        if (!more) 'nextCursor': 'page-2',
+      }), 200, headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      });
+    });
+    await tester.pumpWidget(MaterialApp(
+      home: ThemeStoreScreen(repository: ThemeStoreRepository(dio)),
+    ));
+    await _settleIo(tester);
+    final more = find.byKey(const ValueKey('theme-store-load-more'));
+    await tester.ensureVisible(more);
+    await tester.tap(more);
+    await _settleIo(tester);
+    expect(oldPageRequested, isTrue);
+    await tester.ensureVisible(find.text('热门'));
+    await tester.tap(find.text('热门'));
+    await _settleIo(tester);
+    delayed.complete();
+    await tester.pump();
+    await tester.ensureVisible(more);
+    await tester.tap(more);
+    await _settleIo(tester);
+    expect(find.text('popular-next'), findsOneWidget);
+    expect(find.text('latest-next'), findsNothing);
+  });
+
   testWidgets('商城列表状态、详情六态按钮与跨页面全局试用横条', (tester) async {
     const familyId = '11111111-2222-4333-8444-555555555555';
     var storeState = 'disabled'; // disabled -> error -> empty -> loaded

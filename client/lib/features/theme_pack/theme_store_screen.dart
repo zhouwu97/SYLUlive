@@ -124,11 +124,13 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
 
     setState(() {
       _loading = true;
+      _loadingMore = false;
       _error = null;
       _storeDisabled = false;
     });
 
     await _syncInstalledIndex();
+    if (!mounted || generation != _loadGeneration) return;
     final repo = _repo();
     try {
       final showOfficialShelf =
@@ -178,6 +180,7 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
         tag: _selectedTag,
         query: _appliedQuery,
         cursor: cursor,
+        cancelToken: _cancelToken,
       );
       if (!mounted || generation != _loadGeneration) return;
       setState(() {

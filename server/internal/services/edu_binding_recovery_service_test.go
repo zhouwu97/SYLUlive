@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
@@ -115,4 +116,33 @@ func TestEduBindingRecoverySchedulesIdentityCleanupWhenRemoteHasNoBinding(t *tes
 	if !job.DeleteIdentity || job.ExpectedGeneration != 1 {
 		t.Fatalf("身份清理任务语义错误: %#v", job)
 	}
+}
+
+func TestEduBindingRecoverySkipsRevokedOwnerAfterRemoteLookup(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.EduCredentialCleanupJob{}))
+	now := time.Now()
+	start := now.Add(-time.Hour)
+	status := EduBindingRecoveryStatus{Authorized: true, CredentialGeneration: 1, StudentID: "2026000053"}
+	service := NewEduBindingRecoveryService(db, eduBindingRecoveryRemoteStub{status: status}, nil, time.Now)
+	for _, state := range []string{"active", "cancelled"} {
+		user := models.User{PasswordHash: "fixture", AccountStatus: state, EduBindingState: "pending", EduBindingPendingGeneration: 1,
+			EduBindingStartedAt: &start, EduBindingPendingStudentID: status.StudentID}
+		if state == "active" {
+			user.LegalConsentRevokedAt = &now
+		}
+		require.NoError(t, db.Create(&user).Error)
+		require.NoError(t, service.completeBinding(context.Background(), user.ID, 1, status))
+		var stored models.User
+		require.NoError(t, db.First(&stored, user.ID).Error)
+		require.Empty(t, stored.StudentID)
+		require.False(t, stored.EduAuthorized)
+	}
+	report, err := service.ProcessDue(context.Background(), 10)
+	require.NoError(t, err)
+	require.Zero(t, report.Processed)
+	var consents int64
+	require.NoError(t, db.Model(&models.UserLegalConsent{}).Count(&consents).Error)
+	require.Zero(t, consents)
 }

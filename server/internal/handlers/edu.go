@@ -129,7 +129,7 @@ func pythonEduRequestWithContext(ctx context.Context, method, path string, userI
 // PythonEduCredentialCleanupRemote 将本地已提交的撤销授权补偿到教务服务。
 type PythonEduCredentialCleanupRemote struct{}
 
-// Unbind 仅删除指定授权代次的远端凭据；接口失败由 outbox 记录后重试。
+// Unbind 撤销截止代次以内的远端凭据，保留之后重新绑定的凭据。
 func (PythonEduCredentialCleanupRemote) Unbind(ctx context.Context, userID uint, generation uint, deleteIdentity bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -137,6 +137,7 @@ func (PythonEduCredentialCleanupRemote) Unbind(ctx context.Context, userID uint,
 	response, err := pythonEduRequest(http.MethodDelete, "/api/edu/authorization", &userID, map[string]interface{}{
 		"expected_generation": generation,
 		"delete_identity":     deleteIdentity,
+		"through_generation":  true,
 	})
 	if err != nil {
 		return err
@@ -209,6 +210,20 @@ func bindEduWithPython(userID uint, studentID, password string, generation uint)
 	return &result, nil
 }
 
+// 撤销同时消费已发往学校服务的待绑定代次，重新授权必须使用更高代次。
+func invalidatePendingEduBinding(user models.User, updates map[string]interface{}) uint {
+	generation := max(user.EduAuthorizationGeneration, user.EduBindingPendingGeneration)
+	updates["edu_authorization_generation"] = generation
+	updates["edu_binding_state"] = "idle"
+	if updates["edu_cleanup_pending"] == true {
+		updates["edu_binding_state"] = "cleanup_pending"
+	}
+	updates["edu_binding_pending_generation"] = 0
+	updates["edu_binding_pending_student_id"] = ""
+	updates["edu_binding_started_at"] = nil
+	return generation
+}
+
 // prepareEduBinding 在跨服务请求前持久化待绑定代次及目标学号。相同 pending 代次仅能由
 // 同一学号重试，从而覆盖 Python 已成功、Go 进程尚未完成本地提交时的崩溃窗口。
 func prepareEduBinding(db *gorm.DB, userID uint, studentID string) (uint, error) {
@@ -222,7 +237,7 @@ func prepareEduBinding(db *gorm.DB, userID uint, studentID string) (uint, error)
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
 			return err
 		}
-		if user.AccountStatus == "cancelled" || user.AccountStatus == "registration_cleanup_pending" {
+		if user.LegalConsentRevokedAt != nil || user.AccountStatus == "cancelled" || user.AccountStatus == "registration_cleanup_pending" {
 			return errors.New("当前账号不能绑定教务")
 		}
 		if user.EduBindingState == "pending" && user.EduBindingPendingGeneration > user.EduAuthorizationGeneration {
@@ -284,7 +299,7 @@ func updateUserEduBinding(db *gorm.DB, userID uint, studentID string, result *ed
 		if user.StudentVerifiedAt != nil && user.StudentID != "" && user.StudentID != studentID {
 			return errEduStudentIdentityImmutable
 		}
-		if user.AccountStatus == "cancelled" || user.AccountStatus == "registration_cleanup_pending" {
+		if user.LegalConsentRevokedAt != nil || user.AccountStatus == "cancelled" || user.AccountStatus == "registration_cleanup_pending" {
 			return errors.New("当前账号不能绑定教务")
 		}
 		if user.EduBindingState == "active" && user.EduAuthorizationGeneration == generation && user.EduAuthorized && user.StudentID == studentID {
@@ -370,9 +385,13 @@ func precheckEduBinding(db *gorm.DB, userID uint, studentID string) error {
 
 // compensateFailedEduBinding 清理 Python 已落库、但 Go 未能提交身份升级的残留凭据。
 func (h *EduHandler) compensateFailedEduBinding(userID uint, generation uint) {
+	var owner models.User
+	if err := h.db.Select("id", "account_status").First(&owner, userID).Error; err != nil {
+		return
+	}
 	resp, err := pythonEduRequest(http.MethodDelete, "/api/edu/authorization", &userID, map[string]interface{}{
 		"expected_generation": generation,
-		"delete_identity":     false,
+		"delete_identity":     owner.AccountStatus == "cancelled",
 	})
 	if err == nil && resp.StatusCode() == http.StatusOK {
 		return
@@ -382,7 +401,13 @@ func (h *EduHandler) compensateFailedEduBinding(userID uint, generation uint) {
 	}
 	_ = h.db.Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
-		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&owner, userID).Error; err != nil {
+			return err
+		}
+		if max(owner.EduAuthorizationGeneration, owner.EduBindingPendingGeneration) > generation {
+			return nil
+		}
+		if err := tx.Model(&owner).Updates(map[string]interface{}{
 			"edu_authorization_generation":   generation,
 			"edu_authorized":                 false,
 			"edu_bound":                      false,
@@ -397,7 +422,7 @@ func (h *EduHandler) compensateFailedEduBinding(userID uint, generation uint) {
 		}).Error; err != nil {
 			return err
 		}
-		return h.cleanupJobs.Enqueue(tx, userID, generation, now, false)
+		return h.cleanupJobs.Enqueue(tx, userID, generation, now, owner.AccountStatus == "cancelled")
 	})
 }
 
@@ -829,13 +854,12 @@ func (h *EduHandler) RevokeEduAuthorization(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
 			return err
 		}
-		generation = user.EduAuthorizationGeneration
 		updates := map[string]interface{}{
 			"edu_authorized": false, "edu_bound": false, "edu_session_state": "revoked",
 			"edu_auto_relogin": false, "edu_session_updated_at": now,
 			"edu_cleanup_pending": true, "edu_password": "", "edu_cookie": "",
-			"edu_binding_state": "cleanup_pending", "edu_binding_pending_generation": 0, "edu_binding_pending_student_id": "", "edu_binding_started_at": nil,
 		}
+		generation = invalidatePendingEduBinding(user, updates)
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
 			return err
 		}
@@ -857,6 +881,7 @@ func (h *EduHandler) RevokeEduAuthorization(c *gin.Context) {
 	resp, err := pythonEduRequest(http.MethodDelete, "/api/edu/authorization", &userID, map[string]interface{}{
 		"expected_generation": generation,
 		"delete_identity":     false,
+		"through_generation":  true,
 	})
 	if err != nil || resp.StatusCode() != http.StatusOK {
 		_ = h.db.Create(&models.AccountSecurityAuditLog{UserID: userID, Action: "edu_authorization_revoked_pending_cleanup"}).Error

@@ -250,6 +250,43 @@ func TestCancelAccountAnonymizesIdentityAndInvalidatesSession(t *testing.T) {
 	}
 }
 
+func TestPrivacyRevocationInvalidatesPendingEduBinding(t *testing.T) {
+	for _, action := range []string{"withdraw", "cancel", "unbind"} {
+		t.Run(action, func(t *testing.T) {
+			handler, db, user := newPrivacyTestHandler(t)
+			const studentID = "2026000088"
+			require.NoError(t, db.Model(&user).Updates(map[string]any{
+				"student_id": "", "edu_student_id": "", "edu_cookie": "",
+				"edu_authorization_generation": 1, "edu_binding_state": "pending",
+				"edu_binding_pending_generation": 2, "edu_binding_pending_student_id": studentID,
+				"edu_binding_started_at": time.Now().Add(-time.Hour),
+			}).Error)
+			c, response := privacyContext(http.MethodDelete, "/", `{"password":"password123","confirmed":true}`, user.ID)
+			switch action {
+			case "withdraw":
+				handler.WithdrawConsent(c)
+			case "cancel":
+				handler.CancelAccount(c)
+			case "unbind":
+				handler.UnbindEdu(c)
+			}
+			require.Equal(t, http.StatusOK, response.Code)
+			require.Error(t, updateUserEduBinding(db, user.ID, studentID, &eduBindResult{StudentID: studentID}, 2, true))
+			var stored models.User
+			require.NoError(t, db.First(&stored, user.ID).Error)
+			require.Empty(t, stored.StudentID)
+			require.False(t, stored.EduAuthorized)
+			require.False(t, stored.EduAutoRelogin)
+			require.Zero(t, stored.EduBindingPendingGeneration)
+			require.Empty(t, stored.EduBindingPendingStudentID)
+			var job models.EduCredentialCleanupJob
+			require.NoError(t, db.Where("user_id = ?", user.ID).First(&job).Error)
+			require.Equal(t, uint(2), job.ExpectedGeneration)
+			require.Equal(t, action == "cancel", job.DeleteIdentity)
+		})
+	}
+}
+
 func TestRetireSuperAdminRequiresSeedHandoffAndRevokesSessions(t *testing.T) {
 	handler, db, target := newPrivacyTestHandler(t)
 	require.NoError(t, db.AutoMigrate(&models.AdminLog{}, &models.RefreshToken{}))

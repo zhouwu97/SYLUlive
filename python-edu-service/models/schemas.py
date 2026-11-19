@@ -34,6 +34,7 @@ class UnbindResponse(BaseModel):
 
 class AuthorizationCleanupInput(BaseModel):
     """按授权代次删除远端凭据，避免旧任务删除新绑定。"""
+    through_generation: bool = False
     expected_generation: int = Field(..., ge=0)
     delete_identity: bool = False
 

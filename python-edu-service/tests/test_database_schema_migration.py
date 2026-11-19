@@ -125,3 +125,38 @@ async def test_init_db_revokes_legacy_raw_password_records(tmp_path, monkeypatch
         assert row[7] is not None
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("through,current,delete_identity,expected", [
+    (True, 1, False, "revoked"), (True, 2, True, "deleted"),
+    (True, 3, True, "active"), (False, 1, False, "active"),
+])
+async def test_cleanup_respects_binding_generation(through, current, delete_identity, expected):
+    from models.schemas import AuthorizationCleanupInput
+    from routers.auth import revoke_edu_authorization
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(database.Base.metadata.create_all)
+        async with AsyncSession(engine, expire_on_commit=False) as session:
+            user = database.EduUser(
+                user_id="fixture", student_id="2026000053", authorized=True,
+                credential_generation=current,
+            )
+            session.add(user)
+            await session.commit()
+            user_key = user.id
+            cleanup = AuthorizationCleanupInput(
+                expected_generation=2, through_generation=through, delete_identity=delete_identity,
+            )
+            await revoke_edu_authorization(cleanup, "fixture", session)
+            result = await session.get(database.EduUser, user_key, populate_existing=True)
+            if expected == "deleted":
+                assert result is None
+            else:
+                assert result.authorized == (expected == "active")
+                assert result.credential_generation == (2 if expected == "revoked" else current)
+    finally:
+        await engine.dispose()

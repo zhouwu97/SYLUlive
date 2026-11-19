@@ -62,6 +62,7 @@ func (s *EduBindingRecoveryService) ProcessDue(ctx context.Context, limit int) (
 	}
 	var users []models.User
 	if err := s.db.WithContext(ctx).
+		Where("account_status IN ? AND legal_consent_revoked_at IS NULL", []string{"active", "registration_pending", ""}).
 		Where("edu_binding_state = ? AND edu_binding_pending_generation > edu_authorization_generation AND edu_binding_started_at <= ?", "pending", s.now().Add(-eduBindingRecoveryDelay)).
 		Order("edu_binding_started_at ASC, id ASC").
 		Limit(limit).
@@ -115,7 +116,8 @@ func (s *EduBindingRecoveryService) completeBinding(ctx context.Context, userID,
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
 			return err
 		}
-		if user.EduBindingState != "pending" || user.EduBindingPendingGeneration != generation {
+		if user.LegalConsentRevokedAt != nil || (user.AccountStatus != "active" && user.AccountStatus != "registration_pending" && user.AccountStatus != "") ||
+			user.EduBindingState != "pending" || user.EduBindingPendingGeneration != generation {
 			return nil
 		}
 		pendingStudentID := strings.TrimSpace(user.EduBindingPendingStudentID)

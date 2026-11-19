@@ -7,13 +7,19 @@ export function entries(data: ScheduleData): ScheduleEntry[] {
   const start = Date.parse(`${data.termStart}T00:00:00+08:00`);
   const result: ScheduleEntry[] = [];
   for (const course of mergeCourses(data.courses, data.overrides)) {
-    const time = periodStarts[Math.min(...course.periods) - 1];
-    if (!time || !Number.isFinite(start)) continue;
-    const [hour, minute] = time.split(':').map(Number);
-    for (const week of new Set(course.weeks)) result.push({
-      id: `${course.id}:${week}`, title: course.name, room: course.room, kind: 'course',
-      at: start + ((week - 1) * 7 + course.day - 1) * 86400000 + (hour * 60 + minute) * 60000,
-    });
+    if (!Number.isFinite(start)) continue;
+    const periods = new Set(course.periods);
+    for (const period of periods) {
+      // 每段连续节次只在起始节安排提醒；同日分开的时段分别进入课程窗口。
+      if (periods.has(period - 1)) continue;
+      const time = periodStarts[period - 1];
+      if (!time) continue;
+      const [hour, minute] = time.split(':').map(Number);
+      for (const week of new Set(course.weeks)) result.push({
+        id: `${course.id}:${week}:${period}`, title: course.name, room: course.room, kind: 'course',
+        at: start + ((week - 1) * 7 + course.day - 1) * 86400000 + (hour * 60 + minute) * 60000,
+      });
+    }
   }
   for (const exam of data.exams) result.push({id: `exam:${exam.id}`, title: exam.name, room: exam.room, kind: 'exam', at: Date.parse(exam.startTime)});
   return result.sort((a,b) => a.at - b.at);

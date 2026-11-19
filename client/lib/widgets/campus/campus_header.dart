@@ -1,6 +1,7 @@
 import '../../features/theme_pack/theme_presentation.dart';
 import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
+import '../../theme/app_theme_style.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/campus_calendar_provider.dart';
@@ -117,6 +118,7 @@ class CampusHeader extends StatelessWidget {
 
     return ThemeHeaderFrame(
       slot: 'campus',
+      ornamentSlot: 'campusHeader',
       defaultBuilder: (_) => AppCardSurface(
         applyCardStyle: false,
         padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
@@ -149,12 +151,12 @@ class CampusHeader extends StatelessWidget {
                 children: [
                   Text(
                     '校园',
-                    style: TextStyle(
+                    style: AppThemeStyle.of(context).title(TextStyle(
                       fontSize: 28,
                       height: 1.1,
                       fontWeight: FontWeight.w900,
                       color: tokens.textPrimary,
-                    ),
+                    )),
                   ),
                   const SizedBox(height: 7),
                   Text(
@@ -253,11 +255,11 @@ class CampusHeader extends StatelessWidget {
               children: [
                 Text(
                   '校园',
-                  style: TextStyle(
+                  style: AppThemeStyle.of(context).title(TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
                     color: tokens.textPrimary,
-                  ),
+                  )),
                 ),
                 Text(
                   semesterText,

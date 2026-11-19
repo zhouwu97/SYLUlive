@@ -1099,3 +1099,69 @@ func TestThemePackPostgresAutoMigrateAndConcurrency(t *testing.T) {
 	}
 	runThemePackConcurrencyAndLifecycleSuite(t, db)
 }
+
+func TestThemePackV2FieldsAndTitleFont(t *testing.T) {
+	titleFont := buildMinimalSFNTFont(fullFontRunes(0.995), "Copyright 2026 SYLU", "OFL-1.1")
+	m := defaultValidManifest()
+	m["font"] = map[string]any{
+		"title": map[string]any{"name": "测试标题体", "regular": "fonts/title.ttf", "license": "OFL-1.1"},
+	}
+	light := m["light"].(map[string]any)
+	light["identityHarmony"] = 0.6
+	light["cardStyle"] = map[string]any{"fill": "tint"}
+	light["backdrop"] = map[string]any{
+		"gradient": map[string]any{"colors": []any{"#EAF2FF", "#FFF6EE"}, "angle": 160.0},
+		"glow":     []any{map[string]any{"color": "#BFD6FF", "x": 0.9, "y": 0.1}},
+		"pattern":  map[string]any{"tile": "decorations/tile.png", "opacity": 0.2},
+	}
+	light["sectionMark"] = map[string]any{"style": "icon", "image": "decorations/mark.png"}
+	light["illustrations"] = map[string]any{"empty": "decorations/empty.png"}
+	light["ornaments"] = map[string]any{
+		"postCard": map[string]any{"image": "decorations/ear.png", "width": 56.0, "dx": 56.0, "dy": -20.0},
+	}
+	light["serviceIcons"] = map[string]any{"edu": "icons/edu.png"}
+	assets := defaultValidAssets()
+	assets["decorations/ear.png"] = testAssetSpec{Width: 224, Height: 112}
+	assets["icons/edu.png"] = testAssetSpec{Width: 256, Height: 256}
+	assets["fonts/title.ttf"] = testAssetSpec{RawData: titleFont}
+	assets["decorations/tile.png"] = testAssetSpec{Width: 64, Height: 64}
+	assets["decorations/mark.png"] = testAssetSpec{Width: 48, Height: 48}
+	assets["decorations/empty.png"] = testAssetSpec{Width: 400, Height: 400}
+
+	res, err := ValidateAndNormalizeThemePack(buildTestThemeZip(t, m, assets), ThemeMetadataOverrides{})
+	require.NoError(t, err)
+	out := res.Manifest["light"].(map[string]any)
+	require.Equal(t, 0.6, out["identityHarmony"])
+	require.Equal(t, "tint", out["cardStyle"].(map[string]any)["fill"])
+	backdrop := out["backdrop"].(map[string]any)
+	require.Equal(t, 0.5, backdrop["glow"].([]any)[0].(map[string]any)["radius"])
+	require.True(t, strings.HasPrefix(backdrop["pattern"].(map[string]any)["tile"].(string), "decorations/"))
+	require.True(t, strings.HasSuffix(out["illustrations"].(map[string]any)["empty"].(string), ".png"))
+	ear := out["ornaments"].(map[string]any)["postCard"].(map[string]any)
+	require.Equal(t, "topRight", ear["corner"])
+	require.Equal(t, 1.0, ear["opacity"])
+	require.True(t, strings.HasPrefix(ear["image"].(string), "decorations/"))
+	require.True(t, strings.HasPrefix(out["serviceIcons"].(map[string]any)["edu"].(string), "icons/"))
+	title := res.Manifest["font"].(map[string]any)["title"].(map[string]any)
+	require.True(t, strings.HasPrefix(title["regular"].(string), "fonts/"))
+	_, hasRegular := res.Manifest["font"].(map[string]any)["regular"]
+	require.False(t, hasRegular)
+
+	for _, bad := range []map[string]any{
+		{"backdrop": map[string]any{}},
+		{"backdrop": map[string]any{"gradient": map[string]any{"colors": []any{"#FFFFFF"}}}},
+		{"sectionMark": map[string]any{"style": "icon"}},
+		{"identityHarmony": 1.5},
+		{"cardStyle": map[string]any{"fill": "neon"}},
+		{"ornaments": map[string]any{"postCard": map[string]any{"image": "decorations/ear.png", "width": 400.0}}},
+	} {
+		broken := defaultValidManifest()
+		for k, v := range bad {
+			broken["light"].(map[string]any)[k] = v
+		}
+		_, err := ValidateAndNormalizeThemePack(buildTestThemeZip(t, broken, defaultValidAssets()), ThemeMetadataOverrides{})
+		var themeErr *ThemePackError
+		require.ErrorAs(t, err, &themeErr, "%v", bad)
+		require.Equal(t, "theme_field_invalid", themeErr.Code, "%v", bad)
+	}
+}

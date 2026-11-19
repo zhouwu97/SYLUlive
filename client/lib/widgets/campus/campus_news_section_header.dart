@@ -1,5 +1,6 @@
 import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
+import '../../theme/app_theme_style.dart';
 
 class CampusNewsSectionHeader extends StatelessWidget {
   final VoidCallback onCompetitionTap;
@@ -20,7 +21,7 @@ class CampusNewsSectionHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              ThemeSectionTitle(
                 '校园资讯',
                 style: TextStyle(
                   fontSize: 18,

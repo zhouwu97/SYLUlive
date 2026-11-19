@@ -73,7 +73,7 @@ UTF-8 编码，大小不超过 64KB。
 | `schemeVariant` | string | 否 | `tonalSpot`（默认）、`neutral`、`vibrant`、`expressive`、`fidelity`、`content` 之一 |
 | `tokens` | object | 是 | 第 3 节的全部 Token 都要给出。值为 `#RRGGBB`；标注了"可透明"的 Token 也可以用 `#AARRGGBB` |
 | `coursePalette` | string[] | 是 | 5–12 个 `#RRGGBB` |
-| `wallpapers` | object | 否 | 键为 `global`、`home`、`schedule`、`me`，值为壁纸对象或 null |
+| `wallpapers` | object | 否 | 键为 `global`、`home`、`schedule`、`me`、`secondary`，值为壁纸对象或 null |
 | `componentOpacity` | number | 否 | 0.75–1.0，默认 1.0。明暗两套分别生效，系统切换明暗时随之切换 |
 | `frostedGlass` | object | 否 | `{ "enabled": bool, "strength": 0–1 }` |
 | `cardStyle` | object | 否 | 共享卡片样式，见 2.7 节；省略时保留当前组件默认样式 |
@@ -99,6 +99,7 @@ UTF-8 编码，大小不超过 64KB。
 | 课表 | `schedule` |
 | 我 | `me` |
 | 集市、校园 | `global` |
+| 二级页面（工具箱、设置、详情页等从主壳打开的页面） | `secondary` |
 
 页面槽位为空时，回退到 `global`；`global` 也为空时，显示 `background` 纯色。
 
@@ -153,10 +154,12 @@ UTF-8 编码，大小不超过 64KB。
 
 | 字段 | 约束 |
 | --- | --- |
-| `preset` | `standard`（默认）、`compact`、`immersive`。standard 保留现有资料／标题组织，装饰区在信息区之后；compact 在同一行组织标识与摘要，装饰区在其后；immersive 将装饰区放在信息区之前 |
+| `preset` | `standard`（默认）、`compact`、`immersive`。standard 保留现有资料／标题组织，装饰区在信息区之后；compact 在同一行组织标识与摘要，装饰区在其后；immersive 为沉浸页头，见下方说明 |
 | `alignment` | `start`（默认）、`center`、`end`，只控制页头标识与摘要的水平对齐 |
-| `imageHeight` | 96–280，默认 160，单位 dp，只控制独立图片区 |
+| `imageHeight` | 96–280，默认 160，单位 dp，只控制独立图片区；immersive 时表示内容区为 hero 留出的可见高度 |
 | `imageWidth` | 0.45–1.0，默认 1.0，占页头可用宽度的比例，按 alignment 对齐 |
+
+**immersive（沉浸页头）**：在主壳的首页、校园、我三个页签里，页头背景图作为 hero 画在页面背景层中，从屏幕顶部（状态栏下方）铺到内容区锚点下方 28dp，顶栏、搜索框、页头信息和第一张内容卡都叠在 hero 上。hero 顶部用 `background` 色从 62% 透明度渐变到 0，保证顶栏文字清楚；底部最后 18% 渐隐到 `background`。首页不再显示单独的信息卡，标题直接叠在 hero 上；校园、我的信息卡上压 hero 底边。滚动时 hero 以内容一半的速度上移，滚过 hero 高度 70% 时完全淡出。贴纸坐标按 hero 区域换算。导入预览、主题工坊、设置编辑和二级页面没有背景层，immersive 在这些地方仍按"装饰区在信息区之前"显示。`imageWidth` 对 immersive 不生效，hero 始终整宽。
 
 三个模板都支持可选的独立装饰区；未添加背景或贴纸时，忽略 imageHeight、imageWidth，不保留图片空位。信息区依内容和系统文字缩放自然增长，图片区尺寸不能限制资料、通知、按钮的高度。宽屏按页面所在内容栏计算尺寸，不能跨过分栏边界。
 
@@ -209,6 +212,46 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 - 工坊预览、实际页面和导出预览复用同一渲染矩阵；明暗两套参数独立保存。服务端只规范化原图并保留这些参数，不把效果烘焙进图片后再次应用。
 
 本次字段纳入尚未交付的 formatVersion 1；带上述字段的包由 P1 实现确定并填写 minAppVersion。以后不能把同名字段改成另一种含义。已知模板、枚举或数字字段不合法，统一报 theme_field_invalid 并带字段路径；缺图和坏图分别使用既有 theme_asset_missing、theme_image_invalid。
+
+### 2.10 视觉 V2 扩展（全部可选）
+
+以下字段来自[主题视觉改版方案](theme-visual-redesign.md)。省略时外观与之前完全一致。
+
+明暗变体中新增：
+
+| 字段 | 约束 | 作用 |
+| --- | --- | --- |
+| `identityHarmony` | 0–1 | 分类图标、集市橙等板块识别色在 HCT 空间向 `primary` 色相靠拢：旋转 `min(色相差×0.6, 40°)×强度`，色度乘 `1−0.35×强度`，色调不变。状态色（成功、警告、危险、金额）不受影响 |
+| `backdrop` | 见下表，至少一项 | 氛围背景。没有壁纸图片的页面显示它；页面因此保持透明，但顶栏文字仍按"无壁纸"取色 |
+| `cardStyle.fill` | `solid`、`tint`、`glass` | `tint`／`glass` 把默认卡片底色向 `primaryContainer` 混合 32%；显式指定底色的卡片不变 |
+| `sectionMark` | `{style: none／dot／bar／icon, image}`；icon 必须带 `decorations/` 下的透明图 | 区块标题前的主题记号，按 `primary` 着色 |
+| `illustrations` | `{empty, error}`，`decorations/` 下透明 PNG／WebP，长边 ≤ 1024，≤ 1MB | 共享空状态、错误状态在图标位置显示插画；加载态不替换 |
+| `ornaments` | 键为 `postCard`、`campusHeader`、`campusNotice`、`campusServices`，值见下表 | 卡片角饰：首页信息流帖子卡片、校园页头信息卡、校园通知卡、校园服务宫格 |
+| `cardArt` | `{image, alignment, width, opacity}`：image 为 `decorations/` 下透明插画（插画限制）；alignment 取 `bottomRight`（默认）、`bottomLeft`、`topRight`、`topLeft`；width 0.2–0.7，占卡片宽度的比例，默认 0.42，最宽 200 逻辑像素；opacity 0.04–0.4，默认 0.14 | 内容卡片（帖子、评论区、说明卡、表单卡等）里的淡底图，画在内容后面并按卡片圆角裁切；胶囊、圆形、弹窗面板和过小的卡片不画 |
+| `serviceIcons` | 键为 `edu`、`canteen`、`ranking`、`team`、`map`、`calendar`（校园服务）和 `erke`、`fitness`、`exam`、`papers`、`sites`、`cloudGame`、`lottery`（工具箱），值为 `icons/` 下透明方图（图标限制） | 替换入口图标，按 40×40 显示，不再叠加识别色底板；没给的键保持原图标 |
+
+角饰对象：
+
+| 字段 | 约束 |
+| --- | --- |
+| `image` | `decorations/` 下透明 PNG／WebP（贴纸限制） |
+| `corner` | `topLeft`、`topRight`、`bottomLeft`、`bottomRight`，默认 `topRight` |
+| `width` | 24–160，显示宽度（逻辑像素），高度按图片比例 |
+| `dx` | -64–240，从所选角向卡片内侧的水平偏移，默认 0 |
+| `dy` | -96–96，向卡片内侧为正，负值表示探出卡片边缘，默认 0 |
+| `opacity` | 0–1，默认 1 |
+
+角饰不占布局、不响应点击、不进语义树，画在卡片之上，制作时要避开卡片右上角的「更多」按钮和文字。
+
+`backdrop`：
+
+| 字段 | 约束 |
+| --- | --- |
+| `gradient` | `{colors: 2–4 个 #RRGGBB, angle: 0–360，默认 180}`；角度按 CSS 语义，180 为自上而下 |
+| `glow` | 最多 3 项 `{color, x: 0–1, y: 0–1, radius: 0.1–1.5（默认 0.5）, opacity: 0–1（默认 0.6）}`，径向光斑 |
+| `pattern` | `{tile: decorations/ 下透明图（贴纸限制）, opacity: 0–1（默认 0.2）, scale: 0.5–2（默认 1）}`；scale 1 时一个纹理块按 256 逻辑像素平铺 |
+
+顶层 `font` 新增可选的 `title: {name, regular, license}`：标题字体只作用于 16 号及以上的展示文字（页头标题、区块标题、`TextTheme` 的 display／headline／titleLarge），小字号保持正文字体。`font` 可以只提供 `title` 而不提供正文字体。
 
 ## 3. 语义 Token
 

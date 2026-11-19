@@ -9,12 +9,16 @@ import 'package:provider/provider.dart';
 
 import '../../providers/theme_provider.dart';
 import '../../theme/app_palette.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../../widgets/about_app_sheet.dart';
+import '../../widgets/app_card.dart';
 import '../../widgets/floating_bottom_nav.dart';
 import '../../widgets/liquid_bottom_nav.dart';
 import '../../widgets/opacity_safe_backdrop_filter.dart';
 import 'theme_appearance.dart';
+import 'theme_appearance_exporter.dart';
 import 'theme_contrast.dart';
+import 'theme_downloads.dart';
 import 'theme_font_registry.dart';
 import 'theme_manifest.dart';
 import 'theme_navigation_images.dart';
@@ -31,12 +35,14 @@ class ThemeImportScreen extends StatefulWidget {
     this.pickFile,
     this.appVersion,
     this.incomingRequest,
+    this.downloadFile,
   });
 
   final InstalledTheme? installed;
   final Future<String?> Function()? pickFile;
   final String? appVersion;
   final ThemeIncomingRequest? incomingRequest;
+  final ThemeDownloadFile? downloadFile;
 
   static bool get isIncomingRouteActive =>
       ThemeIncomingCoordinator.instance.hasActiveOwner;
@@ -53,6 +59,7 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
   bool _saving = false;
   String? _error;
   bool _requiresUpdate = false;
+  bool _fromDownloads = false;
   Brightness _brightness = Brightness.light;
   int _generation = 0;
   int? _incomingGeneration;
@@ -78,6 +85,10 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
       final active =
           ThemeIncomingCoordinator.instance.current ?? widget.incomingRequest!;
       _startIncoming(active, initialBuild: true);
+    } else if (widget.downloadFile case final file?) {
+      _fromDownloads = true;
+      _reading = true;
+      unawaited(_loadFromPath(file.name, ++_generation, download: file));
     }
   }
 
@@ -170,6 +181,7 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
   }
 
   Future<void> _pick() async {
+    _fromDownloads = false;
     final previousIncomingGen = _incomingGeneration;
     _incomingGeneration = null;
     if (previousIncomingGen != null) {
@@ -222,6 +234,7 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
     String file,
     int generation, {
     int? incomingGen,
+    ThemeDownloadFile? download,
   }) async {
     bool isStillCurrent() =>
         mounted &&
@@ -235,7 +248,10 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
       }
       final version = await _resolveAppVersion();
       if (!isStillCurrent()) return;
-      final pack = await ThemePackCodec.readFile(file, appVersion: version);
+      final pack = download == null
+          ? await ThemePackCodec.readFile(file, appVersion: version)
+          : await ThemePackCodec.decode(await ThemeDownloads.read(download),
+              appVersion: version);
       if (!isStillCurrent()) return;
       setState(() {
         _pack = pack;
@@ -312,6 +328,13 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
           _pack!.manifest.id,
           _pack!.manifest.version,
         );
+        if (Platform.isAndroid && !_fromDownloads && existing == null) {
+          final pack = _pack!;
+          final name = ThemeAppearanceExporter.sanitizeFileName(
+              pack.manifest.name, fallback: pack.manifest.id);
+          await ThemeDownloads.save('$name-v${pack.manifest.version}.sltheme',
+              await ThemePackCodec.encode(pack.manifest, pack.contents));
+        }
         target = existing ?? await provider.installTheme(_pack!);
         if (mounted && launchGen == _generation) {
           _installed = target;
@@ -328,6 +351,8 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
         }
         messenger.showSnackBar(
           SnackBar(
+            persist: false,
+            duration: const Duration(seconds: 5),
             content: Text(
               appliedLauncherOnAndroid
                   ? '主题已应用（桌面图标返回桌面后生效）'
@@ -363,6 +388,8 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
   @override
   Widget build(BuildContext context) {
     final manifest = _manifest;
+    final theme = Theme.of(context);
+    final tokens = AppThemeTokens.of(context);
     final issues = manifest == null
         ? const <ThemeContrastIssue>[]
         : ThemeContrast.check(manifest);
@@ -383,15 +410,63 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
             child: ListView(
               padding: const EdgeInsets.all(18),
               children: [
-                if (widget.installed == null) ...[
-                  const Text('选择 .sltheme 文件，在预览后决定要更换哪些部分。'),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _reading || _saving ? null : _pick,
-                    icon: const Icon(Icons.file_open_outlined),
-                    label: Text(manifest == null ? '选择主题文件' : '重新选择文件'),
+                if (widget.installed == null && manifest == null)
+                  AppCardSurface(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: tokens.card,
+                      border: Border.all(color: tokens.cardBorder),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primaryContainer,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.folder_open_outlined,
+                                color: theme.colorScheme.onPrimaryContainer,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                '选择 .sltheme 文件',
+                                style: theme.textTheme.titleMedium,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          '预览后选择要更换的外观。',
+                          style: TextStyle(color: tokens.textSecondary),
+                        ),
+                        const SizedBox(height: 10),
+                        FilledButton.tonalIcon(
+                          onPressed: _reading || _saving ? null : _pick,
+                          icon: const Icon(Icons.file_open_outlined),
+                          label: const Text('选择主题文件'),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
+                if (widget.installed == null && manifest != null)
+                  Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: TextButton.icon(
+                      onPressed: _reading || _saving ? null : _pick,
+                      icon: const Icon(Icons.file_open_outlined, size: 18),
+                      label: const Text('重新选择文件'),
+                    ),
+                  ),
                 if (_reading)
                   const Padding(
                     padding: EdgeInsets.all(32),
@@ -405,8 +480,23 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
                   ),
                 if (_error != null)
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Semantics(liveRegion: true, child: Text(_error!)),
+                    padding: const EdgeInsets.only(top: 12, bottom: 4),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            _error!,
+                            style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 if (_requiresUpdate)
                   TextButton.icon(

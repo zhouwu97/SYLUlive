@@ -7,6 +7,7 @@ import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../theme/app_theme_style.dart';
 import '../widgets/app_card.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:image_picker/image_picker.dart';
@@ -266,8 +267,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cleanLightMode = themeProvider.isCleanBackgroundMode && !isDark;
-    final overlayStyle = (cleanLightMode
+    // 沉浸 hero 顶部压着一层页面底色，状态栏图标按底色明暗取色。
+    final lightBackdrop = themeProvider.hasImmersiveHero('me')
+        ? ThemeData.estimateBrightnessForColor(
+                AppThemeTokens.of(context).background) ==
+            Brightness.light
+        : themeProvider.isCleanBackgroundMode && !isDark;
+    final overlayStyle = (lightBackdrop
             ? SystemUiOverlayStyle.dark
             : SystemUiOverlayStyle.light)
         .copyWith(
@@ -278,8 +284,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
-        backgroundColor: AppPageBackground.color(
-            context, AppThemeTokens.of(context).background),
+        backgroundColor:
+            context.watch<ThemeProvider?>()?.hasImmersiveHero('me') == true
+                ? Colors.transparent
+                : AppPageBackground.color(
+                    context, AppThemeTokens.of(context).background),
         body: ProfileDetailLayout(
           key: _navigationKey,
           isActive: widget.isActive && currentHomeTabIndex.value == 4,
@@ -1130,7 +1139,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 10),
-            child: Text(
+            child: ThemeSectionTitle(
               title,
               key: ValueKey('profile-section-$title'),
               style: TextStyle(
@@ -1543,7 +1552,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _openProfilePage(
               MaterialPageRoute(
                 builder: (_) => ThemeWorkshopScreen(
-                  deviceSettingsBuilder: (_) => const AppearanceSettingsScreen(),
+                  deviceSettingsBuilder: (_) =>
+                      const AppearanceSettingsScreen(),
                 ),
               ),
             );
@@ -1594,6 +1604,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required bool isDark,
     VoidCallback? onTap,
   }) {
+    // 功能识别色随主题的识别色协调强度向主色相靠拢。
+    final tint = AppThemeStyle.of(context).identity(iconColor);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1607,10 +1619,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.1),
+                  color: tint.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, color: iconColor, size: 20),
+                child: Icon(icon, color: tint, size: 20),
               ),
               const SizedBox(width: 14),
               Expanded(

@@ -10,6 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/app_dialog.dart';
 import 'theme_appearance_exporter.dart';
+import 'theme_downloads.dart';
 import 'theme_import_screen.dart';
 import 'theme_pack_store.dart';
 import 'theme_store_repository.dart';
@@ -25,7 +26,11 @@ class InstalledThemesScreen extends StatefulWidget {
 }
 
 class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
+  late final AppLifecycleListener _lifecycle;
   List<InstalledTheme>? _themes;
+  List<ThemeDownloadFile> _downloads = [];
+  bool _downloadError = false;
+  bool _selectingDirectory = false;
   Map<String, ThemeCatalogItem> _remoteUpdates = const {};
   String? _error;
   bool _busy = false;
@@ -34,7 +39,16 @@ class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
   @override
   void initState() {
     super.initState();
+    _lifecycle = AppLifecycleListener(
+      onResume: () => unawaited(_loadDownloads(_generation)),
+    );
     unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
   }
 
   ThemeStoreRepository? _resolveRepo() {
@@ -47,6 +61,8 @@ class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
   Future<void> _load() async {
     final generation = ++_generation;
     setState(() => _error = null);
+    await _loadDownloads(generation);
+    if (!mounted || generation != _generation) return;
     try {
       final themes = await context.read<ThemeProvider>().installedThemes();
       if (!mounted || generation != _generation) return;
@@ -82,6 +98,36 @@ class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
     }
   }
 
+  Future<void> _loadDownloads(int generation) async {
+    try {
+      final files = await ThemeDownloads.list();
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _downloads = files;
+        _downloadError = false;
+      });
+    } catch (_) {
+      if (mounted && generation == _generation) {
+        setState(() => _downloadError = true);
+      }
+    }
+  }
+
+  Future<void> _selectDirectory() async {
+    setState(() => _selectingDirectory = true);
+    try {
+      if (await ThemeDownloads.selectDirectory() && mounted) await _load();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请选择 Download/沈理校园/主题 文件夹')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _selectingDirectory = false);
+    }
+  }
+
   Future<void> _openUpdateDetail(ThemeCatalogItem item) async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -103,9 +149,9 @@ class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
     };
   }
 
-  Future<void> _open([InstalledTheme? theme]) async {
+  Future<void> _open([InstalledTheme? theme, ThemeDownloadFile? file]) async {
     await Navigator.of(context).push(MaterialPageRoute<bool>(
-        builder: (_) => ThemeImportScreen(installed: theme)));
+        builder: (_) => ThemeImportScreen(installed: theme, downloadFile: file)));
     if (mounted) await _load();
   }
 
@@ -149,21 +195,30 @@ class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
       final bytes = await store.export(theme);
       if (!mounted) return;
       if (saveToFile) {
-        final savedPath = await FilePicker.platform.saveFile(
-          dialogTitle: '保存主题文件',
-          fileName: fileName,
-          bytes: bytes,
-        );
+        final savedToDownloads = await ThemeDownloads.save(fileName, bytes);
+        final savedPath = savedToDownloads
+            ? '${ThemeDownloads.directory}/$fileName'
+            : await FilePicker.platform.saveFile(
+                dialogTitle: '保存主题文件',
+                fileName: fileName,
+                bytes: bytes,
+              );
         if (savedPath != null && savedPath.isNotEmpty) {
           final target = File(savedPath);
-          if (!await target.exists() || await target.length() == 0) {
+          if (!savedToDownloads &&
+              (!await target.exists() || await target.length() == 0)) {
             await target.parent.create(recursive: true);
             await target.writeAsBytes(bytes, flush: true);
           }
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('已保存 $fileName')),
+              SnackBar(
+                content: Text(savedToDownloads
+                    ? '已保存到 ${ThemeDownloads.directory}'
+                    : '已保存 $fileName'),
+              ),
             );
+            if (savedToDownloads) await _loadDownloads(_generation);
           }
         }
       } else {
@@ -203,6 +258,27 @@ class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
                             icon: const Icon(Icons.file_open_outlined),
                             label: const Text('导入主题')),
                         const SizedBox(height: 12),
+                        if (Platform.isAndroid)
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('主题文件夹'),
+                            subtitle: const Text(ThemeDownloads.directory),
+                            trailing: TextButton(
+                              onPressed: _selectingDirectory
+                                  ? null
+                                  : _selectDirectory,
+                              child: const Text('授权读取'),
+                            ),
+                          ),
+                        if (_downloadError)
+                          const Text('无法读取主题文件夹，请刷新或重新授权。'),
+                        for (final file in _downloads)
+                          ListTile(
+                            leading: const Icon(Icons.folder_zip_outlined),
+                            title: Text(file.name),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: _busy ? null : () => _open(null, file),
+                          ),
                         if (_error != null) ...[
                           Text(_error!, semanticsLabel: _error),
                           TextButton(onPressed: _load, child: const Text('重试'))

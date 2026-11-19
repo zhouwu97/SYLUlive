@@ -16,6 +16,8 @@ import '../services/app_resume_coordinator.dart';
 import '../services/campus_article_service.dart';
 import '../services/exam_schedule_repository.dart';
 import '../providers/course_schedule_provider.dart';
+import '../providers/theme_provider.dart';
+import '../theme/app_theme_style.dart';
 import '../widgets/home_tab_reveal.dart';
 import '../utils/campus_asset_preloader.dart';
 import '../utils/app_feedback.dart';
@@ -411,9 +413,12 @@ class _CampusScreenState extends State<CampusScreen>
     final todayShown = _todayItems.isNotEmpty;
 
     return Scaffold(
-      // 壁纸沿用外层绘制，简洁模式使用当前主题底色。
-      backgroundColor: AppPageBackground.color(
-            context, AppThemeTokens.of(context).background),
+      // 壁纸和沉浸页头沿用外层绘制，简洁模式使用当前主题底色。
+      backgroundColor:
+          context.watch<ThemeProvider?>()?.hasImmersiveHero('campus') == true
+              ? Colors.transparent
+              : AppPageBackground.color(
+                  context, AppThemeTokens.of(context).background),
       body: ResponsiveContent.page(
           child: SafeArea(
         bottom: false,
@@ -515,10 +520,13 @@ class _CampusScreenState extends State<CampusScreen>
 
     // 有数据 → 显示真实卡片
     if (latest != null) {
-      return CampusFeatureNoticeCard(
+      return ThemeOrnamented(
+        slot: 'campusNotice',
+        child: CampusFeatureNoticeCard(
         article: latest,
         isDark: isDark,
         onTap: () => _openArticleDetail(latest),
+      ),
       );
     }
 
@@ -751,10 +759,13 @@ class _LatestCardEmpty extends StatelessWidget {
       decoration: CampusTheme.themedCardDecoration(context),
       child: Column(
         children: [
-          Icon(
-            Icons.inbox_rounded,
-            size: 36,
-            color: AppThemeTokens.of(context).textTertiary,
+          ThemeStateArt(
+            size: 104,
+            fallback: Icon(
+              Icons.inbox_rounded,
+              size: 36,
+              color: AppThemeTokens.of(context).textTertiary,
+            ),
           ),
           const SizedBox(height: 10),
           Text(
@@ -869,10 +880,13 @@ class _RecentListEmpty extends StatelessWidget {
       decoration: CampusTheme.themedCardDecoration(context),
       child: Column(
         children: [
-          Icon(
-            Icons.inbox_rounded,
-            size: 36,
-            color: AppThemeTokens.of(context).textTertiary,
+          ThemeStateArt(
+            size: 104,
+            fallback: Icon(
+              Icons.inbox_rounded,
+              size: 36,
+              color: AppThemeTokens.of(context).textTertiary,
+            ),
           ),
           const SizedBox(height: 10),
           Text(

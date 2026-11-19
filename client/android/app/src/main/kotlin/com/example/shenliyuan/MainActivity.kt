@@ -63,6 +63,7 @@ class MainActivity : FlutterActivity() {
         private const val EXTRA_THEME_INTENT_HANDLED =
             "com.example.shenliyuan.THEME_INTENT_HANDLED"
         private const val MAX_THEME_PACKAGE_BYTES = 48L * 1024L * 1024L
+        private const val THEME_DIRECTORY_REQUEST = 39241
 
         private val activityInstanceLock = Any()
         private var liveActivityCount = 0
@@ -73,6 +74,25 @@ class MainActivity : FlutterActivity() {
     private var pendingDeepLink: Any? = null
     
     private var notificationOpenChannel: MethodChannel? = null
+    private var themeDirectoryResult: MethodChannel.Result? = null
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != THEME_DIRECTORY_REQUEST) return
+        val result = themeDirectoryResult ?: return
+        themeDirectoryResult = null
+        val uri = if (resultCode == RESULT_OK) data?.data else null
+        if (uri == null) {
+            result.success(false)
+            return
+        }
+        try {
+            ThemeDownloads.grant(this, uri)
+            result.success(true)
+        } catch (_: Exception) {
+            result.error("THEME_DIRECTORY", "请选择 Download/沈理校园/主题", null)
+        }
+    }
 
     private val keepAliveHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
@@ -373,6 +393,45 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         liquidGlassGravity?.dispose()
         liquidGlassGravity = LiquidGlassGravityBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
+        MethodChannel(
+            messenger, "shenliyuan/theme_downloads",
+            io.flutter.plugin.common.StandardMethodCodec.INSTANCE, messenger.makeBackgroundTaskQueue(),
+        ).setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "list" -> result.success(ThemeDownloads.list(this))
+                    "read" -> result.success(ThemeDownloads.read(this, call.argument<String>("uri")!!))
+                    "save" -> result.success(ThemeDownloads.save(this,
+                        call.argument<String>("name")!!, call.argument<ByteArray>("bytes")!!))
+                    "selectDirectory" -> runOnUiThread {
+                        if (themeDirectoryResult != null) {
+                            result.success(false)
+                            return@runOnUiThread
+                        }
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                            putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI,
+                                android.provider.DocumentsContract.buildDocumentUri(
+                                    "com.android.externalstorage.documents",
+                                    "primary:Download/沈理校园/主题"))
+                        }
+                        try {
+                            themeDirectoryResult = result
+                            startActivityForResult(intent, THEME_DIRECTORY_REQUEST)
+                        } catch (_: android.content.ActivityNotFoundException) {
+                            themeDirectoryResult = null
+                            result.error("THEME_DIRECTORY", "无法打开系统文件夹选择器", null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            } catch (error: Exception) {
+                result.error("THEME_DOWNLOADS", error.message, null)
+            }
+        }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger,
             "shenliyuan/academic_archive").setMethodCallHandler { call, result ->

@@ -42,6 +42,9 @@ import '../widgets/campus/campus_theme.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'schedule/course_detail_sheet.dart';
 import '../theme/app_theme_tokens.dart';
+import '../theme/app_theme_style.dart';
+import '../theme/app_palette.dart';
+import '../features/theme_pack/theme_contrast.dart';
 import '../widgets/app_card.dart';
 
 /// 每节课槽的默认高度
@@ -487,9 +490,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final themeProvider = context.watch<ThemeProvider>();
-    final cleanLightMode = themeProvider.isCleanBackgroundMode && !isDark;
-    final overlayStyle = (cleanLightMode
+    final background = AppThemeTokens.of(context).background;
+    final lightBackground =
+        ThemeData.estimateBrightnessForColor(background) == Brightness.light;
+    final overlayStyle = (lightBackground
             ? SystemUiOverlayStyle.dark
             : SystemUiOverlayStyle.light)
         .copyWith(
@@ -1022,9 +1026,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Widget _buildDateHeader(CourseScheduleProvider sc) {
     final academicWeek = sc.getAcademicWeek(_weekStart);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor = AppThemeTokens.of(context).textPrimary;
+    final tokens = AppThemeTokens.of(context);
+    final titleColor = tokens.textPrimary;
     final secondaryColor = appContentSecondaryColor(
-        context, AppThemeTokens.of(context).textSecondary);
+      context,
+      tokens.textSecondary,
+    );
+    final weekEnd = _weekStart.add(const Duration(days: 6));
 
     return Container(
       color: Colors.transparent,
@@ -1044,14 +1052,20 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     children: [
                       Row(
                         children: [
-                          GestureDetector(
-                            onTap: () => _pickSemesterStart(context),
-                            child: Text(
-                              academicWeek != null ? '第 $academicWeek 周' : '课表',
-                              style: TextStyle(
-                                color: titleColor,
-                                fontSize: 28,
-                                fontWeight: FontWeight.w900,
+                          Flexible(
+                            child: GestureDetector(
+                              onTap: () => _pickSemesterStart(context),
+                              child: Text(
+                                academicWeek != null
+                                    ? '第 $academicWeek 周'
+                                    : '课表',
+                                style: AppThemeStyle.of(context).title(
+                                  TextStyle(
+                                    color: titleColor,
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1061,31 +1075,35 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           ],
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      GestureDetector(
-                        onTap: () => _openTermSwitchSheet(context),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '${sc.currentTerm.title}  ${_weekStart.month}/${_weekStart.day} - ${_weekStart.add(const Duration(days: 6)).month}/${_weekStart.add(const Duration(days: 6)).day}',
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: secondaryColor,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                      Wrap(
+                        spacing: 10,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          TextButton(
+                            onPressed: () => _openTermSwitchSheet(context),
+                            style: TextButton.styleFrom(
+                              backgroundColor: tokens.tagBackground,
+                              foregroundColor: tokens.tagText,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
                               ),
-                              const SizedBox(width: 4),
-                              Icon(Icons.arrow_drop_down,
-                                  size: 16, color: secondaryColor),
-                            ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(child: Text(sc.currentTerm.title)),
+                                const Icon(Icons.expand_more, size: 16),
+                              ],
+                            ),
                           ),
-                        ),
+                          Text(
+                            '${_weekStart.month}/${_weekStart.day} – ${weekEnd.month}/${weekEnd.day}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: secondaryColor,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1143,7 +1161,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   /// 内容高度因此有上界；时间轴顶部留出同高空位即可与网格行对齐。
   double _weekHeaderHeightOf(BuildContext context) {
     final scale = MediaQuery.textScalerOf(context).scale(1.0);
-    return (16 * scale) * 1.5 + 4 + (12 * scale) * 1.5 + 8;
+    return (16 * scale) * 1.5 + 4 + (12 * scale) * 1.5 + 14;
   }
 
   Widget _buildWeekdayHeader(
@@ -1152,10 +1170,21 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }) {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
-    final primaryColor = AppThemeTokens.of(context).primary;
-    final titleColor = AppThemeTokens.of(context).textPrimary;
+    final tokens = AppThemeTokens.of(context);
+    final todayFill = tokens.timetableToday.a == 0
+        ? tokens.primaryContainer
+        : Color.alphaBlend(tokens.timetableToday, tokens.background);
+    final todayText =
+        ThemeContrast.ratio(tokens.onPrimaryContainer, todayFill) >= 4.5
+        ? tokens.onPrimaryContainer
+        : ThemeContrast.ratio(Colors.white, todayFill) >= 4.5
+        ? Colors.white
+        : Colors.black;
+    final titleColor = tokens.textPrimary;
     final secondaryColor = appContentSecondaryColor(
-        context, AppThemeTokens.of(context).textSecondary);
+      context,
+      tokens.textSecondary,
+    );
 
     return SizedBox(
       height: _weekHeaderHeightOf(context),
@@ -1168,30 +1197,46 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 final d = weekStart.add(Duration(days: i));
                 final isToday = d == todayDate;
                 return Expanded(
-                  child: Column(
-                    children: [
-                      Text(
-                        _wd[i],
-                        style: TextStyle(
-                          color: isToday ? primaryColor : titleColor,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          '${d.month}/${d.day}',
-                          style: TextStyle(
-                            color: isToday ? primaryColor : secondaryColor,
-                            fontSize: 12,
-                            fontWeight:
-                                isToday ? FontWeight.w600 : FontWeight.w500,
+                  child: Semantics(
+                    selected: isToday,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      decoration: isToday
+                          ? BoxDecoration(
+                              color: todayFill,
+                              borderRadius: BorderRadius.circular(
+                                AppShape.of(context).sm,
+                              ),
+                            )
+                          : null,
+                      child: Column(
+                        children: [
+                          Text(
+                            _wd[i],
+                            style: TextStyle(
+                              color: isToday ? todayText : titleColor,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 4),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              '${d.month}/${d.day}',
+                              style: TextStyle(
+                                color: isToday ? todayText : secondaryColor,
+                                fontSize: 12,
+                                fontWeight: isToday
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 );
               }),
@@ -1204,6 +1249,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   // ====== 未登录引导 ======
+
   Widget _buildLoginPrompt(BuildContext context, bool isDark) {
     return CourseEmptyStateCard(
       type: CourseEmptyStateType.unlogged,
@@ -1261,24 +1307,26 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
-        20,
-        22,
-        20,
+        0,
+        16,
+        0,
         24 + MediaQuery.paddingOf(context).bottom,
       ),
-      child: Column(
-        children: [
-          CourseEmptyStateCard(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: CourseEmptyStateCard(
             type: isCurrentTerm
                 ? CourseEmptyStateType.noCache
                 : CourseEmptyStateType.currentTermNoCache,
             isDark: isDark,
-            recommendedTerm:
-                isCurrentTerm ? sc.currentTerm : CourseTerm.inferCurrentTerm(),
+            recommendedTerm: isCurrentTerm
+                ? sc.currentTerm
+                : CourseTerm.inferCurrentTerm(),
             onMainAction: () => _openCoursePullSheet(context),
             onSecondaryAction: () => _openTermSwitchSheet(context),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -4400,7 +4448,7 @@ $classFilterRule
               if (c.location != null && c.location!.isNotEmpty) ...[
                 SizedBox(height: 1 * scale),
                 Text(
-                  '@${c.location}',
+                  c.location!,
                   style: TextStyle(
                     color: AppThemeTokens.of(context).courseCardText,
                     fontSize: (isCompact ? 9 : 11) * scale,
@@ -4408,6 +4456,8 @@ $classFilterRule
                     height: 1.15,
                   ),
                   textAlign: TextAlign.left,
+                  maxLines: isCompact ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
               if (!isCompact &&

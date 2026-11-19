@@ -105,7 +105,13 @@ abstract final class ThemeAppearanceExporter {
         if (modeWalls != null) {
           final slots = <String, dynamic>{};
           var hasAny = false;
-          for (final slot in const ['global', 'home', 'schedule', 'me']) {
+          for (final slot in const [
+            'global',
+            'home',
+            'schedule',
+            'me',
+            'secondary',
+          ]) {
             final item = modeWalls[slot] as Map?;
             if (item == null) {
               slots[slot] = null;
@@ -226,11 +232,73 @@ abstract final class ThemeAppearanceExporter {
         }
       }
 
+      // V2 附加参数：识别色协调、氛围背景、区块记号与状态插画。
+      final modeColors = colorsGroup?[mode] as Map?;
+      final harmony = (modeColors?['identityHarmony'] as num?)?.toDouble();
+      Map? rawBackdrop;
+      if (wallpapersGroup?['legacy'] == null) {
+        final modeWallpapers = wallpapersGroup?[mode] as Map?;
+        rawBackdrop = modeWallpapers?['backdrop'] as Map?;
+      }
+      Map<String, dynamic>? exportedBackdrop;
+      if (rawBackdrop != null) {
+        final pattern = rawBackdrop['pattern'] as Map?;
+        exportedBackdrop = {
+          ...Map<String, dynamic>.from(rawBackdrop),
+          if (pattern != null)
+            'pattern': {
+              ...Map<String, dynamic>.from(pattern),
+              'tile': registerLocalAsset(pattern['tile'] as String, 'decorations'),
+            },
+        };
+      }
+      final modeDecoration = decorationGroup?[mode] as Map?;
+      final rawMark = modeDecoration?['sectionMark'] as Map?;
+      final rawIllustrations = modeDecoration?['illustrations'] as Map?;
+      final rawOrnaments = modeDecoration?['ornaments'] as Map?;
+      final rawServiceIcons = modeDecoration?['serviceIcons'] as Map?;
+      final rawCardArt = modeDecoration?['cardArt'] as Map?;
+
       return {
         'seedColor': seedColor,
         'schemeVariant': schemeVariant,
         'tokens': tokens,
         'coursePalette': coursePalette,
+        if (harmony != null) 'identityHarmony': harmony,
+        if (exportedBackdrop != null) 'backdrop': exportedBackdrop,
+        if (rawMark != null)
+          'sectionMark': {
+            'style': rawMark['style'],
+            if (rawMark['image'] != null)
+              'image': registerLocalAsset(rawMark['image'] as String, 'decorations'),
+          },
+        if (rawIllustrations != null && rawIllustrations.isNotEmpty)
+          'illustrations': {
+            for (final entry in rawIllustrations.entries)
+              entry.key as String:
+                  registerLocalAsset(entry.value as String, 'decorations'),
+          },
+        if (rawOrnaments != null && rawOrnaments.isNotEmpty)
+          'ornaments': {
+            for (final entry in rawOrnaments.entries)
+              entry.key as String: {
+                ...Map<String, dynamic>.from(entry.value as Map),
+                'image': registerLocalAsset(
+                    (entry.value as Map)['image'] as String, 'decorations'),
+              },
+          },
+        if (rawServiceIcons != null && rawServiceIcons.isNotEmpty)
+          'serviceIcons': {
+            for (final entry in rawServiceIcons.entries)
+              entry.key as String:
+                  registerLocalAsset(entry.value as String, 'icons'),
+          },
+        if (rawCardArt != null)
+          'cardArt': {
+            ...Map<String, dynamic>.from(rawCardArt),
+            'image':
+                registerLocalAsset(rawCardArt['image'] as String, 'decorations'),
+          },
         if (exportedWallpapers != null) 'wallpapers': exportedWallpapers,
         if (componentOpacity != null) 'componentOpacity': componentOpacity,
         if (frostedGlass != null) 'frostedGlass': frostedGlass,
@@ -267,13 +335,25 @@ abstract final class ThemeAppearanceExporter {
     }
 
     Map<String, dynamic>? exportedFont;
-    if (fontGroup != null && fontGroup['regular'] != null) {
+    final titleFont = fontGroup?['title'] as Map?;
+    if (fontGroup != null &&
+        (fontGroup['regular'] != null || titleFont?['regular'] != null)) {
       exportedFont = {
-        'name': fontGroup['name'] as String,
-        'regular': registerLocalAsset(fontGroup['regular'] as String, 'fonts'),
-        if (fontGroup['bold'] != null)
-          'bold': registerLocalAsset(fontGroup['bold'] as String, 'fonts'),
-        'license': fontGroup['license'] as String? ?? 'OFL-1.1',
+        if (fontGroup['regular'] != null) ...{
+          'name': fontGroup['name'] as String,
+          'regular':
+              registerLocalAsset(fontGroup['regular'] as String, 'fonts'),
+          if (fontGroup['bold'] != null)
+            'bold': registerLocalAsset(fontGroup['bold'] as String, 'fonts'),
+          'license': fontGroup['license'] as String? ?? 'OFL-1.1',
+        },
+        if (titleFont?['regular'] != null)
+          'title': {
+            'name': titleFont!['name'] as String,
+            'regular':
+                registerLocalAsset(titleFont['regular'] as String, 'fonts'),
+            'license': titleFont['license'] as String? ?? 'OFL-1.1',
+          },
       };
     }
 

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -7,9 +8,12 @@ import '../../theme/app_theme_tokens.dart';
 
 class ThemedWallpaperLayer extends StatelessWidget {
   const ThemedWallpaperLayer(
-      {super.key, required this.settings, this.imageProvider});
+      {super.key, required this.settings, this.imageProvider, this.backdrop});
   final Map<String, dynamic>? settings;
   final ImageProvider? imageProvider;
+
+  /// 没有壁纸图片的页面使用的氛围背景；有壁纸图片时被图片完整覆盖，不绘制。
+  final Map<String, dynamic>? backdrop;
 
   /// 按契约 2.9 顺序（亮度 → 对比度 → 饱和度）生成 4×5 颜色矩阵；中性参数返回单位矩阵。
   static List<double> buildColorMatrix({
@@ -50,9 +54,12 @@ class ThemedWallpaperLayer extends StatelessWidget {
         disableAnimations ? Duration.zero : const Duration(milliseconds: 200);
     Widget content;
     if (config == null) {
-      content = ColoredBox(
-        key: ValueKey(('solid', background)),
-        color: background,
+      // AnimatedSwitcher 用宽松约束摆放子项，纯色层必须显式铺满，否则尺寸为 0。
+      content = SizedBox.expand(
+        key: ValueKey(('solid', background, backdrop)),
+        child: backdrop == null
+            ? ColoredBox(color: background)
+            : ThemeBackdropLayer(backdrop: backdrop!, background: background),
       );
     } else {
       final landscape =
@@ -135,6 +142,83 @@ class ThemedWallpaperLayer extends StatelessWidget {
     return AnimatedSwitcher(
       duration: duration,
       child: content,
+    );
+  }
+}
+
+/// 氛围背景：底色 → 线性渐变 → 径向光斑 → 平铺纹理。只用渐变和图片着色器，不做逐像素处理。
+class ThemeBackdropLayer extends StatelessWidget {
+  const ThemeBackdropLayer({
+    super.key,
+    required this.backdrop,
+    required this.background,
+  });
+
+  final Map<String, dynamic> backdrop;
+  final Color background;
+
+  static Color _parse(String hex) =>
+      Color(int.parse(hex.substring(1), radix: 16) | 0xFF000000);
+
+  @override
+  Widget build(BuildContext context) {
+    final gradient = backdrop['gradient'] as Map?;
+    final glows = (backdrop['glow'] as List?) ?? const [];
+    final pattern = backdrop['pattern'] as Map?;
+    LinearGradient? linear;
+    if (gradient != null) {
+      final colors = [for (final c in gradient['colors'] as List) _parse(c as String)];
+      // angle 按 CSS 语义：0 为自下而上，90 为自左向右，180 为自上而下。
+      final radians = ((gradient['angle'] as num?) ?? 180).toDouble() * 3.14159265 / 180;
+      final dx = math.sin(radians);
+      final dy = -math.cos(radians);
+      linear = LinearGradient(
+        begin: Alignment(-dx, -dy),
+        end: Alignment(dx, dy),
+        colors: colors,
+      );
+    }
+    final tile = pattern?['tile'] as String?;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(color: background, gradient: linear),
+        ),
+        for (final raw in glows)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: Alignment(
+                  ((raw as Map)['x'] as num).toDouble() * 2 - 1,
+                  (raw['y'] as num).toDouble() * 2 - 1,
+                ),
+                radius: (raw['radius'] as num? ?? .5).toDouble(),
+                colors: [
+                  _parse(raw['color'] as String)
+                      .withValues(alpha: (raw['opacity'] as num? ?? .6).toDouble()),
+                  _parse(raw['color'] as String).withValues(alpha: 0),
+                ],
+              ),
+            ),
+          ),
+        if (tile != null)
+          Opacity(
+            opacity: ((pattern!['opacity'] as num?) ?? .2).toDouble(),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                image: DecorationImage(
+                  image: FileImage(File(tile)),
+                  repeat: ImageRepeat.repeat,
+                  alignment: Alignment.topLeft,
+                  // DecorationImage.scale 越大图越小：scale 1 时一个纹理块按 256 逻辑像素显示。
+                  scale: 2 / ((pattern['scale'] as num?) ?? 1).toDouble(),
+                  onError: (_, __) {},
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

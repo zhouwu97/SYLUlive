@@ -117,6 +117,8 @@ class _ThemeTrialBannerHostState extends State<ThemeTrialBannerHost> {
       await provider.applyTrial();
       messenger?.showSnackBar(
         SnackBar(
+          persist: false,
+          duration: const Duration(seconds: 5),
           content: const Text('主题已应用'),
           action: SnackBarAction(
             label: '撤销',

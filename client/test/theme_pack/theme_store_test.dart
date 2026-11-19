@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
@@ -569,8 +570,9 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 30));
     expect(downloader.activeTaskForFamily(familyId), isNotNull);
 
+    final canceled = expectLater(future, throwsA(isA<DioException>()));
     await downloader.cancel(familyId, 1);
-    await expectLater(future, throwsA(isA<DioException>()));
+    await canceled;
     expect(await partFile.exists(), isFalse);
     await streamCtrl.close();
   });
@@ -673,15 +675,19 @@ void main() {
     final auth = _TestAuth(dio);
     final repo = ThemeStoreRepository(dio);
     final downloader = ThemePackDownloadManager(store: store, repository: repo);
+    final catalogBoundary = GlobalKey();
 
     await tester.pumpWidget(
       _wrapWithProviders(
         auth: auth,
         themeProvider: themeProvider,
-        home: ThemeStoreScreen(
-          repository: repo,
-          downloadManager: downloader,
-          appVersion: '1.7.12',
+        home: RepaintBoundary(
+          key: catalogBoundary,
+          child: ThemeStoreScreen(
+            repository: repo,
+            downloadManager: downloader,
+            appVersion: '1.7.12',
+          ),
         ),
       ),
     );
@@ -703,6 +709,26 @@ void main() {
     await _settleIo(tester);
     expect(find.text('官方主题'), findsOneWidget);
     expect(find.text('海盐蓝'), findsWidgets);
+    final qaDirectory = Platform.environment['THEME_WORKSHOP_QA_DIR'];
+    if (qaDirectory != null) {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      try {
+        await tester.pumpAndSettle();
+        final boundary = catalogBoundary.currentContext!.findRenderObject()
+            as RenderRepaintBoundary;
+        await tester.runAsync(() async {
+          final image = await boundary.toImage();
+          final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          image.dispose();
+          final directory = await Directory(qaDirectory).create(recursive: true);
+          await File(p.join(directory.path, 'theme-store.png'))
+              .writeAsBytes(bytes!.buffer.asUint8List());
+        });
+      } finally {
+        await tester.binding.setSurfaceSize(null);
+        await tester.pumpAndSettle();
+      }
+    }
 
     // 进入详情页：状态 1 未安装
     await tester.tap(find.text('海盐蓝').first);

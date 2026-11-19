@@ -519,6 +519,9 @@ void main() {
     expect(provider.hasThemeColors, isTrue);
     expect(find.text('打开导入'), findsOneWidget);
     expect((await tester.runAsync(provider.installedThemes))!.length, 1);
+    final confirmation = tester.widget<SnackBar>(find.byType(SnackBar));
+    expect(confirmation.persist, isFalse);
+    expect(confirmation.duration, const Duration(seconds: 5));
     await tester.tap(find.text('撤销'));
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 80)));
@@ -1227,6 +1230,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
 
+      // 沉浸模板在正式页面里只留锚点和叠在 hero 上的标题，hero 图由主壳背景层绘制。
+      if (preset == 'immersive') {
+        expect(find.byKey(const ValueKey('theme-hero-anchor-home')), findsOneWidget);
+        expect(find.byKey(const ValueKey('home-themed-header-immersive')), findsOneWidget);
+        expect(find.byKey(const ValueKey('home-themed-header-info')), findsNothing);
+        expect(find.byKey(const ValueKey('theme-header-decoration-home')), findsNothing);
+        await tester.ensureVisible(find.text('卡片按钮'));
+        await tester.tap(find.text('卡片按钮'));
+        await tester.pump();
+        continue;
+      }
+
       // 正式页面装饰区必须包裹 IgnorePointer 与 ExcludeSemantics
       final decoFinder = find.byKey(
         const ValueKey('theme-header-decoration-home'),
@@ -1241,16 +1256,12 @@ void main() {
         findsWidgets,
       );
 
-      // immersive 预设装饰区在信息区上方，standard/compact 在下方
+      // standard / compact 预设的装饰区在信息区下方
       final infoRect = tester.getRect(
         find.byKey(const ValueKey('home-themed-header-info')),
       );
       final decoRect = tester.getRect(decoFinder);
-      if (preset == 'immersive') {
-        expect(decoRect.top, lessThan(infoRect.top));
-      } else {
-        expect(infoRect.top, lessThan(decoRect.top));
-      }
+      expect(infoRect.top, lessThan(decoRect.top));
 
       // 卡片按钮可正常点击，不被装饰层劫持
       await tester.ensureVisible(find.text('卡片按钮'));
@@ -1307,10 +1318,11 @@ void main() {
       tester.widgetList<Image>(find.byType(Image)).map((image) => image.image),
     );
     await tester.pumpAndSettle();
-    final splitDecoRect = tester.getRect(
-      find.byKey(const ValueKey('theme-header-decoration-home')),
+    // 循环最后应用的是沉浸模板：叠在 hero 上的标题区不越过分栏边界。
+    final splitHeaderRect = tester.getRect(
+      find.byKey(const ValueKey('home-themed-header-immersive')),
     );
-    expect(splitDecoRect.right, lessThanOrEqualTo(380.0));
+    expect(splitHeaderRect.right, lessThanOrEqualTo(380.0));
 
     // 设置编辑页在 360px + 1.5x 字号下无溢出渲染
     await tester.binding.setSurfaceSize(const Size(360, 800));

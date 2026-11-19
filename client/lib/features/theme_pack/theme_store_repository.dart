@@ -10,6 +10,8 @@ import 'package:path/path.dart' as p;
 import '../../config/api_constants.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/publish_session_scope.dart';
+import 'theme_appearance_exporter.dart';
+import 'theme_downloads.dart';
 import 'theme_manifest.dart';
 import 'theme_pack_codec.dart';
 import 'theme_pack_store.dart';
@@ -820,6 +822,9 @@ class ThemePackDownloadManager extends ChangeNotifier {
         bytes,
         appVersion: appVersion,
       );
+      final name = ThemeAppearanceExporter.sanitizeFileName(
+          item.name, fallback: item.familyId);
+      await ThemeDownloads.save('$name-v${item.version}.sltheme', bytes);
       final installed = await provider.installStoreTheme(
         prepared,
         source: item.source,

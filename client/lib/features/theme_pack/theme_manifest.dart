@@ -60,7 +60,8 @@ enum ThemeAssetKind {
   launcher,
   font,
   header,
-  sticker
+  sticker,
+  illustration
 }
 
 class ThemeAsset {
@@ -73,6 +74,31 @@ class ThemeAsset {
 class ThemeManifest {
   const ThemeManifest.fromStored(this.data);
   final Map<String, dynamic> data;
+
+  /// 可挂卡片角饰的位置：首页帖子卡片、校园页头卡、校园通知卡、校园服务宫格。
+  static const ornamentSlots = [
+    'postCard',
+    'campusHeader',
+    'campusNotice',
+    'campusServices',
+  ];
+
+  /// 可替换的入口图标：前 6 个是校园服务宫格，后 7 个是工具箱。
+  static const serviceIconKeys = [
+    'edu',
+    'canteen',
+    'ranking',
+    'team',
+    'map',
+    'calendar',
+    'erke',
+    'fitness',
+    'exam',
+    'papers',
+    'sites',
+    'cloudGame',
+    'lottery',
+  ];
   String get id => data['id'] as String;
   int get version => data['version'] as int;
   String get name => data['name'] as String;
@@ -86,8 +112,9 @@ class ThemeManifest {
         ThemeGroup.colors,
         ThemeGroup.widgets,
         if (data.containsKey('shape')) ThemeGroup.shape,
-        if (['light', 'dark']
-            .any((key) => (data[key] as Map).containsKey('wallpapers')))
+        if (['light', 'dark'].any((key) =>
+            (data[key] as Map).containsKey('wallpapers') ||
+            (data[key] as Map).containsKey('backdrop')))
           ThemeGroup.wallpapers,
         if (['light', 'dark'].any((key) {
           final v = data[key] as Map;
@@ -105,8 +132,14 @@ class ThemeManifest {
         if (data.containsKey('layout') && (data['layout'] as Map).isNotEmpty)
           ThemeGroup.layout,
         if (['light', 'dark'].any((key) {
-          final decos = (data[key] as Map)['decorations'] as Map?;
-          return decos != null && decos.values.any((v) => v != null);
+          final v = data[key] as Map;
+          final decos = v['decorations'] as Map?;
+          return (decos != null && decos.values.any((d) => d != null)) ||
+              v['sectionMark'] != null ||
+              v['illustrations'] != null ||
+              v['ornaments'] != null ||
+              v['serviceIcons'] != null ||
+              v['cardArt'] != null;
         }))
           ThemeGroup.decoration,
       };
@@ -137,6 +170,26 @@ class ThemeManifest {
           yield ThemeAsset(sticker['image'] as String, ThemeAssetKind.sticker);
         }
       }
+      final tile = (v['backdrop'] as Map?)?['pattern']?['tile'] as String?;
+      if (tile != null) yield ThemeAsset(tile, ThemeAssetKind.sticker);
+      final mark = (v['sectionMark'] as Map?)?['image'] as String?;
+      if (mark != null) yield ThemeAsset(mark, ThemeAssetKind.sticker);
+      for (final image in ((v['illustrations'] as Map?) ?? {}).values) {
+        if (image != null) {
+          yield ThemeAsset(image as String, ThemeAssetKind.illustration);
+        }
+      }
+      for (final ornament in ((v['ornaments'] as Map?) ?? {}).values) {
+        yield ThemeAsset(
+            (ornament as Map)['image'] as String, ThemeAssetKind.sticker);
+      }
+      for (final image in ((v['serviceIcons'] as Map?) ?? {}).values) {
+        yield ThemeAsset(image as String, ThemeAssetKind.icon);
+      }
+      final cardArt = (v['cardArt'] as Map?)?['image'] as String?;
+      if (cardArt != null) {
+        yield ThemeAsset(cardArt, ThemeAssetKind.illustration);
+      }
     }
     for (final icon in ((data['bottomNav']?['icons'] as Map?) ?? {}).values) {
       if (icon == null) continue;
@@ -146,7 +199,11 @@ class ThemeManifest {
     }
     final font = data['font'] as Map?;
     if (font != null) {
-      yield ThemeAsset(font['regular'] as String, ThemeAssetKind.font);
+      final title = (font['title'] as Map?)?['regular'] as String?;
+      if (title != null) yield ThemeAsset(title, ThemeAssetKind.font);
+      if (font['regular'] != null) {
+        yield ThemeAsset(font['regular'] as String, ThemeAssetKind.font);
+      }
       if (font['bold'] != null) {
         yield ThemeAsset(font['bold'] as String, ThemeAssetKind.font);
       }
@@ -268,14 +325,29 @@ class ThemeManifest {
       };
     }
     if (source['font'] != null) {
+      const licenses = ['OFL-1.1', 'Apache-2.0', 'CC0-1.0', 'author-owned'];
       final font = parser.object(source['font'], 'font');
+      final title = font['title'] == null
+          ? null
+          : parser.object(font['title'], 'font.title');
+      // 正文字体与标题字体至少提供一种；只有标题字体时正文沿用 App 默认字体。
+      if (font['regular'] == null && title == null) parser.invalid('font');
       result['font'] = {
-        'name': parser.text(font['name'], 'font.name', 1, 30),
-        'regular': parser.path(font['regular'], 'font.regular', 'fonts'),
-        if (font['bold'] != null)
-          'bold': parser.path(font['bold'], 'font.bold', 'fonts'),
-        'license': parser.choice(font['license'], 'font.license',
-            const ['OFL-1.1', 'Apache-2.0', 'CC0-1.0', 'author-owned']),
+        if (font['regular'] != null) ...{
+          'name': parser.text(font['name'], 'font.name', 1, 30),
+          'regular': parser.path(font['regular'], 'font.regular', 'fonts'),
+          if (font['bold'] != null)
+            'bold': parser.path(font['bold'], 'font.bold', 'fonts'),
+          'license': parser.choice(font['license'], 'font.license', licenses),
+        },
+        if (title != null)
+          'title': {
+            'name': parser.text(title['name'], 'font.title.name', 1, 30),
+            'regular':
+                parser.path(title['regular'], 'font.title.regular', 'fonts'),
+            'license':
+                parser.choice(title['license'], 'font.title.license', licenses),
+          },
       };
     }
     if (source['launcherIcon'] != null) {
@@ -433,6 +505,120 @@ class _ManifestParser {
     };
   }
 
+  /// 氛围背景：2–4 色线性渐变、最多 3 个光斑、可选平铺纹理，至少提供一项。
+  Map<String, dynamic> backdrop(Object? value, String field) {
+    final v = object(value, field);
+    final gradient =
+        v['gradient'] == null ? null : object(v['gradient'], '$field.gradient');
+    final glows = list(v['glow'] ?? const [], '$field.glow', 0, 3);
+    final pattern =
+        v['pattern'] == null ? null : object(v['pattern'], '$field.pattern');
+    if (gradient == null && glows.isEmpty && pattern == null) invalid(field);
+    final stops = gradient == null
+        ? const []
+        : list(gradient['colors'], '$field.gradient.colors', 2, 4);
+    return {
+      if (gradient != null)
+        'gradient': {
+          'colors': [
+            for (var i = 0; i < stops.length; i++)
+              color(stops[i], '$field.gradient.colors[$i]')
+          ],
+          'angle':
+              number(gradient['angle'] ?? 180, '$field.gradient.angle', 0, 360),
+        },
+      'glow': [
+        for (var i = 0; i < glows.length; i++) glow(glows[i], '$field.glow[$i]')
+      ],
+      if (pattern != null)
+        'pattern': {
+          'tile': path(pattern['tile'], '$field.pattern.tile', 'decorations',
+              transparent: true),
+          'opacity':
+              number(pattern['opacity'] ?? .2, '$field.pattern.opacity', 0, 1),
+          'scale': number(pattern['scale'] ?? 1, '$field.pattern.scale', .5, 2),
+        },
+    };
+  }
+
+  Map<String, dynamic> glow(Object? value, String field) {
+    final g = object(value, field);
+    return {
+      'color': color(g['color'], '$field.color'),
+      'x': number(g['x'], '$field.x', 0, 1),
+      'y': number(g['y'], '$field.y', 0, 1),
+      'radius': number(g['radius'] ?? .5, '$field.radius', .1, 1.5),
+      'opacity': number(g['opacity'] ?? .6, '$field.opacity', 0, 1),
+    };
+  }
+
+  Map<String, dynamic> sectionMark(Object? value, String field) {
+    final v = object(value, field);
+    final style = choice(
+        v['style'], '$field.style', const ['none', 'dot', 'bar', 'icon']);
+    if (style == 'icon' && v['image'] == null) invalid('$field.image');
+    return {
+      'style': style,
+      if (v['image'] != null)
+        'image':
+            path(v['image'], '$field.image', 'decorations', transparent: true),
+    };
+  }
+
+  Map<String, dynamic> illustrations(Object? value, String field) {
+    final v = object(value, field);
+    return {
+      for (final key in const ['empty', 'error'])
+        if (v[key] != null)
+          key: path(v[key], '$field.$key', 'decorations', transparent: true),
+    };
+  }
+
+  /// 卡片角饰：贴在指定卡片的一个角上，dx 从角向卡片内侧为正，dy 向卡片内侧为正、向外为负（探出卡片边缘）。
+  Map<String, dynamic> ornaments(Object? value, String field) {
+    final v = object(value, field);
+    return {
+      for (final key in ThemeManifest.ornamentSlots)
+        if (v[key] != null) key: ornament(v[key], '$field.$key'),
+    };
+  }
+
+  Map<String, dynamic> ornament(Object? value, String field) {
+    final v = object(value, field);
+    return {
+      'image':
+          path(v['image'], '$field.image', 'decorations', transparent: true),
+      'corner': choice(v['corner'] ?? 'topRight', '$field.corner',
+          const ['topLeft', 'topRight', 'bottomLeft', 'bottomRight']),
+      'width': number(v['width'], '$field.width', 24, 160),
+      'dx': number(v['dx'] ?? 0, '$field.dx', -64, 240),
+      'dy': number(v['dy'] ?? 0, '$field.dy', -96, 96),
+      'opacity': number(v['opacity'] ?? 1, '$field.opacity', 0, 1),
+    };
+  }
+
+  /// 内容卡片淡底图：只给一张透明插画，客户端负责缩放和压淡。
+  Map<String, dynamic> cardArt(Object? value, String field) {
+    final v = object(value, field);
+    return {
+      'image':
+          path(v['image'], '$field.image', 'decorations', transparent: true),
+      'alignment': choice(v['alignment'] ?? 'bottomRight', '$field.alignment',
+          const ['bottomRight', 'bottomLeft', 'topRight', 'topLeft']),
+      'width': number(v['width'] ?? .42, '$field.width', .2, .7),
+      'opacity': number(v['opacity'] ?? .14, '$field.opacity', .04, .4),
+    };
+  }
+
+  Map<String, dynamic> serviceIcons(Object? value, String field) {
+    final v = object(value, field);
+    return {
+      for (final key in ThemeManifest.serviceIconKeys)
+        if (v[key] != null)
+          key: path(v[key], '$field.$key', 'icons', transparent: true),
+    };
+  }
+
   Map<String, dynamic> sticker(Object? value, String field) {
     final v = object(value, field);
     return {
@@ -492,7 +678,7 @@ class _ManifestParser {
       ],
       if (walls != null)
         'wallpapers': {
-          for (final slot in ['global', 'home', 'schedule', 'me'])
+          for (final slot in ['global', 'home', 'schedule', 'me', 'secondary'])
             slot: walls[slot] == null
                 ? null
                 : wallpaper(walls[slot], '$field.wallpapers.$slot')
@@ -514,7 +700,26 @@ class _ManifestParser {
           if (style['shadow'] != null)
             'shadow': choice(style['shadow'], '$field.cardStyle.shadow',
                 const ['none', 'soft', 'medium']),
+          if (style['fill'] != null)
+            'fill': choice(style['fill'], '$field.cardStyle.fill',
+                const ['solid', 'tint', 'glass']),
         },
+      if (v['identityHarmony'] != null)
+        'identityHarmony':
+            number(v['identityHarmony'], '$field.identityHarmony', 0, 1),
+      if (v['backdrop'] != null)
+        'backdrop': backdrop(v['backdrop'], '$field.backdrop'),
+      if (v['sectionMark'] != null)
+        'sectionMark': sectionMark(v['sectionMark'], '$field.sectionMark'),
+      if (v['illustrations'] != null)
+        'illustrations':
+            illustrations(v['illustrations'], '$field.illustrations'),
+      if (v['ornaments'] != null)
+        'ornaments': ornaments(v['ornaments'], '$field.ornaments'),
+      if (v['serviceIcons'] != null)
+        'serviceIcons': serviceIcons(v['serviceIcons'], '$field.serviceIcons'),
+      if (v['cardArt'] != null)
+        'cardArt': cardArt(v['cardArt'], '$field.cardArt'),
       if (decorations != null)
         'decorations': {
           for (final slot in ['home', 'campus', 'me'])

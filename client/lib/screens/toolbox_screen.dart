@@ -3,6 +3,7 @@ import '../widgets/app_page_background.dart';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../theme/app_theme_style.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../platform/contracts/external_navigator.dart';
@@ -110,7 +111,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
-    final useCustomBackground = themeProvider.shouldShowCustomBackground;
+    final useCustomBackground = themeProvider.needsPhotoContrast;
     final cleanLightMode = !useCustomBackground && !isDark;
     final foregroundColor = useCustomBackground
         ? Colors.white // theme: fixed 壁纸覆盖层对比前景
@@ -228,6 +229,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 color: const Color(
                                     0xFF55B97A), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '二课分查询',
+                                themeKey: 'erke',
                                 subtitle: '支持 WebVPN 穿透',
                                 onTap: () => _openErke(context),
                               ),
@@ -237,6 +239,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 color: const Color(
                                     0xFFE9A23B), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '体测成绩',
+                                themeKey: 'fitness',
                                 subtitle: '扫码核验 / 查询',
                                 onTap: () => _openPhysicalTest(context),
                               ),
@@ -246,6 +249,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 color: const Color(
                                     0xFF826FE8), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '考试日程',
+                                themeKey: 'exam',
                                 subtitle: 'AI一键提取',
                                 onTap: () => Navigator.push(
                                   context,
@@ -260,6 +264,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 color: const Color(
                                     0xFFEC6F5B), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '试卷库',
+                                themeKey: 'papers',
                                 subtitle: '历年试卷 / 投稿审核',
                                 onTap: () => Navigator.push(
                                   context,
@@ -275,6 +280,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 color: const Color(
                                     0xFF4F8DF7), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '网站大全',
+                                themeKey: 'sites',
                                 subtitle: '用得到的网站',
                                 onTap: () => _showWebsiteDirectory(context),
                               ),
@@ -297,6 +303,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 color: const Color(
                                     0xFF35B7C4), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '云原神',
+                                themeKey: 'cloudGame',
                                 subtitle: '点击即玩',
                                 onTap: () => _launchCloudGenshin(context),
                               ),
@@ -306,6 +313,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 color: const Color(
                                     0xFFEE5C8A), // theme: fixed 工具入口、网站入口分类识别色
                                 title: '抽奖活动',
+                                themeKey: 'lottery',
                                 subtitle: '公平福利派送',
                                 onTap: () => Navigator.push(
                                   context,
@@ -512,22 +520,25 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    String? themeKey,
   }) {
+    final themedIcon = AppThemeStyle.of(context).serviceIcon(context, themeKey);
     return GlassContainer(
       onTap: onTap,
       borderRadius: AppShape.of(context).lg,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 22),
-          ),
+          themedIcon ??
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 22),
+              ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -573,7 +584,7 @@ class _WebsiteDirectoryScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
-    final useCustomBackground = themeProvider.shouldShowCustomBackground;
+    final useCustomBackground = themeProvider.needsPhotoContrast;
     final cleanLightMode = !useCustomBackground && !isDark;
     final foregroundColor = useCustomBackground
         ? Colors.white // theme: fixed 壁纸覆盖层对比前景
@@ -734,9 +745,11 @@ class _WebsiteDirectoryCard extends StatelessWidget {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                      color: item.color.withValues(alpha: 0.15),
+                      color: AppThemeStyle.of(context).identity(item.color).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(13)),
-                  child: Icon(item.icon, color: item.color, size: 23)),
+                  child: Icon(item.icon,
+                      color: AppThemeStyle.of(context).identity(item.color),
+                      size: 23)),
               const SizedBox(width: 12),
               Expanded(
                   child: Column(

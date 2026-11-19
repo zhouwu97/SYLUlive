@@ -447,12 +447,19 @@ class AppCardStyle extends ThemeExtension<AppCardStyle> {
   const AppCardStyle({
     this.borderWidth,
     this.shadow,
+    this.fill,
   });
 
   final double? borderWidth;
   final String? shadow;
 
-  bool get hasOverrides => borderWidth != null || shadow != null;
+  /// solid / tint / glass；tint 把默认卡片底色向 primaryContainer 混合。
+  final String? fill;
+
+  bool get tinted => fill == 'tint' || fill == 'glass';
+
+  bool get hasOverrides =>
+      borderWidth != null || shadow != null || (fill != null && fill != 'solid');
 
   static AppCardStyle of(BuildContext context) =>
       Theme.of(context).extension<AppCardStyle>() ?? const AppCardStyle();
@@ -461,9 +468,11 @@ class AppCardStyle extends ThemeExtension<AppCardStyle> {
     if (raw == null || raw.isEmpty) return const AppCardStyle();
     final bw = (raw['borderWidth'] as num?)?.toDouble();
     final sh = raw['shadow'] as String?;
+    final fill = raw['fill'] as String?;
     return AppCardStyle(
       borderWidth: (bw != null && bw.isFinite) ? bw.clamp(0.0, 2.0) : null,
       shadow: const {'none', 'soft', 'medium'}.contains(sh) ? sh : null,
+      fill: const {'solid', 'tint', 'glass'}.contains(fill) ? fill : null,
     );
   }
 
@@ -510,10 +519,12 @@ class AppCardStyle extends ThemeExtension<AppCardStyle> {
   AppCardStyle copyWith({
     double? borderWidth,
     String? shadow,
+    String? fill,
   }) =>
       AppCardStyle(
         borderWidth: borderWidth ?? this.borderWidth,
         shadow: shadow ?? this.shadow,
+        fill: fill ?? this.fill,
       );
 
   @override

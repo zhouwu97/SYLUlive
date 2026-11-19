@@ -1,7 +1,6 @@
 import '../theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:shenliyuan/widgets/app_glass_button_style.dart';
-import '../widgets/app_tab_bar_surface.dart';
 import '../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import '../widgets/ai_bot_identity.dart';
@@ -602,10 +601,13 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     double screenWidth,
   ) {
     final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
+    final tabHeight =
+        (MediaQuery.textScalerOf(context).scale(16) * 1.5 + 20)
+            .clamp(46.0, double.infinity);
     // 分栏内的卡片与标签栏共用左右边界，个人封面仍按原来的方式展示。
     final horizontalInset = SharedPageBackground.of(context) ? 0.0 : 12.0;
     final contentPadding =
-        EdgeInsets.fromLTRB(horizontalInset, 10, horizontalInset, 24);
+        EdgeInsets.fromLTRB(horizontalInset, 8, horizontalInset, 24);
     return Scaffold(
       backgroundColor: AppPageBackground.color(context, panelColor),
       body: RefreshIndicator(
@@ -703,7 +705,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                           Positioned(
                             left: 20,
                             right: 20,
-                            bottom: 64,
+                            bottom: tabHeight + 18,
                             child: _buildProfileOverlay(context, user, isMe),
                           ),
                         ],
@@ -712,46 +714,52 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                   ),
                 ),
 
-                // 底部圆角标签栏
                 bottom: PreferredSize(
-                  preferredSize: const Size.fromHeight(46),
-                  child: AppTabBarSurface(
-                    height: 46,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: panelColor,
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(22),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 8,
-                          offset: const Offset(0, -2),
+                  preferredSize: Size.fromHeight(tabHeight),
+                  child: Builder(
+                    builder: (context) {
+                      final settings = context.dependOnInheritedWidgetOfExactType<
+                          FlexibleSpaceBarSettings>()!;
+                      final collapsed =
+                          settings.currentExtent <= settings.minExtent + 1;
+                      final tokens = AppThemeTokens.of(context);
+                      return Material(
+                        key: const ValueKey('user-home-compact-tabs'),
+                        color: panelColor,
+                        borderRadius: collapsed
+                            ? BorderRadius.zero
+                            : const BorderRadius.vertical(
+                                top: Radius.circular(22),
+                              ),
+                        clipBehavior: Clip.antiAlias,
+                        child: TabBar(
+                          controller: _tabController,
+                          dividerColor: Colors.transparent,
+                          indicatorSize: TabBarIndicatorSize.tab,
+                          indicatorWeight: 0,
+                          indicatorPadding:
+                              const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                          indicator: BoxDecoration(
+                            color: tokens.primaryContainer,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          labelColor: tokens.onPrimaryContainer,
+                          unselectedLabelColor: tokens.textSecondary,
+                          labelStyle: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          unselectedLabelStyle: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          tabs: [
+                            Tab(height: tabHeight, text: '帖子 ${_posts.length}'),
+                            Tab(height: tabHeight, text: _marketTabText),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: TabBar(
-                      controller: _tabController,
-                      indicatorSize: TabBarIndicatorSize.label,
-                      indicatorWeight: 3,
-                      indicatorColor: Theme.of(context).colorScheme.primary,
-                      labelColor: Theme.of(context).colorScheme.primary,
-                      unselectedLabelColor:
-                          AppThemeTokens.of(context).textSecondary,
-                      labelStyle: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      unselectedLabelStyle: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      tabs: [
-                        Tab(text: '帖子 ${_posts.length}'),
-                        Tab(text: _marketTabText),
-                      ],
-                    ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -765,14 +773,36 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                 ),
             ];
           },
-          body: TabBarView(
-            controller: _tabController,
+          body: Stack(
+            fit: StackFit.expand,
             children: [
-              _buildPostsList(
-                padding: contentPadding,
-              ),
-              _buildMarketPostsList(
-                padding: contentPadding,
+              if (_publishedThemes.isEmpty)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 20,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            panelColor,
+                            panelColor.withValues(alpha: 0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildPostsList(padding: contentPadding),
+                  _buildMarketPostsList(padding: contentPadding),
+                ],
               ),
             ],
           ),
@@ -1305,8 +1335,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         },
       );
     } else {
+      final colors = Theme.of(context).colorScheme;
       return Material(
-        color: Theme.of(context).colorScheme.primary,
+        color: colors.primary,
         borderRadius: BorderRadius.circular(22),
         child: InkWell(
           onTap: () async {
@@ -1323,12 +1354,12 @@ class _UserHomeScreenState extends State<UserHomeScreen>
             }
           },
           borderRadius: BorderRadius.circular(22),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 22, vertical: 9),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 9),
             child: Text(
               '关注',
               style: TextStyle(
-                color: Colors.white,
+                color: colors.onPrimary,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),

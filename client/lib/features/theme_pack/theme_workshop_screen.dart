@@ -54,7 +54,8 @@ enum WorkshopTab {
 }
 
 enum _WorkshopCategory {
-  colors('颜色', Icons.colorize_outlined, [WorkshopTab.colors, WorkshopTab.courses]),
+  colors(
+      '颜色', Icons.colorize_outlined, [WorkshopTab.colors, WorkshopTab.courses]),
   wallpapers('背景', Icons.wallpaper_outlined, [WorkshopTab.wallpapers]),
   cards('卡片与页头', Icons.dashboard_customize_outlined,
       [WorkshopTab.material, WorkshopTab.layout, WorkshopTab.decoration]),
@@ -147,11 +148,11 @@ class WorkshopVariantDraft {
               ? null
               : Map<String, dynamic>.from(entry.value as Map),
       },
-      componentOpacity:
-          ((json['componentOpacity'] as num?)?.toDouble() ?? 1.0).clamp(0.75, 1.0),
+      componentOpacity: ((json['componentOpacity'] as num?)?.toDouble() ?? 1.0)
+          .clamp(0.75, 1.0),
       frostedEnabled: json['frostedEnabled'] == true,
-      frostedStrength:
-          ((json['frostedStrength'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0),
+      frostedStrength: ((json['frostedStrength'] as num?)?.toDouble() ?? 0.0)
+          .clamp(0.0, 1.0),
       cardStyle: json['cardStyle'] == null
           ? null
           : Map<String, dynamic>.from(json['cardStyle'] as Map),
@@ -216,10 +217,8 @@ class ThemeWorkshopStateData {
     final b = List<int>.generate(16, (_) => rng.nextInt(256));
     b[6] = (b[6] & 0x0f) | 0x40;
     b[8] = (b[8] & 0x3f) | 0x80;
-    String h(int s, int e) => b
-        .sublist(s, e)
-        .map((v) => v.toRadixString(16).padLeft(2, '0'))
-        .join();
+    String h(int s, int e) =>
+        b.sublist(s, e).map((v) => v.toRadixString(16).padLeft(2, '0')).join();
     return '${h(0, 4)}-${h(4, 6)}-${h(6, 8)}-${h(8, 10)}-${h(10, 16)}';
   }
 
@@ -299,7 +298,13 @@ class ThemeWorkshopStateData {
       final walls = <String, Map<String, dynamic>?>{};
       if (wallsGroup != null && wallsGroup['legacy'] == null) {
         final modeWalls = wallsGroup[mode] as Map? ?? const {};
-        for (final slot in const ['global', 'home', 'schedule', 'me']) {
+        for (final slot in const [
+          'global',
+          'home',
+          'schedule',
+          'me',
+          'secondary'
+        ]) {
           final item = modeWalls[slot] as Map?;
           if (item != null) walls[slot] = Map<String, dynamic>.from(item);
         }
@@ -468,11 +473,7 @@ class ThemeWorkshopStateData {
         'iconTint': iconTint,
         'icons': navIcons,
       },
-      if (font != null)
-        'font': {
-          'source': {'themeId': themeId, 'version': version, 'name': name},
-          ...font!,
-        },
+      if (font != null) 'font': font!,
       if (builtinLauncherIcon != null || customLauncherIconPath != null)
         'launcherIcon': {
           'source': null,
@@ -579,7 +580,8 @@ class ThemeWorkshopStateData {
         renderedLightPng: renderedLightPng,
         renderedDarkPng: renderedDarkPng,
         requireContrastPass: requireContrastPass,
-      )).$1;
+      ))
+          .$1;
 
   Future<(Uint8List, PreparedThemePack)> _exportPack({
     required String appVersion,
@@ -606,10 +608,11 @@ class ThemeWorkshopStateData {
     }) async {
       final key = '$folder::$localPath';
       if (localToArchive.containsKey(key)) return localToArchive[key]!;
-      var bytes = isWallpaper && ThemeProvider.isBundledAssetBackground(localPath)
-          ? Uint8List.sublistView(await rootBundle.load(
-              ThemeProvider.resolveBundledAssetPath(localPath)))
-          : await File(localPath).readAsBytes();
+      var bytes =
+          isWallpaper && ThemeProvider.isBundledAssetBackground(localPath)
+              ? Uint8List.sublistView(await rootBundle
+                  .load(ThemeProvider.resolveBundledAssetPath(localPath)))
+              : await File(localPath).readAsBytes();
       var ext = path.extension(localPath).toLowerCase().replaceFirst('.', '');
       if (ext == 'jpeg') ext = 'jpg';
       if (ext.isEmpty) ext = folder == 'fonts' ? 'ttf' : 'png';
@@ -635,7 +638,13 @@ class ThemeWorkshopStateData {
           (applying.contains(ThemeGroup.wallpapers) ||
               v.wallpapers.values.any((w) => w != null))) {
         wallsOut = {};
-        for (final slot in const ['global', 'home', 'schedule', 'me']) {
+        for (final slot in const [
+          'global',
+          'home',
+          'schedule',
+          'me',
+          'secondary'
+        ]) {
           final item = v.wallpapers[slot];
           if (item == null || item['portrait'] == null) {
             wallsOut[slot] = null;
@@ -716,7 +725,8 @@ class ThemeWorkshopStateData {
           },
         },
         if (includes(ThemeGroup.material) &&
-            v.cardStyle != null && v.cardStyle!.isNotEmpty)
+            v.cardStyle != null &&
+            v.cardStyle!.isNotEmpty)
           'cardStyle': v.cardStyle,
         if (decosOut != null) 'decorations': decosOut,
       };
@@ -809,7 +819,8 @@ class ThemeWorkshopStateData {
 
     final manifest = ThemeManifest.parse(manifestJson, appVersion: safeVersion);
     final encoded = await ThemePackCodec.encode(manifest, rawFiles);
-    final prepared = await ThemePackCodec.decode(encoded, appVersion: safeVersion);
+    final prepared =
+        await ThemePackCodec.decode(encoded, appVersion: safeVersion);
     return (encoded, prepared);
   }
 
@@ -828,12 +839,17 @@ class ThemeWorkshopStateData {
         targetHeight: math.max(1, (descriptor.height * scale).round()),
       );
       image = (await codec.getNextFrame()).image;
-      final pixels = (await image.toByteData(format: ui.ImageByteFormat.rawStraightRgba))!;
+      final pixels =
+          (await image.toByteData(format: ui.ImageByteFormat.rawStraightRgba))!;
       final width = image.width;
       final height = image.height;
       return Isolate.run(() => Uint8List.fromList(img.encodeJpg(
-            img.Image.fromBytes(width: width, height: height, bytes: pixels.buffer,
-                bytesOffset: pixels.offsetInBytes, numChannels: 4),
+            img.Image.fromBytes(
+                width: width,
+                height: height,
+                bytes: pixels.buffer,
+                bytesOffset: pixels.offsetInBytes,
+                numChannels: 4),
             quality: 88,
           )));
     } finally {
@@ -983,10 +999,12 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
   String? _highlightedToken;
   String _wallpaperSlot = 'global';
   String _headerSlot = 'home';
+  final _editorAnchor = GlobalKey();
 
   Timer? _autosaveTimer;
   bool _savingDraft = false;
   bool _draftSaveFailed = false;
+  bool _loadingStartPoints = false;
   bool _exporting = false;
   String? _bannerMessage;
   bool _forceAllowPop = false;
@@ -1025,18 +1043,22 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
             group: jsonEncode({...?appearance.group(group)}..remove('source')),
       };
 
-  ThemeWorkshopStateData _currentDraft(ThemeProvider? provider, {String? draftId}) {
+  ThemeWorkshopStateData _currentDraft(ThemeProvider? provider,
+      {String? draftId}) {
     if (provider == null) {
       return ThemeWorkshopStateData.fromDefault(draftId: draftId);
     }
     final appearance = provider.persistedAppearance;
-    final draft = ThemeWorkshopStateData.fromAppearance(appearance, draftId: draftId);
+    final draft =
+        ThemeWorkshopStateData.fromAppearance(appearance, draftId: draftId);
     draft.bottomNavStyle ??= provider.bottomNavStyle.storageValue;
     String? usablePath(String? raw) {
       if (raw == null) return null;
       if (ThemeProvider.isBundledAssetBackground(raw)) return raw;
       if (!ThemeProvider.isLocalFileBackground(raw)) return null;
-      return raw.startsWith('file://') ? File.fromUri(Uri.parse(raw)).path : raw;
+      return raw.startsWith('file://')
+          ? File.fromUri(Uri.parse(raw)).path
+          : raw;
     }
 
     if (!provider.usesThemeWallpapers && provider.shouldShowCustomBackground) {
@@ -1123,15 +1145,20 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     String purpose, {
     List<String>? allowedExtensions,
   }) async {
-    if (widget.pickFilePath != null) {
-      return widget.pickFilePath!(purpose);
+    try {
+      if (widget.pickFilePath != null) {
+        return await widget.pickFilePath!(purpose);
+      }
+      final picked = await FilePicker.platform.pickFiles(
+        type: allowedExtensions == null ? FileType.any : FileType.custom,
+        allowedExtensions: allowedExtensions,
+        withData: false,
+      );
+      return picked?.files.single.path;
+    } on PlatformException {
+      throw ThemePackError(
+          'theme_field_invalid', purpose, '无法选取文件，请检查文件权限后重试。');
     }
-    final picked = await FilePicker.platform.pickFiles(
-      type: allowedExtensions == null ? FileType.any : FileType.custom,
-      allowedExtensions: allowedExtensions,
-      withData: false,
-    );
-    return picked?.files.single.path;
   }
 
   void _handlePreviewFocus(WorkshopFocusTarget target) {
@@ -1169,22 +1196,31 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
           _activeTab = WorkshopTab.widgets;
       }
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final anchor = _editorAnchor.currentContext;
+      if (anchor != null) Scrollable.ensureVisible(anchor);
+    });
   }
 
   Future<void> _showStartPointMenu() async {
+    if (_loadingStartPoints) return;
+    setState(() => _loadingStartPoints = true);
     final provider = context.read<ThemeProvider?>();
     late final List<InstalledTheme> installed;
     late final List<Map<String, dynamic>> drafts;
     try {
-      installed = provider == null ? const [] : await provider.installedThemes();
+      installed =
+          provider == null ? const [] : await provider.installedThemes();
       drafts = await _draftStore.list();
     } catch (_) {
       if (mounted) {
         setState(() => _bannerMessage = '无法读取本机主题和草稿，请重试。');
       }
       return;
+    } finally {
+      if (mounted) setState(() => _loadingStartPoints = false);
     }
-    if (!mounted) return;
+    if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
 
     final chosen = await showModalBottomSheet<Object>(
       context: context,
@@ -1222,8 +1258,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                   ListTile(
                     leading: const Icon(Icons.inventory_2_outlined),
                     title: Text('已安装：${item.manifest.name}'),
-                    subtitle:
-                        Text('${item.manifest.author} · v${item.manifest.version}'),
+                    subtitle: Text(
+                        '${item.manifest.author} · v${item.manifest.version}'),
                     onTap: () => Navigator.of(sheetCtx).pop(item),
                   ),
                 for (final draft in drafts)
@@ -1467,7 +1503,10 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
   Future<void> _runPackAction(String action) async {
     if (_exporting) return;
     final applying = action == 'apply';
-    final appearance = _state.buildAppearance();
+    final draft = ThemeWorkshopStateData.fromDraftJson(
+      jsonDecode(jsonEncode(_state.toDraftJson())) as Map<String, dynamic>,
+    );
+    final appearance = draft.buildAppearance();
     final groups = applying ? _editedGroups(appearance) : <ThemeGroup>{};
     if (applying && groups.isEmpty) return;
 
@@ -1482,17 +1521,18 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
       final provider = context.read<ThemeProvider>();
       if (applying) {
         final previous = (await provider.installedThemes())
-            .where((theme) => theme.manifest.id == _state.themeId)
+            .where((theme) => theme.manifest.id == draft.themeId)
             .firstOrNull;
-        if (previous != null && previous.manifest.version >= _state.version) {
-          _state.version = previous.manifest.version + 1;
+        if (previous != null && previous.manifest.version >= draft.version) {
+          draft.version = previous.manifest.version + 1;
+          _state.version = draft.version;
         }
       }
       await _saveDraftNow();
       final appVer = widget.appVersion ?? await _resolveAppVersion();
       if (!mounted) return;
       final (lightPng, darkPng) = await _captureOffscreenPreviews(appearance);
-      final (bytes, prepared) = await _state._exportPack(
+      final (bytes, prepared) = await draft._exportPack(
         appVersion: appVer,
         renderedLightPng: lightPng,
         renderedDarkPng: darkPng,
@@ -1502,7 +1542,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
       if (!mounted) return;
 
       final fileName =
-          '${ThemeAppearanceExporter.sanitizeFileName(_state.name)}.sltheme';
+          '${ThemeAppearanceExporter.sanitizeFileName(draft.name)}.sltheme';
       if (action == 'submit') {
         await Navigator.of(context).push<void>(
           MaterialPageRoute<void>(
@@ -1520,7 +1560,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
           resetMissingGroups: true,
         );
         if (mounted) {
-          _appliedGroups = _groupValues(_state.buildAppearance());
+          _appliedGroups = _groupValues(appearance);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('主题已应用')),
           );
@@ -1569,9 +1609,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
       if (mounted) setState(() => _bannerMessage = e.message);
     } catch (_) {
       if (mounted) {
-        setState(() => _bannerMessage = applying
-            ? '主题应用失败，编辑内容已保留，请重试。'
-            : '导出主题包失败，请检查素材后重试。');
+        setState(() => _bannerMessage =
+            applying ? '主题应用失败，编辑内容已保留，请重试。' : '导出主题包失败，请检查素材后重试。');
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -1627,7 +1666,6 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     }
   }
 
-
   void _selectBrightness(Brightness brightness) {
     setState(() {
       _brightness = brightness;
@@ -1659,7 +1697,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
       );
 
   Future<void> _showFullscreenPreview(ThemeAppearance appearance) =>
-      Navigator.of(context).push<void>(
+      Navigator.of(context)
+          .push<void>(
         MaterialPageRoute<void>(
           fullscreenDialog: true,
           builder: (_) => StatefulBuilder(
@@ -1699,8 +1738,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                                 child: ChoiceChip(
                                   label: Text(state.label),
                                   selected: _sampleState == state,
-                                  onSelected: (_) => updatePreview(
-                                      () => _sampleState = state),
+                                  onSelected: (_) =>
+                                      updatePreview(() => _sampleState = state),
                                 ),
                               ),
                             FilterChip(
@@ -1733,7 +1772,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
             ),
           ),
         ),
-      ).then((_) {
+      )
+          .then((_) {
         if (mounted) setState(() {});
       });
 
@@ -1741,44 +1781,78 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     final tokens = AppThemeTokens.of(context);
     final preview = appearance.buildTheme(_brightness).colorScheme;
     final provider = context.watch<ThemeProvider?>();
+    final typography = Theme.of(context).textTheme;
+    final accentWash =
+        Color.alphaBlend(preview.primary.withValues(alpha: .13), tokens.card);
     return AppCardSurface(
       decoration: BoxDecoration(
-        color: tokens.card,
+        border: Border.all(color: tokens.cardBorder),
         borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: AlignmentDirectional.topStart,
+          end: AlignmentDirectional.bottomEnd,
+          colors: [accentWash, tokens.card],
+        ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(14),
         child: Row(
           children: [
-            SizedBox(
-              width: 112,
-              height: 170,
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: preview.onSurface,
+                borderRadius: BorderRadius.circular(19),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: .16),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
               child: Semantics(
                 button: true,
                 label: '打开全屏主题预览',
                 child: InkWell(
                   key: const ValueKey('workshop-preview-thumbnail'),
+                  borderRadius: BorderRadius.circular(19),
                   onTap: () => _showFullscreenPreview(appearance),
-                  child: ExcludeSemantics(
-                    child: IgnorePointer(child: _scaledSample(appearance)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(3),
+                    child: SizedBox(
+                      width: 100,
+                      height: 158.33,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: ExcludeSemantics(
+                          child:
+                              IgnorePointer(child: _scaledSample(appearance)),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('实时预览', style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    '实时预览',
+                    style: typography.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   if (provider != null)
                     Text(
-                      '当前外观 · ${provider.currentAppearanceSummary}',
+                      provider.currentAppearanceSummary,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: tokens.textSecondary),
                     ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
@@ -1793,15 +1867,17 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                           decoration: BoxDecoration(
                             color: color,
                             border: Border.all(color: tokens.divider),
-                            shape: BoxShape.circle,
+                            borderRadius: BorderRadius.circular(6),
                           ),
-                          child: const SizedBox.square(dimension: 20),
+                          child: const SizedBox(width: 23, height: 18),
                         ),
                     ],
                   ),
-                  TextButton(
+                  const SizedBox(height: 4),
+                  FilledButton.tonalIcon(
                     onPressed: () => _showFullscreenPreview(appearance),
-                    child: const Text('全屏预览'),
+                    icon: const Icon(Icons.fullscreen_rounded, size: 18),
+                    label: const Text('全屏预览'),
                   ),
                 ],
               ),
@@ -1813,10 +1889,12 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
   }
 
   Widget _buildCategories(_WorkshopCategory category) {
+    final colors = Theme.of(context).colorScheme;
+    final tokens = AppThemeTokens.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        const gap = 6.0;
-        final columns = constraints.maxWidth >= 320 ? 3 : 2;
+        const gap = 8.0;
+        final columns = constraints.maxWidth >= 510 ? 3 : 2;
         final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
         return Wrap(
           spacing: gap,
@@ -1825,22 +1903,66 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
             for (final item in _WorkshopCategory.values)
               SizedBox(
                 width: width,
-                child: ChoiceChip(
-                  key: ValueKey('workshop-category-${item.name}'),
+                child: Semantics(
+                  button: true,
                   selected: item == category,
-                  showCheckmark: false,
-                  label: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 52),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(item.icon, size: 20),
-                        const SizedBox(height: 3),
-                        Text(item.label, textAlign: TextAlign.center),
-                      ],
+                  child: Material(
+                    color: item == category
+                        ? colors.primaryContainer
+                        : tokens.card,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(
+                          color: item == category
+                              ? Colors.transparent
+                              : tokens.cardBorder),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      key: ValueKey('workshop-category-${item.name}'),
+                      onTap: () => setState(() => _activeTab = item.tabs.first),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 54),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 7),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 30,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  color: item == category
+                                      ? colors.primary
+                                      : colors.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: Icon(item.icon,
+                                    size: 17,
+                                    color: item == category
+                                        ? colors.onPrimary
+                                        : tokens.textSecondary),
+                              ),
+                              const SizedBox(width: 7),
+                              Flexible(
+                                child: Text(
+                                  item.label,
+                                  style: TextStyle(
+                                    fontWeight: item == category
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: item == category
+                                        ? colors.onPrimaryContainer
+                                        : tokens.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  onSelected: (_) => setState(() => _activeTab = item.tabs.first),
                 ),
               ),
           ],
@@ -1855,7 +1977,9 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     final category = _WorkshopCategory.values
         .firstWhere((item) => item.tabs.contains(_activeTab));
     final canApply = context.watch<ThemeProvider?>() != null &&
-        !_exporting && !_savingDraft &&
+        !_exporting &&
+        !_savingDraft &&
+        !_loadingStartPoints &&
         _editedGroups(appearance).isNotEmpty;
 
     return PopScope(
@@ -1879,7 +2003,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                 child: const Text('应用'),
               ),
               PopupMenuButton<String>(
-                enabled: !_exporting,
+                enabled: !_exporting && !_loadingStartPoints,
                 tooltip: '主题设置选项',
                 onSelected: (action) {
                   if (action == 'start') {
@@ -1896,7 +2020,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                   const PopupMenuItem(value: 'start', child: Text('切换起点')),
                   const PopupMenuItem(value: 'guide', child: Text('制作指南')),
                   if (widget.deviceSettingsBuilder != null)
-                    const PopupMenuItem(value: 'settings', child: Text('设备外观偏好')),
+                    const PopupMenuItem(
+                        value: 'settings', child: Text('设备外观偏好')),
                 ],
               ),
             ],
@@ -1908,9 +2033,9 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                 constraints: const BoxConstraints(maxWidth: 760),
                 child: Column(
                   children: [
-                    if (_exporting)
-                      const LinearProgressIndicator(
-                        semanticsLabel: '正在处理主题',
+                    if (_exporting || _loadingStartPoints)
+                      LinearProgressIndicator(
+                        semanticsLabel: _exporting ? '正在处理主题' : '正在读取主题与草稿',
                       ),
                     if (_draftSaveFailed || _bannerMessage != null)
                       Material(
@@ -1928,7 +2053,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                               if (_draftSaveFailed)
                                 TextButton(
                                   key: const ValueKey('workshop-draft-retry'),
-                                  onPressed: _savingDraft ? null : _saveDraftNow,
+                                  onPressed:
+                                      _savingDraft ? null : _saveDraftNow,
                                   child: const Text('重试'),
                                 ),
                             ],
@@ -1952,13 +2078,17 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                                 Wrap(
                                   spacing: 6,
                                   children: [
-                                    for (final mode in Brightness.values)
+                                    for (final mode in [
+                                      Brightness.light,
+                                      Brightness.dark
+                                    ])
                                       ChoiceChip(
                                         label: Text(mode == Brightness.light
                                             ? '浅色'
                                             : '深色'),
                                         selected: _brightness == mode,
-                                        onSelected: (_) => _selectBrightness(mode),
+                                        onSelected: (_) =>
+                                            _selectBrightness(mode),
                                       ),
                                   ],
                                 ),
@@ -1968,7 +2098,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                                   children: [
                                     for (final tab in category.tabs)
                                       ChoiceChip(
-                                        key: ValueKey('workshop-tab-${tab.name}'),
+                                        key: ValueKey(
+                                            'workshop-tab-${tab.name}'),
                                         label: Text(tab.label),
                                         selected: _activeTab == tab,
                                         onSelected: (_) =>
@@ -1976,9 +2107,10 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                                       ),
                                   ],
                                 ),
-                              const SizedBox(height: 8),
+                              SizedBox(key: _editorAnchor, height: 8),
                               AppCardSurface(
-                                key: ValueKey('workshop-editor-${_activeTab.name}'),
+                                key: ValueKey(
+                                    'workshop-editor-${_activeTab.name}'),
                                 decoration: BoxDecoration(
                                   color: AppThemeTokens.of(context).card,
                                   borderRadius: BorderRadius.circular(20),
@@ -2157,6 +2289,23 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
           ],
         ),
         const SizedBox(height: 14),
+        for (final (label, key) in const [
+          ('版块标签底色', 'feedSectionSurface'),
+          ('标签文字颜色', 'tagText'),
+        ])
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: CircleAvatar(
+              radius: 11,
+              backgroundColor: ThemeContrast.parseColor(tokens[key]!),
+            ),
+            title: Text(label),
+            subtitle: Text(tokens[key]!),
+            trailing: const Icon(Icons.edit_outlined, size: 18),
+            onTap: () => _editTokenHex(key, tokens[key]!),
+          ),
+        const SizedBox(height: 8),
         // 对比度检查面板
         Container(
           padding: const EdgeInsets.all(12),
@@ -2406,8 +2555,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                 if (v.coursePalette.length > 5)
                   IconButton(
                     icon: const Icon(Icons.delete_outline, size: 18),
-                    onPressed: () =>
-                        _mutate(() => v.coursePalette.removeAt(i)),
+                    onPressed: () => _mutate(() => v.coursePalette.removeAt(i)),
                   ),
               ],
             ),
@@ -2421,9 +2569,12 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     final slotData = v.wallpapers[_wallpaperSlot];
 
     Future<void> pickWall({required bool landscape}) async {
+      final draft = _state;
+      final slot = _wallpaperSlot;
+      final brightness = _brightness;
       try {
         final raw = await _pickRawFile(
-          'wallpaper_${_wallpaperSlot}_${landscape ? 'landscape' : 'portrait'}',
+          'wallpaper_${slot}_${landscape ? 'landscape' : 'portrait'}',
           allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
         );
         if (raw == null || !mounted) return;
@@ -2432,25 +2583,25 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
           ThemeAssetKind.wallpaper,
         );
         final copied = await _draftStore.copyAssetIntoDraft(
-          _state.draftId,
+          draft.draftId,
           raw,
-          'wallpaper_${_brightness.name}_${_wallpaperSlot}_${landscape ? 'l' : 'p'}${path.extension(raw)}',
+          'wallpaper_${ThemeWorkshopStateData.newUuid()}${path.extension(raw)}',
         );
-        if (!mounted) return;
+        if (!mounted || !identical(draft, _state)) return;
         _mutate(() {
           final current = Map<String, dynamic>.from(
-            v.wallpapers[_wallpaperSlot] ??
+            v.wallpapers[slot] ??
                 {
                   'portrait': copied,
                   'fit': 'cover',
                   'focalX': 0.5,
                   'focalY': 0.5,
                   'blur': 0.0,
-                  'scrim': _brightness == Brightness.dark ? 0.35 : 0.0,
+                  'scrim': brightness == Brightness.dark ? 0.35 : 0.0,
                 },
           );
           current[landscape ? 'landscape' : 'portrait'] = copied;
-          v.wallpapers[_wallpaperSlot] = current;
+          v.wallpapers[slot] = current;
         });
       } on ThemePackError catch (e) {
         if (mounted) setState(() => _bannerMessage = e.message);
@@ -2664,7 +2815,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
       'me' => '我的',
       _ => '首页',
     };
-    final layoutSpec = ThemeHeaderLayoutSpec.fromMap(_state.layout[_headerSlot]);
+    final layoutSpec =
+        ThemeHeaderLayoutSpec.fromMap(_state.layout[_headerSlot]);
 
     Future<String?> pickDecoAsset(ThemeAssetKind kind) async {
       try {
@@ -2715,8 +2867,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
           assetResolver: _resolveLocalImage,
           onPickHeaderBackground: () => pickDecoAsset(ThemeAssetKind.header),
           onPickSticker: () => pickDecoAsset(ThemeAssetKind.sticker),
-          onChanged: (next) =>
-              _mutate(() => v.decorations[_headerSlot] = next),
+          onChanged: (next) => _mutate(() => v.decorations[_headerSlot] = next),
         ),
       ],
     );
@@ -2724,6 +2875,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
 
   Widget _buildIconsEditor() {
     Future<void> pickNavIcon(String slot, String iconState) async {
+      final draft = _state;
       try {
         final raw = await _pickRawFile(
           'nav_${slot}_$iconState',
@@ -2749,11 +2901,11 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
           throw const ThemePackError('theme_image_invalid', 'bottomNav.icons');
         }
         final savedPath = await _draftStore.writeAssetBytes(
-          _state.draftId,
-          'nav_${slot}_$iconState.png',
+          draft.draftId,
+          'nav_${ThemeWorkshopStateData.newUuid()}.png',
           croppedPng,
         );
-        if (!mounted) return;
+        if (!mounted || !identical(draft, _state)) return;
         _mutate(() {
           final existing = _state.navIcons[slot];
           _state.navIcons[slot] = {
@@ -2861,6 +3013,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
 
   Widget _buildFontEditor() {
     Future<void> pickFontFile({required bool bold}) async {
+      final draft = _state;
       try {
         final raw = await _pickRawFile(
           bold ? 'font_bold' : 'font_regular',
@@ -2872,34 +3025,27 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
           throw const ThemePackError('theme_font_invalid', 'font');
         }
         final copied = await _draftStore.copyAssetIntoDraft(
-          _state.draftId,
+          draft.draftId,
           raw,
-          'font_${bold ? 'bold' : 'regular'}${path.extension(raw)}',
+          'font_${ThemeWorkshopStateData.newUuid()}${path.extension(raw)}',
         );
+        if (!mounted || !identical(draft, _state)) return;
         final candidateFont = <String, dynamic>{
           'name': _state.font?['name'] ??
               path.basenameWithoutExtension(raw).takeRunes(30),
-          'regular':
-              bold ? (_state.font?['regular'] ?? copied) : copied,
+          'regular': bold ? (_state.font?['regular'] ?? copied) : copied,
           if (bold)
             'bold': copied
           else if (_state.font?['bold'] != null)
             'bold': _state.font!['bold'],
           'license': _state.font?['license'] ?? 'OFL-1.1',
         };
-        final loaded = await ThemeFontRegistry.ensureLoaded({
-          'source': {
-            'themeId': _state.themeId,
-            'version': DateTime.now().millisecondsSinceEpoch % 100000,
-          },
-          ...candidateFont,
-        });
+        final loaded = await ThemeFontRegistry.ensureLoaded(candidateFont);
         if (loaded == null) {
           throw const ThemePackError('theme_font_invalid', 'font');
         }
-        if (!mounted) return;
+        if (!mounted || !identical(draft, _state)) return;
         _mutate(() => _state.font = candidateFont);
-        _ensureFontLoadedIfAny();
       } on ThemePackError catch (e) {
         if (mounted) setState(() => _bannerMessage = e.message);
       }
@@ -3057,9 +3203,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
               onPressed: pickCustomLauncher,
               icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
               label: Text(
-                _state.customLauncherIconPath == null
-                    ? '选择自定义图标'
-                    : '更换自定义图标',
+                _state.customLauncherIconPath == null ? '选择自定义图标' : '更换自定义图标',
               ),
             ),
             if (_state.customLauncherIconPath != null)
@@ -3178,7 +3322,8 @@ class ThemeCreationGuideScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppThemeTokens.of(context).card,
                   borderRadius: BorderRadius.circular(AppShape.of(context).lg),
-                  border: Border.all(color: AppThemeTokens.of(context).cardBorder),
+                  border:
+                      Border.all(color: AppThemeTokens.of(context).cardBorder),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

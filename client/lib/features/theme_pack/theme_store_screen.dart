@@ -290,8 +290,14 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
                 slivers: [
                   // 搜索栏 + 排序切换 + 标签筛选
                   SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+                    child: AppCardSurface(
+                      margin: const EdgeInsets.fromLTRB(14, 10, 14, 7),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: tokens.card,
+                        border: Border.all(color: tokens.cardBorder),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -581,8 +587,13 @@ class _ThemeCatalogCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
-    return AppCard(
-      clipBehavior: Clip.antiAlias,
+    final colors = Theme.of(context).colorScheme;
+    return AppCardSurface(
+      decoration: BoxDecoration(
+        color: tokens.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: tokens.cardBorder),
+      ),
       child: InkWell(
         onTap: onTap,
         child: Column(
@@ -592,19 +603,34 @@ class _ThemeCatalogCard extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(14)),
-                  child: previewUrl.isEmpty
-                      ? Container(color: tokens.surfaceMuted)
-                      : Image.network(
-                          previewUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: tokens.surfaceMuted,
-                            child: const Icon(Icons.palette_outlined),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: AlignmentDirectional.topStart,
+                      end: AlignmentDirectional.bottomEnd,
+                      colors: [tokens.surfaceMuted, colors.secondaryContainer],
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(19, 13, 19, 0),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                        border: Border.all(color: tokens.cardBorder),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: .12),
+                            blurRadius: 9,
+                            offset: const Offset(0, 3),
                           ),
-                        ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                        child: _ThemeCover(url: previewUrl, alignment: Alignment.topCenter),
+                      ),
+                    ),
+                  ),
                 ),
                 if (badge != null)
                   Positioned(
@@ -616,16 +642,14 @@ class _ThemeCatalogCard extends StatelessWidget {
                         vertical: 3,
                       ),
                       decoration: BoxDecoration(
-                        color: badge == '可更新'
-                            ? Theme.of(context).colorScheme.primary
-                            : Colors.black.withValues(alpha: 0.65),
+                        color: badge == '可更新' ? colors.primary : tokens.card,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         badge!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: Colors.white,
+                          color: badge == '可更新' ? colors.onPrimary : tokens.textPrimary,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -635,7 +659,7 @@ class _ThemeCatalogCard extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+            padding: const EdgeInsets.fromLTRB(11, 9, 11, 11),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -665,6 +689,35 @@ class _ThemeCatalogCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _ThemeCover extends StatelessWidget {
+  const _ThemeCover({required this.url, this.alignment = Alignment.center});
+
+  final String url;
+  final Alignment alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    final placeholder = ColoredBox(
+      color: tokens.surfaceMuted,
+      child: Center(
+        child: Icon(Icons.palette_outlined, color: tokens.textSecondary),
+      ),
+    );
+    return url.isEmpty
+        ? placeholder
+        : Image.network(
+            url,
+            fit: BoxFit.cover,
+            alignment: alignment,
+            excludeFromSemantics: true,
+            frameBuilder: (_, child, frame, synchronouslyLoaded) =>
+                synchronouslyLoaded || frame != null ? child : placeholder,
+            errorBuilder: (_, __, ___) => placeholder,
+          );
   }
 }
 
@@ -1071,65 +1124,77 @@ class _ThemeDetailScreenState extends State<ThemeDetailScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // 左右滑动明暗预览图（点击可全屏查看）
-            SizedBox(
-              height: 360,
-              child: PageView.builder(
-                controller: _previewController,
-                onPageChanged: (idx) => setState(() => _previewPage = idx),
-                itemCount: 2,
-                itemBuilder: (context, idx) {
-                  final url = previewUrls[idx];
-                  return GestureDetector(
-                    onTap: () => _openFullScreenPreview(previewUrls, idx),
-                    child: Center(
-                      child: AspectRatio(
-                        aspectRatio: 1080 / 2340,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(18),
-                          child: url.isEmpty
-                              ? Container(color: tokens.surfaceMuted)
-                              : Image.network(
-                                  url,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    color: tokens.surfaceMuted,
-                                    child: const Center(
-                                      child: Icon(Icons.palette_outlined),
-                                    ),
-                                  ),
-                                ),
+            AppCardSurface(
+              padding: const EdgeInsets.fromLTRB(12, 16, 12, 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: tokens.cardBorder),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Theme.of(context).colorScheme.secondaryContainer, tokens.card],
+                ),
+              ),
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 320,
+                    child: PageView.builder(
+                      controller: _previewController,
+                      onPageChanged: (idx) => setState(() => _previewPage = idx),
+                      itemCount: 2,
+                      itemBuilder: (context, idx) => Center(
+                        child: AspectRatio(
+                          aspectRatio: 1080 / 2340,
+                          child: Material(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              side: BorderSide(color: tokens.cardBorder),
+                            ),
+                            elevation: 4,
+                            clipBehavior: Clip.antiAlias,
+                            child: Semantics(
+                              button: true,
+                              label: idx == 0 ? '全屏查看浅色预览' : '全屏查看深色预览',
+                              child: InkWell(
+                                onTap: () => _openFullScreenPreview(previewUrls, idx),
+                                child: _ThemeCover(url: previewUrls[idx]),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  );
-                },
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      for (var idx = 0; idx < 2; idx++)
+                        ChoiceChip(
+                          avatar: Icon(
+                            idx == 0 ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                            size: 16,
+                          ),
+                          label: Text(idx == 0 ? '浅色预览' : '深色预览'),
+                          selected: _previewPage == idx,
+                          onSelected: (_) {
+                            if (MediaQuery.disableAnimationsOf(context)) {
+                              _previewController.jumpToPage(idx);
+                            } else {
+                              _previewController.animateToPage(
+                                idx,
+                                duration: const Duration(milliseconds: 200),
+                                curve: Curves.easeOutCubic,
+                              );
+                            }
+                          },
+                        ),
+                    ],
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ChoiceChip(
-                  label: const Text('浅色预览'),
-                  selected: _previewPage == 0,
-                  onSelected: (_) => _previewController.animateToPage(
-                    0,
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOut,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text('深色预览'),
-                  selected: _previewPage == 1,
-                  onSelected: (_) => _previewController.animateToPage(
-                    1,
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOut,
-                  ),
-                ),
-              ],
             ),
             const SizedBox(height: 14),
             AppCard(

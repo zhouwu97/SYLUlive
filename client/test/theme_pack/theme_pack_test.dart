@@ -10,6 +10,8 @@ import 'package:shenliyuan/features/theme_pack/theme_manifest.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_codec.dart';
 import 'package:shenliyuan/features/theme_pack/themed_wallpaper_layer.dart';
 import 'package:shenliyuan/theme/app_palette.dart';
+import 'package:shenliyuan/theme/app_theme_style.dart';
+import 'package:material_color_utilities/material_color_utilities.dart';
 
 Map<String, dynamic> themeFixture(
         {String id = '00000000-0000-4000-8000-000000000001',
@@ -244,6 +246,121 @@ void main() {
           ThemeGroup.layout,
           ThemeGroup.decoration,
         ]));
+  });
+
+  test('V2 字段：氛围背景、识别色协调、卡片填充、区块记号、状态插画与标题字体', () async {
+    final json = themeFixture();
+    json['light']
+      ..['identityHarmony'] = .6
+      ..['cardStyle'] = {'fill': 'tint'}
+      ..['backdrop'] = {
+        'gradient': {
+          'colors': ['#EAF2FF', '#FFF6EE'],
+          'angle': 160
+        },
+        'glow': [
+          {'color': '#BFD6FF', 'x': .9, 'y': .1}
+        ],
+        'pattern': {'tile': 'decorations/tile.png', 'opacity': .2}
+      }
+      ..['sectionMark'] = {'style': 'icon', 'image': 'decorations/mark.png'}
+      ..['illustrations'] = {'empty': 'decorations/empty.png'}
+      ..['ornaments'] = {
+        'postCard': {'image': 'decorations/ear.png', 'width': 56, 'dy': -20}
+      }
+      ..['serviceIcons'] = {'edu': 'icons/edu.png'};
+    final pack = await ThemePackCodec.decode(
+        themeArchive(json, files: {
+          'decorations/tile.png': themeImage(64, 64),
+          'decorations/mark.png': themeImage(48, 48),
+          'decorations/empty.png': themeImage(400, 400),
+          'decorations/ear.png': themeImage(224, 112),
+          'icons/edu.png': themeImage(256, 256),
+        }),
+        appVersion: '9.0.0');
+    final light = pack.manifest.data['light'] as Map;
+    expect(light['identityHarmony'], .6);
+    expect(light['cardStyle'], {'fill': 'tint'});
+    expect(light['backdrop']['glow'][0]['radius'], .5);
+    expect(light['sectionMark'], {'style': 'icon', 'image': 'decorations/mark.png'});
+    expect(light['ornaments']['postCard'], {
+      'image': 'decorations/ear.png',
+      'corner': 'topRight',
+      'width': 56,
+      'dx': 0,
+      'dy': -20,
+      'opacity': 1,
+    });
+    expect(light['serviceIcons'], {'edu': 'icons/edu.png'});
+    expect(pack.manifest.groups,
+        containsAll([ThemeGroup.wallpapers, ThemeGroup.decoration]));
+    expect(
+        pack.manifest.assets
+            .where((a) => a.kind == ThemeAssetKind.illustration)
+            .map((a) => a.path),
+        ['decorations/empty.png']);
+
+    for (final bad in <Map<String, dynamic>>[
+      {'backdrop': <String, dynamic>{}},
+      {
+        'backdrop': {
+          'gradient': {
+            'colors': ['#FFFFFF']
+          }
+        }
+      },
+      {'sectionMark': {'style': 'icon'}},
+      {'identityHarmony': 1.5},
+      {'cardStyle': {'fill': 'neon'}},
+      {
+        'ornaments': {
+          'postCard': {'image': 'decorations/ear.png', 'width': 400}
+        }
+      },
+    ]) {
+      final broken = themeFixture();
+      final light = broken['light'] as Map;
+      for (final entry in bad.entries) {
+        light[entry.key] = entry.value as Object;
+      }
+      expect(
+          () => ThemeManifest.parse(broken, appVersion: '9.0.0'),
+          throwsA(isA<ThemePackError>()
+              .having((e) => e.code, 'code', 'theme_field_invalid')),
+          reason: '$bad');
+    }
+
+    final titleOnly = themeFixture()
+      ..['font'] = {
+        'title': {
+          'name': '标题',
+          'regular': 'fonts/title.ttf',
+          'license': 'OFL-1.1'
+        }
+      };
+    final parsed = ThemeManifest.parse(titleOnly, appVersion: '9.0.0');
+    expect(parsed.data['font'].containsKey('regular'), isFalse);
+    expect(parsed.assets.where((a) => a.kind == ThemeAssetKind.font).single.path,
+        'fonts/title.ttf');
+  });
+
+  test('识别色协调与标题字号规则：强度 0 原样返回，协调后色相靠近主色、色调不变', () {
+    const orange = Color(0xFFFF7A45);
+    const style0 = AppThemeStyle();
+    expect(style0.identity(orange), orange);
+    const style = AppThemeStyle(
+        identityHarmony: .7, identityAnchor: Color(0xFF3C6090));
+    final source = Hct.fromInt(orange.toARGB32());
+    final result = Hct.fromInt(style.identity(orange).toARGB32());
+    final anchor = Hct.fromInt(const Color(0xFF3C6090).toARGB32());
+    double distance(double a, double b) => ((a - b + 540) % 360 - 180).abs();
+    expect(distance(result.hue, anchor.hue),
+        lessThan(distance(source.hue, anchor.hue)));
+    expect(result.tone, closeTo(source.tone, 1.5));
+    const titled = AppThemeStyle(titleFontFamily: 'theme_title_x');
+    expect(titled.title(const TextStyle(fontSize: 14)).fontFamily, isNull);
+    expect(titled.title(const TextStyle(fontSize: 18)).fontFamily,
+        'theme_title_x');
   });
 
   test('图片颜色矩阵：中性参数为单位矩阵，非中性严格按亮度→对比度→饱和度顺序计算', () {

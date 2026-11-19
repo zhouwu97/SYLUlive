@@ -339,21 +339,22 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
               ),
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: tokens.tagBackground,
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              '点选组件直达编辑',
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-                color: tokens.tagText,
+          if (widget.onFocusTarget != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: tokens.tagBackground,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '点选组件直达编辑',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  color: tokens.tagText,
+                ),
               ),
             ),
-          ),
         ],
       ),
     );

@@ -148,13 +148,15 @@ void main() {
               scrollable: find.byType(Scrollable).first);
           await tester.pumpAndSettle();
           expect(title, findsOneWidget);
-          expect(tester.widget(title), isA<Text>());
+          // 标题由 ThemeSectionTitle 包一层主题标记，文字本身在其内部。
+          final text = find.descendant(of: title, matching: find.byType(Text));
+          expect(text, findsOneWidget);
           final rect = tester.getRect(title);
           for (final glass in [true, false]) {
             await appearance.setFrostedGlass(glass);
             await tester.pumpAndSettle();
             expect(tester.getRect(title), rect);
-            expect(tester.widget<Text>(title).style!.color,
+            expect(tester.widget<Text>(text).style!.color,
                 Theme.of(tester.element(title)).colorScheme.onSurfaceVariant);
             expect(
                 find.ancestor(

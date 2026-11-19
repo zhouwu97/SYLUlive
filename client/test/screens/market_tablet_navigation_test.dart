@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shenliyuan/features/theme_pack/theme_contrast.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
@@ -414,7 +415,16 @@ void main() {
     final h = await _show(tester, adapter: _Adapter()..posts = []);
     h.auth.changeSession(login: false);
     await _advance(tester);
-    await tester.tap(find.text('发布商品'));
+    final publish = find.text('发布商品');
+    final button = tester.widget<ElevatedButton>(
+        find.ancestor(of: publish, matching: find.byType(ElevatedButton)));
+    final style = button.style!;
+    expect(
+      ThemeContrast.ratio(style.foregroundColor!.resolve({})!,
+          style.backgroundColor!.resolve({})!),
+      greaterThanOrEqualTo(4.5),
+    );
+    await tester.tap(publish);
     await _advance(tester);
     expect(find.text('登录测试页'), findsOneWidget);
     expect(h.root.currentState!.canPop(), isTrue);
@@ -423,6 +433,20 @@ void main() {
     expect(find.text('还没有商品'), findsOneWidget);
     expect(find.text('选择左侧商品查看详情'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('深色个人主页的关注按钮文字与主题底色对比达标', (tester) async {
+    await _show(tester, profile: true, dark: true);
+    final follow = find.text('关注');
+    final label = tester.widget<Text>(follow);
+    final scheme = Theme.of(tester.element(follow)).colorScheme;
+    final surface = tester.widget<Material>(find.ancestor(
+      of: follow,
+      matching: find.byWidgetPredicate(
+          (widget) => widget is Material && widget.color == scheme.primary),
+    ));
+    expect(ThemeContrast.ratio(label.style!.color!, surface.color!),
+        greaterThanOrEqualTo(4.5));
   });
 
   for (final embedded in [false, true]) {

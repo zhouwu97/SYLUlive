@@ -170,6 +170,7 @@ abstract final class ThemePackCodec {
         ThemeAssetKind.icon => 256 * 1024,
         ThemeAssetKind.launcher => 1024 * 1024,
         ThemeAssetKind.sticker => 512 * 1024,
+        ThemeAssetKind.illustration => 1024 * 1024,
         ThemeAssetKind.font => 24 * 1024 * 1024,
       };
 
@@ -271,7 +272,9 @@ abstract final class ThemePackCodec {
           ThemeAssetKind.launcher => !jpeg && w == h && w >= 432 && w <= 1024,
           ThemeAssetKind.wallpaper => w <= 4096 && h <= 4096,
           ThemeAssetKind.header => w <= 2048 && h <= 2048,
-          ThemeAssetKind.sticker => !jpeg && w <= 1024 && h <= 1024,
+          ThemeAssetKind.sticker ||
+          ThemeAssetKind.illustration =>
+            !jpeg && w <= 1024 && h <= 1024,
           ThemeAssetKind.font => true,
         };
         if (!valid) throw const FormatException('图片尺寸不合规');

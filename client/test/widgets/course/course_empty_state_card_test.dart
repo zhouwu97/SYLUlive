@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
+import 'package:shenliyuan/theme/app_theme_style.dart';
 import '../../helpers/golden_test_app.dart';
 import '../../helpers/golden_viewport.dart';
 import '../../helpers/load_test_fonts.dart';
@@ -39,6 +40,8 @@ void main() {
                 )))),
           ));
           await tester.pumpAndSettle();
+          expect(tester.widget<ThemeStateArt>(find.byType(ThemeStateArt)).enabled,
+              type == CourseEmptyStateType.noCache);
           final hints = type == CourseEmptyStateType.unlogged
               ? ['登录并绑定教务系统后即可解锁以上功能', '桌面小组件', '上课提醒']
               : ['1 选择学期  ·  2 预览课程  ·  3 设置开学第一周'];

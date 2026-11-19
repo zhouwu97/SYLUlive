@@ -12,6 +12,7 @@ import '../screens/user_home_screen.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_palette.dart';
+import '../features/theme_pack/theme_contrast.dart';
 import '../theme/app_theme_tokens.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
@@ -78,6 +79,9 @@ class PostCard extends StatefulWidget {
 
 class _PostCardState extends State<PostCard>
     with AutomaticKeepAliveClientMixin {
+  static final _invisibleNicknameCharacters =
+      RegExp(r'[\s\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFE00-\uFE0F\uFEFF]');
+
   bool _likePressed = false;
   @override
   bool get wantKeepAlive => true;
@@ -155,8 +159,13 @@ class _PostCardState extends State<PostCard>
     final isMyPost = authUser != null && post.author?.id == authUser.id;
     final displayAvatar =
         isMyPost ? authUser.avatar : (post.author?.avatar ?? '');
-    final displayNickname =
-        isMyPost ? authUser.nickname : (post.author?.nickname ?? '匿名');
+    final nickname = (isMyPost ? authUser.nickname : post.author?.nickname)
+        ?.trim();
+    final displayNickname = nickname == null
+        ? '匿名'
+        : nickname.replaceAll(_invisibleNicknameCharacters, '').isEmpty
+            ? '未设置昵称'
+            : nickname;
 
     // 只统计真正具有有效地址的图片
     final validImageCount = post.images
@@ -377,8 +386,7 @@ class _PostCardState extends State<PostCard>
     final surface = AppThemeTokens.of(context).card;
     final border =
         AppThemeTokens.of(context).divider;
-    final secondary =
-        AppThemeTokens.of(context).textSecondary;
+    final secondary = AppThemeTokens.of(context).textSecondary;
     final contentMaxLines = validImageCount == 0 ? 3 : 2;
     final hasUsefulTag = _isMeaningfulLegacyTopicLabel(labels.tagLabel);
 
@@ -410,11 +418,9 @@ class _PostCardState extends State<PostCard>
                 _buildHomeAuthorRow(
                   context,
                   post: post,
-                  isDark: isDark,
                   displayAvatar: displayAvatar,
                   displayNickname: displayNickname,
                   labels: labels,
-                  secondary: secondary,
                 ),
                 if (post.title.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.xs),
@@ -501,11 +507,9 @@ class _PostCardState extends State<PostCard>
   Widget _buildHomeAuthorRow(
     BuildContext context, {
     required Post post,
-    required bool isDark,
     required String displayAvatar,
     required String displayNickname,
     required _WaterPostLabels labels,
-    required Color secondary,
   }) {
     final isMine = context.read<AuthProvider?>()?.user?.id == post.authorId;
     final sectionLabel = labels.sectionLabel;
@@ -557,10 +561,7 @@ class _PostCardState extends State<PostCard>
                       if (sectionLabel.isNotEmpty) ...[
                         const SizedBox(width: AppSpacing.xs),
                         Flexible(
-                          child: _buildHomeSectionBadge(
-                            sectionLabel,
-                            isDark: isDark,
-                          ),
+                          child: _buildHomeSectionBadge(context, sectionLabel),
                         ),
                       ],
                     ],
@@ -583,7 +584,7 @@ class _PostCardState extends State<PostCard>
         if (widget.onPostAction != null)
           FeedPostActionMenu(
             isMine: isMine,
-            isDark: isDark,
+            isDark: Theme.of(context).brightness == Brightness.dark,
             onAction: widget.onPostAction!,
             allowNotInterested: widget.allowNotInterested,
             allowHideAuthor: widget.allowHideAuthor,
@@ -593,21 +594,25 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  Widget _buildHomeSectionBadge(String label, {required bool isDark}) {
+  Widget _buildHomeSectionBadge(BuildContext context, String label) {
+    final tokens = AppThemeTokens.of(context);
+    final fill = tokens.feedSectionSurface;
+    final text = ThemeContrast.ratio(tokens.tagText, fill) >= 4.5
+        ? tokens.tagText
+        : ThemeContrast.ratio(Colors.white, fill) >= 4.5
+        ? Colors.white
+        : Colors.black;
     return Container(
-      height: 20,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: AppThemeTokens.of(context).feedSectionSurface,
-        borderRadius: BorderRadius.circular(6),
+        color: fill,
+        borderRadius: BorderRadius.circular(AppShape.of(context).sm),
       ),
       child: Text(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: AppTextStyles.feedBadge.copyWith(
-          color: AppThemeTokens.of(context).primary,
-        ),
+        style: AppTextStyles.feedBadge.copyWith(color: text),
       ),
     );
   }

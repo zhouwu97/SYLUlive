@@ -6,8 +6,10 @@ import 'package:provider/provider.dart';
 
 import '../../providers/theme_provider.dart';
 import '../../theme/app_palette.dart';
+import '../../theme/app_theme_style.dart';
 import '../../theme/app_theme_tokens.dart';
 import 'theme_appearance.dart';
+import 'theme_hero_layer.dart';
 import 'theme_manifest.dart';
 import 'themed_wallpaper_layer.dart';
 
@@ -178,6 +180,8 @@ class ThemeHeaderDecorationArea extends StatelessWidget {
     this.selectedStickerIndex,
     this.onStickerSelected,
     this.onStickerDragChanged,
+    this.transparent = false,
+    this.boxHeight,
   });
 
   final String slot;
@@ -186,6 +190,12 @@ class ThemeHeaderDecorationArea extends StatelessWidget {
   final List<Map<String, dynamic>> stickers;
   final ThemeAssetProviderResolver assetResolver;
   final bool interactive;
+
+  /// 沉浸 hero 叠贴纸时使用：不画占位底色、不裁圆角。
+  final bool transparent;
+
+  /// 覆盖装饰区高度；沉浸 hero 按 hero 实际高度换算贴纸坐标。
+  final double? boxHeight;
   final int? selectedStickerIndex;
   final ValueChanged<int>? onStickerSelected;
   final void Function(int index, double x, double y)? onStickerDragChanged;
@@ -203,9 +213,12 @@ class ThemeHeaderDecorationArea extends StatelessWidget {
             : MediaQuery.sizeOf(context).width;
         final boxWidth =
             (availableWidth * layout.imageWidth).clamp(1.0, availableWidth);
-        final boxHeight = layout.imageHeight.clamp(96.0, 280.0);
+        final boxHeight =
+            this.boxHeight ?? layout.imageHeight.clamp(96.0, 280.0);
         final dpr = MediaQuery.devicePixelRatioOf(context);
-        final radius = BorderRadius.circular(AppShape.of(context).lg);
+        final radius = transparent
+            ? BorderRadius.zero
+            : BorderRadius.circular(AppShape.of(context).lg);
 
         final bgImagePath = background?['image'] as String?;
         final bgSettings = background == null
@@ -224,11 +237,12 @@ class ThemeHeaderDecorationArea extends StatelessWidget {
             child: Stack(
               clipBehavior: Clip.hardEdge,
               children: [
-                Positioned.fill(
-                  child: ColoredBox(
-                    color: AppThemeTokens.of(context).surfaceMuted,
+                if (!transparent)
+                  Positioned.fill(
+                    child: ColoredBox(
+                      color: AppThemeTokens.of(context).surfaceMuted,
+                    ),
                   ),
-                ),
                 if (bgSettings != null && bgImagePath != null)
                   Positioned.fill(
                     child: ThemedWallpaperLayer(
@@ -354,6 +368,7 @@ class ThemeHeaderFrame extends StatelessWidget {
     required this.standardInfoBuilder,
     required this.compactInfoBuilder,
     this.spacing = 8.0,
+    this.ornamentSlot,
   });
 
   final String slot;
@@ -364,20 +379,41 @@ class ThemeHeaderFrame extends StatelessWidget {
       compactInfoBuilder;
   final double spacing;
 
+  /// 信息卡上挂的主题角饰位置（见 [ThemeOrnamented]）；装饰区不挂。
+  final String? ornamentSlot;
+
+  Widget _ornament(Widget card) => ornamentSlot == null
+      ? card
+      : ThemeOrnamented(slot: ornamentSlot!, child: card);
+
   @override
   Widget build(BuildContext context) {
     final resolved = ThemeHeaderResolved.of(context, slot);
     if (!resolved.isCustomized) {
-      return defaultBuilder(context);
+      return _ornament(defaultBuilder(context));
     }
 
     final layout = resolved.layout;
-    final infoWidget = layout.preset == 'compact'
+    final infoWidget = _ornament(layout.preset == 'compact'
         ? compactInfoBuilder(context, layout)
-        : standardInfoBuilder(context, layout);
+        : standardInfoBuilder(context, layout));
 
     if (!resolved.hasDecoration) {
       return infoWidget;
+    }
+
+    // 沉浸模板：hero 图由背景层的 ThemeHeroLayer 铺到状态栏下方绘制，这里只留出
+    // 图片可见区并登记锚点；信息卡紧接锚点，压住 hero 底边。正式页面以外（导入预览、
+    // 工坊、设置编辑）没有背景层，仍使用内嵌装饰区，保证预览可见。
+    if (layout.preset == 'immersive' && immersiveEnabled(context)) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ThemeHeroAnchor(slot: slot, height: layout.imageHeight),
+          infoWidget,
+        ],
+      );
     }
 
     final decorationWidget = ThemeHeaderDecorationArea(
@@ -404,6 +440,12 @@ class ThemeHeaderFrame extends StatelessWidget {
             ],
     );
   }
+
+  /// 只有主壳里的正式页面能使用背景层 hero；预览环境（挂了 ThemePresentationOverride）
+  /// 和二级路由沿用内嵌装饰区。
+  static bool immersiveEnabled(BuildContext context) =>
+      ThemePresentationOverride.maybeOf(context) == null &&
+      ModalRoute.of(context)?.isFirst != false;
 }
 
 /// 首页（home）信息流顶部主题页头：仅在配置了 home 布局或装饰时渲染，默认路径高度为 0。
@@ -411,9 +453,27 @@ class HomeThemedHeaderBanner extends StatelessWidget {
   const HomeThemedHeaderBanner({
     super.key,
     required this.feedModeLabel,
+    this.heroExtend = 0,
   });
 
   final String feedModeLabel;
+
+  /// 沉浸模板下 hero 图在标题区之后继续铺开的高度（首页用它铺到吸顶的标签栏和搜索框背后）。
+  final double heroExtend;
+
+  /// 当前首页是否走沉浸模板：标题叠在背景层 hero 上，页头控件要透明。
+  static bool isImmersive(BuildContext context) {
+    final resolved = ThemeHeaderResolved.of(context, 'home');
+    return resolved.layout.preset == 'immersive' &&
+        resolved.hasDecoration &&
+        ThemeHeaderFrame.immersiveEnabled(context);
+  }
+
+  /// 沉浸模板标题区的高度（含底部留白）。
+  static double immersiveHeight(BuildContext context) =>
+      (ThemeHeaderResolved.of(context, 'home').layout.imageHeight * 0.78)
+          .clamp(86.0, 176.0) +
+      4;
 
   @override
   Widget build(BuildContext context) {
@@ -424,6 +484,22 @@ class HomeThemedHeaderBanner extends StatelessWidget {
 
     final tokens = AppThemeTokens.of(context);
     final shape = AppShape.of(context);
+
+    // 沉浸模板：hero 图由背景层绘制，这里只留出透明空间和锚点，不叠标题文字。
+    if (isImmersive(context)) {
+      return Padding(
+        key: const ValueKey('home-themed-header-immersive'),
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(height: immersiveHeight(context) - 4),
+            ThemeHeroAnchor(slot: 'home', extend: heroExtend + 4),
+          ],
+        ),
+      );
+    }
 
     Widget buildInfoCard(ThemeHeaderLayoutSpec layout, {required bool compact}) {
       return Container(

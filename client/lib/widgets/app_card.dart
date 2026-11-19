@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
 import '../theme/app_palette.dart';
+import '../theme/app_theme_style.dart';
 import '../theme/app_theme_tokens.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
@@ -187,6 +188,9 @@ class AppCardSurface extends Container {
 
   /// 显式指定是否套用主题 cardStyle；为 null 时仅对内容卡片自动生效。
   final bool? applyCardStyle;
+
+  /// 是否画主题卡片淡底图；输入栏等工具条传 false。
+  final bool themeArt;
   AppCardSurface({
     super.key,
     super.alignment,
@@ -205,6 +209,7 @@ class AppCardSurface extends Container {
     this.blur = 10,
     this.surfaceOpacity,
     this.applyCardStyle,
+    this.themeArt = true,
   });
 
   bool _shouldApplyCardStyle(BuildContext context, BoxDecoration? box) {
@@ -227,6 +232,30 @@ class AppCardSurface extends Container {
     return true;
   }
 
+  /// 主题淡底图只画在内容卡片上：圆形、胶囊、透明底和弹窗里的面板不画。
+  bool _shouldPaintArt(BuildContext context, BoxDecoration? box) {
+    if (!themeArt || applyCardStyle == false || surfaceOpacity == 0) {
+      return false;
+    }
+    if (box?.shape == BoxShape.circle) return false;
+    final br = box?.borderRadius;
+    if (br is BorderRadius && br.topLeft.x >= 99) return false;
+    return context.findAncestorWidgetOfExactType<Dialog>() == null;
+  }
+
+  /// 内容在上、主题淡底图在下；passthrough 保持原 Container 拿到的约束不变。
+  Widget _withArt(BuildContext context, BoxDecoration? box, Widget content) {
+    final art = AppThemeStyle.of(context).cardArt;
+    if (art == null || !_shouldPaintArt(context, box)) return content;
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        Positioned.fill(child: ThemeCardArt(spec: art)),
+        content,
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<ThemeProvider?>();
@@ -245,7 +274,11 @@ class AppCardSurface extends Container {
     final outerShadows = cardStyle?.resolveBoxShadows(
       Theme.of(context).brightness == Brightness.dark,
     );
-    final surface = color ?? box?.color ?? tokens.card;
+    final baseSurface = color ?? box?.color ?? tokens.card;
+    // 主题卡片填充为 tint 时，只给默认卡片底色混入 primaryContainer，显式指定底色的卡片保持原样。
+    final surface = cardStyle?.tinted == true && baseSurface == tokens.card
+        ? Color.lerp(tokens.card, tokens.primaryContainer, 0.32)!
+        : baseSurface;
     final alpha =
         (surfaceOpacity ?? settings?.effectiveComponentOpacity ?? 1.0) *
             progress;
@@ -315,16 +348,20 @@ class AppCardSurface extends Container {
           // 材质只替换绘制，保留原 Container 的边框占位和显式内容间距。
           child: DecoratedBox(
             decoration: material,
-            child: Container(
-              alignment: alignment,
-              padding: decoration?.padding == null
-                  ? padding
-                  : decoration!.padding.add(padding ?? EdgeInsets.zero),
-              foregroundDecoration: foregroundDecoration,
-              child: AppSurfaceTransition.foreground(
-                context,
-                progress: progress,
-                child: child,
+            child: _withArt(
+              context,
+              box,
+              Container(
+                alignment: alignment,
+                padding: decoration?.padding == null
+                    ? padding
+                    : decoration!.padding.add(padding ?? EdgeInsets.zero),
+                foregroundDecoration: foregroundDecoration,
+                child: AppSurfaceTransition.foreground(
+                  context,
+                  progress: progress,
+                  child: child,
+                ),
               ),
             ),
           ),

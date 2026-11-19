@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_palette.dart';
+import '../../theme/app_theme_style.dart';
 import '../../theme/app_theme.dart';
 import 'theme_contrast.dart';
 import 'theme_font_registry.dart';
@@ -29,7 +30,7 @@ class ThemeAppearance {
         rawCardStyle = modeMat['cardStyle'] as Map;
       }
     }
-    return AppTheme.build(
+    final base = AppTheme.build(
       brightness: brightness,
       fontFamily: fontFamily,
       rawCardStyle: rawCardStyle,
@@ -48,6 +49,58 @@ class ThemeAppearance {
           : DynamicSchemeVariant.values
               .byName(colors['schemeVariant'] as String),
       shape: AppShape(preset: AppShapePreset.values.byName(preset)),
+    );
+    final style = _styleFor(mode, base);
+    final titleFamily = style.titleFontFamily;
+    TextStyle? withTitle(TextStyle? value) =>
+        titleFamily == null ? value : value?.copyWith(fontFamily: titleFamily);
+    final text = base.textTheme;
+    return base.copyWith(
+      extensions: [...base.extensions.values, style],
+      textTheme: titleFamily == null
+          ? text
+          : text.copyWith(
+              displayLarge: withTitle(text.displayLarge),
+              displayMedium: withTitle(text.displayMedium),
+              displaySmall: withTitle(text.displaySmall),
+              headlineLarge: withTitle(text.headlineLarge),
+              headlineMedium: withTitle(text.headlineMedium),
+              headlineSmall: withTitle(text.headlineSmall),
+              titleLarge: withTitle(text.titleLarge),
+            ),
+    );
+  }
+
+  /// V2 附加参数：识别色协调来自配色组，区块记号与插画来自页头装饰组，标题字体来自字体组。
+  AppThemeStyle _styleFor(String mode, ThemeData base) {
+    final colors = group(ThemeGroup.colors)?[mode] as Map?;
+    final decoration = group(ThemeGroup.decoration)?[mode] as Map?;
+    final mark = decoration?['sectionMark'] as Map?;
+    final illustrations = decoration?['illustrations'] as Map?;
+    return AppThemeStyle(
+      identityHarmony:
+          ((colors?['identityHarmony'] as num?)?.toDouble() ?? 0).clamp(0, 1),
+      identityAnchor: base.extension<AppPalette>()?.primary,
+      sectionMark: mark?['style'] as String? ?? 'none',
+      sectionMarkImage: mark?['image'] as String?,
+      emptyIllustration: illustrations?['empty'] as String?,
+      errorIllustration: illustrations?['error'] as String?,
+      ornaments: {
+        for (final entry
+            in ((decoration?['ornaments'] as Map?) ?? const {}).entries)
+          entry.key as String:
+              ThemeOrnamentSpec.fromJson(entry.value as Map),
+      },
+      cardArt: decoration?['cardArt'] == null
+          ? null
+          : ThemeCardArtSpec.fromJson(decoration!['cardArt'] as Map),
+      serviceIcons: {
+        for (final entry
+            in ((decoration?['serviceIcons'] as Map?) ?? const {}).entries)
+          entry.key as String: entry.value as String,
+      },
+      titleFontFamily:
+          ThemeFontRegistry.resolvedTitleFamilyFor(group(ThemeGroup.font)),
     );
   }
 
@@ -85,9 +138,11 @@ class ThemeAppearance {
                   'seedColor',
                   'schemeVariant',
                   'tokens',
-                  'coursePalette'
+                  'coursePalette',
+                  'identityHarmony',
                 ])
-                  field: (manifest.data[mode] as Map)[field],
+                  if ((manifest.data[mode] as Map)[field] != null)
+                    field: (manifest.data[mode] as Map)[field],
               }
           };
         case ThemeGroup.shape:
@@ -96,10 +151,15 @@ class ThemeAppearance {
             'value': manifest.data['shape'] ?? 'standard'
           };
         case ThemeGroup.wallpapers:
+          Map<String, dynamic> walls(Map<String, dynamic> variant) => {
+                ...resolve(variant['wallpapers'] ?? {}) as Map<String, dynamic>,
+                if (variant['backdrop'] != null)
+                  'backdrop': resolve(variant['backdrop']),
+              };
           next['wallpapers'] = {
             'source': source,
-            'light': resolve(light['wallpapers'] ?? {}),
-            'dark': resolve(dark['wallpapers'] ?? {})
+            'light': walls(light),
+            'dark': walls(dark),
           };
         case ThemeGroup.material:
           next['material'] = {
@@ -157,10 +217,23 @@ class ThemeAppearance {
             next.remove('layout');
           }
         case ThemeGroup.decoration:
+          Map<String, dynamic> decorations(Map<String, dynamic> variant) => {
+                ...resolve(variant['decorations'] ?? {}) as Map<String, dynamic>,
+                if (variant['sectionMark'] != null)
+                  'sectionMark': resolve(variant['sectionMark']),
+                if (variant['illustrations'] != null)
+                  'illustrations': resolve(variant['illustrations']),
+                if (variant['ornaments'] != null)
+                  'ornaments': resolve(variant['ornaments']),
+                if (variant['serviceIcons'] != null)
+                  'serviceIcons': resolve(variant['serviceIcons']),
+                if (variant['cardArt'] != null)
+                  'cardArt': resolve(variant['cardArt']),
+              };
           next['decoration'] = {
             'source': source,
-            'light': resolve(light['decorations'] ?? {}),
-            'dark': resolve(dark['decorations'] ?? {}),
+            'light': decorations(light),
+            'dark': decorations(dark),
           };
       }
     }

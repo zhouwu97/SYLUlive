@@ -14,14 +14,14 @@ import 'package:shenliyuan/features/theme_pack/theme_pack_codec.dart';
 import 'package:shenliyuan/features/theme_pack/theme_manifest.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_store.dart';
 import 'package:shenliyuan/features/theme_pack/theme_resolver.dart';
-import 'package:shenliyuan/features/theme_pack/theme_workshop_samples.dart';
 import 'package:shenliyuan/features/theme_pack/theme_workshop_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/post_card.dart';
 
-import '../helpers/emoji_flow_qa.dart' show settleEmojiQAImages, waitForEmojiWork;
+import '../helpers/emoji_flow_qa.dart'
+    show settleEmojiQAImages, waitForEmojiWork;
 import '../helpers/load_test_fonts.dart';
 import 'theme_pack_test.dart' show themeImage;
 
@@ -280,6 +280,8 @@ void main() {
             initialState: initial,
             draftStore: draftStore,
             appVersion: '1.7.12',
+            pickFilePath: (_) async =>
+                throw PlatformException(code: 'permission_denied'),
           ),
         ),
       ),
@@ -295,7 +297,8 @@ void main() {
     await _captureWorkshop(tester, previewBoundary, 'theme-settings');
 
     // 修改种子色后，预览组件的主题主色立即跟随变化。
-    await tester.ensureVisible(find.byKey(const ValueKey('workshop-seed-hex-input')));
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('workshop-seed-hex-input')));
     await tester.enterText(
       find.byKey(const ValueKey('workshop-seed-hex-input')),
       '#C9617E',
@@ -353,9 +356,16 @@ void main() {
     await _captureWorkshop(tester, previewBoundary, 'fullscreen-preview');
     await tester.tap(find.byKey(const ValueKey('home-themed-header-info')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('workshop-editor-layout')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('workshop-editor-layout')), findsOneWidget);
 
     await category('wallpapers');
+    final chooseWallpaper = find.widgetWithText(OutlinedButton, '更换竖屏图');
+    await tester.ensureVisible(chooseWallpaper);
+    await tester.tap(chooseWallpaper);
+    await tester.pumpAndSettle();
+    expect(find.text('无法选取文件，请检查文件权限后重试。'), findsOneWidget);
+    expect(initial.light.wallpapers['global']!['portrait'], wallFile.path);
     final darkMode = find.widgetWithText(ChoiceChip, '深色');
     await tester.ensureVisible(darkMode);
     await tester.tap(darkMode);
@@ -401,7 +411,8 @@ void main() {
     // 6. 模拟草稿保存失败：编辑内容保留、顶栏出现“未保存 · 重试”，恢复后点击重试成功落盘
     shouldFailSave = true;
     await category('colors');
-    await tester.ensureVisible(find.byKey(const ValueKey('workshop-seed-hex-input')));
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('workshop-seed-hex-input')));
     await tester.enterText(
       find.byKey(const ValueKey('workshop-seed-hex-input')),
       '#3E6B4F',
@@ -446,7 +457,8 @@ void main() {
         value: provider,
         child: MaterialApp(
           theme: provider.buildAppTheme(Brightness.light),
-          home: ThemeWorkshopScreen(draftStore: draftStore, appVersion: '1.7.12'),
+          home:
+              ThemeWorkshopScreen(draftStore: draftStore, appVersion: '1.7.12'),
         ),
       ),
     );
@@ -455,7 +467,7 @@ void main() {
     final preset = find.widgetWithText(ActionChip, '海盐蓝');
     await tester.ensureVisible(preset);
     await tester.tap(preset);
-    await tester.pumpAndSettle();
+    await tester.pump();
     expect(tester.widget<FilledButton>(apply).onPressed, isNotNull);
 
     Future<void> applyAndWait() async {
@@ -489,7 +501,8 @@ Future<void> _captureWorkshop(
   final directory = Platform.environment['THEME_WORKSHOP_QA_DIR'];
   if (directory == null) return;
   await tester.runAsync(() async {
-    final render = key.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    final render =
+        key.currentContext!.findRenderObject() as RenderRepaintBoundary;
     final image = await render.toImage();
     final png = await image.toByteData(format: ui.ImageByteFormat.png);
     image.dispose();

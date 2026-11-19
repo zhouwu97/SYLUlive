@@ -171,6 +171,14 @@ const (
 	themeAssetHeader    themeAssetKind = "header"
 	themeAssetSticker   themeAssetKind = "sticker"
 	themeAssetFont      themeAssetKind = "font"
+	// 空状态、错误状态插画：透明 PNG/WebP，长边 ≤ 1024，≤ 1MB。
+	themeAssetIllustration themeAssetKind = "illustration"
+)
+
+// 卡片角饰位置与可替换入口图标的键，与客户端 ThemeManifest 保持一致。
+var (
+	themeOrnamentSlots   = []string{"postCard", "campusHeader", "campusNotice", "campusServices"}
+	themeServiceIconKeys = []string{"edu", "canteen", "ranking", "team", "map", "calendar", "erke", "fitness", "exam", "papers", "sites", "cloudGame", "lottery"}
 )
 
 type themeAssetRef struct {
@@ -696,29 +704,57 @@ func parseAndValidateManifest(source map[string]any, currentAppVersion string) (
 		if err != nil {
 			return nil, nil, err
 		}
-		fontName, err := parseJSONText(fontObj["name"], "font.name", 1, 30, false)
-		if err != nil {
-			return nil, nil, err
+		fontLicenses := []string{"OFL-1.1", "Apache-2.0", "CC0-1.0", "author-owned"}
+		if fontObj["regular"] == nil && fontObj["title"] == nil {
+			return nil, nil, themeFieldError("font")
 		}
-		regularPath, err := parseFontPath(fontObj["regular"], "font.regular")
-		if err != nil {
-			return nil, nil, err
-		}
-		fontLicense, err := parseJSONChoice(fontObj["license"], "font.license", []string{"OFL-1.1", "Apache-2.0", "CC0-1.0", "author-owned"})
-		if err != nil {
-			return nil, nil, err
-		}
-		fontOut := map[string]any{
-			"name":    fontName,
-			"regular": addRef(regularPath, themeAssetFont),
-			"license": fontLicense,
-		}
-		if fontObj["bold"] != nil {
-			boldPath, err := parseFontPath(fontObj["bold"], "font.bold")
+		fontOut := map[string]any{}
+		if fontObj["regular"] != nil {
+			fontName, err := parseJSONText(fontObj["name"], "font.name", 1, 30, false)
 			if err != nil {
 				return nil, nil, err
 			}
-			fontOut["bold"] = addRef(boldPath, themeAssetFont)
+			regularPath, err := parseFontPath(fontObj["regular"], "font.regular")
+			if err != nil {
+				return nil, nil, err
+			}
+			fontLicense, err := parseJSONChoice(fontObj["license"], "font.license", fontLicenses)
+			if err != nil {
+				return nil, nil, err
+			}
+			fontOut["name"] = fontName
+			fontOut["regular"] = addRef(regularPath, themeAssetFont)
+			fontOut["license"] = fontLicense
+			if fontObj["bold"] != nil {
+				boldPath, err := parseFontPath(fontObj["bold"], "font.bold")
+				if err != nil {
+					return nil, nil, err
+				}
+				fontOut["bold"] = addRef(boldPath, themeAssetFont)
+			}
+		}
+		if fontObj["title"] != nil {
+			titleObj, err := parseJSONObject(fontObj["title"], "font.title")
+			if err != nil {
+				return nil, nil, err
+			}
+			titleName, err := parseJSONText(titleObj["name"], "font.title.name", 1, 30, false)
+			if err != nil {
+				return nil, nil, err
+			}
+			titlePath, err := parseFontPath(titleObj["regular"], "font.title.regular")
+			if err != nil {
+				return nil, nil, err
+			}
+			titleLicense, err := parseJSONChoice(titleObj["license"], "font.title.license", fontLicenses)
+			if err != nil {
+				return nil, nil, err
+			}
+			fontOut["title"] = map[string]any{
+				"name":    titleName,
+				"regular": addRef(titlePath, themeAssetFont),
+				"license": titleLicense,
+			}
 		}
 		out["font"] = fontOut
 	}
@@ -830,7 +866,7 @@ func parseVariant(raw any, field string, addRef func(string, themeAssetKind) str
 			return nil, err
 		}
 		wallsOut := map[string]any{}
-		for _, slot := range []string{"global", "home", "schedule", "me"} {
+		for _, slot := range []string{"global", "home", "schedule", "me", "secondary"} {
 			if wallsObj[slot] == nil {
 				wallsOut[slot] = nil
 				continue
@@ -891,9 +927,170 @@ func parseVariant(raw any, field string, addRef func(string, themeAssetKind) str
 			}
 			csOut["shadow"] = sh
 		}
+		if csObj["fill"] != nil {
+			fill, err := parseJSONChoice(csObj["fill"], field+".cardStyle.fill", []string{"solid", "tint", "glass"})
+			if err != nil {
+				return nil, err
+			}
+			csOut["fill"] = fill
+		}
 		if len(csOut) > 0 {
 			out["cardStyle"] = csOut
 		}
+	}
+
+	if v["identityHarmony"] != nil {
+		harmony, err := parseJSONNumber(v["identityHarmony"], field+".identityHarmony", 0, 1)
+		if err != nil {
+			return nil, err
+		}
+		out["identityHarmony"] = harmony
+	}
+	if v["backdrop"] != nil {
+		backdrop, err := parseBackdrop(v["backdrop"], field+".backdrop", addRef)
+		if err != nil {
+			return nil, err
+		}
+		out["backdrop"] = backdrop
+	}
+	if v["sectionMark"] != nil {
+		markObj, err := parseJSONObject(v["sectionMark"], field+".sectionMark")
+		if err != nil {
+			return nil, err
+		}
+		style, err := parseJSONChoice(markObj["style"], field+".sectionMark.style", []string{"none", "dot", "bar", "icon"})
+		if err != nil {
+			return nil, err
+		}
+		if style == "icon" && markObj["image"] == nil {
+			return nil, themeFieldError(field + ".sectionMark.image")
+		}
+		markOut := map[string]any{"style": style}
+		if markObj["image"] != nil {
+			img, err := parseAssetPath(markObj["image"], field+".sectionMark.image", "decorations", true)
+			if err != nil {
+				return nil, err
+			}
+			markOut["image"] = addRef(img, themeAssetSticker)
+		}
+		out["sectionMark"] = markOut
+	}
+	if v["illustrations"] != nil {
+		illObj, err := parseJSONObject(v["illustrations"], field+".illustrations")
+		if err != nil {
+			return nil, err
+		}
+		illOut := map[string]any{}
+		for _, key := range []string{"empty", "error"} {
+			if illObj[key] == nil {
+				continue
+			}
+			img, err := parseAssetPath(illObj[key], field+".illustrations."+key, "decorations", true)
+			if err != nil {
+				return nil, err
+			}
+			illOut[key] = addRef(img, themeAssetIllustration)
+		}
+		out["illustrations"] = illOut
+	}
+	if v["ornaments"] != nil {
+		ornObj, err := parseJSONObject(v["ornaments"], field+".ornaments")
+		if err != nil {
+			return nil, err
+		}
+		ornOut := map[string]any{}
+		for _, key := range themeOrnamentSlots {
+			if ornObj[key] == nil {
+				continue
+			}
+			f := field + ".ornaments." + key
+			o, err := parseJSONObject(ornObj[key], f)
+			if err != nil {
+				return nil, err
+			}
+			img, err := parseAssetPath(o["image"], f+".image", "decorations", true)
+			if err != nil {
+				return nil, err
+			}
+			corner := o["corner"]
+			if corner == nil {
+				corner = "topRight"
+			}
+			cornerVal, err := parseJSONChoice(corner, f+".corner", []string{"topLeft", "topRight", "bottomLeft", "bottomRight"})
+			if err != nil {
+				return nil, err
+			}
+			width, err := parseJSONNumber(o["width"], f+".width", 24, 160)
+			if err != nil {
+				return nil, err
+			}
+			dx, err := parseJSONNumberDefault(o["dx"], 0, f+".dx", -64, 240)
+			if err != nil {
+				return nil, err
+			}
+			dy, err := parseJSONNumberDefault(o["dy"], 0, f+".dy", -96, 96)
+			if err != nil {
+				return nil, err
+			}
+			opacity, err := parseJSONNumberDefault(o["opacity"], 1, f+".opacity", 0, 1)
+			if err != nil {
+				return nil, err
+			}
+			ornOut[key] = map[string]any{
+				"image": addRef(img, themeAssetSticker), "corner": cornerVal,
+				"width": width, "dx": dx, "dy": dy, "opacity": opacity,
+			}
+		}
+		out["ornaments"] = ornOut
+	}
+	if v["cardArt"] != nil {
+		f := field + ".cardArt"
+		artObj, err := parseJSONObject(v["cardArt"], f)
+		if err != nil {
+			return nil, err
+		}
+		img, err := parseAssetPath(artObj["image"], f+".image", "decorations", true)
+		if err != nil {
+			return nil, err
+		}
+		align := artObj["alignment"]
+		if align == nil {
+			align = "bottomRight"
+		}
+		alignVal, err := parseJSONChoice(align, f+".alignment", []string{"bottomRight", "bottomLeft", "topRight", "topLeft"})
+		if err != nil {
+			return nil, err
+		}
+		width, err := parseJSONNumberDefault(artObj["width"], 0.42, f+".width", 0.2, 0.7)
+		if err != nil {
+			return nil, err
+		}
+		opacity, err := parseJSONNumberDefault(artObj["opacity"], 0.14, f+".opacity", 0.04, 0.4)
+		if err != nil {
+			return nil, err
+		}
+		out["cardArt"] = map[string]any{
+			"image": addRef(img, themeAssetIllustration), "alignment": alignVal,
+			"width": width, "opacity": opacity,
+		}
+	}
+	if v["serviceIcons"] != nil {
+		iconObj, err := parseJSONObject(v["serviceIcons"], field+".serviceIcons")
+		if err != nil {
+			return nil, err
+		}
+		iconOut := map[string]any{}
+		for _, key := range themeServiceIconKeys {
+			if iconObj[key] == nil {
+				continue
+			}
+			img, err := parseAssetPath(iconObj[key], field+".serviceIcons."+key, "icons", true)
+			if err != nil {
+				return nil, err
+			}
+			iconOut[key] = addRef(img, themeAssetIcon)
+		}
+		out["serviceIcons"] = iconOut
 	}
 
 	if v["decorations"] != nil {
@@ -916,6 +1113,99 @@ func parseVariant(raw any, field string, addRef func(string, themeAssetKind) str
 		out["decorations"] = decosOut
 	}
 
+	return out, nil
+}
+
+// parseBackdrop 校验氛围背景：2–4 色渐变、最多 3 个光斑、可选平铺纹理，至少提供一项。
+func parseBackdrop(raw any, field string, addRef func(string, themeAssetKind) string) (map[string]any, error) {
+	obj, err := parseJSONObject(raw, field)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	if obj["gradient"] != nil {
+		gObj, err := parseJSONObject(obj["gradient"], field+".gradient")
+		if err != nil {
+			return nil, err
+		}
+		stops, err := parseJSONList(gObj["colors"], field+".gradient.colors", 2, 4)
+		if err != nil {
+			return nil, err
+		}
+		colors := make([]any, 0, len(stops))
+		for i, c := range stops {
+			hex, err := parseJSONColor(c, fmt.Sprintf("%s.gradient.colors[%d]", field, i), false)
+			if err != nil {
+				return nil, err
+			}
+			colors = append(colors, hex)
+		}
+		angle, err := parseJSONNumberDefault(gObj["angle"], 180, field+".gradient.angle", 0, 360)
+		if err != nil {
+			return nil, err
+		}
+		out["gradient"] = map[string]any{"colors": colors, "angle": angle}
+	}
+	glowsRaw := obj["glow"]
+	if glowsRaw == nil {
+		glowsRaw = []any{}
+	}
+	glows, err := parseJSONList(glowsRaw, field+".glow", 0, 3)
+	if err != nil {
+		return nil, err
+	}
+	glowOut := make([]any, 0, len(glows))
+	for i, g := range glows {
+		gf := fmt.Sprintf("%s.glow[%d]", field, i)
+		gObj, err := parseJSONObject(g, gf)
+		if err != nil {
+			return nil, err
+		}
+		hex, err := parseJSONColor(gObj["color"], gf+".color", false)
+		if err != nil {
+			return nil, err
+		}
+		x, err := parseJSONNumber(gObj["x"], gf+".x", 0, 1)
+		if err != nil {
+			return nil, err
+		}
+		y, err := parseJSONNumber(gObj["y"], gf+".y", 0, 1)
+		if err != nil {
+			return nil, err
+		}
+		radius, err := parseJSONNumberDefault(gObj["radius"], .5, gf+".radius", .1, 1.5)
+		if err != nil {
+			return nil, err
+		}
+		opacity, err := parseJSONNumberDefault(gObj["opacity"], .6, gf+".opacity", 0, 1)
+		if err != nil {
+			return nil, err
+		}
+		glowOut = append(glowOut, map[string]any{"color": hex, "x": x, "y": y, "radius": radius, "opacity": opacity})
+	}
+	out["glow"] = glowOut
+	if obj["pattern"] != nil {
+		pObj, err := parseJSONObject(obj["pattern"], field+".pattern")
+		if err != nil {
+			return nil, err
+		}
+		tile, err := parseAssetPath(pObj["tile"], field+".pattern.tile", "decorations", true)
+		if err != nil {
+			return nil, err
+		}
+		opacity, err := parseJSONNumberDefault(pObj["opacity"], .2, field+".pattern.opacity", 0, 1)
+		if err != nil {
+			return nil, err
+		}
+		scale, err := parseJSONNumberDefault(pObj["scale"], 1, field+".pattern.scale", .5, 2)
+		if err != nil {
+			return nil, err
+		}
+		out["pattern"] = map[string]any{"tile": addRef(tile, themeAssetSticker), "opacity": opacity, "scale": scale}
+	}
+	if out["gradient"] == nil && len(glowOut) == 0 && out["pattern"] == nil {
+		return nil, themeFieldError(field)
+	}
 	return out, nil
 }
 
@@ -1124,6 +1414,35 @@ func rewriteManifestAssetPaths(manifest map[string]any, mapping map[string]strin
 				}
 			}
 		}
+		if backdrop, ok := variant["backdrop"].(map[string]any); ok {
+			if pattern, ok := backdrop["pattern"].(map[string]any); ok {
+				pattern["tile"] = mapping[string(themeAssetSticker)+":"+pattern["tile"].(string)]
+			}
+		}
+		if mark, ok := variant["sectionMark"].(map[string]any); ok {
+			if img, has := mark["image"].(string); has {
+				mark["image"] = mapping[string(themeAssetSticker)+":"+img]
+			}
+		}
+		if ills, ok := variant["illustrations"].(map[string]any); ok {
+			for key, img := range ills {
+				ills[key] = mapping[string(themeAssetIllustration)+":"+img.(string)]
+			}
+		}
+		if orns, ok := variant["ornaments"].(map[string]any); ok {
+			for _, o := range orns {
+				orn := o.(map[string]any)
+				orn["image"] = mapping[string(themeAssetSticker)+":"+orn["image"].(string)]
+			}
+		}
+		if art, ok := variant["cardArt"].(map[string]any); ok {
+			art["image"] = mapping[string(themeAssetIllustration)+":"+art["image"].(string)]
+		}
+		if icons, ok := variant["serviceIcons"].(map[string]any); ok {
+			for key, img := range icons {
+				icons[key] = mapping[string(themeAssetIcon)+":"+img.(string)]
+			}
+		}
 		if decos, ok := variant["decorations"].(map[string]any); ok {
 			for _, dRaw := range decos {
 				if dMap, ok := dRaw.(map[string]any); ok && dMap != nil {
@@ -1150,7 +1469,12 @@ func rewriteManifestAssetPaths(manifest map[string]any, mapping map[string]strin
 		}
 	}
 	if font, ok := manifest["font"].(map[string]any); ok {
-		font["regular"] = mapping[string(themeAssetFont)+":"+font["regular"].(string)]
+		if regular, hasRegular := font["regular"].(string); hasRegular {
+			font["regular"] = mapping[string(themeAssetFont)+":"+regular]
+		}
+		if title, hasTitle := font["title"].(map[string]any); hasTitle {
+			title["regular"] = mapping[string(themeAssetFont)+":"+title["regular"].(string)]
+		}
 		if bold, hasBold := font["bold"].(string); hasBold {
 			font["bold"] = mapping[string(themeAssetFont)+":"+bold]
 		}
@@ -1315,6 +1639,8 @@ func validateAndNormalizeThemeImage(data []byte, kind themeAssetKind, assetPath 
 		maxBytes = 1 * 1024 * 1024
 	case themeAssetSticker:
 		maxBytes = 512 * 1024
+	case themeAssetIllustration:
+		maxBytes = 1024 * 1024
 	case themeAssetIcon:
 		maxBytes = 256 * 1024
 	default:
@@ -1351,7 +1677,7 @@ func validateAndNormalizeThemeImage(data []byte, kind themeAssetKind, assetPath 
 		if maxSide > 2048 {
 			return nil, "", imgErr()
 		}
-	case themeAssetSticker:
+	case themeAssetSticker, themeAssetIllustration:
 		if maxSide > 1024 {
 			return nil, "", imgErr()
 		}

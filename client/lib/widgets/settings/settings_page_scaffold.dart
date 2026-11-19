@@ -28,7 +28,7 @@ class SettingsPageScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final baseTheme = Theme.of(context);
     final appearance = context.watch<ThemeProvider?>();
-    final pageBg = appearance?.shouldShowCustomBackground == true
+    final pageBg = appearance?.hasSeeThroughBackground == true
         ? Colors.transparent
         : CampusTheme.pageBackground(context);
 

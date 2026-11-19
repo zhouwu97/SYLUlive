@@ -423,8 +423,37 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       landscapeBackgroundImage != null && landscapeBackgroundImage!.isNotEmpty;
   bool get hasAnyBackground => hasBackground || hasLandscapeBackground;
 
-  bool get shouldShowCustomBackground =>
-      isCustomBackgroundMode && hasAnyBackground;
+  /// 正在显示壁纸图片。不少页面据此把顶栏文字改成白色，所以氛围背景不计入。
+  bool get shouldShowCustomBackground => isCustomBackgroundMode && hasAnyBackground;
+
+  /// 用户自选照片壁纸：顶栏需要压暗并改用白字。主题壁纸和主题配色一起设计，不需要。
+  bool get needsPhotoContrast =>
+      shouldShowCustomBackground && !usesThemeWallpapers;
+
+  /// 页面需要透明、露出背景层：壁纸图片或主题氛围背景。
+  bool get hasSeeThroughBackground =>
+      shouldShowCustomBackground || themeBackdrop != null;
+
+  /// 当前明暗模式的氛围背景（渐变、光斑、纹理）。
+  Map<String, dynamic>? get themeBackdrop {
+    if (!usesThemeWallpapers) return null;
+    final mode = _wallpaperGroup![_appearanceMode] as Map?;
+    return mode?['backdrop'] as Map<String, dynamic>?;
+  }
+
+  /// 当前外观在 [slot]（home / campus / me）使用沉浸页头且有页头图片或贴纸。
+  /// 主壳这三个页面此时必须保持透明，hero 画在它们下面的背景层里。
+  bool hasImmersiveHero(String slot) {
+    final layout = appearance.group(ThemeGroup.layout)?['value'] as Map?;
+    final header = layout?[slot] as Map?;
+    if (header?['preset'] != 'immersive') return false;
+    final decoration =
+        (appearance.group(ThemeGroup.decoration)?[_appearanceMode] as Map?)?[
+            slot] as Map?;
+    final stickers = decoration?['stickers'] as List?;
+    return decoration?['background'] != null ||
+        (stickers != null && stickers.isNotEmpty);
+  }
 
   static bool isBundledAssetBackground(String imagePath) {
     return !isLocalFileBackground(imagePath) &&
@@ -1210,12 +1239,15 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Map<String, dynamic>? themeWallpaperFor({bool secondary = false}) {
     if (!usesThemeWallpapers) return null;
     final slots = _wallpaperGroup![_appearanceMode] as Map;
-    final slot = switch (secondary ? -1 : currentHomeTabIndex.value) {
-      0 => 'home',
-      2 => 'schedule',
-      4 => 'me',
-      _ => 'global'
-    };
+    // 二级页面优先用 secondary 槽位，主壳页签按页签取槽位；都没有时回退到 global。
+    final slot = secondary
+        ? 'secondary'
+        : switch (currentHomeTabIndex.value) {
+            0 => 'home',
+            2 => 'schedule',
+            4 => 'me',
+            _ => 'global'
+          };
     return (slots[slot] ?? slots['global']) as Map<String, dynamic>?;
   }
 

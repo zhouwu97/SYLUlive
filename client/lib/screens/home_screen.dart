@@ -28,6 +28,8 @@ import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/bottom_nav_setup_hint.dart';
+import '../features/theme_pack/theme_hero_layer.dart'
+    show ThemeHeroScrollListener, ThemeStatusBarScrim;
 import '../widgets/global_background_wrapper.dart' show CustomBackgroundLayer;
 import '../widgets/navigation_dock_layout.dart';
 import '../widgets/home_tab_reveal.dart';
@@ -1503,8 +1505,18 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             Row(children: [
               SizedBox(width: useSideRail ? sideWidth : 0),
-              Expanded(child: _buildTabContent()),
+              Expanded(
+                child: BackdropGroup(
+                  child: ThemeHeroScrollListener(child: _buildTabContent()),
+                ),
+              ),
             ]),
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ThemeStatusBarScrim(),
+            ),
           ]))),
           if (useSideRail)
             Positioned(

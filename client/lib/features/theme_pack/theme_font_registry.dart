@@ -38,6 +38,23 @@ abstract final class ThemeFontRegistry {
     return family;
   }
 
+  /// 字体组里的标题字体（font.title）换算成可单独注册的字体描述。
+  static Map<String, dynamic>? titleGroupFor(Map<String, dynamic>? fontGroup) {
+    final title = fontGroup?['title'] as Map?;
+    final regular = title?['regular'] as String?;
+    if (regular == null || regular.isEmpty) return null;
+    final source = fontGroup!['source'] as Map?;
+    final key = source != null &&
+            source['themeId'] is String &&
+            source['version'] is int
+        ? 'theme_title_${source['themeId']}_${source['version']}'
+        : 'theme_title_local_${regular.hashCode.abs()}';
+    return {'regular': regular, 'familyKey': key};
+  }
+
+  static String? resolvedTitleFamilyFor(Map<String, dynamic>? fontGroup) =>
+      resolvedFamilyFor(titleGroupFor(fontGroup));
+
   static void debugResetForTesting() {
     _loadedFamilies.clear();
     _inflight.clear();
@@ -50,7 +67,23 @@ abstract final class ThemeFontRegistry {
   ) async {
     final font = manifest.data['font'] as Map?;
     if (font == null) return;
-    final regularPath = font['regular'] as String;
+    final titlePath = (font['title'] as Map?)?['regular'] as String?;
+    if (titlePath != null) {
+      final titleBytes = contents[titlePath];
+      if (titleBytes == null || !_hasRequiredSfntTables(titleBytes)) {
+        throw ThemePackError('theme_font_invalid', titlePath);
+      }
+      try {
+        await (FontLoader('theme_title_probe_${++_probeCounter}')
+              ..addFont(
+                  Future<ByteData>.value(ByteData.sublistView(titleBytes))))
+            .load();
+      } catch (_) {
+        throw ThemePackError('theme_font_invalid', titlePath);
+      }
+    }
+    final regularPath = font['regular'] as String?;
+    if (regularPath == null) return;
     final boldPath = font['bold'] as String?;
 
     final regularBytes = contents[regularPath];
@@ -116,7 +149,21 @@ abstract final class ThemeFontRegistry {
     return hasOutlines;
   }
 
+  /// 加载正文字体和标题字体；返回正文字体家族名，只有标题字体时返回标题字体家族名。
   static Future<String?> ensureLoaded(
+    Map<String, dynamic>? fontGroup, {
+    Map<String, Uint8List>? inMemoryContents,
+  }) async {
+    final title = titleGroupFor(fontGroup);
+    final titleFamily = title == null
+        ? null
+        : await _ensureSingle(title, inMemoryContents: inMemoryContents);
+    final body =
+        await _ensureSingle(fontGroup, inMemoryContents: inMemoryContents);
+    return body ?? titleFamily;
+  }
+
+  static Future<String?> _ensureSingle(
     Map<String, dynamic>? fontGroup, {
     Map<String, Uint8List>? inMemoryContents,
   }) {

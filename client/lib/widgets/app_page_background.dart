@@ -12,7 +12,7 @@ class AppPageBackground extends StatelessWidget {
   final WidgetBuilder builder;
 
   static Color? color(BuildContext context, Color? fallback) =>
-      context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+      context.watch<ThemeProvider?>()?.hasSeeThroughBackground == true
           ? Colors.transparent
           : fallback;
 
@@ -21,7 +21,7 @@ class AppPageBackground extends StatelessWidget {
     final appearance = context.watch<ThemeProvider?>();
     if (appearance == null) return Builder(builder: builder);
     final theme = Theme.of(context);
-    final custom = appearance.shouldShowCustomBackground;
+    final custom = appearance.hasSeeThroughBackground;
     return GlobalBackgroundWrapper(
       child: Theme(
         data: custom

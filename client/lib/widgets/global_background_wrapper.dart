@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
+import '../features/theme_pack/theme_hero_layer.dart';
 import '../features/theme_pack/themed_wallpaper_layer.dart';
 import '../theme/app_theme_tokens.dart';
 import '../services/wallpaper_prefetch_service.dart';
@@ -52,7 +53,8 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
       fit: StackFit.expand,
       children: [
         const CustomBackgroundLayer(),
-        widget.child,
+        // 页面里的卡片毛玻璃共用一次背景采样；弹窗、底部弹层是独立路由，不在组内。
+        BackdropGroup(child: widget.child),
       ],
     );
   }
@@ -74,8 +76,10 @@ class CustomBackgroundLayer extends StatelessWidget {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final layer = themeProvider.usesThemeWallpapers
-        ? ThemedWallpaperLayer(settings: themeProvider.themeWallpaperFor(
-            secondary: ModalRoute.of(context)?.isFirst == false))
+        ? ThemedWallpaperLayer(
+            settings: themeProvider.themeWallpaperFor(
+                secondary: ModalRoute.of(context)?.isFirst == false),
+            backdrop: themeProvider.themeBackdrop)
         : themeProvider.shouldShowCustomBackground
         ? _buildBackgroundImageLayer(context, themeProvider, isDark)
         : themeProvider.hasThemeColors
@@ -83,6 +87,7 @@ class CustomBackgroundLayer extends StatelessWidget {
             : _buildCleanBackground(isDark);
     final canvas = canvasSize;
     if (canvas == null) return layer;
+    // 只有主壳（首页传入 canvasSize）承载沉浸页头的 hero 图。
     return ClipRect(
       child: OverflowBox(
         alignment: Alignment.topLeft,
@@ -90,7 +95,10 @@ class CustomBackgroundLayer extends StatelessWidget {
         maxWidth: canvas.width,
         minHeight: canvas.height,
         maxHeight: canvas.height,
-        child: layer,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [layer, const ThemeHeroLayer()],
+        ),
       ),
     );
   }

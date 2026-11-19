@@ -1,4 +1,5 @@
 import '../../theme/app_theme_tokens.dart';
+import '../../theme/app_theme_style.dart';
 import 'package:flutter/material.dart';
 import '../../models/course_term.dart';
 import '../app_card.dart';
@@ -23,7 +24,11 @@ class CourseEmptyStateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cardPrimary = AppThemeTokens.of(context).primary;
+    final tokens = AppThemeTokens.of(context);
+    final cardPrimary = tokens.primary;
+    final isMissingSchedule =
+        type == CourseEmptyStateType.noCache ||
+        type == CourseEmptyStateType.currentTermNoCache;
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -48,44 +53,55 @@ class CourseEmptyStateCard extends StatelessWidget {
               width: 1.5,
             ),
           ),
-          padding: const EdgeInsets.all(32),
+          padding: isMissingSchedule
+              ? const EdgeInsets.fromLTRB(22, 22, 22, 14)
+              : const EdgeInsets.all(32),
           child: Column(
             children: [
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      cardPrimary.withValues(alpha: 0.15),
-                      cardPrimary.withValues(alpha: 0.05),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+              ThemeStateArt(
+                enabled: isMissingSchedule,
+                size: 104,
+                fallback: Container(
+                  padding: EdgeInsets.all(isMissingSchedule ? 14 : 18),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        cardPrimary.withValues(alpha: 0.15),
+                        cardPrimary.withValues(alpha: 0.05),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    shape: BoxShape.circle,
                   ),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _getIcon(),
-                  size: 42,
-                  color: cardPrimary.withValues(alpha: 0.85),
+                  child: Icon(
+                    _getIcon(),
+                    size: isMissingSchedule ? 34 : 42,
+                    color: cardPrimary.withValues(alpha: 0.85),
+                  ),
                 ),
               ),
-              const SizedBox(height: 20),
+              SizedBox(height: isMissingSchedule ? 12 : 20),
               Text(
                 _getTitle(),
-                style: TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w800,
-                  color: AppThemeTokens.of(context).textPrimary,
-                  letterSpacing: 0.2,
+                textAlign: TextAlign.center,
+                style: AppThemeStyle.of(context).title(
+                  TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                    color: AppThemeTokens.of(context).textPrimary,
+                    letterSpacing: 0.2,
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
               if (type == CourseEmptyStateType.noCache &&
                   recommendedTerm != null) ...[
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: cardPrimary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
@@ -110,7 +126,7 @@ class CourseEmptyStateCard extends StatelessWidget {
                   height: 1.6,
                 ),
               ),
-              const SizedBox(height: 32),
+              SizedBox(height: isMissingSchedule ? 20 : 32),
               Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
@@ -146,7 +162,7 @@ class CourseEmptyStateCard extends StatelessWidget {
                 ),
               ),
               if (onSecondaryAction != null) ...[
-                const SizedBox(height: 12),
+                SizedBox(height: isMissingSchedule ? 4 : 12),
                 TextButton(
                   onPressed: onSecondaryAction,
                   style: TextButton.styleFrom(
@@ -165,7 +181,7 @@ class CourseEmptyStateCard extends StatelessWidget {
                     ),
                   ),
                 ),
-              ]
+              ],
             ],
           ),
         ),
@@ -173,62 +189,73 @@ class CourseEmptyStateCard extends StatelessWidget {
           const SizedBox(height: 24),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: AppContentSurface.reading(child: LayoutBuilder(
-              builder: (context, constraints) {
-                // 大字号时四列会把五字标签压成不均匀的多行，改成两列保留完整阅读宽度。
-                final largeText =
-                    MediaQuery.textScalerOf(context).scale(1.0) > 1.2;
-                final items = [
-                  _buildFeatureItem(context, Icons.sync_rounded, '教务导入'),
-                  _buildFeatureItem(context, Icons.edit_rounded, '自定义课程'),
-                  _buildFeatureItem(context, Icons.widgets_rounded, '桌面小组件'),
-                  _buildFeatureItem(
-                      context, Icons.notifications_active_rounded, '上课提醒'),
-                ];
+            child: AppContentSurface.reading(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // 大字号时四列会把五字标签压成不均匀的多行，改成两列保留完整阅读宽度。
+                  final largeText =
+                      MediaQuery.textScalerOf(context).scale(1.0) > 1.2;
+                  final items = [
+                    _buildFeatureItem(context, Icons.sync_rounded, '教务导入'),
+                    _buildFeatureItem(context, Icons.edit_rounded, '自定义课程'),
+                    _buildFeatureItem(context, Icons.widgets_rounded, '桌面小组件'),
+                    _buildFeatureItem(
+                      context,
+                      Icons.notifications_active_rounded,
+                      '上课提醒',
+                    ),
+                  ];
 
-                if (!largeText) {
-                  return Row(
+                  if (!largeText) {
+                    return Row(
+                      children: items
+                          .map((item) => Expanded(child: item))
+                          .toList(growable: false),
+                    );
+                  }
+
+                  final itemWidth = (constraints.maxWidth - 12) / 2;
+                  return Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    runSpacing: 12,
                     children: items
-                        .map((item) => Expanded(child: item))
+                        .map((item) => SizedBox(width: itemWidth, child: item))
                         .toList(growable: false),
                   );
-                }
-
-                final itemWidth = (constraints.maxWidth - 12) / 2;
-                return Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: items
-                      .map((item) => SizedBox(width: itemWidth, child: item))
-                      .toList(growable: false),
-                );
-              },
-            )),
+                },
+              ),
+            ),
           ),
           const SizedBox(height: 20),
           AppContentSurface.reading(
-              child: Text(
-            '登录并绑定教务系统后即可解锁以上功能',
-            style: TextStyle(
-              fontSize: 11,
-              color: appContentSecondaryColor(
-                  context, AppThemeTokens.of(context).textSecondary),
+            child: Text(
+              '登录并绑定教务系统后即可解锁以上功能',
+              style: TextStyle(
+                fontSize: 11,
+                color: appContentSecondaryColor(
+                  context,
+                  AppThemeTokens.of(context).textSecondary,
+                ),
+              ),
             ),
-          )),
+          ),
         ],
         if (type == CourseEmptyStateType.noCache) ...[
           const SizedBox(height: 24),
           AppContentSurface.reading(
-              child: Text(
-            '1 选择学期  ·  2 预览课程  ·  3 设置开学第一周',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: appContentSecondaryColor(
-                  context, AppThemeTokens.of(context).textSecondary),
+            child: Text(
+              '1 选择学期  ·  2 预览课程  ·  3 设置开学第一周',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: appContentSecondaryColor(
+                  context,
+                  AppThemeTokens.of(context).textSecondary,
+                ),
+              ),
             ),
-          )),
+          ),
         ],
       ],
     );
@@ -284,7 +311,7 @@ class CourseEmptyStateCard extends StatelessWidget {
       case CourseEmptyStateType.unbound:
         return '绑定后可从教务系统导入课表';
       case CourseEmptyStateType.noCache:
-        return '还没有任何课表数据，可以从教务系统一键导入';
+        return '从教务系统导入后，即可按周查看课程。';
       case CourseEmptyStateType.currentTermNoCache:
         return '该学期暂无本地课表数据，你可以尝试从教务系统拉取';
     }
@@ -311,7 +338,7 @@ class CourseEmptyStateCard extends StatelessWidget {
       case CourseEmptyStateType.noCache:
         return '切换历史学期';
       case CourseEmptyStateType.currentTermNoCache:
-        return '也可以手动添加课程';
+        return '切换学期';
     }
   }
 }

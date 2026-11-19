@@ -1,3 +1,4 @@
+import '../theme/app_theme_style.dart';
 import '../theme/app_theme_tokens.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -28,13 +29,15 @@ final class _CardTokens {
   static Color subColor(BuildContext context) =>
       AppThemeTokens.of(context).textSecondary;
 
-  static Color accent(bool isDark) => isDark
-      ? const Color(0xFFFFA06D) // theme: fixed 集市模块识别色
-      : const Color(0xFFFF7A45); // theme: fixed 集市模块识别色
+  static Color accent(BuildContext context, bool isDark) =>
+      AppThemeStyle.of(context).identity(isDark
+          ? const Color(0xFFFFA06D) // theme: fixed 集市模块识别色
+          : const Color(0xFFFF7A45)); // theme: fixed 集市模块识别色
 
-  static Color accentSoft(bool isDark) => isDark
-      ? const Color(0xFFFFA06D).withValues(alpha: 0.14) // theme: fixed 集市模块识别色
-      : const Color(0xFFFFF0E8); // theme: fixed 集市模块识别色
+  static Color accentSoft(BuildContext context, bool isDark) =>
+      AppThemeStyle.of(context).identity(isDark
+          ? const Color(0xFFFFA06D).withValues(alpha: 0.14) // theme: fixed 集市模块识别色
+          : const Color(0xFFFFF0E8)); // theme: fixed 集市模块识别色
 
   static Color priceColor(bool _) =>
       const Color(0xFFE76F51); // theme: fixed 金额语义色
@@ -101,7 +104,7 @@ class MarketPostCard extends StatelessWidget {
     final validImages =
         post.images.where((img) => img.url.trim().isNotEmpty).toList();
     final isSold = post.status == 'sold' || post.status == 'closed';
-    final accent = _CardTokens.accent(isDark);
+    final accent = _CardTokens.accent(context, isDark);
     final title = post.title.isNotEmpty ? post.title : post.content;
     final typeLabel = _marketTypeLabel(post);
     final statusLabel = _marketStatusLabel(post);
@@ -221,7 +224,7 @@ class MarketPostCard extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: isSold
                                     ? Colors.grey.withValues(alpha: 0.08)
-                                    : _CardTokens.accentSoft(isDark),
+                                    : _CardTokens.accentSoft(context, isDark),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
@@ -239,7 +242,7 @@ class MarketPostCard extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 5, vertical: 2),
                               decoration: BoxDecoration(
-                                color: _CardTokens.accentSoft(isDark),
+                                color: _CardTokens.accentSoft(context, isDark),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
@@ -619,7 +622,7 @@ class MarketPostCard extends StatelessWidget {
       {bool showViews = false}) {
     final isLostOrFound = post.postType == 'lost' || post.postType == 'found';
     final isSold = post.status == 'sold' || post.status == 'closed';
-    final accent = _CardTokens.accent(isDark);
+    final accent = _CardTokens.accent(context, isDark);
     final statusLabel = _marketStatusLabel(post);
     final typeLabel = _marketTypeLabel(post);
 
@@ -668,7 +671,7 @@ class MarketPostCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: isSold
                   ? Colors.grey.withValues(alpha: 0.1)
-                  : _CardTokens.accentSoft(isDark),
+                  : _CardTokens.accentSoft(context, isDark),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -684,7 +687,7 @@ class MarketPostCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: _CardTokens.accentSoft(isDark),
+              color: _CardTokens.accentSoft(context, isDark),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -714,7 +717,7 @@ class MarketPostCard extends StatelessWidget {
   Widget _buildMarketTags(BuildContext context, bool isDark,
       {int maxTags = 2}) {
     final tags = post.marketTags.take(maxTags).toList(growable: false);
-    final accent = _CardTokens.accent(isDark);
+    final accent = _CardTokens.accent(context, isDark);
     return Wrap(
       spacing: 6,
       runSpacing: 4,
@@ -723,7 +726,7 @@ class MarketPostCard extends StatelessWidget {
             (tag) => Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
               decoration: BoxDecoration(
-                color: _CardTokens.accentSoft(isDark),
+                color: _CardTokens.accentSoft(context, isDark),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(

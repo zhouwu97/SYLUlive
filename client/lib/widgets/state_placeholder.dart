@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme_style.dart';
 
 import '../theme/app_motion.dart';
 import 'app_card.dart';
@@ -42,6 +43,16 @@ class StatePlaceholder extends StatelessWidget {
   /// 紧凑模式：缩小的圆底与间距（用于聊天详情消息区）。
   final bool compact;
 
+  /// 失败类图标使用主题的错误插画，其余使用空状态插画；加载态不替换。
+  bool get _looksLikeError => <IconData?>[
+        Icons.error_outline,
+        Icons.error_outline_rounded,
+        Icons.cloud_off_outlined,
+        Icons.cloud_off_rounded,
+        Icons.wifi_off,
+        Icons.wifi_off_rounded,
+      ].contains(icon);
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -73,7 +84,11 @@ class StatePlaceholder extends StatelessWidget {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
+                  ThemeStateArt(
+                    enabled: !loading,
+                    error: _looksLikeError,
+                    size: tight ? 64 : compact ? 96 : 132,
+                    fallback: Container(
                     width: circleSize,
                     height: circleSize,
                     decoration: BoxDecoration(
@@ -92,6 +107,7 @@ class StatePlaceholder extends StatelessWidget {
                             ),
                           )
                         : Icon(icon, size: compact ? 28 : 32, color: accent),
+                  ),
                   ),
                   SizedBox(
                       height: tight

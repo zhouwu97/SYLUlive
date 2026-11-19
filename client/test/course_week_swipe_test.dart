@@ -137,7 +137,8 @@ class _BoundEduProvider extends EduProvider {
 String? _weekHeaderText(WidgetTester tester) {
   final datePattern = RegExp(r'\d{1,2}/\d{1,2} - \d{1,2}/\d{1,2}');
   for (final text in tester.widgetList<Text>(find.byType(Text))) {
-    final data = text.data ?? '';
+    // 页头日期区间用 en dash 排版，这里统一成连字符再比较。
+    final data = (text.data ?? '').replaceAll('–', '-');
     if (datePattern.hasMatch(data)) return data;
   }
   return null;

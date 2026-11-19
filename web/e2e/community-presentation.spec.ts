@@ -18,7 +18,7 @@ for (const dark of [false, true]) {
     await expect(page.locator('.post-comment').first().locator('.ai-bot-creator')).toHaveText('由校园创建者创建');
     await page.locator('.post-comment').first().evaluate(element => element.scrollIntoView({block:'center'}));
     await expect(page.locator('.post-comment').first().locator('.ai-bot-system-badge')).toHaveText('AI机器人');
-    await page.screenshot({ path: `E:/AI/xynewui/scratch/bot-identity-20261104/web-community-ai-${dark ? 'dark' : 'light'}.png`, fullPage: true });
+    await page.screenshot({ path: test.info().outputPath(`web-community-ai-${dark ? 'dark' : 'light'}.png`), fullPage: true });
     expect(state.errors).toEqual([]);
   });
 }
@@ -31,7 +31,7 @@ test('桌面作者侧栏与公开关注列表保留系统AI身份', async ({ pag
   await page.goto('post/675');
   await expect(page.locator('.post-context-author .ai-bot-system-badge')).toBeVisible();
   await expect(page.locator('.post-context-author .ai-bot-creator')).toHaveText('由校园创建者创建');
-  await page.screenshot({ path: 'E:/AI/xynewui/scratch/bot-identity-20261104/web-desktop-ai.png', fullPage: true });
+  await page.screenshot({ path: test.info().outputPath('web-desktop-ai.png'), fullPage: true });
   await page.route('**/api/user/3/following', route => route.fulfill({ json: { users: [bot, { id: 8, nickname: '[AI] 仅是普通昵称' }] } }));
   await page.goto('profile');
   await page.getByRole('tab', { name: '关注', exact: true }).click();
@@ -54,7 +54,7 @@ for (const dark of [false, true]) {
     await expect(page.getByRole('article', { name: '鱼的评论', exact: true }).locator('.ai-bot-system-badge')).toHaveText('AI机器人');
     await expect(page.getByRole('article', { name: '未知创建者的鱼的评论', exact: true }).locator('.ai-bot-creator')).toHaveText('创建者未公开');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: `E:/AI/xynewui/scratch/bot-identity-20261104/web-threaded-ai-${dark ? 'dark' : 'light'}.png`, fullPage: true });
+    await page.screenshot({ path: test.info().outputPath(`web-threaded-ai-${dark ? 'dark' : 'light'}.png`), fullPage: true });
     expect(state.errors).toEqual([]);
   });
 }
@@ -651,10 +651,12 @@ test("三点菜单对齐 App：填充符昵称清洗、匿名帖不提供不看 
   state.post.post_type = "campus_life";
   state.root.author_id = 3;
   let pendingFeatured = false;
+  let allowModeration = false;
+  let permissionUnavailable = true;
   let hiddenAuthors = [{ author_id: 7, nickname: "\u1160\u3164", hidden_at: "2026-11-18T00:00:00Z" }];
 
   await page.route("**/api/water/sections/campus_life/my-permission", (route) =>
-    route.fulfill({ json: { permission: { is_moderator: true, can_pin_post: true, can_delete_post: true, can_mute_user: true } } }),
+    route.fulfill(permissionUnavailable ? { status: 503, json: { error: "版块权限暂时不可用" } } : { json: { permission: { is_moderator: allowModeration, can_pin_post: allowModeration, can_delete_post: allowModeration, can_mute_user: allowModeration } } }),
   );
   await page.route("**/api/posts/675/featured-application-status", (route) =>
     route.fulfill({ json: { has_pending: pendingFeatured } }),
@@ -693,7 +695,24 @@ test("三点菜单对齐 App：填充符昵称清洗、匿名帖不提供不看 
 
   await page.goto("post/675");
   await page.locator(".post-toolbar .post-more summary").click();
-  await expect(page.getByRole("button", { name: "设为版块置顶", exact: true })).toBeVisible();
+  const retryPermission = page.getByRole("button", { name: "重试读取版块权限" });
+  await expect(retryPermission).toBeVisible();
+  permissionUnavailable = false;
+  await retryPermission.click();
+  await expect(retryPermission).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "申请精华", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "设为版块置顶", exact: true })).toHaveCount(0);
+  await expect(page.locator(".post-comment-children .post-comment-more")).toHaveCount(0);
+  allowModeration = true;
+  await page.reload();
+  await page.locator(".post-toolbar .post-more summary").click();
+  await page.getByRole("button", { name: "设为版块置顶", exact: true }).click();
+  await page.getByLabel("操作原因").fill("重要校园通知");
+  await page.getByRole("button", { name: "确认设为版块置顶", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(state.writes).toContainEqual({ path: "/api/water/sections/campus_life/posts/675/pin", method: "POST", body: JSON.stringify({ reason: "重要校园通知" }) });
+  await page.locator(".post-toolbar .post-more summary").click();
+  await expect(page.getByRole("button", { name: "取消版块置顶", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "设为版块精华", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "版主删除", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "禁言作者", exact: true })).toBeVisible();

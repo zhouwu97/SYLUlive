@@ -33,6 +33,7 @@ async function setup(page: Page, guest = false) {
     }
     if (url.pathname === "/api/notifications/replies/unread") return route.fulfill({ json: { count: 1, items: [{ id: 1 }] } });
     if (url.pathname === "/api/campus/articles") return route.fulfill({ json: { items: [article, { ...article, id: 72, title: "第二条校园资讯" }] } });
+    if (url.pathname === "/api/user/7/posts/count") return route.fulfill({ json: { count: 24 } });
     if (url.pathname === "/api/user/7/posts") return route.fulfill({ json: { posts: [normal], total: 24 } });
     if (url.pathname === "/api/user/7/following") return route.fulfill({ json: { users: [author] } });
     return route.fulfill({ json: { items: [] } });

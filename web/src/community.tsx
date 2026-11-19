@@ -2,7 +2,10 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import { AiBotIdentity } from "./ai-bot-identity";
 import { PublicPosts, isPublicPost } from "./campus-chrome";
 import { ServerAvatar } from "./server-avatar";
-import { userLevel } from "./user-level";
+import { LevelBadge } from "./level-badge";
+import { EmojiText } from "./inline-emoji";
+import { truncateGraphemes } from "./emoji-text";
+import { displayName, userHref, userLevel } from "./user-level";
 import { mobilePostTime, useMobile } from "./mobile";
 import { useSlidingIndicator } from "./desktop-motion";
 import { PollCard } from "./polls";
@@ -50,7 +53,7 @@ import "./market.css";
 import { usePostEditor } from './post-editor-page';
 export { uploadIDs } from "./media";
 function PostAvatar({ author }: { author?: Entity }) {
-  return <span className="post-avatar"><ServerAvatar src={author?.avatar} name={author?.nickname || "校园同学"} /></span>;
+  return <span className="post-avatar"><ServerAvatar src={author?.avatar} name={displayName(author?.nickname)} /></span>;
 }
 
 function PostTime({ value }: { value: unknown }) {
@@ -114,15 +117,19 @@ function PostAuthor({
   const mobile = useMobile();
   const author = authorOverride || post.author;
   const authorId = Number(post.author_id || author?.id) || 0;
+  const name = displayName(author?.nickname);
+  const location = useLocation();
+  const profileState = { from: location.pathname + location.search + location.hash };
+  const href = !post.is_anonymous && userHref(authorId, auth.user?.id, author?.nickname);
   const localFollow = useAuthorFollow(authorId, Boolean(author?.is_following || post.is_following), `${post.id}:${auth.user?.id ?? ""}`);
   const followed = controlledFollowed ?? localFollow.followed;
   const pending = controlledPending ?? localFollow.pending;
   const toggleFollow = onToggleFollow ?? localFollow.toggle;
   return (
     <div className="author post-author">
-      <PostAvatar author={author} />
+      {href ? <Link className="post-avatar-link" to={href} state={profileState} aria-label={`查看${name}的主页`}><PostAvatar author={author} /></Link> : <PostAvatar author={author} />}
       <div className="author-meta">
-        <div className="author-name-line"><b>{author?.nickname || "校园同学"}</b><span className="author-level">Lv.{userLevel(author, post.author_level)}</span>{badges}</div>
+        <div className="author-name-line"><b>{href ? <Link to={href} state={profileState}>{name}</Link> : name}</b><LevelBadge className="author-level" level={userLevel(author, post.author_level)} />{badges}</div>
         <AiBotIdentity user={author} />
         <span>{meta ?? <><PostTime value={post.created_at} />{author?.followers_count != null ? ` · ${author.followers_count} 位关注者` : ""}</>}</span>
       </div>
@@ -180,7 +187,7 @@ export function PostCard({
           </span>
         </div>
         <div className="market-info">
-          <h3>{post.title || post.content}</h3>
+          <h3><EmojiText text={post.title || post.content || ""} /></h3>
           <div className="market-price-row">
             {mobile && ["lost", "found"].includes(marketType) ? <span className="mobile-market-type">{marketStateLabel || marketLabel}</span> : <>
               {!mobile && post.price === 0 ? <strong className="price is-free">免费送</strong> : <strong className="price"><small>¥</small> {post.price ?? "待议"}</strong>}
@@ -199,6 +206,7 @@ export function PostCard({
   if (dismissal.mode === "hidden") return null;
   if (dismissal.mode === "placeholder") return <DismissedPost dismissal={dismissal.dismissal} />;
   if (post.poll_meta) return <PollCard key={`${post.id}:${auth.user?.id}`} post={post} compact />;
+  const summary = truncateGraphemes(post.content || "", 220);
   const menu = <PostCardMenu post={post} feedSource={feedSource} onEdit={() => openPostEditor({ postId: Number(post.id) })} />;
   const openPostFromCard = (event: ReactMouseEvent<HTMLElement>) => {
     const target = event.target instanceof Element ? event.target : null;
@@ -214,9 +222,9 @@ export function PostCard({
     <article className="feed-card feed-card-clickable" tabIndex={0} aria-label={`打开帖子：${post.title || post.content?.slice(0, 40) || "无标题"}`} onClick={openPostFromCard} onKeyDown={openPostFromKeyboard}>
       <PostAuthor key={`author:${post.id}:${auth.user?.id}`} post={post} menu={menu} />
       <Link className="post-summary" to={`/post/${post.id}`} state={back}>
-        {post.title && <h3 className="post-title">{post.title}</h3>}
-        {post.content && <p className={`post-body ${post.title ? "" : "post-text-only"}`}>{post.content.slice(0, 220)}{post.content.length > 220 && "…"}</p>}
-        {post.content?.length > 220 && <span className="post-read-more">查看全文 <span aria-hidden="true">→</span></span>}
+        {post.title && <h3 className="post-title"><EmojiText text={post.title} /></h3>}
+        {post.content && <p className={`post-body ${post.title ? "" : "post-text-only"}`}><EmojiText text={summary.text} />{summary.truncated && "…"}</p>}
+        {summary.truncated && <span className="post-read-more">查看全文 <span aria-hidden="true">→</span></span>}
       </Link>
       <MediaGallery items={post.images} title={post.title || "帖子图片"} />
       <PostActions key={`actions:${post.id}:${auth.user?.id}`} post={post} from={back.from} />
@@ -441,6 +449,7 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
   }
   const moreActions = (
     <PostMore>
+      {auth.user && p.board_id === 1 && !isPoll && <SectionPostActions post={p} userId={auth.user.id} />}
       {p.images?.[0] && (
         <button type="button" onClick={async () => { if (!auth.requireUser()) return; const path = mediaURL(p.images[0], "origin"); if (!path) return; await ui.act(() => favoritePublicImage(path), "图片已收藏为表情"); }}>
           收藏首图为表情
@@ -582,7 +591,7 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
                   followPending={followState.pending}
                   onToggleFollow={followState.toggle}
                 />
-                {p.title && <h1>{p.title}</h1>}
+                {p.title && <h1><EmojiText text={p.title} /></h1>}
                 {p.board_id === 2 && (
                   <div className="post-market-summary">
                     {!mobile && p.price === 0 ? <strong className="post-market-price is-free">免费送</strong> : <strong className="post-market-price"><small>¥</small> {p.price ?? "待议"}</strong>}
@@ -590,7 +599,7 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
                     {marketTags.map((tag: string) => <span className="post-market-tag" key={tag}>{tag}</span>)}
                   </div>
                 )}
-                {p.content && <div className="post-body details-text">{p.content}</div>}
+                {p.content && <div className="post-body details-text"><EmojiText text={p.content} /></div>}
                 {Array.isArray(p.topics) && p.topics.length > 0 && (
                   <div className="post-detail-topics" aria-label="帖子话题">
                     {p.topics.map((topic: Entity | string, index: number) => {
@@ -729,7 +738,7 @@ function PostDetailRail({
         <PostAvatar author={author} />
         <div className="post-context-person-copy">
           <div className="post-context-name">
-            <b>{author?.nickname || "校园同学"}</b>
+            <b>{displayName(author?.nickname)}</b>
             <span className="post-context-level">Lv.{level}</span>
           </div>
           <AiBotIdentity user={author} />
@@ -787,9 +796,57 @@ function PostDetailRail({
   </aside>;
 }
 
-function PostMore({ children }: { children: ReactNode }) {
+function SectionPostActions({ post, userId }: { post: Entity; userId: number }) {
+  const ui = useUI(), qc = useQueryClient();
+  const section = post.post_type ? `/api/water/sections/${encodeURIComponent(post.post_type)}` : "";
+  const permission = useQuery({
+    queryKey: ["api", "water-permission", section, userId],
+    enabled: !!section,
+    queryFn: ({ signal }) => request<Entity>(`${section}/my-permission`, { signal }),
+    retry: false,
+  });
+  const application = useApi(post.is_featured ? null : `/api/posts/${post.id}/featured-application-status`);
+  const perm = permission.data?.permission;
+  const canModerate = !permission.isError && (perm?.is_moderator || perm?.is_global_admin);
+  const base = `${section}/posts/${post.id}`;
+  function action(title: string, path: string, method = "POST", kind: "moderation" | "mute" | "application" = "moderation") {
+    const current = captureAuthSession();
+    return <button type="button" onClick={() => ui.open(title, <Form
+      fields={[
+        { name: "reason", label: kind === "application" ? "推荐/自荐加精理由" : "操作原因", type: "textarea", required: true },
+        ...(kind === "mute" ? [{ name: "days", label: "禁言时长", options: [["1", "1 天"], ["3", "3 天"], ["7", "7 天"]] as [string, string][] }] : []),
+      ]}
+      submit={kind === "application" ? "提交精华申请" : `确认${title}`}
+      onSubmit={async values => {
+        if (!current()) throw new Error("账号已切换，请重新打开菜单");
+        const body = { reason: values.reason, ...(kind === "mute" && { until: new Date(Date.now() + Number(values.days) * 86400000).toISOString() }) };
+        await write(path, body, method);
+        await qc.invalidateQueries({ queryKey: ["api"] });
+        if (current()) { ui.close(); ui.notify("操作已完成"); }
+      }}
+    />)}>{title}</button>;
+  }
+  return <>
+    {canModerate && perm.can_pin_post && <>
+      {action(post.water_section_pinned ? "取消版块置顶" : "设为版块置顶", `${base}/pin`, post.water_section_pinned ? "DELETE" : "POST")}
+      {action(post.water_section_featured ? "取消版块精华" : "设为版块精华", `${base}/feature`, post.water_section_featured ? "DELETE" : "POST")}
+    </>}
+    {canModerate && perm.can_delete_post && action("版主删除", `${base}/moderate`, "DELETE")}
+    {canModerate && perm.can_mute_user && !post.is_anonymous && post.author_id > 0 && post.author_id !== userId &&
+      action("禁言作者", `${section}/users/${post.author_id}/mute`, "POST", "mute")}
+    {!post.is_featured && !application.isError && application.data && (application.data.has_pending
+      ? <button type="button" disabled>精华申请待审核</button>
+      : action("申请精华", `/api/posts/${post.id}/featured-applications`, "POST", "application"))}
+    {application.isError && <button type="button" onClick={event => { event.stopPropagation(); void application.refetch(); }}>重试读取精华申请状态</button>}
+    {permission.isError && <button type="button" onClick={event => { event.stopPropagation(); void permission.refetch(); }}>重试读取版块权限</button>}
+  </>;
+}
+
+function PostMore({ children, className = "" }: { children: ReactNode; className?: string }) {
+  const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
+    if (!open) return;
     const dismiss = (event: PointerEvent) => { if (!ref.current?.contains(event.target as Node)) ref.current?.removeAttribute("open"); };
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape" && ref.current?.open) { ref.current.open = false; ref.current.querySelector("summary")?.focus(); }
@@ -797,8 +854,8 @@ function PostMore({ children }: { children: ReactNode }) {
     document.addEventListener("pointerdown", dismiss);
     document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
-  }, []);
-  return <details className="post-more" ref={ref}><summary aria-label="更多操作"><Icon name="more" size={20} /><span className="post-more-label">更多</span></summary><div className="post-more-menu" onClick={(event) => { if ((event.target as HTMLElement).closest("button") && ref.current) { ref.current.open = false; ref.current.querySelector("summary")?.focus(); } }}>{children}</div></details>;
+  }, [open]);
+  return <details className={`post-more ${className}`} ref={ref} onToggle={event => setOpen(event.currentTarget.open)}><summary aria-label="更多操作"><Icon name="more" size={20} /><span className="post-more-label">更多</span></summary><div className="post-more-menu" onClick={(event) => { if ((event.target as HTMLElement).closest("button") && ref.current) { ref.current.open = false; ref.current.querySelector("summary")?.focus(); } }}>{open && children}</div></details>;
 }
 
 function uniqueReplies(replies: Entity[]) {
@@ -831,6 +888,7 @@ function CommentRow({ postId, postAuthorId, reply, onReply }: { postId: number; 
   const deleted = reply.status === "deleted";
   const author = reply.author || reply.user;
   const authorName = author?.nickname || "校园同学";
+  const canDelete = auth.user && (reply.author_id === auth.user.id || ["admin", "super_admin"].includes(auth.user.role));
   const isPostAuthor = !deleted && !!postAuthorId && Number(reply.author_id) === postAuthorId;
   const hasLevel = !deleted && (author?.exp != null || author?.level != null);
   return <article className="post-comment" aria-label={`${reply.author?.nickname || "校园同学"}的评论`}>
@@ -847,7 +905,7 @@ function CommentRow({ postId, postAuthorId, reply, onReply }: { postId: number; 
       </div>
       <AiBotIdentity user={author} />
       {deleted ? <p className="post-comment-deleted">该评论已删除</p> : <>
-        {reply.content && reply.content !== "[表情]" && <p className="details-text">{reply.content}</p>}
+        {reply.content && reply.content !== "[表情]" && <p className="details-text"><EmojiText text={reply.content} /></p>}
         {reply.sticker_id && <StickerRenderer stickerId={reply.sticker_id} assetKey={reply.asset_key} packId={reply.pack_id} />}
         {(reply.images || reply.attachments)?.length > 0 && <MediaGallery items={reply.images || reply.attachments} title="评论图片" maxVisible={4} />}
       </>}
@@ -863,6 +921,13 @@ function CommentRow({ postId, postAuthorId, reply, onReply }: { postId: number; 
           if (!auth.requireUser()) return;
           setReplyStarted(true); setReplying((value) => !value);
         }}><Icon name="community" size={16} />回复</button>
+        {canDelete && <PostMore className="post-comment-more"><button type="button" onClick={() => {
+          const current = captureAuthSession();
+          ui.open("删除评论", <Form fields={[]} submit="确认删除" onSubmit={async () => {
+            if (!current()) throw new Error("账号已切换，请重新确认删除");
+            if (await ui.act(() => request(`/api/replies/${reply.id}`, { method: "DELETE" }), "评论已删除") && current()) ui.close();
+          }}><p>确认删除这条评论？</p></Form>);
+        }}>删除评论</button></PostMore>}
       </div></div>}
       {!mobile && replyStarted && <div className="post-thread-composer" hidden={!replying}><ReplyComposer inline active={replying} postId={postId} parentReplyId={Number(reply.parent_reply_id || reply.id)} replyToReplyId={reply.parent_reply_id ? Number(reply.id) : undefined} replyToUserId={reply.parent_reply_id ? Number(reply.author_id) : undefined} replyToName={authorName} onCancel={() => { setReplying(false); replyButton.current?.focus({ preventScroll: true }); }} onSent={() => { setReplying(false); setReplyStarted(false); }} /></div>}
     </div>

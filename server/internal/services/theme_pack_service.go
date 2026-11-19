@@ -63,8 +63,26 @@ func (s *ThemePackService) IsStoreEnabled(ctx context.Context) bool {
 	return v != "false" && v != "0" && v != "off"
 }
 
+const officialThemeReleasePrefix = "official-release-"
+
 // Submit 分锁外校验重编码与锁内确定版本号打包两段执行，保证 DB 版本与规范包内 manifest 完全一致。
 func (s *ThemePackService) Submit(ctx context.Context, userID uint, opts ThemeSubmitOptions, rawZip []byte) (*models.ThemePack, error) {
+	return s.submit(ctx, userID, opts, rawZip, "")
+}
+
+// PublishOfficialRelease 供发布 CLI 登记已经批准分发的内置主题。HTTP 投稿不调用此入口。
+func (s *ThemePackService) PublishOfficialRelease(ctx context.Context, authorID uint, releaseCommit string, overrides ThemeMetadataOverrides, rawZip []byte) (*models.ThemePack, error) {
+	if _, err := hex.DecodeString(releaseCommit); err != nil || len(releaseCommit) != 40 || releaseCommit != strings.ToLower(releaseCommit) {
+		return nil, themeFieldError("releaseCommit")
+	}
+	return s.submit(ctx, authorID, ThemeSubmitOptions{
+		IdempotencyKey:  officialThemeReleasePrefix + releaseCommit,
+		RequestedSource: models.ThemeSourceOfficial,
+		Overrides:       overrides,
+	}, rawZip, releaseCommit)
+}
+
+func (s *ThemePackService) submit(ctx context.Context, userID uint, opts ThemeSubmitOptions, rawZip []byte, releaseCommit string) (*models.ThemePack, error) {
 	opts.IdempotencyKey = strings.TrimSpace(opts.IdempotencyKey)
 	opts.FamilyID = strings.ToLower(strings.TrimSpace(opts.FamilyID))
 	opts.RequestedSource = strings.TrimSpace(opts.RequestedSource)
@@ -72,7 +90,8 @@ func (s *ThemePackService) Submit(ctx context.Context, userID uint, opts ThemeSu
 	if userID == 0 {
 		return nil, newThemeError(http.StatusForbidden, ThemeCodeForbidden, "", "无权操作")
 	}
-	if !themeIdemKeyPattern.MatchString(opts.IdempotencyKey) {
+	if !themeIdemKeyPattern.MatchString(opts.IdempotencyKey) ||
+		(releaseCommit == "" && strings.HasPrefix(opts.IdempotencyKey, officialThemeReleasePrefix)) {
 		return nil, themeFieldError("idempotencyKey")
 	}
 	if opts.FamilyID != "" && !themeUUIDPattern.MatchString(opts.FamilyID) {
@@ -91,6 +110,10 @@ func (s *ThemePackService) Submit(ctx context.Context, userID uint, opts ThemeSu
 	}
 	if preUser.AccountStatus != "" && preUser.AccountStatus != "active" {
 		return nil, newThemeError(http.StatusForbidden, ThemeCodeForbidden, "", "账号处于受限或注销状态，无法投稿")
+	}
+
+	if releaseCommit != "" && preUser.Role != models.RoleSuperAdmin {
+		return nil, newThemeError(http.StatusForbidden, ThemeCodeForbidden, "", "官方发布需要应用超级管理员署名")
 	}
 
 	// 锁外幂等快速路径：同一用户同一幂等键直接返回原记录，不比对请求摘要。
@@ -143,6 +166,10 @@ func (s *ThemePackService) Submit(ctx context.Context, userID uint, opts ThemeSu
 			return newThemeError(http.StatusForbidden, ThemeCodeForbidden, "", "账号处于受限或注销状态，无法投稿")
 		}
 
+		if releaseCommit != "" && user.Role != models.RoleSuperAdmin {
+			return newThemeError(http.StatusForbidden, ThemeCodeForbidden, "", "官方发布需要应用超级管理员署名")
+		}
+
 		// 锁内再次核对幂等键，防止并发重复请求生成两条记录。
 		if err := tx.Where("author_user_id = ? AND idempotency_key = ?", userID, opts.IdempotencyKey).First(&existing).Error; err == nil {
 			return nil
@@ -184,8 +211,15 @@ func (s *ThemePackService) Submit(ctx context.Context, userID uint, opts ThemeSu
 		packID := uuid.NewString()
 		familyID := packID
 		version := 1
+		status := models.ThemeStatusPending
 
-		if opts.FamilyID != "" {
+		if releaseCommit != "" {
+			// 保留内置包的版本族身份，使已内置的主题能与商城详情对应。
+			packID = validated.Manifest["id"].(string)
+			familyID = packID
+			version = validated.Manifest["version"].(int)
+			status = models.ThemeStatusApproved
+		} else if opts.FamilyID != "" {
 			familyID = opts.FamilyID
 			var root models.ThemePack
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&root, "id = ?", familyID).Error; err != nil {
@@ -263,7 +297,7 @@ func (s *ThemePackService) Submit(ctx context.Context, userID uint, opts ThemeSu
 			Tags:            validated.Tags,
 			License:         validated.License,
 			Source:          finalSource,
-			Status:          models.ThemeStatusPending,
+			Status:          status,
 			MinAppVersion:   validated.MinAppVersion,
 			FontCopyright:   validated.FontCopyright,
 			FontLicenseNote: validated.FontLicenseNote,
@@ -271,7 +305,19 @@ func (s *ThemePackService) Submit(ctx context.Context, userID uint, opts ThemeSu
 			PackageSize:     int64(len(pkgBytes)),
 			IdempotencyKey:  opts.IdempotencyKey,
 		}
-		return tx.Create(&created).Error
+		if err := tx.Create(&created).Error; err != nil {
+			return err
+		}
+		if releaseCommit == "" {
+			return nil
+		}
+		return tx.Create(&models.AdminLog{
+			AdminID:   userID,
+			AdminName: user.Nickname,
+			Action:    "发布内置官方主题",
+			Target:    familyID,
+			Detail:    fmt.Sprintf("%s v%d，App 发布提交 %s", created.Name, created.Version, releaseCommit),
+		}).Error
 	})
 	if err != nil {
 		return nil, err

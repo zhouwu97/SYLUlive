@@ -1165,3 +1165,45 @@ func TestThemePackV2FieldsAndTitleFont(t *testing.T) {
 		require.Equal(t, "theme_field_invalid", themeErr.Code, "%v", bad)
 	}
 }
+
+func TestThemePackOfficialReleasePreservesBuiltInIdentityAndAudits(t *testing.T) {
+	db := openSQLiteThemeDB(t)
+	require.NoError(t, db.Create(&models.User{ID: 11, Nickname: "发布负责人", Role: models.RoleSuperAdmin, AccountStatus: "active", PasswordHash: "x"}).Error)
+	require.NoError(t, db.Create(&models.User{ID: 12, Nickname: "社区管理员", Role: models.RoleAdmin, AccountStatus: "active", PasswordHash: "x"}).Error)
+	svc := NewThemePackService(db, t.TempDir())
+	m := defaultValidManifest()
+	m["version"] = 7
+	raw := buildTestThemeZip(t, m, defaultValidAssets())
+	ctx := context.Background()
+	commit := strings.Repeat("a", 40)
+
+	_, err := svc.PublishOfficialRelease(ctx, 12, commit, ThemeMetadataOverrides{}, raw)
+	var themeErr *ThemePackError
+	require.ErrorAs(t, err, &themeErr)
+	require.Equal(t, ThemeCodeForbidden, themeErr.Code)
+	_, err = svc.Submit(ctx, 11, ThemeSubmitOptions{
+		IdempotencyKey: officialThemeReleasePrefix + commit, RequestedSource: models.ThemeSourceOfficial,
+	}, raw)
+	require.ErrorAs(t, err, &themeErr)
+	require.Equal(t, ThemeCodeFieldInvalid, themeErr.Code)
+
+	item, err := svc.PublishOfficialRelease(ctx, 11, commit, ThemeMetadataOverrides{}, raw)
+	require.NoError(t, err)
+	require.Equal(t, m["id"], item.ID)
+	require.Equal(t, item.ID, item.FamilyID)
+	require.Equal(t, 7, item.Version)
+	require.Equal(t, models.ThemeSourceOfficial, item.Source)
+	require.Equal(t, models.ThemeStatusApproved, item.Status)
+	require.Nil(t, item.ReviewedBy)
+	require.FileExists(t, filepath.Join(svc.PackDir(item.ID), "package.sltheme"))
+	retried, err := svc.PublishOfficialRelease(ctx, 11, commit, ThemeMetadataOverrides{}, raw)
+	require.NoError(t, err)
+	require.Equal(t, item.ID, retried.ID)
+
+	var audit []models.AdminLog
+	require.NoError(t, db.Find(&audit).Error)
+	require.Len(t, audit, 1)
+	require.Equal(t, uint(11), audit[0].AdminID)
+	require.Equal(t, item.FamilyID, audit[0].Target)
+	require.Contains(t, audit[0].Detail, commit)
+}

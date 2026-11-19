@@ -65,6 +65,8 @@ func ClassifyAcademicIdentityFailure(statusCode int, code, message string) error
 	code = strings.ToUpper(strings.TrimSpace(code))
 	message = strings.TrimSpace(message)
 	switch code {
+	case "REMOTE_SYSTEM_UNAVAILABLE":
+		return ErrAcademicProviderUnavailable
 	case "EDU_IDENTITY_UNVERIFIED", "ACADEMIC_IDENTITY_UNVERIFIED":
 		return ErrAcademicIdentityUnverified
 	case "EDU_IDENTITY_MISMATCH", "ACADEMIC_IDENTITY_MISMATCH":

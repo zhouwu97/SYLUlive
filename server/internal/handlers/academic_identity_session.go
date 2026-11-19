@@ -26,24 +26,38 @@ type academicSessionVerifier interface {
 }
 
 func sessionProofCookies(proof academicSessionProof, provider string) ([]*http.Cookie, error) {
-	if len(proof.Cookies) == 0 || len(proof.Cookies) > 24 ||
+	if len(proof.Cookies) > 24 ||
 		(provider == models.AcademicProviderUndergraduate && proof.SessionPrefix != "") ||
 		(proof.SessionPrefix != "" && !graduateValidatedSessionPrefix.MatchString(proof.SessionPrefix)) {
 		return nil, ErrAcademicChallengeRejected
 	}
 	result := make([]*http.Cookie, 0, len(proof.Cookies))
-	seen := make(map[string]bool)
+	seen := make(map[string]string)
 	for _, raw := range proof.Cookies {
 		if len(raw) > 4096 || strings.ContainsAny(raw, "\r\n\x00") {
 			return nil, ErrAcademicChallengeRejected
 		}
 		cookie, err := http.ParseSetCookie(raw)
-		if err != nil || cookie.Valid() != nil || cookie.Name == "" || cookie.Value == "" || seen[cookie.Name] {
+		if err != nil || cookie.Valid() != nil {
 			return nil, ErrAcademicChallengeRejected
 		}
-		seen[cookie.Name] = true
+		// 学校可在不同路径设置同值 Cookie，也可留下空的辅助项。只转发唯一的非空凭据。
+		if cookie.Value == "" {
+			continue
+		}
+		if previous, exists := seen[cookie.Name]; exists {
+			if previous != cookie.Value {
+				return nil, ErrAcademicChallengeRejected
+			}
+			continue
+		}
+		seen[cookie.Name] = cookie.Value
 		// 只取名字和值，客户端 Domain/Path/Expires 均不能改变服务端请求目的地。
 		result = append(result, &http.Cookie{Name: cookie.Name, Value: cookie.Value, Path: "/"})
+	}
+	// 研究生教务支持仅用 URL 会话段；固定学校资料接口仍须返回匹配的本人学号。
+	if len(result) == 0 && (provider != models.AcademicProviderGraduate || proof.SessionPrefix == "") {
+		return nil, ErrAcademicChallengeRejected
 	}
 	return result, nil
 }

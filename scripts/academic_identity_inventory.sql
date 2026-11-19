@@ -81,3 +81,22 @@ FROM (
   GROUP BY provider_id, student_id
   HAVING COUNT(*) > 1
 ) AS duplicate_identity_pairs;
+
+-- 8) 按现存正常账号去重核对旧教务绑定和待补交配置，供修复前后复查。
+WITH identity_state AS (
+  SELECT u.edu_bound,
+         EXISTS (SELECT 1 FROM academic_account_configs c
+                 WHERE c.user_id = u.id AND c.state = 'active' AND TRIM(c.student_id) <> '') AS configured,
+         EXISTS (SELECT 1 FROM academic_identity_bindings b
+                 WHERE b.user_id = u.id AND b.verification_method IN ('school_profile', 'legacy_migration')
+                   AND b.verified_at > TIMESTAMP '0001-01-01') AS verified,
+         EXISTS (SELECT 1 FROM academic_identity_bindings b
+                 WHERE b.user_id = u.id AND b.provider_id = 'sylu_undergraduate' AND b.student_id = u.edu_student_id
+                   AND b.verification_method IN ('school_profile', 'legacy_migration')
+                   AND b.verified_at > TIMESTAMP '0001-01-01') AS legacy_binding_verified
+  FROM users u WHERE u.account_status IN ('', 'active')
+)
+SELECT COUNT(*) FILTER (WHERE edu_bound) AS legacy_bound_accounts,
+       COUNT(*) FILTER (WHERE edu_bound AND NOT legacy_binding_verified) AS legacy_bound_missing_identity,
+       COUNT(*) FILTER (WHERE configured AND NOT verified) AS configured_accounts_pending_school_proof
+FROM identity_state;

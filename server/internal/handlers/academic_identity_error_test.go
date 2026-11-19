@@ -22,6 +22,9 @@ func TestClassifyAcademicIdentityFailureFailsClosedForAmbiguousResponses(t *test
 }
 
 func TestClassifyAcademicIdentityFailureKeepsTransportFailuresSeparate(t *testing.T) {
+	if err := ClassifyAcademicIdentityFailure(http.StatusOK, "REMOTE_SYSTEM_UNAVAILABLE", "学校暂不可用"); !errors.Is(err, ErrAcademicProviderUnavailable) {
+		t.Fatalf("教务内部接口返回暂时故障时应允许重试: %v", err)
+	}
 	if err := ClassifyAcademicIdentityFailure(http.StatusTooManyRequests, "", "请求失败"); !errors.Is(err, ErrAcademicRateLimited) {
 		t.Fatalf("限流响应分类=%v，期望 rate limited", err)
 	}

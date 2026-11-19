@@ -46,7 +46,7 @@ void main() {
           createdAt: created,
           validatedAt: created,
           opaqueProviderState: const {
-            'cookies': ['ASP.NET_SessionId=fixture; Path=/; Secure'],
+            'cookies': ['ASP.NET_SessionId=fixture; Path=/student; Secure'],
             'session_path_prefix': '',
           }));
       final dio = Dio(BaseOptions(baseUrl: graduatePortalBaseUrl,
@@ -98,8 +98,12 @@ void main() {
         expect(artifact.validatedAt!.isAfter(created), scenario == 'success');
       }
       expect(await credentials.readForIdentity(identity), isNotNull);
-      expect(await gateway.exportSession(),
-          scenario == 'success' ? isNotNull : isNull);
+      final exported = await gateway.exportSession();
+      if (scenario == 'success') {
+        expect(exported!.cookies.single, contains('ASP.NET_SessionId=fixture'));
+      } else {
+        expect(exported, isNull);
+      }
       controller.dispose();
       provider.close();
     });

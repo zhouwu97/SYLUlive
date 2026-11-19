@@ -574,6 +574,10 @@ func (h *PrivacyHandler) cancelAccountTx(tx *gorm.DB, user models.User, randomPa
 	if err := services.InvalidateUserIntegrations(tx, userID, now); err != nil {
 		return err
 	}
+	owner := tx.Model(&models.User{}).Select("id").Where("id = ? AND account_status = ?", userID, "cancelled")
+	if err := services.DeleteCancelledAcademicRecords(tx, owner); err != nil {
+		return err
+	}
 	if tx.Migrator().HasTable(&models.AccountLoginAlias{}) {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.AccountLoginAlias{}).Error; err != nil {
 			return err

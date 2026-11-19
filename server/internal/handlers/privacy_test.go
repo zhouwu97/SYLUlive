@@ -202,6 +202,17 @@ func TestPrivacyExportExcludesCredentials(t *testing.T) {
 
 func TestCancelAccountAnonymizesIdentityAndInvalidatesSession(t *testing.T) {
 	handler, db, user := newPrivacyTestHandler(t)
+	const provider = models.AcademicProviderUndergraduate
+	require.NoError(t, db.AutoMigrate(&models.AcademicIdentityBinding{}, &models.AcademicAccountConfig{}, &models.AcademicConfigReceipt{}))
+	bind := func(owner uint) error {
+		return persistAcademicIdentityBinding(db, owner, provider, user.StudentID, time.Now(), models.AcademicVerificationMethodSchoolProfile, "v1")
+	}
+	require.NoError(t, bind(user.ID))
+	require.NoError(t, db.Create(&models.AcademicAccountConfig{UserID: user.ID, ProviderID: provider, StudentID: user.StudentID, State: "active"}).Error)
+	require.NoError(t, db.Create(&models.AcademicConfigReceipt{UserID: user.ID, OperationID: "save", Result: user.StudentID}).Error)
+	other := models.User{PasswordHash: "fixture"}
+	require.NoError(t, db.Create(&other).Error)
+	require.ErrorIs(t, bind(other.ID), errAcademicIdentityAlreadyBound)
 	if err := db.AutoMigrate(&models.AccountLoginAlias{}); err != nil {
 		t.Fatal(err)
 	}
@@ -222,6 +233,12 @@ func TestCancelAccountAnonymizesIdentityAndInvalidatesSession(t *testing.T) {
 	}
 	if cancelled.TokenVersion != user.TokenVersion+1 {
 		t.Fatalf("token version=%d want %d", cancelled.TokenVersion, user.TokenVersion+1)
+	}
+	require.NoError(t, bind(other.ID))
+	for _, model := range []any{&models.AcademicIdentityBinding{}, &models.AcademicAccountConfig{}, &models.AcademicConfigReceipt{}} {
+		var count int64
+		require.NoError(t, db.Model(model).Where("user_id = ?", user.ID).Count(&count).Error)
+		require.Zero(t, count)
 	}
 	var aliasCount int64
 	if err := db.Model(&models.AccountLoginAlias{}).Where("user_id = ?", user.ID).Count(&aliasCount).Error; err != nil || aliasCount != 0 {

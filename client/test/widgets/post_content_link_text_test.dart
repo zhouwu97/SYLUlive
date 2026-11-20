@@ -405,6 +405,47 @@ void main() {
     expect(sharedText, '普通文字');
   });
 
+  testWidgets('iPad 分享选中文本时传入窗口内的非空锚点', (tester) async {
+    const channel = MethodChannel('dev.fluttercommunity.plus/share');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return '';
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1024, 768);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(MaterialApp(
+      theme: ThemeData(platform: TargetPlatform.iOS),
+      home: const Scaffold(
+        body: PostContentLinkText(text: '普通文字', selectable: true),
+      ),
+    ));
+    await _showToolbarForSelection(
+      tester,
+      selection: const TextSelection(baseOffset: 0, extentOffset: 4),
+    );
+    await tester.tap(find.text('分享'));
+    await tester.pumpAndSettle();
+
+    final call = calls.single;
+    expect(call.method, 'share');
+    final args = call.arguments as Map;
+    expect(args['text'], '普通文字');
+    final origin = Rect.fromLTWH(
+      args['originX'] as double,
+      args['originY'] as double,
+      args['originWidth'] as double,
+      args['originHeight'] as double,
+    );
+    expect(origin.isEmpty, isFalse);
+    expect((Offset.zero & tester.view.physicalSize).intersect(origin), origin);
+  });
+
   testWidgets('中文平台边界返回前，用户拖动不会被异步结果覆盖', (tester) async {
     final boundaryCompleter = Completer<TextRange?>();
     final resolver = _FakeTextBoundaryResolver(boundaryCompleter.future);

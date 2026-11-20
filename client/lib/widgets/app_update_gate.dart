@@ -4,13 +4,35 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/app_update_info.dart';
+import '../platform/app_platform.dart';
 import '../platform/contracts/external_navigator.dart';
+import '../platform/contracts/update_action.dart';
 import '../platform/platform_capabilities.dart';
 import '../platform/update_download_bridge.dart';
 import '../services/app_update_coordinator.dart';
+import '../utils/app_feedback.dart';
 import 'app_dialog.dart';
 
 const _githubReleasesUrl = 'https://github.com/zhouwu97/SYLUlive/releases';
+
+String get _storeLabel => AppPlatforms.current.isIOS
+    ? '打开 App Store / TestFlight'
+    : '打开应用市场';
+
+Future<bool> _openStore(BuildContext context, AppUpdateInfo info) async {
+  final action = AppPlatforms.current.isIOS
+      ? const IOSAppStoreUpdateAction()
+      : const OhosMarketUpdateAction();
+  try {
+    await action.execute(info);
+    return true;
+  } catch (_) {
+    if (context.mounted) {
+      AppFeedback.error('无法打开应用市场，请重试', context: context);
+    }
+    return false;
+  }
+}
 
 /// 根级更新提示协调器。它只在需要用户决策时呈现紧凑 Dialog，下载始终留在后台。
 class AppUpdateGate extends StatefulWidget {
@@ -280,6 +302,30 @@ class _UpdateDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (info.deliveryMode == AppUpdateDeliveryMode.externalMarket) {
+      return AppAlertDialog(
+        title: Text(required ? '需要更新沈理校园' : '发现新版本 ${info.latestVersionName}'),
+        content: SingleChildScrollView(
+          child: Text(info.changelog.isEmpty ? '请在应用市场更新。' : info.changelog),
+        ),
+        actions: [
+          if (!required)
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(_UpdateDialogAction.later),
+              child: const Text('稍后'),
+            ),
+          FilledButton(
+            onPressed: () async {
+              if (await _openStore(context, info) && context.mounted) {
+                Navigator.of(context).pop(_UpdateDialogAction.later);
+              }
+            },
+            child: Text(_storeLabel),
+          ),
+        ],
+      );
+    }
     final active = downloadStatus.isActive;
     final ready = downloadStatus.state == AppUpdateDownloadState.ready;
     return AppAlertDialog(
@@ -357,20 +403,25 @@ class _RequiredDownloadBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = coordinator.downloadStatus;
-    final text = status.state == AppUpdateDownloadState.ready
-        ? '版本需要更新 · 更新包已准备完成'
-        : status.isActive
-            ? '版本需要更新 · 正在后台下载 ${(status.progress * 100).toStringAsFixed(0)}%'
-            : '版本需要更新 · 请下载新版本';
+    final external = info.deliveryMode == AppUpdateDeliveryMode.externalMarket;
+    final text = external
+        ? '版本需要更新 · $_storeLabel'
+        : status.state == AppUpdateDownloadState.ready
+            ? '版本需要更新 · 更新包已准备完成'
+            : status.isActive
+                ? '版本需要更新 · 正在后台下载 ${(status.progress * 100).toStringAsFixed(0)}%'
+                : '版本需要更新 · 请下载新版本';
     return SafeArea(
       child: Material(
         color: Theme.of(context).colorScheme.errorContainer,
         child: InkWell(
-          onTap: status.state == AppUpdateDownloadState.ready
-              ? coordinator.installPreparedUpdate
-              : status.isActive
-                  ? null
-                  : coordinator.downloadOrInstall,
+          onTap: external
+              ? () => unawaited(_openStore(context, info))
+              : status.state == AppUpdateDownloadState.ready
+                  ? coordinator.installPreparedUpdate
+                  : status.isActive
+                      ? null
+                      : coordinator.downloadOrInstall,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(

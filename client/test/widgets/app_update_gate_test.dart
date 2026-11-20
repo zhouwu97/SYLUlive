@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/app_update_info.dart';
 import 'package:shenliyuan/platform/app_platform.dart';
+import 'package:shenliyuan/platform/contracts/external_navigator.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/platform/update_download_bridge.dart';
 import 'package:shenliyuan/services/app_update_api.dart';
@@ -84,6 +85,9 @@ class _NoopAppUpdateCoordinator extends AppUpdateCoordinator {
 }
 
 class _RequiredAppUpdateCoordinator extends _NoopAppUpdateCoordinator {
+  _RequiredAppUpdateCoordinator({this.store = false});
+
+  final bool store;
   int downloadCalls = 0;
 
   @override
@@ -110,11 +114,24 @@ class _RequiredAppUpdateCoordinator extends _NoopAppUpdateCoordinator {
         sha256:
             '0000000000000000000000000000000000000000000000000000000000000000',
         downloadUrl: 'https://example.com/app.apk',
-        deliveryMode: AppUpdateDeliveryMode.directPackage,
-        actionUrl: '',
+        deliveryMode: store
+            ? AppUpdateDeliveryMode.externalMarket
+            : AppUpdateDeliveryMode.directPackage,
+        actionUrl: store ? 'https://apps.apple.com/cn/app/id123456789' : '',
         publishedAt: null,
         checkAfterSeconds: 21600,
       );
+}
+
+class _StoreNavigator implements ExternalNavigator {
+  bool opened = false;
+  final requests = <Uri>[];
+
+  @override
+  Future<bool> open(Uri uri) async {
+    requests.add(uri);
+    return opened;
+  }
 }
 
 class _FailedAppUpdateCoordinator extends _NoopAppUpdateCoordinator {
@@ -203,6 +220,34 @@ void main() {
     addTearDown(coordinator.dispose);
     return coordinator;
   }
+
+  testWidgets('iOS 更新打开 App Store，跳转失败时可重试', (tester) async {
+    AppPlatforms.currentOverrides = AppPlatform.ios;
+    addTearDown(() => AppPlatforms.currentOverrides = null);
+    final previous = ExternalNavigator.current();
+    final store = _StoreNavigator();
+    ExternalNavigator.register(store);
+    addTearDown(() => ExternalNavigator.register(previous));
+    final coordinator = _RequiredAppUpdateCoordinator(store: true);
+    addTearDown(coordinator.dispose);
+    await _pumpGate(tester, coordinator);
+
+    final button =
+        find.widgetWithText(FilledButton, '打开 App Store / TestFlight');
+    expect(button, findsOneWidget);
+    expect(find.text('后台下载'), findsNothing);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(button, findsOneWidget);
+    expect(find.text('无法打开应用市场，请重试'), findsOneWidget);
+    store.opened = true;
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(button, findsNothing);
+    expect(
+        store.requests, List.filled(2, Uri.parse(coordinator.info.actionUrl)));
+    expect(coordinator.downloadCalls, 0);
+  });
 
   testWidgets('默认静默下载排队时仍显示新版，并可在下载完成后安装', (tester) async {
     final api = _PublishedUpdateApi()..latestVersionCode = 1712;

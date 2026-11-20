@@ -111,7 +111,7 @@ import WidgetKit
         }
         var total = 0
         var buffer = [UInt8](repeating: 0, count: 16 * 1024)
-        while input.hasBytesAvailable {
+        while true {
           let read = input.read(&buffer, maxLength: buffer.count)
           if read < 0 {
             try? fm.removeItem(at: dest)
@@ -125,11 +125,17 @@ import WidgetKit
             self.deliverIncomingThemeResult(generation: generation, eventId: eventId, path: nil, error: "theme_too_large")
             return
           }
-          let written = buffer.withUnsafeBufferPointer { ptr -> Int in
-            guard let base = ptr.baseAddress else { return -1 }
-            return output.write(base, maxLength: read)
+          let completed = buffer.withUnsafeBufferPointer { ptr in
+            let base = ptr.baseAddress!
+            var offset = 0
+            while offset < read {
+              let written = output.write(base.advanced(by: offset), maxLength: read - offset)
+              guard written > 0 else { return false }
+              offset += written
+            }
+            return true
           }
-          if written < 0 {
+          if !completed {
             try? fm.removeItem(at: dest)
             self.deliverIncomingThemeResult(generation: generation, eventId: eventId, path: nil, error: "read_failed")
             return
@@ -301,14 +307,15 @@ import WidgetKit
           UIApplication.shared.open(settingsURL) { opened in result(opened) }
         case "getPushDiagnostics":
           UNUserNotificationCenter.current().getNotificationSettings { settings in
-            let enabled = settings.authorizationStatus == .authorized ||
-              settings.authorizationStatus == .provisional ||
-              settings.authorizationStatus == .ephemeral
+            let status = settings.authorizationStatus
+            var enabled = status == .authorized || status == .provisional
+            if #available(iOS 14.0, *), status == .ephemeral {
+              enabled = true
+            }
             result([
               "notificationsEnabled": enabled,
               "privateMessageChannelExists": true,
               "privateMessageChannelBlocked": false,
-              "storedAliasState": "bound",
             ])
           }
         default:

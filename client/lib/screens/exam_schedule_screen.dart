@@ -14,6 +14,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../services/academic_archive_exporter.dart';
 import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:share_plus/share_plus.dart';
+import '../utils/share_position.dart';
 import 'package:file_picker/file_picker.dart';
 import '../widgets/glass_container.dart';
 import '../features/academic/domain/academic_provider.dart';
@@ -171,7 +172,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
               label: '分享/打开',
               onPressed: () {
                 Share.shareXFiles([XFile(file.shareFile.path)],
-                    text: '沈理校园考试存档导出');
+                    text: '沈理校园考试存档导出',
+                    sharePositionOrigin: sharePosition(context));
               },
             ),
           ),

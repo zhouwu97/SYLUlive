@@ -1,0 +1,69 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [codex/ios-ipa]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unsigned-ipa:
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      PUB_HOSTED_URL: https://pub.flutter-io.cn
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.41.8'
+          cache: true
+      - name: Resolve Flutter dependencies
+        run: flutter pub get --enforce-lockfile
+      - name: Build for iPhone and iPad
+        shell: bash
+        run: |
+          xcodebuild -version
+          pod --version
+          # iOS uses the numeric version. The build number identifies the beta.
+          build_name=$(sed -nE 's/^version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' pubspec.yaml)
+          test -n "$build_name"
+          flutter build ios --release --no-codesign --no-pub --build-name "$build_name"
+      - name: Package and verify unsigned IPA
+        shell: bash
+        run: |
+          app=build/ios/iphoneos/Runner.app
+          extension="$app/PlugIns/CourseScheduleWidget.appex"
+          test -f "$app/Info.plist"
+          test -f "$extension/Info.plist"
+          test ! -e "$app/embedded.mobileprovision"
+          test ! -e "$extension/embedded.mobileprovision"
+          xcrun lipo -verify_arch arm64 "$app/Runner"
+          xcrun lipo -verify_arch arm64 "$extension/CourseScheduleWidget"
+          for key in CFBundleShortVersionString CFBundleVersion; do
+            app_value=$(plutil -extract "$key" raw "$app/Info.plist")
+            extension_value=$(plutil -extract "$key" raw "$extension/Info.plist")
+            test "$app_value" = "$extension_value"
+            printf '%s=%s\n' "$key" "$app_value"
+          done
+
+          mkdir -p build/ios/ipa "$RUNNER_TEMP/Payload"
+          ditto "$app" "$RUNNER_TEMP/Payload/Runner.app"
+          ipa="build/ios/ipa/SYLUlive-${GITHUB_SHA::12}-unsigned.ipa"
+          ditto -c -k --keepParent "$RUNNER_TEMP/Payload" "$ipa"
+          unzip -tq "$ipa"
+          shasum -a 256 "$ipa"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sylulive-ios-unsigned
+          path: client/build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 7

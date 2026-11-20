@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../ai_bot_identity.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../utils/share_position.dart';
 
 import '../../config/api_constants.dart';
 import '../../models/post.dart';
@@ -395,7 +396,9 @@ class SectionPostCard extends StatelessWidget {
       link,
     ].join('\n');
     try {
-      await Share.share(text, subject: title.isEmpty ? 'SYLUlive 帖子' : title);
+      await Share.share(text,
+          subject: title.isEmpty ? 'SYLUlive 帖子' : title,
+          sharePositionOrigin: sharePosition(context));
     } catch (error) {
       if (context.mounted) {
         AppFeedback.error('分享失败，请稍后重试', context: context);

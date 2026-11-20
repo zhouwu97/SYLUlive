@@ -27,6 +27,7 @@ import 'feed/feed_post_action_menu.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../utils/share_position.dart';
 import 'app_card.dart';
 
 const _ignoredLegacyTopicLabels = {'其他', '其它', '默认', '未分类', '综合'};
@@ -713,7 +714,8 @@ class _PostCardState extends State<PostCard>
       if (post.title.trim().isNotEmpty) post.title.trim(),
       post.content.trim(),
     ].where((item) => item.isNotEmpty).join('\n');
-    await Share.share(text.isEmpty ? '分享一条校园帖子' : text, subject: 'SYLUlive 帖子');
+    await Share.share(text.isEmpty ? '分享一条校园帖子' : text,
+        subject: 'SYLUlive 帖子', sharePositionOrigin: sharePosition(context));
   }
 
   Widget _buildCategoryTag(BuildContext context, bool isDark, Post post) {

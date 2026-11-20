@@ -197,13 +197,14 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                       decoration: const InputDecoration(labelText: '发布平台'),
                       items: const [
                         DropdownMenuItem(value: 'android', child: Text('Android')),
+                        DropdownMenuItem(value: 'ios', child: Text('iOS')),
                         DropdownMenuItem(value: 'ohos', child: Text('HarmonyOS')),
                       ],
                       onChanged: (v) {
                         if (v != null) {
                           setDialogState(() {
                             selectedPlatform = v;
-                            if (v == 'ohos') {
+                            if (v != 'android') {
                               selectedDeliveryMode = 'external_market';
                             }
                           });
@@ -212,13 +213,14 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
+                      key: ValueKey(selectedPlatform),
                       initialValue: selectedDeliveryMode,
                       decoration: const InputDecoration(labelText: '交付模式'),
                       items: const [
                         DropdownMenuItem(value: 'direct_package', child: Text('直接安装包')),
                         DropdownMenuItem(value: 'external_market', child: Text('外部市场')),
                       ],
-                      onChanged: selectedPlatform == 'ohos'
+                      onChanged: selectedPlatform != 'android'
                           ? null
                           : (v) {
                               if (v != null) {
@@ -255,7 +257,9 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                       const SizedBox(height: 12),
                     ],
                     if (selectedDeliveryMode == 'external_market') ...[
-                      _field(actionUrl, '跳转链接 (以 http:// 或 https:// 开头)'),
+                      _field(actionUrl, selectedPlatform == 'ios'
+                          ? 'App Store 或 TestFlight 链接'
+                          : '应用市场 HTTPS 链接'),
                       const SizedBox(height: 12),
                     ],
                     _field(versionName, '展示版本号，例如 1.6.3'),

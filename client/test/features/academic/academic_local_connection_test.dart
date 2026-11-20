@@ -322,7 +322,8 @@ void main() {
         saveCredentials: true,
         saveAcademicData: false);
     expect(result.isSuccess, true);
-    expect(result.message, contains('学生身份尚未同步'));
+    expect(result.message, contains('认证状态尚未同步'));
+    expect(result.message, contains('联网后会重试'));
     expect(h.session.isAuthenticated, true);
     expect((await h.credentials.readForIdentity(h.session.identity!))?.password,
         'password-secret');

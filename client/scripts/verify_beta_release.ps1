@@ -28,15 +28,14 @@ $policyPath = Join-Path $clientRoot 'lib\config\beta_release_policy.dart'
 foreach ($flag in @(
     'graduationWarningResults',
     'aiGraduationAssistant',
-    'aiCompetitionFit',
+    'competitionAIExplanation',
     'aiTeamMatching',
     'competitionRecommendations',
-    'awardArchive',
-    'policyBenefits',
     'clientAcademicProbe'
 )) {
     Assert-Matches $policyPath "static const bool $flag = false;" "Frozen Beta-0 feature is enabled: $flag"
 }
+Assert-Matches $policyPath 'static const bool aiCompetitionFit = competitionAIExplanation;' 'Legacy competition AI flag must follow the frozen AI explanation flag.'
 
 $trackedProbeOutput = & git -C $repoRoot ls-files -- 'python-edu-service/private-probe-output/'
 if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect tracked probe output.' }

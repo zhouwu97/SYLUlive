@@ -55,3 +55,30 @@
   .emoji-pack-row { gap: var(--space-sm); }
 }
 @media (prefers-reduced-motion: reduce) { .emoji-picker .emoji-option { transition: none; } }
+
+/* 桌面表情面板（≥601px）：贴纸是主角，格子方正、不挂名字（名字保留在 title 与读屏文本），
+ * 只让贴纸网格内部滚动，弹层本身不再出现第二条滚动条。手机网页对照 App，不在此调整。 */
+@media (min-width: 601px) {
+  html .reply-emoji-popover { width: 420px; max-width: 100%; max-height: none; overflow: visible; border-radius: 14px; box-shadow: 0 16px 40px -18px rgb(27 28 31 / .28), 0 0 0 1px var(--line); border: 0; }
+  .emoji-picker.sticker-picker { min-width: 0; gap: 10px; }
+  .reply-emoji-popover .emoji-picker.sticker-picker { padding: 12px 12px 10px; }
+  .emoji-picker.sticker-picker .emoji-head { min-height: 28px; }
+  .emoji-picker.sticker-picker .emoji-head b { font-size: var(--text-sm); }
+  .emoji-picker.sticker-picker .emoji-search { min-height: 44px; padding-inline: 12px; border-color: transparent; background: var(--color-paper-2); }
+  .emoji-picker.sticker-picker .emoji-search:focus { border-color: var(--color-accent-border); background: var(--color-surface); }
+  .emoji-picker.sticker-picker .emoji-tabs { gap: 2px; }
+  .emoji-picker.sticker-picker .emoji-tabs button { min-height: 44px; padding: 0 10px; font-size: var(--text-caption); font-weight: 400; }
+  .emoji-picker.sticker-picker .emoji-tabs button[aria-selected="true"] { color: var(--color-ink); font-weight: 600; }
+  .emoji-picker.sticker-picker .emoji-group-heading { min-height: 20px; }
+  .emoji-picker.sticker-picker .emoji-group-heading small { display: none; }
+  .emoji-picker.sticker-picker .emoji-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; max-height: 264px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .emoji-picker.sticker-picker .emoji-option { aspect-ratio: 1; min-height: 0; padding: 6px; border: 0; border-radius: 10px; background: transparent; transition: background-color var(--dur-micro) ease-out; }
+  .emoji-picker.sticker-picker .emoji-option img { width: 100%; height: 100%; object-fit: contain; }
+  .emoji-picker.sticker-picker .emoji-option:is(:hover, :focus-visible) { transform: none; border: 0; background: var(--color-paper-2); }
+  .emoji-picker.sticker-picker .emoji-option.selected { background: var(--color-accent-soft); box-shadow: inset 0 0 0 1.5px var(--color-accent); }
+  .emoji-picker.sticker-picker .emoji-option-name { display: none; }
+  .emoji-picker.sticker-picker .emoji-option small.emoji-animation { top: 4px; right: 4px; padding: 0 4px; border-radius: 4px; background: rgb(27 28 31 / .62); color: #fff; font-size: 10px; line-height: 16px; }
+  .emoji-picker.sticker-picker .emoji-foot { padding-top: 8px; font-size: var(--text-xs); }
+  .emoji-picker.sticker-picker .emoji-state { min-height: 120px; }
+  .emoji-picker.sticker-picker .emoji-state .svg-icon { color: var(--color-muted); }
+}

@@ -114,6 +114,8 @@ class PostReplyService {
           'reply_to_user_id': draft.replyToUserId.toString(),
         if (draft.replyToReplyId != null)
           'reply_to_reply_id': draft.replyToReplyId.toString(),
+        if (draft.mentionUserIds.isNotEmpty)
+          'mention_user_ids': draft.mentionUserIds.join(','),
       }),
       options: _writeOptions(idempotencyKey),
     );

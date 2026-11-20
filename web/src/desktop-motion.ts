@@ -179,8 +179,9 @@ export function mountCollapsedTooltips(sidebar: HTMLElement): () => void {
   tip.setAttribute("aria-hidden", "true");
   document.body.append(tip);
   let owner: HTMLElement | null = null;
+  let suppressed: HTMLElement | null = null;
 
-  const collapsed = () => isDesktop() && sidebar.getBoundingClientRect().width < 120;
+  const collapsed = () => isDesktop() && (window.innerWidth <= 860 || Boolean(sidebar.closest(".market-shell")));
   const restore = () => {
     if (owner?.dataset.navTitle) {
       owner.setAttribute("title", owner.dataset.navTitle);
@@ -190,10 +191,11 @@ export function mountCollapsedTooltips(sidebar: HTMLElement): () => void {
     tip.classList.remove("is-shown");
   };
   const over = (event: Event) => {
-    const item = (event.target as Element).closest<HTMLElement>(".nav-item");
+    const item = (event.target as Element).closest<HTMLElement>(".nav-item, .sidebar-more > summary");
+    if (item !== suppressed) suppressed = null;
     if (item === owner) return;
     restore();
-    if (!item || !collapsed()) return;
+    if (!item || item === suppressed || !collapsed()) return;
     const label = item.getAttribute("aria-label") || item.textContent?.trim() || "";
     if (!label) return;
     owner = item;
@@ -205,16 +207,29 @@ export function mountCollapsedTooltips(sidebar: HTMLElement): () => void {
     tip.style.top = `${Math.round(rect.top + rect.height / 2)}px`;
     tip.classList.add("is-shown");
   };
+  const leave = () => {
+    suppressed = null;
+    restore();
+  };
+  const click = (event: Event) => {
+    suppressed = (event.target as Element).closest<HTMLElement>(".nav-item, .sidebar-more > summary");
+    restore();
+  };
+  const observer = new ResizeObserver(() => {
+    if (!collapsed()) restore();
+  });
+  observer.observe(sidebar);
   sidebar.addEventListener("pointerover", over);
-  sidebar.addEventListener("pointerleave", restore);
+  sidebar.addEventListener("pointerleave", leave);
   sidebar.addEventListener("scroll", restore, { passive: true });
-  sidebar.addEventListener("click", restore);
+  sidebar.addEventListener("click", click);
   return () => {
+    observer.disconnect();
     restore();
     sidebar.removeEventListener("pointerover", over);
-    sidebar.removeEventListener("pointerleave", restore);
+    sidebar.removeEventListener("pointerleave", leave);
     sidebar.removeEventListener("scroll", restore);
-    sidebar.removeEventListener("click", restore);
+    sidebar.removeEventListener("click", click);
     tip.remove();
   };
 }

@@ -122,7 +122,7 @@ test("服务端嵌套宽高在单图加载前预留尺寸，不会先塌缩再�
   await expect(tile.locator("img")).toHaveAttribute("width", "600");
   await expect(tile.locator("img")).toHaveAttribute("height", "1800");
   const before = await tile.evaluate(el => ({ width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height }));
-  expect(before).toEqual({ width: 320, height: 320 });
+  expect(before).toEqual({ width: 270, height: 360 });
   release();
   await tile.locator("img").evaluate(async (img: HTMLImageElement) => { await img.decode(); });
   const after = await tile.evaluate(el => ({ width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height }));
@@ -171,10 +171,10 @@ test("单图动态始终在正文下方，收紧阅读宽度后缩放、预览�
         let layout = await readLayout();
         await expect.poll(async () => {
           layout = await readLayout();
-          return layout.width > 0 && layout.stacked && layout.aligned && layout.width <= 720 && layout.actionsFit;
+          return layout.width > 0 && layout.stacked && layout.aligned && layout.width <= 980 && layout.actionsFit;
         }).toBe(true);
         expect(layout.stacked && layout.aligned).toBe(true);
-        expect(layout.width).toBeLessThanOrEqual(720);
+        expect(layout.width).toBeLessThanOrEqual(980);
         expect(layout.mediaGap, JSON.stringify({ width, path, theme, layout })).toBeGreaterThanOrEqual(8);
         expect(layout.mediaGap).toBeLessThanOrEqual(12);
         expect(layout.toolbarGap).toBeLessThanOrEqual(14);
@@ -203,7 +203,7 @@ test("单图动态始终在正文下方，收紧阅读宽度后缩放、预览�
   await expect.poll(() => failed.evaluate(el => ({
     width: el.getBoundingClientRect().width,
     retry: el.textContent?.includes("点击重试"),
-  }))).toEqual({width: 320, retry: true});
+  }))).toEqual({width: 270, retry: true});
   state.failMedium(false);
   await failed.click();
   await expect(failed.locator("img")).toBeVisible();

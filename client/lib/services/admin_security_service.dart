@@ -21,6 +21,53 @@ class SecurityBlockGroup {
   final int createdBy;
 }
 
+class SecurityLogEntry {
+  const SecurityLogEntry({
+    required this.id,
+    required this.adminId,
+    required this.adminName,
+    required this.action,
+    required this.target,
+    required this.detail,
+    required this.createdAt,
+  });
+
+  factory SecurityLogEntry.fromJson(Map<String, dynamic> json) =>
+      SecurityLogEntry(
+        id: (json['id'] as num?)?.toInt() ?? 0,
+        adminId: (json['admin_id'] as num?)?.toInt() ?? 0,
+        adminName: json['admin_name']?.toString() ?? '',
+        action: json['action']?.toString() ?? '',
+        target: json['target']?.toString() ?? '',
+        detail: json['detail']?.toString() ?? '',
+        createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '')
+                ?.toLocal() ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+      );
+
+  final int id;
+  final int adminId;
+  final String adminName;
+  final String action;
+  final String target;
+  final String detail;
+  final DateTime createdAt;
+
+  String get actionLabel => switch (action) {
+        'security_event_resolved' => '结案',
+        'security_event_false_positive' => '标为误报',
+        'security_block_created' => '封禁来源',
+        'security_block_revoked' => '解除封禁',
+        _ => action.isEmpty ? '安全操作' : action,
+      };
+
+  String get targetLabel {
+    if (action.startsWith('security_event_')) return '事件 #$target';
+    if (action == 'security_block_revoked') return '封禁 #$target';
+    return target.isEmpty ? '' : '来源 $target';
+  }
+}
+
 class SecurityEventPage {
   const SecurityEventPage(
       {required this.items,
@@ -45,7 +92,8 @@ class AdminSecurityService {
       {PublishSessionScope? session}) async {
     final rows = <Map>[];
     for (var page = 1;; page++) {
-      final response = await dio.get('/super/security/blocks',
+      // 管理员与超级管理员共用；来源键原值只在超级管理员响应中出现。
+      final response = await dio.get('/admin/security/blocks',
           queryParameters: {'page': page},
           options: Options(extra: session?.requestExtra));
       final batch = (response.data as List).whereType<Map>().toList();
@@ -76,7 +124,7 @@ class AdminSecurityService {
   }
 
   Future<void> revokeBlock(int id, {PublishSessionScope? session}) async {
-    await dio.delete('/super/security/blocks/$id',
+    await dio.delete('/admin/security/blocks/$id',
         options: Options(extra: session?.requestExtra));
   }
 
@@ -147,6 +195,43 @@ class AdminSecurityService {
       {String note = '', PublishSessionScope? session}) async {
     await dio.post('/admin/security/events/$id/false-positive',
         data: {'note': note}, options: Options(extra: session?.requestExtra));
+  }
+
+  /// 用事件记录的来源封禁，并由服务端在同一事务里把仍待处置的事件结案。
+  ///
+  /// 管理员不持有来源键原值，所以按事件 ID 封禁；[scope] 只能是 'route'
+  /// （事件所在接口）或 'account'（账号与凭据链路），时长 15／60／1440 分钟。
+  /// 返回事件是否随本次封禁结案（事件已被他人处置时为 false）。
+  Future<bool> blockEventSource(
+    int eventId, {
+    required String scope,
+    required int durationMinutes,
+    required String reason,
+    PublishSessionScope? session,
+  }) async {
+    final response = await dio.post('/admin/security/events/$eventId/block',
+        data: {
+          'scope': scope,
+          'duration_minutes': durationMinutes,
+          'reason': reason,
+        },
+        options: Options(extra: session?.requestExtra));
+    final data = response.data;
+    return data is Map && data['event_resolved'] == true;
+  }
+
+  /// 安全中心操作记录：结案、误报、封禁、解除封禁，按时间倒序每页 30 条。
+  Future<List<SecurityLogEntry>> loadLogs(
+      {int page = 1, PublishSessionScope? session}) async {
+    final response = await dio.get('/admin/security/logs',
+        queryParameters: {'page': page},
+        options: Options(extra: session?.requestExtra));
+    final items = (response.data as Map)['items'] as List? ?? const [];
+    return items
+        .whereType<Map>()
+        .map((item) =>
+            SecurityLogEntry.fromJson(Map<String, dynamic>.from(item)))
+        .toList(growable: false);
   }
 
   /// 创建临时来源封禁。

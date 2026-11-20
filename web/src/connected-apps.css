@@ -6,7 +6,7 @@
   --integration-soft: var(--color-accent-soft);
   --integration-solid: var(--color-surface);
   --integration-border: var(--color-rule);
-  --integration-muted: var(--color-muted);
+  --integration-muted: color-mix(in srgb, var(--color-ink) 82%, var(--color-surface));
   --integration-disabled: var(--color-paper-2);
   min-width: 0;
   color: var(--color-ink);
@@ -120,7 +120,7 @@
 .integration-panel .integration-section-head h2 { margin: 0; font-size: 20px; font-weight: 600; }
 .integration-panel .integration-eyebrow { margin: 0 0 4px; color: var(--integration-muted); font-size: 12px; }
 .integration-panel p { line-height: 1.75; }
-.integration-panel .integration-description { margin: 0 0 20px; color: var(--color-ink-2); }
+.integration-panel .integration-description { margin: 0 0 20px; color: var(--integration-muted); }
 .integration-panel .integration-hint { margin: 12px 0 0; font-size: 13px; line-height: 1.75; color: var(--integration-muted); }
 .bot-account-state { display: flex; align-items: center; gap: 8px; margin: 0 0 20px; font-weight: 600; }
 .bot-account-state .svg-icon { color: var(--integration-muted); flex: none; }

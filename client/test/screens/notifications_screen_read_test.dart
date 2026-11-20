@@ -78,6 +78,20 @@ Future<void> _pumpUntilRequest(
 }
 
 void main() {
+  testWidgets('被 @ 的回复通知标题显示为“@了你”并去掉正文前缀', (tester) async {
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+      handler.resolve(Response(
+          requestOptions: request,
+          statusCode: 200,
+          data: _notificationPage(content: '@了你：一起早八')));
+    }));
+    await tester.pumpWidget(_app(dio));
+    await tester.pumpAndSettle();
+    expect(find.text('@了你'), findsOneWidget);
+    expect(find.text('一起早八'), findsOneWidget);
+    expect(find.text('回复了您的帖子'), findsNothing);
+  });
   testWidgets('切号清除旧列表，旧已读响应不干扰新账号的在途操作', (tester) async {
     final dio = Dio();
     final auth = _Auth(dio);

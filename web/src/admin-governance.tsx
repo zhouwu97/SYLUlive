@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, asset, entity, query, rows, time, useApi, write, type Entity } from "./api";
 import { useAuth } from "./auth";
@@ -11,13 +11,13 @@ export function AdminSecurityCenter() {
   const auth = useAuth(), ui = useUI();
   const isSuper = auth.user?.role === "super_admin";
   const [range, setRange] = useState("24h");
-  const [view, setView] = useState<"actionable" | "all" | "blocks">("actionable");
+  const [view, setView] = useState<"actionable" | "all" | "blocks" | "logs">("actionable");
   const [severity, setSeverity] = useState("");
   const [page, setPage] = useState(1);
 
   const overview = useApi(`/api/admin/security/overview?range=${range}`);
   const events = useApi(
-    view !== "blocks"
+    view === "actionable" || view === "all"
       ? query("/api/admin/security/events", {
           actionable: view === "actionable" ? "true" : undefined,
           severity: severity || undefined,
@@ -26,11 +26,40 @@ export function AdminSecurityCenter() {
         })
       : null,
   );
-  const blocks = useApi(isSuper && view === "blocks" ? query("/api/super/security/blocks", { active_only: "true", page: 1, limit: 50 }) : null);
+  const blocks = useApi(view === "blocks" ? "/api/admin/security/blocks" : null);
+  const logs = useApi(view === "logs" ? query("/api/admin/security/logs", { page }) : null);
   const ov = overview.data || {};
   const eventList = rows(events.data, "items", "events");
-  const blockList = rows(blocks.data, "items", "blocks");
+  const blockGroups = groupSecurityBlocks(rows(blocks.data, "items", "blocks"));
+  const logList = rows(logs.data, "items");
+  const [armed, arm] = useArmedAction();
+  const [busyEvent, setBusyEvent] = useState<unknown>(null);
+  const refreshEvents = async () => { await Promise.all([events.refetch(), overview.refetch()]); };
 
+  async function quickSettle(id: number, kind: SecurityVerdict, note: string) {
+    setBusyEvent(id);
+    await ui.act(() => settleSecurityEvent(id, kind, note, refreshEvents), kind === "resolve" ? "事件已结案" : "已标记为误报");
+    setBusyEvent(null);
+  }
+
+  async function quickBlock(ev: Entity) {
+    setBusyEvent(ev.id);
+    await ui.act(() => blockSecurityEventSource(Number(ev.id), { scope: defaultBlockScope(ev), minutes: 1440, reason: defaultBlockReason(ev) }, refreshEvents), "已封禁来源 1 天，事件已结案");
+    setBusyEvent(null);
+  }
+
+  function openEvent(ev: Entity) {
+    ui.open(securityEventTitle(ev), (
+      <SecurityEventDetail
+        id={Number(ev.id)}
+        isSuper={isSuper}
+        onChanged={refreshEvents}
+        onBlock={(sourceKey) => openBlockForm(sourceKey)}
+      />
+    ));
+  }
+
+  // 超级管理员保留按来源指纹手动封禁，包括需要二次确认的全站封禁。
   function openBlockForm(sourceKey = "") {
     ui.open("新增临时来源封禁", (
       <Form
@@ -52,13 +81,16 @@ export function AdminSecurityCenter() {
             reason: v.reason,
           });
           await overview.refetch();
-          if (blocks.refetch) await blocks.refetch();
+          if (view === "blocks") await blocks.refetch();
           ui.notify("来源封禁已生效");
           ui.close();
         }}
       />
     ));
   }
+
+  const switchView = (next: typeof view) => { setView(next); setPage(1); };
+  const refresh = () => { void overview.refetch(); if (view === "blocks") void blocks.refetch(); else if (view === "logs") void logs.refetch(); else void events.refetch(); };
 
   return (
     <>
@@ -69,7 +101,7 @@ export function AdminSecurityCenter() {
           ))}
         </div>
         {isSuper && <button type="button" className="btn primary" onClick={() => openBlockForm()}>新增来源封禁</button>}
-        <button type="button" className="btn" onClick={() => { void overview.refetch(); if (view === "blocks") void blocks.refetch(); else void events.refetch(); }}>刷新</button>
+        <button type="button" className="btn" onClick={refresh}>刷新</button>
       </Head>
 
       <Stats items={[
@@ -81,11 +113,12 @@ export function AdminSecurityCenter() {
 
       <div className="admin-toolbar">
         <div className="admin-seg" role="group" aria-label="安全视图">
-          <button type="button" aria-pressed={view === "actionable"} onClick={() => { setView("actionable"); setPage(1); }}>需处置告警</button>
-          <button type="button" aria-pressed={view === "all"} onClick={() => { setView("all"); setPage(1); }}>全部观察日志</button>
-          {isSuper && <button type="button" aria-pressed={view === "blocks"} onClick={() => setView("blocks")}>生效封禁 ({Number(ov.active_blocks_count || 0)})</button>}
+          <button type="button" aria-pressed={view === "actionable"} onClick={() => switchView("actionable")}>需处置告警</button>
+          <button type="button" aria-pressed={view === "all"} onClick={() => switchView("all")}>全部观察日志</button>
+          <button type="button" aria-pressed={view === "blocks"} onClick={() => switchView("blocks")}>生效封禁 ({Number(ov.active_blocks_count || 0)})</button>
+          <button type="button" aria-pressed={view === "logs"} onClick={() => switchView("logs")}>操作记录</button>
         </div>
-        {view !== "blocks" && (
+        {(view === "actionable" || view === "all") && (
           <select aria-label="严重级别" value={severity} onChange={(e) => { setSeverity(e.target.value); setPage(1); }}>
             <option value="">全部级别</option>
             <option value="high">高危 (high)</option>
@@ -98,51 +131,73 @@ export function AdminSecurityCenter() {
       {view === "blocks" ? (
         <QueryState query={blocks}>
           <div className="panel admin-list">
-            {blockList.map((b) => (
-              <div className="list-row admin-row" key={b.id}>
+            {blockGroups.map((group) => (
+              <div className="list-row admin-row" key={String(group.id)}>
                 <div className="list-main">
                   <div className="admin-row-head">
-                    <b className="mono">{String(b.source_key || "").slice(0, 20)}…</b>
-                    <span className="tag danger">{b.scope === "all" ? "全站封禁" : b.scope === "account" ? "账号接口" : b.route_prefix || "路由封禁"}</span>
+                    <span className="tag danger">{group.prefixes.length > 1 ? "账号相关接口" : group.prefixes[0] || "全站"}</span>
+                    <b className="mono">来源 {String(group.source_fingerprint || "—")}</b>
                   </div>
-                  <p>{b.reason}</p>
-                  <small>到期：{time(b.expires_at)} · 创建于 {time(b.created_at)}</small>
+                  <p>{String(group.reason || "未填写原因")}</p>
+                  <small>到期 {time(group.expires_at)} · 创建于 {time(group.created_at)}{group.created_by ? ` · 管理员 #${String(group.created_by)}` : ""}{group.prefixes.length > 1 ? ` · ${group.prefixes.join("、")}` : ""}</small>
                 </div>
-                <button type="button" className="btn sm" onClick={() => void ui.act(async () => { await write(`/api/super/security/blocks/${b.id}`, {}, "DELETE"); await blocks.refetch(); await overview.refetch(); }, "已解除来源封禁")}>解除封禁</button>
+                <button type="button" className={`btn sm ${armed === `unblock:${group.id}` ? "danger" : ""}`} onClick={() => { if (arm(`unblock:${group.id}`)) void ui.act(async () => { await write(`/api/admin/security/blocks/${group.id}`, {}, "DELETE"); await Promise.all([blocks.refetch(), overview.refetch()]); }, "已解除来源封禁"); }}>{armed === `unblock:${group.id}` ? "确认解除" : "解除封禁"}</button>
               </div>
             ))}
-            {!blockList.length && <Empty icon="check" title="当前没有生效中的临时封禁" />}
+            {!blockGroups.length && <Empty icon="check" title="当前没有生效中的临时封禁" />}
           </div>
+        </QueryState>
+      ) : view === "logs" ? (
+        <QueryState query={logs}>
+          <div className="panel admin-list security-log-list">
+            {logList.map((log) => (
+              <div className="list-row admin-row" key={String(log.id)}>
+                <div className="list-main">
+                  <div className="admin-row-head">
+                    <span className={`tag ${String(log.action).startsWith("security_block_created") ? "danger" : ""}`}>{securityLogLabel(log.action)}</span>
+                    <b>{String(log.admin_name || `管理员 #${String(log.admin_id)}`)}</b>
+                    <span className="muted">{securityLogTarget(log)}</span>
+                  </div>
+                  {!!log.detail && <p>{String(log.detail)}</p>}
+                  <small>{time(log.created_at)}</small>
+                </div>
+              </div>
+            ))}
+            {!logList.length && <Empty icon="file" title="还没有安全处置记录" />}
+          </div>
+          {(page > 1 || logList.length === 30) && <Pagination page={page} hasMore={logList.length === 30} onChange={setPage} />}
         </QueryState>
       ) : (
         <QueryState query={events}>
           <div className="panel admin-list">
             {eventList.map((ev) => {
-              const high = ev.severity === "high" || ev.level === "high";
-              const open = !ev.status || ev.status === "open" || ev.status === "pending";
+              const severity = securityDisplaySeverity(ev);
+              const pending = !!ev.actionable && ev.status === "active";
               return (
-                <div className="list-row admin-row" key={ev.id}>
-                  <div className="list-main">
-                    <div className="admin-row-head">
-                      <span className={`tag ${high ? "danger" : ev.severity === "medium" ? "warn" : ""}`}>{ev.severity || "event"}</span>
-                      <b>{ev.title || ev.event_type || `事件 #${ev.id}`}</b>
-                      {ev.route && <span className="mono muted">{ev.route}</span>}
-                      {!open && <span className="tag">{ev.status === "false_positive" ? "误报" : "已处理"}</span>}
+                <div className="list-row admin-row security-event-row" key={ev.id}>
+                  <button type="button" className="security-event-open" onClick={() => openEvent(ev)}>
+                    <span className="list-main">
+                      <span className="admin-row-head">
+                        <span className={`tag ${severityTone(severity)}`}>{securitySeverityLabel(severity)}</span>
+                        <b>{securityEventTitle(ev)}</b>
+                        <span className={`tag ${pending ? "warn" : ""}`}>{securityStatusLabel(ev)}</span>
+                      </span>
+                      <span className="security-event-line">{securityEventMetrics(ev)} · {securityTargetLabel(ev)}</span>
+                      <small>{ev.method ? `${ev.method} ` : ""}{ev.route} · {securitySourceLabel(ev)} · 最近 {time(ev.last_seen_at)}</small>
+                    </span>
+                  </button>
+                  {pending && (
+                    <div className="admin-row-actions security-quick-actions" aria-label={`快捷处置 ${securityEventTitle(ev)}`}>
+                      {canBlockSource(ev) && (
+                        <button type="button" className={`btn sm ${armed === `${ev.id}:block` ? "danger" : "security-block-btn"}`} disabled={busyEvent === ev.id} onClick={() => { if (arm(`${ev.id}:block`)) void quickBlock(ev); }}>{armed === `${ev.id}:block` ? "确认封禁 1 天" : "封禁 1 天"}</button>
+                      )}
+                      {SECURITY_QUICK.map(([kind, label, note]) => {
+                        const key = `${ev.id}:${kind}`;
+                        return <button type="button" key={kind} className={`btn sm ${armed === key ? (kind === "resolve" ? "primary" : "danger") : ""}`} disabled={busyEvent === ev.id} onClick={() => { if (arm(key)) void quickSettle(Number(ev.id), kind, note); }}>{armed === key ? `确认${label}` : label}</button>;
+                      })}
                     </div>
-                    <p>{ev.summary || ev.detail || ev.message || "安全审计记录"}{ev.user_id ? ` · UID ${ev.user_id}` : ""}</p>
-                    <small>{time(ev.created_at)}{isSuper && ev.source_key ? ` · 来源指纹 ${String(ev.source_key).slice(0, 16)}…` : ""}</small>
-                  </div>
-                  <div className="admin-row-actions">
-                    {open && (
-                      <>
-                        <button type="button" className="btn sm primary" onClick={() => void ui.act(async () => { await write(`/api/admin/security/events/${ev.id}/resolve`, { note: "管理端核查结案" }); await events.refetch(); await overview.refetch(); }, "事件已标为已处理")}>已处理</button>
-                        <button type="button" className="btn sm" onClick={() => void ui.act(async () => { await write(`/api/admin/security/events/${ev.id}/false-positive`, { note: "正常业务操作" }); await events.refetch(); await overview.refetch(); }, "已标记为误报")}>误报</button>
-                      </>
-                    )}
-                    {isSuper && ev.source_key && (
-                      <button type="button" className="btn sm danger" onClick={() => openBlockForm(String(ev.source_key))}>封禁来源</button>
-                    )}
-                  </div>
+                  )}
+                  <Icon name="chevron" size={16} />
                 </div>
               );
             })}
@@ -152,6 +207,317 @@ export function AdminSecurityCenter() {
         </QueryState>
       )}
     </>
+  );
+}
+
+/* 安全事件呈现规则与 App 端 security_event_presentation.dart 保持同一语义：
+ * 标题由 event_type + action 共同决定；自动限流、内容额度和单次登录失败按“提示”展示；
+ * 只有 actionable 且 status=active 的事件可以处置（服务端只允许从 active 处置一次）。 */
+const SECURITY_TITLES: Record<string, string> = {
+  verification_mail_delivery_failed: "验证码邮件发送失败",
+  password_reset_spray: "多邮箱重置请求已限流",
+  verification_spray: "多邮箱验证码请求已限流",
+  verification_source_rate: "验证码请求已限流",
+  verification_cooldown: "验证码冷却拦截",
+  email_target_flood: "验证码发送额度已用完",
+  verification_code_bruteforce: "验证码连续校验失败（待核查）",
+  login_password_spray: "多账号登录异常（待核查）",
+  login_failed: "登录未成功",
+  login_bruteforce: "登录触发冷却限制",
+  login_success: "登录成功",
+  login_new_device: "新设备登录记录",
+  admin_login_new_device: "管理员新设备登录（待核查）",
+  refresh_token_reused: "会话凭据重复使用（待核查）",
+  suspicious_password_reset_succeeded: "可疑密码重置成功",
+  content_post_flood: "发帖被限流",
+  private_message_flood: "私信发送被限流",
+  feedback_ticket_flood: "反馈提交被限流",
+  security_blocked_request: "来源封禁拦截",
+  search_abuse: "搜索请求已限流",
+};
+const AUTO_LIMIT = new Set(["login_bruteforce", "verification_source_rate", "email_target_flood", "verification_spray", "password_reset_spray", "search_abuse"]);
+const CONTENT_QUOTA = new Set(["content_post_flood", "content_reply_flood", "private_message_flood", "feedback_ticket_flood"]);
+const SPRAY = new Set(["login_password_spray", "password_reset_spray", "verification_spray"]);
+const label = (map: Record<string, string>, key: unknown) => map[String(key ?? "")];
+
+function securityMetadata(ev: Entity): Record<string, unknown> {
+  try { return JSON.parse(String(ev.metadata_json || "{}")) || {}; } catch { return {}; }
+}
+function securityEventTitle(ev: Entity) {
+  const type = String(ev.event_type || "");
+  if (type === "password_reset_activity") return label({ mail_sent: "密码重置验证码已发送", password_reset_succeeded: "密码重置成功", request_accepted: "密码重置验证码申请" }, ev.action) || "密码重置活动";
+  if (type === "verification_activity") return label({ mail_sent: "验证码已发送", request_accepted: "验证码申请" }, ev.action) || "验证码活动";
+  if (type === "content_reply_flood") return securityMetadata(ev).reason === "duplicate_content" ? "重复评论被拦截" : "评论发送被限流";
+  return SECURITY_TITLES[type] || type || `事件 #${ev.id}`;
+}
+function securityDisplaySeverity(ev: Entity) {
+  const type = String(ev.event_type || "");
+  return CONTENT_QUOTA.has(type) || AUTO_LIMIT.has(type) || type === "login_failed" ? "low" : String(ev.severity || "info");
+}
+function securitySeverityLabel(value: string) {
+  return label({ critical: "严重", high: "高危", medium: "中危", low: "提示" }, value) || "信息";
+}
+function severityTone(value: string) {
+  return value === "critical" || value === "high" ? "danger" : value === "medium" ? "warn" : "";
+}
+function securityStatusLabel(ev: Entity) {
+  if (!ev.actionable) return "审计流水";
+  return label({ resolved: "已处理", false_positive: "误报", active: "待处置" }, ev.status) || String(ev.status || "");
+}
+function securityActionLabel(ev: Entity) {
+  return label({ observed: "仅观察，未拦截", throttled: "已限流", rate_limited: "已限流", blocked: "已拦截", mail_sent: "验证码已投递", mail_failed: "邮件投递失败", request_accepted: "已受理", password_reset_succeeded: "已完成改密" }, ev.action) || String(ev.action || "未记录");
+}
+function securityEventMetrics(ev: Entity) {
+  const type = String(ev.event_type || ""), meta = securityMetadata(ev);
+  const attempts = Number(ev.attempt_count || 0), blocked = Number(ev.blocked_count || 0), mails = Number(ev.mail_sent_count || 0), resets = Number(ev.password_reset_success_count || 0);
+  const parts: string[] = [];
+  if (SPRAY.has(type)) {
+    const targets = Number(meta.distinct_targets ?? meta.target_count ?? 0);
+    parts.push(targets > 0 ? `${String(meta.window || "同一窗口")}内涉及 ${targets} 个目标` : `请求 ${attempts} 次`);
+    if (type === "login_password_spray" && typeof meta.failure_count === "number") parts.push(`登录失败 ${meta.failure_count} 次`);
+  } else if (type === "login_failed") parts.push(`未成功登录 ${attempts} 次`);
+  else if (type === "login_bruteforce") parts.push(`冷却相关请求 ${attempts} 次`);
+  else if (["login_success", "login_new_device", "admin_login_new_device"].includes(type)) parts.push(`登录 ${attempts} 次`);
+  else if (type === "password_reset_activity" || type === "verification_activity") {
+    if (ev.action === "password_reset_succeeded") parts.push(`成功改密 ${resets} 次`);
+    else {
+      parts.push(`${ev.action === "mail_sent" ? "申请" : "验证码申请"} ${attempts} 次`);
+      if (ev.action === "mail_sent" || mails > 0) parts.push(`实际发信 ${mails} 次`);
+    }
+  } else {
+    parts.push(`尝试 ${attempts} 次`);
+    if (mails > 0) parts.push(`实际发信 ${mails} 次`);
+    if (resets > 0) parts.push(`成功改密 ${resets} 次`);
+  }
+  if (blocked > 0) parts.push(`已拦截 ${blocked} 次`);
+  return parts.join(" · ");
+}
+function securityTargetLabel(ev: Entity) {
+  const postId = securityMetadata(ev).post_id;
+  return String(ev.target_account || ev.target_masked || (ev.target_type === "post" && postId ? `帖子 #${postId}` : "未标记目标"));
+}
+function securitySourceLabel(ev: Entity) {
+  if (!ev.source_attribution_valid || ev.source_ip_status === "untrusted") return "来源归因不可用";
+  if (ev.source_ip_status === "available" && ev.source_ip) return `${ev.source_ip}${ev.source_region ? `（${ev.source_region}）` : ""}`;
+  return ev.source_ip_status === "unavailable" ? "IP 暂不可读取" : "未记录 IP";
+}
+function securityContextLines(ev: Entity) {
+  const type = String(ev.event_type || ""), meta = securityMetadata(ev), lines: string[] = [];
+  if (!ev.target_account && ev.target_account_status === "not_recorded") lines.push("完整账号未记录，历史值无法还原");
+  if (!ev.target_account && ev.target_account_status === "unavailable") lines.push("完整账号暂不可读取（密钥或密文异常）");
+  if (type === "login_failed") lines.push("未成功登录的观察记录，无需人工处置。");
+  else if (AUTO_LIMIT.has(type)) lines.push("系统已自动限流，触发额度或冷却不能单独证明攻击。");
+  else if (type === "login_password_spray") lines.push("同一来源出现较多账号失败；共享网络可能影响判断，请结合账号和设备记录核查。");
+  if (CONTENT_QUOTA.has(type)) {
+    const reason = label({ duplicate_content: "同一帖子内重复发送相同文字", publish_quota_exhausted: "已达到内容发布额度", send_rate_limited: "发送频率超过限制" }, meta.reason);
+    if (reason) lines.push(`原因：${reason}`);
+    if (meta.content_kind) lines.push(`提交内容：${String(meta.content_kind)}${Number(meta.content_length) > 0 ? `（${String(meta.content_length)} 字）` : ""}；正文未写入安全日志`);
+    if (meta.rule) lines.push(`触发规则：${String(meta.rule)}`);
+  }
+  return lines;
+}
+
+type SecurityVerdict = "resolve" | "false-positive";
+// 列表行的快捷处置：不打开详情也能结案或标误报，备注写明来源便于事后追查。
+const SECURITY_QUICK: [SecurityVerdict, string, string][] = [["resolve", "结案", "列表快捷结案：已核查"], ["false-positive", "误报", "列表快捷标记：正常业务操作"]];
+const ACCOUNT_EVENTS = new Set(["admin_login_new_device", "login_new_device", "login_success", "login_password_spray", "refresh_token_reused", "suspicious_password_reset_succeeded", "verification_code_bruteforce"]);
+
+// 详情里的一键处置预设：按事件类型给出最常见的结论，备注即结论本身。
+function securityPresets(ev: Entity): [SecurityVerdict, string, string][] {
+  if (ACCOUNT_EVENTS.has(String(ev.event_type || ""))) return [
+    ["resolve", "确认是本人登录", "已确认为账号本人登录"],
+    ["resolve", "已联系本人核实", "已联系账号本人核实，无异常"],
+    ["resolve", "非本人，已提醒改密", "确认非本人操作，已提醒本人修改密码并检查登录设备"],
+    ["false-positive", "共享网络误判", "共享网络或校园出口导致的误判"],
+  ];
+  return [
+    ["resolve", "已核查无异常", "已核查，无需进一步处理"],
+    ["resolve", "已人工处理", "已人工处理完毕"],
+    ["false-positive", "正常业务操作", "正常业务操作"],
+  ];
+}
+
+// 服务端只允许从 active 处置一次。成功或并发冲突（409，已被其他管理员处置）都刷新，让界面显示最新结论。
+async function settleSecurityEvent(id: number, kind: SecurityVerdict, note: string, refresh: () => Promise<void>) {
+  try {
+    await write(`/api/admin/security/events/${id}/${kind}`, { note });
+  } finally {
+    await refresh();
+  }
+}
+
+// 两步确认：第一次点击只“选中”，4 秒内再点同一个按钮才提交，避免误点造成不可撤回的处置。
+function useArmedAction(): [string, (key: string) => boolean] {
+  const [armed, setArmed] = useState("");
+  useEffect(() => {
+    if (!armed) return;
+    const timer = setTimeout(() => setArmed(""), 4000);
+    return () => clearTimeout(timer);
+  }, [armed]);
+  return [armed, (key) => {
+    if (armed === key) { setArmed(""); return true; }
+    setArmed(key);
+    return false;
+  }];
+}
+
+// 来源封禁按服务端记录的来源执行；归因不可信或没有来源时不提供封禁。
+function canBlockSource(ev: Entity) {
+  return !!ev.source_attribution_valid && !!ev.source_fingerprint && ev.source_ip_status !== "untrusted";
+}
+// 登录、验证码、改密类事件默认封“账号相关接口”，其余只封事件所在的那一个接口。
+function defaultBlockScope(ev: Entity): SecurityBlockScope {
+  const type = String(ev.event_type || "");
+  return ACCOUNT_EVENTS.has(type) || /^(login|verification|password|email_target)/.test(type) ? "account" : "route";
+}
+function defaultBlockReason(ev: Entity) {
+  return `${securityEventTitle(ev)}（${securitySourceLabel(ev)}）`.slice(0, 200);
+}
+type SecurityBlockScope = "account" | "route";
+async function blockSecurityEventSource(id: number, block: { scope: SecurityBlockScope; minutes: number; reason: string }, refresh: () => Promise<void>) {
+  try {
+    await write(`/api/admin/security/events/${id}/block`, { scope: block.scope, duration_minutes: block.minutes, reason: block.reason.trim() });
+  } finally {
+    await refresh();
+  }
+}
+
+// 账号相关接口一次会写多条前缀，同一次操作按 group_id 合并成一行。
+function groupSecurityBlocks(list: Entity[]) {
+  const groups = new Map<string, Entity & { prefixes: string[] }>();
+  for (const block of list) {
+    const key = String(block.group_id || block.id);
+    const group = groups.get(key) || { ...block, prefixes: [] };
+    if (block.route_prefix) group.prefixes.push(String(block.route_prefix));
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+function securityLogLabel(action: unknown) {
+  return label({ security_event_resolved: "结案", security_event_false_positive: "标为误报", security_block_created: "封禁来源", security_block_revoked: "解除封禁" }, action) || String(action || "安全操作");
+}
+function securityLogTarget(log: Entity) {
+  const action = String(log.action || ""), target = String(log.target || "");
+  if (action.startsWith("security_event_")) return `事件 #${target}`;
+  if (action === "security_block_revoked") return `封禁 #${target}`;
+  return target ? `来源 ${target}` : "";
+}
+
+function SecurityEventDetail({ id, isSuper, onChanged, onBlock }: { id: number; isSuper: boolean; onChanged: () => Promise<void>; onBlock: (sourceKey: string) => void }) {
+  const ui = useUI();
+  const detail = useApi(`/api/admin/security/events/${id}`);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [armed, arm] = useArmedAction();
+  const ev = detail.data;
+  const metadata = ev ? securityMetadata(ev) : {};
+  const pending = !!ev?.actionable && ev?.status === "active";
+  const [blockMinutes, setBlockMinutes] = useState(1440);
+  const [blockScope, setBlockScope] = useState<SecurityBlockScope | null>(null);
+  const [blockReason, setBlockReason] = useState<string | null>(null);
+  const scope = blockScope ?? (ev ? defaultBlockScope(ev) : "account");
+  const reason = blockReason ?? (ev ? defaultBlockReason(ev) : "");
+  const durationLabel = blockMinutes === 1440 ? "1 天" : "1 小时";
+
+  async function block() {
+    setBusy(true);
+    const ok = await ui.act(() => blockSecurityEventSource(id, { scope, minutes: blockMinutes, reason }, async () => { await Promise.all([detail.refetch(), onChanged()]); }), `已封禁来源 ${durationLabel}${pending ? "，事件已结案" : ""}`);
+    setBusy(false);
+    if (ok) ui.close();
+  }
+
+  async function settle(kind: SecurityVerdict, text: string) {
+    setBusy(true);
+    const ok = await ui.act(() => settleSecurityEvent(id, kind, text, async () => { await Promise.all([detail.refetch(), onChanged()]); }), kind === "resolve" ? "事件已标为已处理" : "已标记为误报");
+    setBusy(false);
+    if (ok) ui.close();
+  }
+
+  return (
+    <QueryState query={detail}>
+      {ev && (
+        <div className="security-detail">
+          <div className="admin-row-head">
+            <span className={`tag ${severityTone(securityDisplaySeverity(ev))}`}>{securitySeverityLabel(securityDisplaySeverity(ev))}</span>
+            <span className={`tag ${ev.actionable && ev.status === "active" ? "warn" : ""}`}>{securityStatusLabel(ev)}</span>
+            <span className="muted">{securityActionLabel(ev)}</span>
+          </div>
+          <p className="security-detail-metrics">{securityEventMetrics(ev)}</p>
+          <dl className="security-detail-grid">
+            <dt>接口</dt><dd className="mono">{String(ev.method || "")} {String(ev.route || "—")}</dd>
+            <dt>目标</dt><dd>{securityTargetLabel(ev)}</dd>
+            <dt>来源 IP</dt><dd>{securitySourceLabel(ev)}</dd>
+            <dt>来源指纹</dt><dd className="mono">{String(ev.source_fingerprint || "—")}</dd>
+            {ev.actor_user_id != null && <><dt>关联用户</dt><dd><Link to={userHref(ev.actor_user_id) || "#"} onClick={ui.close}>UID {String(ev.actor_user_id)}</Link></dd></>}
+            <dt>设备标识</dt><dd>{ev.installation_seen ? "已记录" : "未记录"}</dd>
+            <dt>首次出现</dt><dd>{time(ev.first_seen_at)}</dd>
+            <dt>最近出现</dt><dd>{time(ev.last_seen_at)}</dd>
+            {!!ev.request_id_sample && <><dt>请求样本</dt><dd className="mono">{String(ev.request_id_sample)}</dd></>}
+            {!!ev.resolved_at && <><dt>处理时间</dt><dd>{time(ev.resolved_at)}{ev.resolved_by ? ` · 管理员 #${String(ev.resolved_by)}` : ""}</dd></>}
+            {!!ev.resolution_note && <><dt>处理备注</dt><dd>{String(ev.resolution_note)}</dd></>}
+          </dl>
+          {securityContextLines(ev).map((line) => <p className="muted" key={line}>{line}</p>)}
+          {Object.keys(metadata).length > 0 && (
+            <details className="security-detail-raw">
+              <summary>原始附加信息</summary>
+              <pre>{JSON.stringify(metadata, null, 2)}</pre>
+            </details>
+          )}
+          {canBlockSource(ev) ? (
+            <section className="security-block-box" aria-label="封禁来源">
+              <h3>封禁这个来源 <small>封禁期间该来源访问所选接口会被拒绝，可在“生效封禁”里提前解除</small></h3>
+              <div className="security-block-options">
+                <div className="admin-seg" role="group" aria-label="封禁时长">
+                  {([[60, "1 小时"], [1440, "1 天"]] as const).map(([value, text]) => <button key={value} type="button" aria-pressed={blockMinutes === value} onClick={() => setBlockMinutes(value)}>{text}</button>)}
+                </div>
+                <div className="admin-seg" role="group" aria-label="封禁范围">
+                  <button type="button" aria-pressed={scope === "account"} onClick={() => setBlockScope("account")}>账号相关接口</button>
+                  <button type="button" aria-pressed={scope === "route"} onClick={() => setBlockScope("route")}>仅 {String(ev.route || "当前接口")}</button>
+                </div>
+              </div>
+              <label className="field">
+                <span>封禁原因</span>
+                <input value={reason} maxLength={200} onChange={(e) => setBlockReason(e.target.value)} />
+              </label>
+              <button type="button" className={`btn ${armed === "block" ? "danger" : "security-block-btn"}`} disabled={busy || !reason.trim()} onClick={() => { if (arm("block")) void block(); }}>
+                {armed === "block" ? "再点一次确认封禁" : `封禁 ${durationLabel}${pending ? "并结案" : ""}`}
+              </button>
+            </section>
+          ) : pending && <p className="muted">该事件没有可信的来源记录，不能封禁；可以直接结案或标为误报。</p>}
+          {pending && (
+            <section className="security-presets" aria-label="一键处置">
+              <h3>一键处置 <small>点一次选中，再点一次提交；处置后不能撤回</small></h3>
+              <div className="security-preset-list">
+                {securityPresets(ev).map(([kind, label, text]) => {
+                  const key = `${kind}:${label}`;
+                  return (
+                    <button type="button" key={key} className={`security-preset ${kind === "false-positive" ? "is-false" : ""} ${armed === key ? "is-armed" : ""}`} disabled={busy} onClick={() => { if (arm(key)) void settle(kind, text); }}>
+                      <b>{armed === key ? "再点一次确认" : label}</b>
+                      <small>{kind === "resolve" ? "结案" : "误报"} · {text}</small>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+          {pending && (
+            <details className="security-custom">
+              <summary>自定义备注处置</summary>
+              <label className="field security-detail-note">
+                <span>处理备注</span>
+                <textarea rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="例如：已联系本人，确认为本人登录" />
+              </label>
+              <div className="admin-inline-actions">
+                <button type="button" className="btn primary" disabled={busy || !note.trim()} onClick={() => void settle("resolve", note.trim())}>标为已处理</button>
+                <button type="button" className="btn" disabled={busy || !note.trim()} onClick={() => void settle("false-positive", note.trim())}>标为误报</button>
+              </div>
+            </details>
+          )}
+          {isSuper && !!ev.source_key && <div className="admin-inline-actions security-detail-actions"><button type="button" className="btn" disabled={busy} onClick={() => onBlock(String(ev.source_key))}>按来源指纹自定义封禁（含全站）</button></div>}
+        </div>
+      )}
+    </QueryState>
   );
 }
 

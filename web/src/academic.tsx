@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { NavLink, useSearchParams } from "react-router-dom";
 import {
   bridgeErrorCode,
   courseConflicts,
@@ -581,21 +581,99 @@ function MobileSchedule() {
     {!all.length && <p className="mobile-schedule-steps">1 选择学期 · 2 预览课程 · 3 设置开学第一周</p>}
   </div>;
 }
+export function StudySubnav() {
+  return (
+    <nav className="study-subnav" aria-label="学习栏目">
+      <NavLink to="/schedule" end>本周课表</NavLink>
+      <NavLink to="/grades">成绩与学业</NavLink>
+      <NavLink to="/exams">考试 · 试卷库</NavLink>
+    </nav>
+  );
+}
+
+const DAY_NAMES = ["一", "二", "三", "四", "五", "六", "日"] as const;
+const SINGLE_PERIOD_TIMES: readonly [string, string][] = [
+  ["08:00", "08:45"],
+  ["08:55", "09:40"],
+  ["10:00", "10:45"],
+  ["10:55", "11:40"],
+  ["13:00", "13:45"],
+  ["13:55", "14:40"],
+  ["14:50", "15:35"],
+  ["15:45", "16:30"],
+  ["16:40", "17:25"],
+  ["17:35", "18:20"],
+  ["19:30", "20:15"],
+  ["20:25", "21:10"],
+];
+const PAD_TONES = ["c-blue", "c-teal", "c-amber", "c-plum", "c-coral", "c-moss"] as const;
+
+function padCourseTone(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return PAD_TONES[hash % PAD_TONES.length];
+}
+
+function splitPeriodRuns(periods: number[]): [number, number][] {
+  const sorted = [...new Set(periods.filter((p) => p >= 1 && p <= 12))].sort((a, b) => a - b);
+  if (!sorted.length) return [];
+  const runs: [number, number][] = [];
+  let start = sorted[0], prev = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === prev + 1) prev = sorted[i];
+    else { runs.push([start, prev]); start = prev = sorted[i]; }
+  }
+  runs.push([start, prev]);
+  return runs;
+}
+
+function formatWeekSpan(weeks: number[]) {
+  if (!weeks.length) return "非本周";
+  const sorted = [...weeks].sort((a, b) => a - b);
+  return sorted.length === 1 ? `第${sorted[0]}周` : `${sorted[0]}–${sorted[sorted.length - 1]}周`;
+}
+
+function periodClockLabel(periods: number[]) {
+  const runs = splitPeriodRuns(periods);
+  if (!runs.length) return "";
+  const [first] = runs[0];
+  const [, last] = runs[runs.length - 1];
+  return `${SINGLE_PERIOD_TIMES[first - 1][0]}–${SINGLE_PERIOD_TIMES[last - 1][1]}`;
+}
+
 function DesktopSchedule() {
   const store = useAcademic(),
     ui = useUI();
   const [params, setParams] = useSearchParams();
-  const week = Math.max(
-    1,
-    Math.min(
-      60,
-      Number(params.get("week")) ||
-        Math.max(1, teachingWeek(store.data.termStart)),
-    ),
-  );
+  const currentWeek = Math.max(1, Math.min(60, teachingWeek(store.data.termStart) || 1));
+  const week = Math.max(1, Math.min(60, Number(params.get("week")) || currentWeek));
   const weekend = params.get("weekend") !== "0";
+  const daysCount = weekend ? 7 : 5;
+  const todayDay = new Date().getDay() || 7;
+  const [selectedDay, setSelectedDay] = useState<number>(() => Math.min(todayDay, daysCount));
+  const activeDay = Math.min(selectedDay, daysCount);
+
   const all = mergeCourses(store.data.courses, store.data.overrides);
   const courses = all.filter((c) => c.weeks.includes(week));
+  const dayCourses = courses
+    .filter((c) => c.day === activeDay)
+    .sort((a, b) => Math.min(...a.periods) - Math.min(...b.periods));
+
+  const monday = store.data.termStart ? new Date(`${store.data.termStart}T00:00:00`) : new Date();
+  if (store.data.termStart && !Number.isNaN(monday.getTime())) {
+    monday.setDate(monday.getDate() + (week - 1) * 7);
+  } else {
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    base.setDate(base.getDate() - ((base.getDay() + 6) % 7) + (week - currentWeek) * 7);
+    monday.setTime(base.getTime());
+  }
+  const weekDates = Array.from({ length: 7 }, (_, idx) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + idx);
+    return d;
+  });
+
   const openConnect = () =>
     ui.open(
       "更新学校课表",
@@ -608,7 +686,7 @@ function DesktopSchedule() {
         }}
       />,
     );
-  const todayIndex = (new Date().getDay() || 7) - 1;
+
   const phoneSchedules = store.phone?.schedules || [];
   // 切换只替换学校课表这一层；本地调整按课程 id 叠加，换回原课表时仍然生效。
   const switchSchedule = (id: string) => {
@@ -620,77 +698,91 @@ function DesktopSchedule() {
     store.setSource("phone");
     setParams({ weekend: weekend ? "1" : "0" });
   };
+
+  const occupied = new Set<string>();
+  const activeBlocks = courses
+    .filter((c) => c.day >= 1 && c.day <= daysCount)
+    .flatMap((c) =>
+      splitPeriodRuns(c.periods).map(([start, end]) => {
+        for (let p = start; p <= end; p++) occupied.add(`${c.day}:${p}`);
+        return { course: c, start, end };
+      }),
+    );
+  const ghostBlocks = all
+    .filter((c) => !c.weeks.includes(week) && c.day >= 1 && c.day <= daysCount)
+    .flatMap((c) =>
+      splitPeriodRuns(c.periods).flatMap(([start, end]) => {
+        for (let p = start; p <= end; p++) {
+          if (occupied.has(`${c.day}:${p}`)) return [];
+        }
+        for (let p = start; p <= end; p++) occupied.add(`${c.day}:${p}`);
+        return [{ course: c, start, end }];
+      }),
+    );
+
   const updatedText = store.updated ? new Date(store.updated).toLocaleString("zh-CN") : "";
+  const termNo = store.data.term.semester === "12" ? "2" : store.data.term.semester === "16" ? "3" : "1";
+  const termYearNum = Number(store.data.term.year) || new Date().getFullYear();
+  const termText = `${termYearNum}-${termYearNum + 1}-${termNo} 学期`;
+  const activeDate = weekDates[activeDay - 1];
+  const isViewingToday = activeDate.toDateString() === new Date().toDateString();
+
   return (
-    <>
-      <Head
-        title="我的课表"
-        description={`${store.data.term.year} 学年 · 学校课表与本地调整`}
-      >
-        <button
-          className="btn"
-          onClick={() => ui.open("课表设置", <AcademicSettings />)}
-        >
-          课表设置
-        </button>
-        <button
-          className="btn"
-          onClick={() => downloadJSON("sylulive-academic.json", store.data)}
-        >
-          导出
-        </button>
-        <button
-          className="btn primary"
-          onClick={() => ui.open("添加课程", <CourseForm />)}
-        >
-          ＋ 添加课程
-        </button>
-      </Head>
-      <div className="source-line">
-        <span>
+    <div className="pad-schedule-page">
+      <div className="pad-schedule-header">
+        <div className="pad-schedule-lead">
+          <h1>课表</h1>
+          <div className="pad-week-switcher">
+            <button
+              type="button"
+              className="pad-week-arrow"
+              aria-label="上一周"
+              disabled={week === 1}
+              onClick={() => setParams({ week: String(week - 1), weekend: weekend ? "1" : "0" })}
+            >
+              <Icon name="chevron" size={15} />
+            </button>
+            <span className="pad-week-label">第 {week} 周</span>
+            <button
+              type="button"
+              className="pad-week-arrow is-next"
+              aria-label="下一周"
+              disabled={week === 60}
+              onClick={() => setParams({ week: String(week + 1), weekend: weekend ? "1" : "0" })}
+            >
+              <Icon name="chevron" size={15} />
+            </button>
+          </div>
+          <span className="pad-term-meta">
+            {termText} · {weekDates[0].getMonth() + 1}/{weekDates[0].getDate()} – {weekDates[6].getMonth() + 1}/{weekDates[6].getDate()}
+          </span>
+          {week !== currentWeek && (
+            <button
+              type="button"
+              className="pad-back-week"
+              onClick={() => setParams({ week: String(currentWeek), weekend: weekend ? "1" : "0" })}
+            >
+              回到本周
+            </button>
+          )}
+        </div>
+        <StudySubnav />
+        <div className="pad-head-actions">
+          <button className="btn" onClick={() => ui.open("课表设置", <AcademicSettings />)}>课表设置</button>
+          <button className="btn" onClick={() => downloadJSON("sylulive-academic.json", store.data)}>导出</button>
+          <button className="btn primary" onClick={() => ui.open("添加课程", <CourseForm />)}>＋ 添加课程</button>
+        </div>
+      </div>
+
+      <div className="source-line pad-source-bar">
+        <span className="pad-sync-status">
+          <i aria-hidden="true" className={store.updated ? "is-synced" : ""} />
           {!store.updated
             ? "未读取学校课表"
             : store.source === "phone"
               ? `来自手机 App 同步 · 课表读取于 ${updatedText}`
               : `学校数据更新于 ${updatedText}`}
         </span>
-        <span className="source-actions">
-          <button className="link-btn" onClick={() => openPhoneSync(ui)}>
-            <Icon name="scan" size={15} />手机 App 扫码同步
-          </button>
-          <button className="link-btn" onClick={openConnect}>
-            连接教务助手 / 刷新
-          </button>
-        </span>
-      </div>
-      <div className="schedule-toolbar">
-        <div className="week-nav">
-          <button
-            className="btn"
-            disabled={week === 1}
-            onClick={() =>
-              setParams({
-                week: String(week - 1),
-                weekend: weekend ? "1" : "0",
-              })
-            }
-          >
-            上一周
-          </button>
-          <div className="week-current">第 {week} 周</div>
-          <button
-            className="btn"
-            disabled={week === 60}
-            onClick={() =>
-              setParams({
-                week: String(week + 1),
-                weekend: weekend ? "1" : "0",
-              })
-            }
-          >
-            下一周
-          </button>
-        </div>
         {phoneSchedules.length > 1 && (
           <label className="schedule-switch">
             <span>切换课表</span>
@@ -707,67 +799,71 @@ function DesktopSchedule() {
           <input
             type="checkbox"
             checked={weekend}
-            onChange={(e) =>
-              setParams({
-                week: String(week),
-                weekend: e.target.checked ? "1" : "0",
-              })
-            }
+            onChange={(e) => setParams({ week: String(week), weekend: e.target.checked ? "1" : "0" })}
           />{" "}
           显示周末
         </label>
+        <span className="source-actions">
+          <button className="link-btn" onClick={() => openPhoneSync(ui)}>
+            <Icon name="scan" size={15} />手机 App 扫码同步
+          </button>
+          <button className="link-btn" onClick={openConnect}>
+            连接教务助手 / 刷新
+          </button>
+        </span>
       </div>
-      <div className="schedule-scroll" tabIndex={0}>
-        {!store.data.courses.length && (
-          <div className="schedule-empty-hint">
-            <Icon name="schedule" size={22} />
-            <b>还没有课表</b>
-            <p>用手机 App 扫码把正在用的课表同步过来，或连接教务助手从学校读取，也可以手动添加课程。</p>
-            <div className="empty-actions">
-              <button className="btn primary" onClick={() => openPhoneSync(ui)}><Icon name="scan" size={16} />手机 App 扫码同步</button>
-              <button className="btn" onClick={openConnect}>连接教务助手</button>
-              <button className="btn" onClick={() => ui.open("添加课程", <CourseForm />)}>手动添加</button>
+
+      <div className="pad-schedule-shell">
+        <aside className="pad-overview-card" aria-label="单日课程概览">
+          <div className="pad-overview-head">
+            <div>
+              <h2>{isViewingToday ? "今日概览" : `周${DAY_NAMES[activeDay - 1]}概览`}</h2>
+              <p>{activeDate.getMonth() + 1}月{activeDate.getDate()}日 · 周{DAY_NAMES[activeDay - 1]}</p>
             </div>
+            <span className="pad-overview-count">{dayCourses.length ? `共 ${dayCourses.length} 门` : "无课"}</span>
           </div>
-        )}
-        <div
-          className="schedule"
-          style={{
-            gridTemplateColumns: `86px repeat(${weekend ? 7 : 5},minmax(104px,1fr))`,
-          }}
-        >
-          <div className="sch-head">节次</div>
-          {["一", "二", "三", "四", "五", "六", "日"]
-            .slice(0, weekend ? 7 : 5)
-            .map((d, index) => (
-              <div className={`sch-head ${index === todayIndex ? "today" : ""}`} key={d}>
-                周{d}
-              </div>
-            ))}
-          {Array.from({ length: 6 }, (_, i) => i * 2 + 1).map((period) => (
-            <Row
-              key={period}
-              period={period}
-              today={todayIndex}
-              days={weekend ? 7 : 5}
-              courses={courses}
-              onEdit={(c) =>
-                ui.open("课程详情与编辑", <CourseForm course={c} />)
-              }
-            />
-          ))}
-        </div>
-      </div>
-      <div className="section">
-        <div className="section-head">
-          <h2>课表工具</h2>
-        </div>
-        <div className="three-col">
-          <div className="panel tool-summary">
-            <b>本地调整</b>
-            <p className="muted">学校刷新保留手动课程和修改。</p>
+
+          {dayCourses.length ? (
+            <div className="pad-overview-list">
+              {dayCourses.map((c) => {
+                const sorted = [...c.periods].sort((a, b) => a - b);
+                const spanText = sorted.length > 1 ? `第${sorted[0]}–${sorted[sorted.length - 1]}节` : `第${sorted[0]}节`;
+                return (
+                  <div
+                    key={c.id}
+                    className={`pad-overview-item ${padCourseTone(c.name)}`}
+                    onClick={() => ui.open("课程详情与编辑", <CourseForm course={c} />)}
+                  >
+                    <div className="pad-overview-time">
+                      <span>{periodClockLabel(c.periods)}</span>
+                      <small>{spanText}</small>
+                    </div>
+                    <b>{c.name}</b>
+                    {(c.room || c.teacher) && (
+                      <div className="pad-overview-meta">
+                        {c.room && <span>@{c.room}</span>}
+                        {c.teacher && <span>{c.teacher}</span>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="pad-overview-empty">
+              <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
+                <path d="M3 8h14v7a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
+                <path d="M6 2v3M10 2v3M14 2v3" />
+              </svg>
+              <b>当日无课，好好休息</b>
+              <p>{all.length ? "点击右侧任意星期表头可切换查看" : "连接教务或扫码同步后展示当日时间轴"}</p>
+            </div>
+          )}
+
+          <div className="pad-overview-tools" aria-label="课表快捷工具">
             <button
-              className="btn"
+              type="button"
               onClick={() =>
                 ui.open(
                   "本地调整",
@@ -786,28 +882,19 @@ function DesktopSchedule() {
                 )
               }
             >
-              管理调整
+              本地调整
             </button>
-          </div>
-          <div className="panel tool-summary">
-            <b>空闲时间</b>
-            <p className="muted">按所选教学周计算</p>
             <button
-              className="btn"
+              type="button"
               onClick={() =>
                 ui.open(
                   "本周空闲节次",
                   <>
                     {Array.from({ length: 7 }, (_, d) => (
                       <p key={d}>
-                        周{d + 1}：
+                        周{DAY_NAMES[d]}：
                         {Array.from({ length: 12 }, (_, p) => p + 1)
-                          .filter(
-                            (p) =>
-                              !courses.some(
-                                (c) => c.day === d + 1 && c.periods.includes(p),
-                              ),
-                          )
+                          .filter((p) => !courses.some((c) => c.day === d + 1 && c.periods.includes(p)))
                           .join("、") || "无"}
                       </p>
                     ))}
@@ -815,17 +902,121 @@ function DesktopSchedule() {
                 )
               }
             >
-              查看空闲节次
+              空闲节次
+            </button>
+            <button type="button" onClick={() => ui.open("课程提醒与小窗", <ReminderSettings />)}>
+              课程提醒
             </button>
           </div>
-          <div className="panel tool-summary">
-            <b>课程提醒</b>
-            <p className="muted">浏览器运行时由助手提醒；修改课表后需重新同步。</p>
-            <button className="btn" onClick={() => ui.open('课程提醒与小窗', <ReminderSettings />)}>设置提醒与小窗</button>
+        </aside>
+
+        <section className="pad-grid-surface schedule-scroll" tabIndex={0} aria-label="周课表网格">
+          {!all.length && (
+            <div className="schedule-empty-hint">
+              <Icon name="schedule" size={22} />
+              <b>还没有课表</b>
+              <p>用手机 App 扫码把正在用的课表同步过来，或连接教务助手从学校读取，也可以手动添加课程。</p>
+              <div className="empty-actions">
+                <button className="btn primary" onClick={() => openPhoneSync(ui)}><Icon name="scan" size={16} />手机 App 扫码同步</button>
+                <button className="btn" onClick={openConnect}>连接教务助手</button>
+                <button className="btn" onClick={() => ui.open("添加课程", <CourseForm />)}>手动添加</button>
+              </div>
+            </div>
+          )}
+
+          <div
+            className="pad-weekdays"
+            style={{ gridTemplateColumns: `56px repeat(${daysCount}, minmax(0, 1fr))` }}
+          >
+            <span className="pad-corner">节次</span>
+            {DAY_NAMES.slice(0, daysCount).map((label, idx) => {
+              const dayNum = idx + 1;
+              const date = weekDates[idx];
+              const isTodayCol = date.toDateString() === new Date().toDateString();
+              const isSelectedCol = dayNum === activeDay;
+              return (
+                <button
+                  type="button"
+                  key={label}
+                  className={`pad-weekday ${isTodayCol ? "is-today" : ""} ${isSelectedCol ? "is-selected" : ""}`}
+                  onClick={() => setSelectedDay(dayNum)}
+                >
+                  <b>周{label}</b>
+                  <small>{date.getMonth() + 1}/{date.getDate()}</small>
+                </button>
+              );
+            })}
           </div>
-        </div>
+
+          <div
+            className="pad-matrix"
+            style={{ gridTemplateColumns: `56px repeat(${daysCount}, minmax(0, 1fr))` }}
+          >
+            {SINGLE_PERIOD_TIMES.map(([start, end], idx) => {
+              const period = idx + 1;
+              const rhythmBreak = period === 4 || period === 10;
+              return (
+                <div
+                  key={`time:${period}`}
+                  className={`pad-period-cell ${rhythmBreak ? "is-break" : ""}`}
+                  style={{ gridColumn: 1, gridRow: period }}
+                >
+                  <b>{period}</b>
+                  <small>{start}</small>
+                  <small>{end}</small>
+                </div>
+              );
+            })}
+
+            {SINGLE_PERIOD_TIMES.flatMap((_, pIdx) => {
+              const period = pIdx + 1;
+              const rhythmBreak = period === 4 || period === 10;
+              return Array.from({ length: daysCount }, (__, dIdx) => {
+                const dayNum = dIdx + 1;
+                const isTodayCol = weekDates[dIdx].toDateString() === new Date().toDateString();
+                const isSelectedCol = dayNum === activeDay;
+                return (
+                  <div
+                    key={`slot:${period}:${dayNum}`}
+                    className={`pad-slot ${rhythmBreak ? "is-break" : ""} ${isTodayCol ? "is-today" : ""} ${isSelectedCol ? "is-selected" : ""}`}
+                    style={{ gridColumn: dayNum + 1, gridRow: period }}
+                    onClick={() => setSelectedDay(dayNum)}
+                  />
+                );
+              });
+            })}
+
+            {ghostBlocks.map(({ course, start, end }) => (
+              <div
+                key={`ghost:${course.id}:${start}-${end}`}
+                className="pad-course is-ghost"
+                style={{ gridColumn: course.day + 1, gridRow: `${start} / ${end + 1}` }}
+                onClick={() => ui.open("课程详情与编辑", <CourseForm course={course} />)}
+                title={`${course.name}（${formatWeekSpan(course.weeks)}）`}
+              >
+                <em>{formatWeekSpan(course.weeks)}</em>
+                <b>{course.name}</b>
+                {course.room && <span>@{course.room}</span>}
+              </div>
+            ))}
+
+            {activeBlocks.map(({ course, start, end }) => (
+              <button
+                type="button"
+                key={`${course.id}:${start}-${end}`}
+                className={`course pad-course ${padCourseTone(course.name)}`}
+                style={{ gridColumn: course.day + 1, gridRow: `${start} / ${end + 1}` }}
+                onClick={() => ui.open("课程详情与编辑", <CourseForm course={course} />)}
+              >
+                <b>{course.name}</b>
+                {course.room && <span>{course.room}</span>}
+                {course.teacher && <small>{course.teacher}</small>}
+              </button>
+            ))}
+          </div>
+        </section>
       </div>
-    </>
+    </div>
   );
 }
 function ReminderSettings() {
@@ -896,6 +1087,7 @@ export function Grades() {
         title="成绩与学业"
         description="成绩、学分要求、二课、体测与毕业检查"
       >
+        {!mobile && <StudySubnav />}
         <button
           className="btn"
           onClick={() => ui.open("数据设置", <AcademicSettings />)}

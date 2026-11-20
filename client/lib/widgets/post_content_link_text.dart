@@ -1,6 +1,7 @@
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
@@ -42,6 +43,12 @@ class PostContentLinkText extends StatefulWidget {
   final Future<void> Function(String text)? onShare;
   final VoidCallback? onPlainTextTap;
 
+  /// 需要高亮的整段文字，例如评论里真实被 @ 的 `@昵称`。
+  final List<String> highlightTerms;
+
+  /// 点击高亮片段时回调该片段文字；为空时高亮片段沿用普通文本点击。
+  final ValueChanged<String>? onHighlightTap;
+
   const PostContentLinkText({
     super.key,
     required this.text,
@@ -58,6 +65,8 @@ class PostContentLinkText extends StatefulWidget {
     this.onSelectionChanged,
     this.onShare,
     this.onPlainTextTap,
+    this.highlightTerms = const [],
+    this.onHighlightTap,
   });
 
   @override
@@ -93,7 +102,9 @@ class _PostContentLinkTextState extends State<PostContentLinkText> {
         oldWidget.style != widget.style ||
         oldWidget.leadingTextEnd != widget.leadingTextEnd ||
         oldWidget.leadingTextStyle != widget.leadingTextStyle ||
-        oldWidget.onPlainTextTap != widget.onPlainTextTap) {
+        oldWidget.onPlainTextTap != widget.onPlainTextTap ||
+        oldWidget.onHighlightTap != widget.onHighlightTap ||
+        !listEquals(oldWidget.highlightTerms, widget.highlightTerms)) {
       _rebuildSpans();
       _invalidateSmartSelection();
     }
@@ -115,6 +126,56 @@ class _PostContentLinkTextState extends State<PostContentLinkText> {
       decoration: TextDecoration.underline,
       decorationColor: AppColors.brandPrimary,
     );
+    final highlightStyle = (widget.style ?? const TextStyle()).copyWith(
+      color: AppColors.brandPrimary,
+      fontWeight: FontWeight.w500,
+    );
+
+    // 普通文本里命中 highlightTerms 的片段单独着色；同一位置取最长的词。
+    void addTermSpans(int start, int end) {
+      var cursor = start;
+      while (cursor < end) {
+        var hitStart = -1;
+        var hitLength = 0;
+        for (final term in widget.highlightTerms) {
+          if (term.isEmpty) continue;
+          final index = widget.text.indexOf(term, cursor);
+          if (index < 0 || index + term.length > end) continue;
+          if (hitStart < 0 ||
+              index < hitStart ||
+              (index == hitStart && term.length > hitLength)) {
+            hitStart = index;
+            hitLength = term.length;
+          }
+        }
+        if (hitStart < 0) hitStart = end;
+        if (hitStart > cursor) {
+          spans.add(
+            TextSpan(
+              text: widget.text.substring(cursor, hitStart),
+              recognizer: _plainTextRecognizer(),
+            ),
+          );
+        }
+        if (hitStart == end) return;
+        final term = widget.text.substring(hitStart, hitStart + hitLength);
+        final onHighlightTap = widget.onHighlightTap;
+        TapGestureRecognizer? recognizer;
+        if (onHighlightTap != null) {
+          recognizer = TapGestureRecognizer()
+            ..onTap = () => onHighlightTap(term);
+          _recognizers.add(recognizer);
+        }
+        spans.add(
+          TextSpan(
+            text: term,
+            style: highlightStyle,
+            recognizer: recognizer ?? _plainTextRecognizer(),
+          ),
+        );
+        cursor = hitStart + hitLength;
+      }
+    }
 
     void addPlainSpan(int start, int end) {
       if (start >= end) return;
@@ -133,12 +194,7 @@ class _PostContentLinkTextState extends State<PostContentLinkText> {
         if (firstEnd >= end) return;
         start = firstEnd;
       }
-      spans.add(
-        TextSpan(
-          text: widget.text.substring(start, end),
-          recognizer: _plainTextRecognizer(),
-        ),
-      );
+      addTermSpans(start, end);
     }
 
     for (final link in links) {

@@ -18,6 +18,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/account_security_screen.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:shenliyuan/screens/admin_security_blocks_screen.dart';
+import 'package:shenliyuan/screens/admin_security_logs_screen.dart';
 import 'package:shenliyuan/screens/admin_security_center_screen.dart';
 import 'package:shenliyuan/screens/admin_panel_screen.dart';
 
@@ -172,7 +173,7 @@ class _Fixture {
             'total': 1,
             'limit': 50
           },
-        '/super/security/blocks' => [
+        '/admin/security/blocks' => [
             {
               'id': 8,
               'group_id': 'qa',
@@ -385,7 +386,7 @@ void main() {
     f.auth.changeRole('admin');
     await tester.pumpAndSettle();
     expect(find.textContaining('synthetic-source-key'), findsNothing);
-    expect(find.text('临时封禁来源'), findsNothing);
+    expect(find.text('自定义封禁（含全站）'), findsNothing);
   });
 
   testWidgets('改密提交锁定重复点击，失败后保留输入允许重试', (tester) async {
@@ -432,11 +433,92 @@ void main() {
     await _pump(tester, f, const AdminSecurityBlocksScreen());
     await tester.tap(find.text('解除封禁'));
     await tester.pumpAndSettle();
-    f.auth.changeRole('admin');
+    // 管理员也可管理封禁；降为普通用户后旧确认框与列表必须失效。
+    f.auth.changeRole('user');
     await tester.pumpAndSettle();
     expect(find.text('确认解除'), findsNothing);
     expect(find.textContaining('验收封禁来源'), findsNothing);
     expect(f.requests.where((r) => r.method == 'DELETE'), isEmpty);
+  });
+
+  testWidgets('管理员从事件封禁来源 1 天并结案，请求不携带来源键', (tester) async {
+    final f = _Fixture();
+    f.auth.changeRole('admin');
+    f.respond = (r) => switch (r.path) {
+          '/admin/security/overview' => {
+              'range': '24h',
+              'actionable_high_count': 1,
+              'protection': {'security_block': 'healthy'}
+            },
+          '/admin/security/events' => {
+              'items': [
+                {
+                  ..._event(1),
+                  'source_key': null,
+                  'source_attribution_valid': true
+                }
+              ],
+              'total': 1,
+              'limit': 50
+            },
+          '/admin/security/events/1/block' => {'event_resolved': true},
+          _ => f.defaults(r),
+        };
+    await _pump(tester, f, const AdminSecurityCenterScreen());
+    await _scrollTo(tester, find.text('目标：验收目标1'), 400);
+    await tester.tap(find.text('目标：验收目标1'));
+    await tester.pumpAndSettle();
+    expect(find.text('自定义封禁（含全站）'), findsNothing);
+    await tester.tap(find.text('封禁来源并结案'));
+    await tester.pumpAndSettle();
+    expect(find.text('封禁这个来源'), findsOneWidget);
+    await tester.tap(find.text('确认封禁 1 天'));
+    await tester.pumpAndSettle();
+    final block = f.requests.singleWhere(
+        (r) => r.method == 'POST' && r.path == '/admin/security/events/1/block');
+    final body = block.data as Map;
+    expect(body['scope'], 'account');
+    expect(body['duration_minutes'], 1440);
+    expect(body['reason'], isNotEmpty);
+    expect(body.containsKey('source_key'), isFalse);
+    expect(find.text('已封禁来源，事件已结案'), findsOneWidget);
+  });
+
+  testWidgets('管理员可查看安全操作记录', (tester) async {
+    final f = _Fixture();
+    f.auth.changeRole('admin');
+    f.respond = (r) => r.path == '/admin/security/logs'
+        ? {
+            'items': [
+              {
+                'id': 3,
+                'admin_id': 7,
+                'admin_name': '值班管理员',
+                'action': 'security_block_created',
+                'target': 'b40c…4d94',
+                'detail': '管理员新设备登录 · 1440 分钟',
+                'created_at': '2026-11-20T05:30:00Z'
+              },
+              {
+                'id': 2,
+                'admin_id': 7,
+                'admin_name': '值班管理员',
+                'action': 'security_event_resolved',
+                'target': '42',
+                'detail': '已封禁来源 1 天：管理员新设备登录',
+                'created_at': '2026-11-20T05:30:00Z'
+              }
+            ]
+          }
+        : f.defaults(r);
+    await _pump(tester, f, const AdminSecurityLogsScreen());
+    expect(find.text('封禁来源'), findsOneWidget);
+    expect(find.text('结案'), findsOneWidget);
+    expect(find.text('事件 #42'), findsOneWidget);
+    expect(find.text('值班管理员'), findsNWidgets(2));
+    f.auth.changeRole('user');
+    await tester.pumpAndSettle();
+    expect(find.text('值班管理员'), findsNothing);
   });
 
   testWidgets('事件分页失败可重试，筛选后丢弃旧页且不串列表', (tester) async {

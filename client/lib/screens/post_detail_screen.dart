@@ -728,6 +728,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       replyToUserId: draft.replyToUserId,
       // 底部输入区回复的是根评论本身；楼中楼 sheet 会传精确目标。
       replyToReplyId: draft.replyToReplyId ?? draft.parentReplyId,
+      mentionUserIds: draft.mentionUserIds,
       idempotencyKey: _replyIdempotencyKey,
       idempotencyFingerprint: fingerprint,
     );
@@ -828,6 +829,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     required int? parentReplyId,
     required int? replyToUserId,
     int? replyToReplyId,
+    List<int> mentionUserIds = const [],
     String? idempotencyKey,
     String? idempotencyFingerprint,
   }) async {
@@ -883,6 +885,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         if (replyToUserId != null) 'reply_to_user_id': replyToUserId.toString(),
         if (replyToReplyId != null)
           'reply_to_reply_id': replyToReplyId.toString(),
+        if (mentionUserIds.isNotEmpty)
+          'mention_user_ids': mentionUserIds.join(','),
       });
       final createResponse = await _dio.post(
         '/posts/${widget.postId}/replies',
@@ -3306,7 +3310,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (p.author != null) ...[
+                      if (p.author != null && !p.author!.isAiBot) ...[
                         const SizedBox(width: 6),
                         _buildLevelBadge(p.author!, isDark),
                       ],
@@ -3775,6 +3779,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       enabled: context.watch<AuthProvider>().isLoggedIn,
       onSubmit: _sendReplyDraft,
       onNeedLogin: _openReplyLogin,
+      mentionReplies: _replies,
     );
   }
 
@@ -3783,6 +3788,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   // ---- 作者卡片（集市复用，保持不变） ----
+
+  void _openMention(Reply reply, String term) {
+    final userId = reply.mentionUserId(term);
+    if (userId != null) _openAuthorHome(userId);
+  }
 
   void _openAuthorHome(int userId) {
     final handler = widget.onAuthorTap;
@@ -4694,6 +4704,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                 preserveReplyTargetOnSuccess: true,
                 emojiPanelFallbackHeight: 230,
                 emojiPanelMaxHeight: 280,
+                mentionReplies: [parentReply, ...sheetChildren],
                 onSubmit: (draft) async {
                   if (isSending) return false;
                   setSheetState(() => isSending = true);
@@ -4832,7 +4843,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                             : Colors.black87,
                       ),
                     ),
-                    if (r.author != null) ...[
+                    if (r.author != null && !r.author!.isAiBot) ...[
                       const SizedBox(width: 4),
                       _buildLevelBadgeSmall(r.author!, isDark),
                     ],
@@ -5050,7 +5061,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                             color: isDark ? Colors.white70 : Colors.black87,
                           ),
                         ),
-                        if (child.author != null) ...[
+                        if (child.author != null && !child.author!.isAiBot) ...[
                           const SizedBox(width: 4),
                           _buildLevelBadgeSmall(child.author!, isDark),
                         ],
@@ -5208,6 +5219,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
     return PostContentLinkText(
       text: content,
+      highlightTerms: r.mentionTerms,
+      onHighlightTap: (term) => _openMention(r, term),
       selectable: true,
       onPlainTextTap: onTextTap,
       leadingTextEnd: r.replyTargetPrefix.isNotEmpty
@@ -5235,6 +5248,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }) {
     final textWidget = PostContentLinkText(
       text: reply.displayContent,
+      highlightTerms: reply.mentionTerms,
+      onHighlightTap: (term) => _openMention(reply, term),
       leadingTextEnd: reply.replyTargetPrefix.length,
       leadingTextStyle: TextStyle(color: Theme.of(context).colorScheme.primary),
       selectable: true,

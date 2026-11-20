@@ -204,7 +204,12 @@ test('食堂审核与商户菜品运营、安全中心告警处置及获奖核�
     if (path === '/api/canteens/admin-list') return route.fulfill({json: {items: [{id: 5, name: '馋熙椒麻鸡', location_area: '二食堂', location_floor: '一楼', operating_status: 'open', average_star: 4.7, rating_count: 18}]}});
     if (path === '/api/canteens/5/admin-dishes') return route.fulfill({json: {items: [{id: 301, name: '招牌椒麻鸡', status: 'active', average_score: 4.8, photos: []}]}});
     if (path === '/api/admin/security/overview') return route.fulfill({json: {actionable_high_count: 1, open_high_count: 1, total_events: 4, active_blocks_count: 0}});
-    if (path === '/api/admin/security/events') return route.fulfill({json: {items: [{id: 88, severity: 'high', status: 'open', title: '高频登录尝试', route: '/api/login', source_key: 'abcdef1234567890abcdef1234567890', created_at: '2026-11-17T06:00:00Z'}]}} );
+    // 字段与服务端 securityEventResponse 一致：未处置状态是 active，时间字段是 first/last_seen_at。
+    const securityEvent = {id: 88, event_type: 'admin_login_new_device', severity: 'high', status: 'active', actionable: true, action: 'observed', method: 'POST', route: '/api/login', attempt_count: 1, target_masked: '24***28', source_attribution_valid: true, source_ip_status: 'available', source_ip: '203.0.113.9', source_region: '测试地区', source_fingerprint: 'b40c…4d94', source_key: 'fixture-source-key', first_seen_at: '2026-11-17T06:00:00Z', last_seen_at: '2026-11-17T06:00:00Z'};
+    if (path === '/api/admin/security/events') return route.fulfill({json: {items: [securityEvent]}});
+    if (path === '/api/admin/security/events/88') return route.fulfill({json: securityEvent});
+    if (path === '/api/admin/security/events/88/block') return route.fulfill({status: 201, json: {id: 7, event_resolved: true}});
+    if (path === '/api/admin/security/logs') return route.fulfill({json: {items: [{id: 501, admin_id: 900, admin_name: '超级管理员', action: 'security_block_created', target: 'b40c…4d94', detail: '管理员新设备登录 · /api/login · 1440 分钟', created_at: '2026-11-17T06:05:00Z'}]}});
     if (path === '/api/admin/competition-awards/verifications') return route.fulfill({json: {items: [{id: 66, award_name: '省一等奖', competition_title: '蓝桥杯'}]}} );
     if (path === '/api/admin/competition-awards/verifications/66') return route.fulfill({json: {id: 66, award_name: '省一等奖', competition_title: '蓝桥杯', evidence_file_ids: []}});
     return route.fulfill({json: {items: []}});
@@ -220,9 +225,32 @@ test('食堂审核与商户菜品运营、安全中心告警处置及获奖核�
   await page.screenshot({path: info.outputPath('admin-canteen-ops.png'), fullPage: true});
 
   await page.goto('admin?tab=security');
-  await expect(page.getByText('高频登录尝试', {exact: true})).toBeVisible();
-  await page.getByRole('button', {name: '已处理', exact: true}).click();
-  expect(writes.some(w => w.path === '/api/admin/security/events/88/resolve')).toBe(true);
+  await expect(page.getByText('管理员新设备登录（待核查）', {exact: true})).toBeVisible();
+  await expect(page.locator('.security-event-row')).toContainText('待处置');
+  await expect(page.locator('.security-event-row')).toContainText('203.0.113.9（测试地区）');
+  const resolveWrites = () => writes.filter(w => w.path === '/api/admin/security/events/88/resolve');
+  // 列表快捷结案需要两次点击：第一次只进入待确认，不发请求。
+  await page.locator('.security-quick-actions').getByRole('button', {name: '结案', exact: true}).click();
+  expect(resolveWrites()).toHaveLength(0);
+  await page.locator('.security-quick-actions').getByRole('button', {name: '确认结案', exact: true}).click();
+  await expect.poll(() => resolveWrites().at(-1)?.body.note).toBe('列表快捷结案：已核查');
+  await page.locator('.security-event-open').click();
+  const securityDialog = page.getByRole('dialog', {name: '管理员新设备登录（待核查）'});
+  await expect(securityDialog).toContainText('POST /api/login');
+  await securityDialog.getByRole('button', {name: /确认是本人登录/}).click();
+  expect(resolveWrites()).toHaveLength(1);
+  await securityDialog.getByRole('button', {name: /再点一次确认/}).click();
+  await expect.poll(() => resolveWrites().at(-1)?.body.note).toBe('已确认为账号本人登录');
+  await page.keyboard.press('Escape');
+  // 列表快捷封禁：两步确认，默认按账号相关接口封禁 1 天，并由服务端同时结案。
+  const blockWrites = () => writes.filter(w => w.path === '/api/admin/security/events/88/block');
+  await page.locator('.security-quick-actions').getByRole('button', {name: '封禁 1 天', exact: true}).click();
+  expect(blockWrites()).toHaveLength(0);
+  await page.locator('.security-quick-actions').getByRole('button', {name: '确认封禁 1 天', exact: true}).click();
+  await expect.poll(() => blockWrites().at(-1)?.body).toMatchObject({scope: 'account', duration_minutes: 1440});
+  await page.getByRole('button', {name: '操作记录', exact: true}).click();
+  await expect(page.locator('.security-log-list')).toContainText('封禁来源');
+  await expect(page.locator('.security-log-list')).toContainText('超级管理员');
   await page.screenshot({path: info.outputPath('admin-security.png'), fullPage: true});
 
   await page.goto('admin?tab=awards');

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { Link } from "react-router-dom";
 import { Icon } from "./ui";
 
 // 桌面网页外观：主题色与页面顶部的淡色渐变。来自校园投票「淡色分区渐变（可以自选颜色）」（96% 支持）。
@@ -117,6 +118,11 @@ export function AppearanceButton() {
             ))}
           </div>
           <p className="appearance-hint">仅保存在当前浏览器，默认跟随顶部分区淡色过渡。</p>
+          <Link className="appearance-theme-link" to="/themes" onClick={() => setOpen(false)}>
+            <Icon name="palette" size={18} />
+            <span>主题商城</span>
+            <Icon name="chevron" size={15} />
+          </Link>
         </div>
       )}
     </div>

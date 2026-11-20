@@ -128,7 +128,6 @@ html, body { overflow-x: clip; color: var(--text); background: var(--bg); font-f
 .social-shell .post-author .post-avatar { width: 40px; height: 40px; flex-basis: 40px; }
 .social-shell .post-author .author-name-line b { font-size: var(--text-base); font-weight: 600; }
 .social-shell .post-author .author-meta > span { font-size: var(--text-xs); color: var(--text-3); }
-.social-shell .author-level { font-size: 10px; padding: 2px 5px; border-radius: var(--space-xs); background: var(--surface-2); color: var(--text-2); font-weight: 600; }
 .social-shell .post-author .author-follow { min-height: 44px; min-width: 64px; padding-inline: var(--space-md); border: 0; border-radius: 999px; color: var(--brand-strong); background: var(--brand-soft); font-size: var(--text-xs); }
 .social-shell .post-author .author-follow.active { background: var(--surface-2); color: var(--text-2); }
 .social-shell .post-toolbar { margin-top: var(--space-lg); padding-block: var(--space-sm) 0; border-top-color: var(--line-2); }

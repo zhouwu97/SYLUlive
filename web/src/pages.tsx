@@ -1,4 +1,4 @@
-import { useAcademic } from "./academic";
+import { StudySubnav, useAcademic } from "./academic";
 import { PublicPosts, isPublicPost } from "./campus-chrome";
 import { ServerAvatar } from "./server-avatar";
 import { displayName } from "./user-level";
@@ -6,7 +6,7 @@ import { useMobile } from "./mobile";
 import { MobileHome } from "./mobile-home";
 import { useDesktopHomeFeed } from "./desktop-home-feed";
 import { feedSourceOf } from "./feed-feedback";
-import { PaperLibrary } from './papers';
+import { PaperLibrary, PaperUploadButton } from './papers';
 import { teachingWeek, mergeCourses } from "@sylulive/academic-contracts";
 import {
   PostCard as CommunityPostCard,
@@ -95,6 +95,7 @@ function DesktopDashboard() {
   const [params, setParams] = useSearchParams();
   const sort = params.get("sort") || "all";
   const posts = useDesktopHomeFeed(sort);
+  const briefArticles = useApi("/api/campus/articles?page=1&page_size=4");
   const loadMore = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const target = loadMore.current;
@@ -106,6 +107,11 @@ function DesktopDashboard() {
     return () => observer.disconnect();
   }, [posts.hasNextPage, posts.isFetching, posts.error, posts.fetchNextPage]);
   const academic = useAcademic();
+  const hasSchedule = !!academic.updated || academic.data.courses.length > 0 || Object.values(academic.data.overrides).some(Boolean);
+  const currentWeek = academic.data.termStart ? teachingWeek(academic.data.termStart) : null;
+  const todayCourses = mergeCourses(academic.data.courses, academic.data.overrides)
+    .filter(c => c.day === (new Date().getDay() || 7) && (!currentWeek || c.weeks.includes(currentWeek)));
+  const latestNotice = rows(briefArticles.data)[0];
   const hour = new Date().getHours();
   const greeting = hour < 6 ? "夜深了" : hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好";
   const pages = posts.data?.pages || [];
@@ -125,11 +131,25 @@ function DesktopDashboard() {
         {HOME_QUICK.map(([id, label]) => <Link key={id} to={`/${id}`}><span className={`home-quick-icon tone-${id}`}><Icon name={id} size={17} /></span>{label}</Link>)}
       </nav>
     </section>
+    <nav className="home-brief-strip" aria-label="校园速览摘要">
+      <Link to="/schedule" className="home-brief-pill">
+        <Icon name="schedule" size={15} />
+        <b>{hasSchedule ? (todayCourses.length ? `今日 ${todayCourses.length} 门课` : "今日无课") : "连接课表"}</b>
+      </Link>
+      <Link to={latestNotice ? `/campus/${latestNotice.id}` : "/campus"} className="home-brief-pill is-grow">
+        <Icon name="bell" size={15} />
+        <span>{latestNotice?.title || "查看学校最新公告与校历"}</span>
+      </Link>
+      <Link to="/market" className="home-brief-pill">
+        <Icon name="market" size={15} />
+        <span>集市闲置</span>
+      </Link>
+    </nav>
     <section className="campus-composer" aria-label="分享校园日常">
       <div className="composer-row"><span className="composer-avatar"><ServerAvatar key={auth.user?.id} src={auth.user?.avatar} name={auth.user?.nickname || "沈理校园"} /></span><button className="composer-trigger" aria-label="分享校园日常" onClick={publish}><span>今天在校园里遇见了什么？</span></button>
         <div className="composer-tools"><button onClick={publish}><Icon name="file" size={17} />图文</button><button onClick={() => nav("/polls")}><Icon name="polls" size={17} />投票</button><button onClick={() => nav("/polls?tab=team")}><Icon name="community" size={17} />组队</button></div></div>
     </section>
-    <div className="home-feed-heading"><h2>校园动态</h2><Tabs tabs={[["all", "推荐"], ["time", "最新"], ["following", "关注"], ["hot", "热门"]]} value={sort} onChange={value => setParams({ sort: value })} /><Link className="home-feed-more" to="/community">全部动态 <span aria-hidden="true">→</span></Link></div>
+    <div className="home-feed-heading"><h2>校园动态</h2><Tabs tabs={[["all", "推荐"], ["time", "最新"], ["following", "关注"], ["hot", "热门"]]} value={sort} onChange={value => setParams({ sort: value })} /><Link className="home-feed-more" to="/community">全部动态</Link></div>
     <div className="dashboard-feed">
       {sort === "following" && !auth.loading && !auth.user ? <Empty icon="lock" title="登录后查看关注动态" description="关注同学，看看他们的校园日常。"><button className="btn primary" onClick={auth.login}>登录</button></Empty> : <QueryState skeleton="feed" query={{ isPending: posts.isPending, error: posts.data ? null : posts.error, refetch: posts.refetch }}>
         {pinned.length > 0 && <PublicPosts posts={pinned} />}
@@ -148,6 +168,7 @@ function DesktopDashboard() {
 
 export function Exams() {
   const ui = useUI(),
+    mobile = useMobile(),
     { data, setData } = useAcademic();
   const [params,setParams]=useSearchParams();
   const tab=params.get('tab')||'schedule';
@@ -220,22 +241,29 @@ export function Exams() {
         title="考试与试卷库"
         description="考试安排、倒计时、历史试卷与资料共享"
       >
-        <button
-          className="btn"
-          onClick={() =>
-            downloadJSON("sylulive-exams.json", {
-              version: 1,
-              semester: data.term.year + '-' + data.term.semester,
-              export_time: new Date().toISOString(),
-              exams: data.exams.map(e=>({...e,location:e.room})),
-            })
-          }
-        >
-          导出考试
-        </button>
-        <button className="btn primary" onClick={() => edit()}>
-          录入考试
-        </button>
+        {!mobile && <StudySubnav />}
+        {tab === "schedule" ? (
+          <>
+            <button
+              className="btn"
+              onClick={() =>
+                downloadJSON("sylulive-exams.json", {
+                  version: 1,
+                  semester: data.term.year + '-' + data.term.semester,
+                  export_time: new Date().toISOString(),
+                  exams: data.exams.map(e=>({...e,location:e.room})),
+                })
+              }
+            >
+              导出考试
+            </button>
+            <button className="btn primary" onClick={() => edit()}>
+              录入考试
+            </button>
+          </>
+        ) : (
+          <PaperUploadButton />
+        )}
       </Head>
       <Tabs tabs={[["schedule","考试安排"],["papers","试卷库"],["mine","我的提交"]]} value={tab} onChange={value=>setParams(value==='mine'?{tab:value,papers:'mine'}:{tab:value})}/>
       {tab!=='schedule'?<PaperLibrary/>:<>

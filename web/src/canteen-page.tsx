@@ -36,7 +36,7 @@ export function CanteenPage(){
       {tab==='ranking'&&<div className="filter-row"><label>排行方式 <select value={params.get('sort')||'composite'} onChange={e=>change('sort',e.target.value)}><option value="composite">综合排行</option><option value="rating">低分优先</option><option value="review_count">点评数量</option></select></label><span className="muted">仅营业中的商家参与排名；没人评价的店不占名次</span></div>}
       <QueryState query={q}>{tab==='home'?(mobile?<MobileHome data={q.data} change={change}/>:<DesktopHome data={q.data} change={change}/>)
       :<><CanteenList items={items} ranking={tab==='ranking'} archived={tab==='nostalgia'} sort={params.get('sort')||'composite'}/>
-        {!items.length&&<Empty title={tab==='nostalgia'?'暂无符合条件的怀旧食堂':undefined}/>}{(tab==='stores'||tab==='nostalgia')&&<Pagination page={page} hasMore={listed.length===20} onChange={n=>change('page',String(n))}/>}</>}
+        {!items.length&&<Empty title={tab==='nostalgia'?'暂无符合条件的怀旧食堂':undefined}/>}{(tab==='stores'||tab==='nostalgia')&&(items.length>0||page>1)&&<Pagination page={page} hasMore={items.length>0&&(q.data?.has_more??items.length===20)} onChange={n=>change('page',String(n))}/>}</>}
       </QueryState></>}
   </div>;
 }
@@ -75,7 +75,7 @@ function DesktopHome({data,change}:HomeProps){
             {hero.image?<img src={asset(hero.image)} alt="" loading="lazy"/>:<span className="food-media-empty"><Icon name="canteen" size={40}/></span>}
           </Link>
           <div className="food-hero-body">
-            <span className="food-badge"><Icon name="trending" size={14}/>综合推荐{ratedTotal>0?` · 排行第 1 / ${ratedTotal}`:''}</span>
+            <span className="food-badge"><Icon name="trending" size={14}/>综合推荐{ratedTotal>0?` · 已评 ${ratedTotal} 家第 1`:''}</span>
             <h2>{hero.canteen_name}</h2>
             {place(hero)&&<p className="food-place"><Icon name="campus" size={15}/>{place(hero)}</p>}
             <div className="food-hero-score">
@@ -88,7 +88,7 @@ function DesktopHome({data,change}:HomeProps){
             </div>)}</dl>}
             <div className="food-hero-actions">
               <Link className="btn primary" to={`/canteen/${hero.canteen_id}`}>查看店铺与点评</Link>
-              {total>0&&<button className="btn" onClick={()=>change('tab','ranking')}>查看全部 {total} 家排行</button>}
+              {total>0&&<button className="btn" onClick={()=>change('tab','ranking')}>食堂排行（共 {total} 家营业）</button>}
             </div>
           </div>
         </>:<Empty title="暂无足够的评价数据"/>}

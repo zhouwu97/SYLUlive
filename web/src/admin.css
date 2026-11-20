@@ -307,3 +307,76 @@
 .notice-preview-lines i:nth-child(3) { width: 55%; }
 .notice-preview-modal { position: absolute; inset: 0; display: grid; place-items: center; padding: 14px; background: rgb(10 14 22 / .35); }
 .notice-preview-modal div { width: 100%; padding: 12px; border-radius: 12px; background: var(--surface); font-size: 12px; }
+
+/* 安全中心：左侧点开详情，右侧快捷结案／误报（两步确认）。 */
+.social-shell .security-event-row { display: flex; align-items: center; gap: 12px; padding: 0 16px 0 0; border-bottom: 1px solid var(--line-2); }
+.social-shell .security-event-row:last-child { border-bottom: 0; }
+.social-shell .security-event-row:hover { background: var(--surface-2); }
+.social-shell .security-event-open { display: block; flex: 1; min-width: 0; padding: 16px 0 16px 20px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.social-shell .security-event-open:focus-visible { outline: 2px solid var(--brand-strong); outline-offset: -2px; border-radius: 12px; }
+.social-shell .security-event-open .list-main { display: block; }
+.social-shell .security-event-open .admin-row-head b { font-size: 15px; font-weight: 600; }
+.social-shell .security-event-line { display: block; margin-top: 4px; color: var(--text-2); font-size: 13px; line-height: 1.6; }
+.social-shell .security-event-row > .svg-icon { flex-shrink: 0; color: var(--text-3); transform: rotate(-90deg); }
+.social-shell .security-quick-actions .btn { min-width: 64px; white-space: nowrap; }
+.security-detail { display: grid; gap: 12px; min-width: min(560px, 80vw); }
+.security-detail-metrics { margin: 0; font-size: 15px; font-weight: 600; }
+.security-detail-grid { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px 16px; margin: 0; padding: 14px 16px; border-radius: 12px; background: var(--surface-2); font-size: 13px; }
+.security-detail-grid dt { color: var(--text-3); }
+.security-detail-grid dd { margin: 0; min-width: 0; overflow-wrap: anywhere; color: var(--text); }
+.security-detail .muted { margin: 0; color: var(--text-3); font-size: 13px; }
+.security-detail-raw summary { color: var(--text-2); font-size: 13px; cursor: pointer; }
+.security-detail-raw pre { max-height: 220px; margin: 8px 0 0; padding: 12px; overflow: auto; border-radius: 10px; background: var(--surface-2); font-size: 12px; line-height: 1.6; }
+.security-detail-note textarea { min-height: 64px; resize: vertical; }
+.security-detail-actions:empty { display: none; }
+
+/* 后台导航复用了 sidebar-scroll / nav-text，会被全站“窄桌面侧栏只留图标”的规则误伤：
+ * 后台左列本身有 196px，这里恢复完整文字导航，徽标也回到行尾。 */
+@media (min-width: 601px) and (max-width: 1040px) {
+  .social-shell .admin-nav .sidebar-scroll { width: auto; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  .social-shell .admin-nav .nav-label { display: block; }
+  .social-shell .admin-nav .nav-item { justify-content: flex-start; }
+  .social-shell .admin-nav .nav-item .nav-text { display: block; position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+}
+
+/* 工作台：数字是主角，图标不垫彩色底块，统一次级文字色；卡片悬停不再上浮。 */
+@media (min-width: 601px) {
+  .social-shell .admin-kpi { box-shadow: none; }
+  .social-shell .admin-kpi:hover { box-shadow: none; transform: none; }
+  .social-shell .admin-kpi-icon { width: 20px; height: 20px; border-radius: 0; background: transparent; color: var(--text-3); }
+  .social-shell .admin-kpi:has(small.is-alert) .admin-kpi-icon { color: var(--danger); }
+  .social-shell .admin-feature-tile { box-shadow: none; }
+  .social-shell .admin-feature-tile:hover { box-shadow: none; transform: none; }
+  .social-shell .admin-feature-icon { flex-basis: 24px; width: 24px; height: 24px; border-radius: 0; background: transparent; color: var(--text-3); }
+  .social-shell .admin-feature-tile:hover .admin-feature-icon { color: var(--brand-strong); }
+}
+
+.security-presets h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 4px 0 8px; font-size: 14px; font-weight: 600; }
+.security-presets h3 small { color: var(--text-3); font-size: 12px; font-weight: 400; }
+.security-preset-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.security-preset { display: grid; gap: 2px; min-height: 56px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--dur-micro) ease-out, background-color var(--dur-micro) ease-out; }
+.security-preset b { font-size: 14px; font-weight: 600; }
+.security-preset small { color: var(--text-3); font-size: 12px; line-height: 1.5; }
+.security-preset:hover { border-color: var(--color-accent-border); background: var(--brand-soft); }
+.security-preset.is-false:hover { border-color: var(--line); background: var(--surface-2); }
+.security-preset.is-armed { border-color: var(--brand-strong); background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand-strong); }
+.security-preset.is-armed b { color: var(--brand-strong); }
+.security-preset:disabled { cursor: default; opacity: .6; }
+.security-preset:focus-visible { outline: 2px solid var(--brand-strong); outline-offset: 2px; }
+.security-custom summary { color: var(--text-2); font-size: 13px; cursor: pointer; }
+.security-custom[open] { display: grid; gap: 10px; }
+@media (max-width: 600px) {
+  .security-preset-list { grid-template-columns: minmax(0, 1fr); }
+  .social-shell .security-event-row { flex-wrap: wrap; padding: 0 16px 12px 0; }
+  .social-shell .security-quick-actions { padding-left: 16px; }
+  .social-shell .security-event-row > .svg-icon { display: none; }
+}
+/* 封禁来源：处置里最重的动作，用危险色描边区分，确认态再填充。 */
+.social-shell .security-quick-actions .security-block-btn,
+.modal .security-block-btn { border-color: color-mix(in oklab, var(--danger) 40%, var(--line)); color: var(--danger); }
+.security-block-box { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid color-mix(in oklab, var(--danger) 28%, var(--line)); border-radius: 12px; background: color-mix(in oklab, var(--danger) 4%, var(--surface)); }
+.security-block-box h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0; font-size: 14px; font-weight: 600; }
+.security-block-box h3 small { color: var(--text-3); font-size: 12px; font-weight: 400; }
+.security-block-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.security-block-box .btn { justify-self: start; }
+.security-block-box .field input { min-height: 40px; }

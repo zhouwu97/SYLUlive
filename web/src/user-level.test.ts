@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayName, userHref, userLevel } from "./user-level";
+import { displayName, splitMentionText, userHref, userLevel } from "./user-level";
 
 describe("与 Android App 一致的经验等级", () => {
   it.each([
@@ -37,6 +37,7 @@ describe("昵称清洗与公开主页链接", () => {
     ["\u3000\u200B\u3164\u2800", "校园同学"],
     ["\u115F\u1160\uFFA0", "校园同学"],
     ["\u200D\uFE0F", "校园同学"],
+    ["\uFE02", "校园同学"],
     [undefined, "校园同学"],
   ])("昵称 %j 展示为 %s", (raw, expected) => {
     expect(displayName(raw)).toBe(expected);
@@ -51,5 +52,16 @@ describe("昵称清洗与公开主页链接", () => {
     ["8", undefined, "测试", "/user/8"],
   ])("目标 %j（本人 %j，昵称 %j）解析为 %j", (targetId, selfId, name, expected) => {
     expect(userHref(targetId, selfId, name)).toBe(expected);
+  });
+});
+
+describe("评论 @ 高亮", () => {
+  it("只切出服务端 mentions 里的 @昵称，手打的 @ 保持普通文字", () => {
+    expect(splitMentionText("@芹菜虾仁 @路人 来看 @芹菜虾仁", [{ user_id: 8, nickname: "芹菜虾仁" }])).toEqual([
+      { text: "@芹菜虾仁", userId: 8 },
+      { text: " @路人 来看 " },
+      { text: "@芹菜虾仁", userId: 8 },
+    ]);
+    expect(splitMentionText("@路人 你好", undefined)).toEqual([{ text: "@路人 你好" }]);
   });
 });

@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../services/emoji_favorite_service.dart';
 import '../features/emoji/domain/emoji_asset_ref.dart';
+import '../models/reply.dart';
 import '../utils/text_editing_helper.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 
@@ -29,6 +30,7 @@ class PostReplyDraft {
     this.favoriteImage,
     this.localImage,
     this.emojiAsset,
+    this.mentionUserIds = const [],
   });
 
   final String text;
@@ -41,11 +43,76 @@ class PostReplyDraft {
   final XFile? localImage;
   final EmojiAssetRef? emojiAsset;
 
+  /// 正文中仍保留 `@昵称` 的被提及用户，服务端据此发通知。
+  final List<int> mentionUserIds;
+
   bool get isEmpty =>
       text.trim().isEmpty &&
       sticker == null &&
       favoriteImage == null &&
       localImage == null;
+}
+
+/// @ 候选列表最多展示的人数：只服务于快速点选，不做全量通讯录。
+const int replyMentionLimit = 4;
+
+final RegExp _mentionQueryBoundary = RegExp(
+  r'''[\s@,，。！？；：、.!?;:()（）\[\]【】{}《》〈〉"'“”‘’/\\|…—-]''',
+);
+
+/// 可被 @ 的用户：评论区作者或全站用户搜索结果。
+class ReplyMentionUser {
+  const ReplyMentionUser({
+    required this.id,
+    required this.nickname,
+    this.avatar = '',
+  });
+
+  factory ReplyMentionUser.fromJson(Map<String, dynamic> json) =>
+      ReplyMentionUser(
+        id: (json['id'] as num).toInt(),
+        nickname: json['nickname']?.toString().trim() ?? '',
+        avatar: json['avatar']?.toString() ?? '',
+      );
+
+  final int id;
+  final String nickname;
+  final String avatar;
+}
+
+/// 组合 @ 候选：先放本帖最近评论过且昵称匹配的人，再补全站搜索结果；
+/// 按用户去重、排除自己，最多 [replyMentionLimit] 人。
+List<ReplyMentionUser> replyMentionCandidates(
+  Iterable<Reply> replies, {
+  required String query,
+  Iterable<ReplyMentionUser> searched = const [],
+  int? viewerId,
+}) {
+  final keyword = query.toLowerCase();
+  final recent = replies
+      .where((reply) => reply.status == 'normal' && reply.author != null)
+      .toList()
+    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  final byId = <int, ReplyMentionUser>{};
+  for (final user in [
+    for (final reply in recent)
+      ReplyMentionUser(
+        id: reply.authorId,
+        nickname: reply.author!.nickname.trim(),
+        avatar: reply.author!.avatar,
+      ),
+    ...searched,
+  ]) {
+    if (byId.length >= replyMentionLimit) break;
+    if (user.id <= 0 ||
+        user.id == viewerId ||
+        user.nickname.isEmpty ||
+        !user.nickname.toLowerCase().contains(keyword)) {
+      continue;
+    }
+    byId.putIfAbsent(user.id, () => user);
+  }
+  return byId.values.toList();
 }
 
 /// 统一维护帖子评论输入区的编辑状态。
@@ -81,6 +148,7 @@ class PostReplyComposerController extends ChangeNotifier {
   EmojiFavoriteItem? _favoriteImage;
   XFile? _localImage;
   EmojiAssetRef? _emojiAsset;
+  final Map<int, String> _mentions = {};
 
   bool get isOpen => _isOpen;
   PostReplyBottomPanel get bottomPanel => _bottomPanel;
@@ -114,7 +182,17 @@ class PostReplyComposerController extends ChangeNotifier {
         favoriteImage: _favoriteImage,
         localImage: _localImage,
         emojiAsset: _emojiAsset,
+        mentionUserIds: _mentionedUserIds(),
       );
+
+  /// 只认正文里仍完整存在的 `@昵称`；用户删掉 token 后不再通知对方。
+  List<int> _mentionedUserIds() {
+    final text = textController.text;
+    return [
+      for (final entry in _mentions.entries)
+        if (text.contains('@${entry.value}')) entry.key,
+    ];
+  }
 
   void updateKeyboardMetrics(double inset) {
     final normalizedInset = inset < 0 ? 0.0 : inset;
@@ -246,6 +324,39 @@ class PostReplyComposerController extends ChangeNotifier {
     }
   }
 
+  /// 光标前正在输入的 `@关键字`；`@` 必须位于开头或分隔符之后，避免把邮箱当成提及。
+  ({int start, String query})? get activeMention {
+    final value = textController.value;
+    final selection = value.selection;
+    if (!selection.isValid || !selection.isCollapsed) return null;
+    final cursor = selection.baseOffset;
+    if (cursor <= 0) return null;
+    final text = value.text;
+    final at = text.lastIndexOf('@', cursor - 1);
+    if (at < 0) return null;
+    if (at > 0 && !_mentionQueryBoundary.hasMatch(text[at - 1])) return null;
+    final query = text.substring(at + 1, cursor);
+    if (query.length > 20 || _mentionQueryBoundary.hasMatch(query)) return null;
+    return (start: at, query: query);
+  }
+
+  /// 选中 @ 候选：把输入中的 `@关键字` 换成 `@昵称 ` 并记录用户 ID。
+  void applyMention(ReplyMentionUser user) {
+    final mention = activeMention;
+    if (mention == null) return;
+    final value = textController.value;
+    final token = '@${user.nickname} ';
+    _mentions[user.id] = user.nickname;
+    textController.value = TextEditingValue(
+      text: value.text.replaceRange(
+        mention.start,
+        value.selection.baseOffset,
+        token,
+      ),
+      selection: TextSelection.collapsed(offset: mention.start + token.length),
+    );
+  }
+
   /// 将删除命中到的 `@名称` 扩展成完整 token，避免残留半个提及。
   ///
   /// 回复对象由 replyToUserId 等元数据维护，因此文本删除不能改变它。
@@ -309,6 +420,7 @@ class PostReplyComposerController extends ChangeNotifier {
   void clearContent() {
     _cancelHandoff();
     textController.clear();
+    _mentions.clear();
     _sticker = null;
     _favoriteImage = null;
     _localImage = null;

@@ -19,6 +19,59 @@ test('课表编辑、冲突校验和 URL 周次',async({page})=>{
  await expect(page.getByRole('button',{name:'本地测试课程 测试教室'})).toHaveCount(0);
  expect(errors).toEqual([]);
 });
+test('桌面平板双栏课表支持 1-12 小节跨节色卡、非本周虚线态与星期联动概览',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.setViewportSize({width:1480,height:960});
+ await page.goto('schedule?week=1');
+ await expect(page.locator('.pad-period-cell')).toHaveCount(12);
+ await page.getByRole('button',{name:'＋ 添加课程'}).click();
+ await page.getByLabel('课程名称',{exact:true}).fill('工程实训大课');
+ await page.getByLabel('地点',{exact:true}).fill('实训楼 C102');
+ await page.getByLabel('星期').selectOption('3');
+ await page.getByLabel('节次，以逗号分隔',{exact:true}).fill('5,6,7,8');
+ await page.getByLabel('周次，以逗号分隔',{exact:true}).fill('1,2');
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.getByRole('button',{name:'＋ 添加课程'}).click();
+ await page.getByLabel('课程名称',{exact:true}).fill('嵌入式导论');
+ await page.getByLabel('星期').selectOption('5');
+ await page.getByLabel('节次，以逗号分隔',{exact:true}).fill('1,2');
+ await page.getByLabel('周次，以逗号分隔',{exact:true}).fill('5,6');
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await expect(page.locator('.pad-course.is-ghost')).toContainText('5–6周');
+ await expect(page.locator('.pad-course.is-ghost')).toContainText('嵌入式导论');
+ await page.locator('.pad-weekday').filter({hasText:'周三'}).click();
+ await expect(page.getByLabel('单日课程概览')).toContainText('工程实训大课');
+ await expect(page.getByLabel('单日课程概览')).toContainText('第5–8节');
+ await page.locator('.pad-weekday').filter({hasText:'周六'}).click();
+ await expect(page.getByLabel('单日课程概览')).toContainText('当日无课，好好休息');
+ await page.getByRole('button',{name:'下一周'}).click();
+ await page.getByRole('button',{name:'下一周'}).click();
+ await expect(page.getByRole('button',{name:'回到本周',exact:true})).toBeVisible();
+ expect(errors).toEqual([]);
+});
+test('试卷库合并到考试页单标题壳层，游客展示登录引导且公开列表不重复标题或审核套话',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ let loggedIn=false;
+ await page.route('**/api/**',route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path==='/api/user/profile')return loggedIn?route.fulfill({json:{id:991,nickname:'测试同学',role:'user'}}):route.fulfill({status:401,json:{error:'未登录'}});
+  if(path==='/api/refresh')return route.fulfill({status:401,json:{error:'未登录'}});
+  if(path==='/api/exam-papers')return route.fulfill({json:{total:1,academic_years:['2025-2026'],items:[{id:11,status:'published',course_name:'大学物理',academic_year:'2025-2026',semester:'first',exam_type:'final',title:'大学物理 · 2025-2026 · 第一学期 · 期末',file_size:524288,download_count:12,approval_reason:'快捷审核通过',contributor:{nickname:'\uFE02'}}]}});
+  return route.fulfill({json:{items:[]}});
+ });
+ await page.goto('exams?tab=papers');
+ await expect(page.locator('main h1')).toHaveCount(1);
+ await expect(page.getByRole('heading',{name:'考试与试卷库',level:1,exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'登录后访问试卷库'})).toBeVisible();
+ loggedIn=true;
+ await page.reload();
+ const row=page.locator('.paper-row');
+ await expect(row).toHaveCount(1);
+ await expect(row.locator('.paper-row-title b')).toHaveText('大学物理');
+ await expect(row).toContainText('校园同学');
+ await expect(row).not.toContainText('快捷审核通过');
+ expect(errors).toEqual([]);
+});
 test('主要路由和移动端导航无运行时错误',async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  for(const route of ['','community','market','schedule','grades','exams','campus','canteen','competition','ratings','polls','ai','toolbox','feedback','profile','notifications','admin','post/1']){await page.goto(route||'./');await expect(page.locator('#mainContent')).toBeVisible()}

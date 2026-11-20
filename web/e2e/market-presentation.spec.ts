@@ -35,10 +35,19 @@ async function setupMarket(page: Page) {
 
 test("集市筛选使用真实参数，进入详情并返回保留筛选；游客发布先登录", async ({ page }) => {
   const state = await setupMarket(page);
+  state.posts.push({ ...state.posts[0], id: 680, post_type: "found", type: "found", title: "综合A110拾到钥匙", price: 0 } as any);
   await page.goto("market");
-  await expect(page.locator(".market-card")).toHaveCount(5);
+  await expect(page.locator(".market-card")).toHaveCount(6);
+  for (const label of ["全部闲置", "出售", "求购", "寻物", "招领", "办事"]) {
+    await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
+  }
+  const foundCard = page.locator(".market-card").filter({ hasText: "综合A110拾到钥匙" });
+  await expect(foundCard.locator(".market-status")).toHaveText("招领");
+  await expect(foundCard.locator(".price")).toHaveText("待认领");
   expect(state.requests.at(-1)?.searchParams.get("sort")).toBe("time");
   expect(state.requests.at(-1)?.searchParams.get("board")).toBe("2");
+  await page.getByRole("button", { name: "招领", exact: true }).click();
+  await expect.poll(() => state.requests.at(-1)?.searchParams.get("type")).toBe("found");
   await page.getByRole("button", { name: "求购", exact: true }).click();
   await expect(page.getByRole("button", { name: "求购", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("搜索内容").fill("教材");
@@ -60,7 +69,11 @@ test("集市筛选使用真实参数，进入详情并返回保留筛选；游�
   await page.locator(".market-card").first().click();
   await expect(page.getByRole("heading", { name: "竖图商品：大学英语教材和学习资料" })).toBeVisible();
   await expect(page.locator(".post-market-price")).toContainText("88");
-  expect(await page.locator(".post-market-summary").evaluate((el) => el.getBoundingClientRect().bottom <= document.querySelector(".post-detail-gallery")!.getBoundingClientRect().top)).toBe(true);
+  expect(await page.locator(".post-market-summary").evaluate((el) => {
+    const summary = el.getBoundingClientRect();
+    const gallery = document.querySelector(".post-detail-gallery")!.getBoundingClientRect();
+    return summary.bottom <= gallery.top + 1 || summary.left >= gallery.right - 1;
+  })).toBe(true);
   await page.getByRole("button", { name: "返回列表" }).click();
   await expect(page.getByLabel("搜索内容")).toHaveValue("教材");
   await expect(page.getByLabel("仅看未售")).toBeChecked();
@@ -142,7 +155,7 @@ test("进入集市导航收成图标，离开与浏览器返回恢复，快速�
   await page.goto("community");
   const sidebar = page.getByLabel("主导航");
   const sidebarWidth = () => sidebar.evaluate((el) => el.getBoundingClientRect().width);
-  await expect.poll(sidebarWidth).toBe(214);
+  await expect.poll(sidebarWidth).toBe(208);
   await sidebar.evaluate((el) => {
     (window as any).__navWidths = [];
     el.addEventListener("transitionrun", () => {
@@ -155,28 +168,28 @@ test("进入集市导航收成图标，离开与浏览器返回恢复，快速�
     }, { once: true });
   });
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).click();
-  await expect.poll(sidebarWidth).toBe(64);
-  expect(await page.evaluate(() => (window as any).__navWidths.some((width: number) => width > 64 && width < 214))).toBe(true);
+  await expect.poll(sidebarWidth).toBe(60);
+  expect(await page.evaluate(() => (window as any).__navWidths.some((width: number) => width > 60 && width < 208))).toBe(true);
   await expect(sidebar.getByRole("link", { name: "食堂", exact: true })).toHaveAttribute("title", "食堂");
   await sidebar.getByRole("link", { name: "食堂", exact: true }).click();
-  await expect.poll(sidebarWidth).toBe(214);
+  await expect.poll(sidebarWidth).toBe(208);
   await page.goBack();
-  await expect.poll(sidebarWidth).toBe(64);
+  await expect.poll(sidebarWidth).toBe(60);
   await page.goForward();
-  await expect.poll(sidebarWidth).toBe(214);
+  await expect.poll(sidebarWidth).toBe(208);
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).press("Enter");
   await expect(page.locator(".app-shell")).toHaveClass(/market-shell/);
   expect(await sidebar.evaluate((el) => getComputedStyle(el).transitionProperty)).toBe("none");
   await sidebar.getByRole("link", { name: "食堂", exact: true }).click();
-  await expect.poll(sidebarWidth).toBe(214);
+  await expect.poll(sidebarWidth).toBe(208);
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).click();
   await sidebar.getByRole("link", { name: "校园首页", exact: true }).click();
-  await expect.poll(sidebarWidth).toBe(214);
+  await expect.poll(sidebarWidth).toBe(208);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).click();
   await expect(page).toHaveURL(/\/market$/);
   await expect(page.locator(".app-shell")).toHaveClass(/market-shell/);
-  expect(await sidebarWidth()).toBe(64);
+  expect(await sidebarWidth()).toBe(60);
   expect(await sidebar.evaluate((el) => getComputedStyle(el).transitionProperty)).toBe("none");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("navigation", { name: "底部导航" }).getByRole("link", { name: "首页", exact: true }).click();
@@ -204,7 +217,7 @@ test("集市深色和 130% 文字保持商品信息可读", async ({ page }) => 
   await page.screenshot({ path: "artifacts/web-social-redesign-2026-10-09/market-mobile-dark-large-text.png" });
 });
 
-type ShellFrame = { route: string; width: number; x: number; icons: number[]; brand: number; opacity: number; overflow: boolean; columns: string; cardWidth: number; bg: string };
+type ShellFrame = { route: string; marketShell: boolean; width: number; x: number; icons: number[]; brand: number; opacity: number; overflow: boolean; columns: string; cardWidth: number; bg: string };
 
 async function recordShell(page: Page, reverse = false) {
   await page.evaluate((reverse) => {
@@ -213,8 +226,10 @@ async function recordShell(page: Page, reverse = false) {
       const workspace = document.querySelector(".workspace")!;
       const card = document.querySelector(".market-card");
       const grid = document.querySelector(".market-grid");
+      const shell = document.querySelector(".app-shell")!;
       frames.push({
         route: location.pathname,
+        marketShell: shell.classList.contains("market-shell"),
         width: document.querySelector(".sidebar")!.getBoundingClientRect().width,
         x: workspace.getBoundingClientRect().left,
         icons: Array.from(document.querySelectorAll(".sidebar .nav-icon")).filter(el => !el.closest("details:not([open])")).map((el) => el.getBoundingClientRect().top),
@@ -223,7 +238,7 @@ async function recordShell(page: Page, reverse = false) {
         overflow: document.documentElement.scrollWidth > innerWidth,
         columns: grid ? getComputedStyle(grid).gridTemplateColumns : "",
         cardWidth: card?.getBoundingClientRect().width ?? 0,
-        bg: getComputedStyle(document.querySelector(".app-shell")!).backgroundColor,
+        bg: getComputedStyle(shell).backgroundColor,
       });
     };
     (window as any).__shellFrames = frames;
@@ -269,8 +284,27 @@ test("公共外壳一致，收展逐帧没有图标跳位、透明闪屏、网�
     await recordShell(page);
     await page.getByLabel("主导航").getByRole("link", { name: "二手集市", exact: true }).click();
     const frames = await shellFrames(page);
-    const movedIcons = frames.flatMap((frame, sample) => frame.icons.flatMap((top, icon) => Math.abs(top - frames[0].icons[icon]) >= 1 ? [{ width, sample, icon, delta: top - frames[0].icons[icon] }] : []));
+    const activeFrames = frames.filter(frame => frame.marketShell);
+    const movedIcons = activeFrames.flatMap((frame, sample) => frame.icons.flatMap((top, icon) => Math.abs(top - activeFrames[0].icons[icon]) >= 1 ? [{ width, sample, icon, delta: top - activeFrames[0].icons[icon] }] : []));
     expect(movedIcons).toEqual([]);
+    const centeredGap = await page.evaluate(() => {
+      const nav = document.querySelector(".sidebar")!.getBoundingClientRect();
+      const scroll = document.querySelector(".sidebar-scroll")!.getBoundingClientRect();
+      return Math.abs((scroll.top - nav.top) - (nav.bottom - scroll.bottom));
+    });
+    expect(centeredGap).toBeLessThan(28);
+    const railInsets = await page.locator(".market-shell .sidebar-scroll").evaluate(rail => {
+      const bounds = rail.getBoundingClientRect();
+      return [...rail.querySelectorAll(".nav-item.active, .sidebar-more summary")].map(control => {
+        const rect = control.getBoundingClientRect();
+        return { left: rect.left - bounds.left, right: bounds.right - rect.right };
+      });
+    });
+    expect(railInsets).toHaveLength(2);
+    for (const { left, right } of railInsets) {
+      expect(left).toBeGreaterThan(0);
+      expect(right).toBeCloseTo(left);
+    }
     const changedShell = frames.filter(frame => frame.brand !== frames[0].brand || frame.bg !== frames[0].bg || frame.opacity !== 1 || frame.overflow);
     expect(changedShell.map(frame => ({ width, route: frame.route, brand: frame.brand, initialBrand: frames[0].brand, opacity: frame.opacity, overflow: frame.overflow, bg: frame.bg, initialBg: frames[0].bg }))).toEqual([]);
     const products = frames.filter((frame) => frame.cardWidth > 0);
@@ -284,7 +318,8 @@ test("公共外壳一致，收展逐帧没有图标跳位、透明闪屏、网�
     await recordShell(page);
     await page.getByLabel("主导航").getByRole("link", { name: "校园首页", exact: true }).click();
     const expanded = await shellFrames(page);
-    expect(expanded.every((frame) => frame.icons.every((top, i) => Math.abs(top - expanded[0].icons[i]) < 1) && frame.bg === frames[0].bg && !frame.overflow)).toBe(true);
+    const homeFrames = expanded.filter(frame => !frame.marketShell);
+    expect(homeFrames.every((frame) => frame.icons.every((top, i) => Math.abs(top - homeFrames[0].icons[i]) < 1) && frame.bg === frames[0].bg && !frame.overflow)).toBe(true);
     const material = await page.locator(".today-card").evaluate((el) => {
       const style = getComputedStyle(el);
       return { image: style.backgroundImage, backdrop: style.backdropFilter, shadow: style.boxShadow, contentShadow: getComputedStyle(document.querySelector(".dashboard-feed .feed-card")!).boxShadow };

@@ -235,6 +235,69 @@ func TestReplyCreateUsesTextInMixedStickerNotification(t *testing.T) {
 	}
 }
 
+func TestReplyCreateNotifiesMentionedUsers(t *testing.T) {
+	db := newReplyTestDB(t)
+	post := createReplyTestPost(t, db)
+	createMessageTestUser(t, db, 2, "Bob")
+	createMessageTestUser(t, db, 3, "Carol")
+	handler := NewReplyHandler(db, "", "")
+
+	for _, raw := range []string{"2,abc", "1,2,3,4,5,6,7,8,9,10,11"} {
+		response := performReplyRequest(t, handler.Create, post.ID, url.Values{
+			"content":          {"你们看"},
+			"mention_user_ids": {raw},
+		})
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("mention_user_ids=%q status=%d body=%s", raw, response.Code, response.Body.String())
+		}
+	}
+
+	// 自己、重复 ID 与不存在的用户都不产生通知。
+	response := performReplyRequest(t, handler.Create, post.ID, url.Values{
+		"content":          {"你们看"},
+		"mention_user_ids": {"2,1,3,2,99"},
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create reply status=%d body=%s", response.Code, response.Body.String())
+	}
+	var notifications []models.Notification
+	if err := db.Order("user_id").Find(&notifications).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if len(notifications) != 2 ||
+		notifications[0].UserID != 2 || notifications[1].UserID != 3 ||
+		notifications[0].Content != "@了你：你们看" || notifications[0].Type != "reply" {
+		t.Fatalf("notifications=%+v", notifications)
+	}
+
+	var created models.Reply
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode reply: %v", err)
+	}
+	var saved models.Reply
+	if err := db.First(&saved, created.ID).Error; err != nil {
+		t.Fatalf("load reply: %v", err)
+	}
+	want := []models.ReplyMention{{UserID: 1, Nickname: "Alice"}, {UserID: 2, Nickname: "Bob"}, {UserID: 3, Nickname: "Carol"}}
+	if fmt.Sprint(created.Mentions) != fmt.Sprint(want) || fmt.Sprint(saved.Mentions) != fmt.Sprint(want) {
+		t.Fatalf("response mentions=%+v saved=%+v", created.Mentions, saved.Mentions)
+	}
+
+	// 列表的根评论与楼中楼预览都要带回 mentions，客户端才能高亮。
+	child := performReplyRequest(t, handler.Create, post.ID, url.Values{
+		"content":          {"@Carol 来"},
+		"parent_reply_id":  {fmt.Sprint(created.ID)},
+		"mention_user_ids": {"3"},
+	})
+	if child.Code != http.StatusCreated {
+		t.Fatalf("create child status=%d body=%s", child.Code, child.Body.String())
+	}
+	list := performReplyListRequest(t, db, post.ID, "", 0).Body.String()
+	if strings.Count(list, `"mentions":[{"user_id":`) != 2 {
+		t.Fatalf("list body=%s", list)
+	}
+}
+
 func performReplyReadRequest(
 	t *testing.T,
 	handler gin.HandlerFunc,

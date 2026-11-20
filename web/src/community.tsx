@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { AiBotIdentity } from "./ai-bot-identity";
+import { AiBotIdentity, aiBotDisplayContent, aiBotDisplayName } from "./ai-bot-identity";
 import { PublicPosts, isPublicPost } from "./campus-chrome";
 import { ServerAvatar } from "./server-avatar";
-import { userLevel } from "./user-level";
+import { LevelBadge } from "./level-badge";
+import { IdentityBadge } from "./identity-badge";
+import { displayName, isAiBotUser, splitMentionText, userHref, userLevel } from "./user-level";
 import { mobilePostTime, useMobile } from "./mobile";
 import { useSlidingIndicator } from "./desktop-motion";
 import { PollCard } from "./polls";
@@ -44,13 +46,18 @@ import {
 import { MediaGallery, MediaUploadPicker, mediaURL, uploadImageFiles, uploadIDs } from "./media";
 import { EmojiSelectionPreview, StickerPicker, StickerRenderer, favoritePublicImage, type StickerPayload } from "./emoji";
 import { messageEmojiFields } from "./emoji-selection";
+import { truncateGraphemes } from "./emoji-text";
+import { EmojiText } from "./inline-emoji";
 import { isDetailPath, useReportDetailOrigin } from "./detail-origin";
 import "./community.css";
 import "./market.css";
 import { usePostEditor } from './post-editor-page';
 export { uploadIDs } from "./media";
-function PostAvatar({ author }: { author?: Entity }) {
-  return <span className="post-avatar"><ServerAvatar src={author?.avatar} name={author?.nickname || "校园同学"} /></span>;
+function PostAvatar({ author, href, state, name = displayName(author?.nickname) }: { author?: Entity; href?: string | null; state?: unknown; name?: string }) {
+  if (href) {
+    return <Link className="post-avatar post-avatar-link" to={href} state={state} aria-label={`查看 ${name} 的主页`}><ServerAvatar src={author?.avatar} name={name} /></Link>;
+  }
+  return <span className="post-avatar"><ServerAvatar src={author?.avatar} name={name} /></span>;
 }
 
 function PostTime({ value }: { value: unknown }) {
@@ -112,18 +119,22 @@ function PostAuthor({
 }) {
   const auth = useAuth();
   const mobile = useMobile();
+  const location = useLocation();
   const author = authorOverride || post.author;
   const authorId = Number(post.author_id || author?.id) || 0;
+  const name = aiBotDisplayName(author);
+  const rawHref = post.is_anonymous ? null : userHref(authorId, auth.user?.id, author?.nickname);
+  const authorHref = rawHref && rawHref !== location.pathname ? rawHref : null;
+  const backState = { from: location.pathname + location.search };
   const localFollow = useAuthorFollow(authorId, Boolean(author?.is_following || post.is_following), `${post.id}:${auth.user?.id ?? ""}`);
   const followed = controlledFollowed ?? localFollow.followed;
   const pending = controlledPending ?? localFollow.pending;
   const toggleFollow = onToggleFollow ?? localFollow.toggle;
   return (
     <div className="author post-author">
-      <PostAvatar author={author} />
+      <PostAvatar author={author} href={authorHref} state={backState} name={name} />
       <div className="author-meta">
-        <div className="author-name-line"><b>{author?.nickname || "校园同学"}</b><span className="author-level">Lv.{userLevel(author, post.author_level)}</span>{badges}</div>
-        <AiBotIdentity user={author} />
+        <div className="author-name-line">{authorHref ? <Link className="author-name-link" to={authorHref} state={backState}><b>{name}</b></Link> : <b>{name}</b>}{!isAiBotUser(author) && <LevelBadge className="author-level" level={userLevel(author, post.author_level)} />}<AiBotIdentity user={author} />{badges}</div>
         <span>{meta ?? <><PostTime value={post.created_at} />{author?.followers_count != null ? ` · ${author.followers_count} 位关注者` : ""}</>}</span>
       </div>
       {auth.user && authorId > 0 && authorId !== auth.user.id && (
@@ -147,6 +158,21 @@ function detailOrigin(path: string): { label: string; icon: string } {
   if (section === "profile") return { label: "个人主页", icon: "profile" };
   return { label: "上一页", icon: "arrow" };
 }
+function renderMarketPrice(marketType: string, price: unknown, className: string) {
+  const numeric = price == null || price === "" ? NaN : Number(price);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return <strong className={className}><small>¥</small> {price as string | number}</strong>;
+  }
+  if (marketType === "found") return <strong className={`${className} is-note`}>待认领</strong>;
+  if (marketType === "lost") return <strong className={`${className} is-note`}>寻找中</strong>;
+  if (marketType === "proxy") return <strong className={`${className} is-note`}>报酬待议</strong>;
+  if (marketType === "buy" || marketType === "marketplace_buy") return <strong className={`${className} is-note`}>预算待议</strong>;
+  if (marketType === "exposure") return <strong className={`${className} is-note`}>曝光提醒</strong>;
+  return numeric === 0
+    ? <strong className={`${className} is-free`}>免费送</strong>
+    : <strong className={`${className} is-note`}>价格待议</strong>;
+}
+
 export function PostCard({
   post,
   market = false,
@@ -160,8 +186,8 @@ export function PostCard({
   const auth = useAuth(), openPostEditor = usePostEditor();
   const mobile = useMobile();
   useDismissals();
-  const marketType = post.post_type || post.type;
-  const marketLabel = ({ sell: "出售", buy: "求购", lost: "寻物", found: "招领", proxy: "办事", marketplace_sell: "出售", marketplace_buy: "求购" } as Record<string, string>)[marketType] || "出售";
+  const marketType = String(post.post_type || post.type || "");
+  const marketLabel = MARKET_TYPE_LABELS[marketType] || "出售";
   const marketStateLabel = ({ sold: "已售出", closed: "已结束" } as Record<string, string>)[post.status]
     || (post.status === "normal" && ["sell", "marketplace_sell"].includes(marketType) ? "出售中" : "");
   const location = useLocation(), navigate = useNavigate();
@@ -174,22 +200,24 @@ export function PostCard({
           <span className="tag market-status">
             {mobile ? marketLabel : post.status === "sold"
               ? "已售出"
-              : post.post_type === "marketplace_buy"
-                ? "求购"
-                : "出售"}
+              : post.status === "closed"
+                ? "已结束"
+                : marketLabel}
           </span>
         </div>
         <div className="market-info">
-          <h3>{post.title || post.content}</h3>
+          <h3><EmojiText text={post.title || post.content || ""} /></h3>
           <div className="market-price-row">
             {mobile && ["lost", "found"].includes(marketType) ? <span className="mobile-market-type">{marketStateLabel || marketLabel}</span> : <>
-              {!mobile && post.price === 0 ? <strong className="price is-free">免费送</strong> : <strong className="price"><small>¥</small> {post.price ?? "待议"}</strong>}
+              {mobile
+                ? <strong className="price"><small>¥</small> {post.price ?? "待议"}</strong>
+                : renderMarketPrice(marketType, post.price, "price")}
               {mobile && marketStateLabel && <span className="mobile-market-type">{marketStateLabel}</span>}
             </>}
             {Number(post.reply_count) > 0 && <span>{post.reply_count} 条讨论</span>}
           </div>
           <div className="market-meta">
-            <span className="market-seller"><PostAvatar author={post.author} /><span>{post.author?.nickname || "校园同学"}</span></span>
+            <span className="market-seller"><PostAvatar author={post.author} /><span>{displayName(post.author?.nickname)}</span></span>
             <PostTime value={post.created_at} />
           </div>
         </div>
@@ -199,6 +227,8 @@ export function PostCard({
   if (dismissal.mode === "hidden") return null;
   if (dismissal.mode === "placeholder") return <DismissedPost dismissal={dismissal.dismissal} />;
   if (post.poll_meta) return <PollCard key={`${post.id}:${auth.user?.id}`} post={post} compact />;
+  const content = aiBotDisplayContent(post.content, post.author);
+  const preview = content ? truncateGraphemes(content, 220) : null;
   const menu = <PostCardMenu post={post} feedSource={feedSource} onEdit={() => openPostEditor({ postId: Number(post.id) })} />;
   const openPostFromCard = (event: ReactMouseEvent<HTMLElement>) => {
     const target = event.target instanceof Element ? event.target : null;
@@ -211,12 +241,12 @@ export function PostCard({
     navigate(`/post/${post.id}`, { state: back });
   };
   return (
-    <article className="feed-card feed-card-clickable" tabIndex={0} aria-label={`打开帖子：${post.title || post.content?.slice(0, 40) || "无标题"}`} onClick={openPostFromCard} onKeyDown={openPostFromKeyboard}>
+    <article className="feed-card feed-card-clickable" tabIndex={0} aria-label={`打开帖子：${post.title || truncateGraphemes(content || "", 40).text || "无标题"}`} onClick={openPostFromCard} onKeyDown={openPostFromKeyboard}>
       <PostAuthor key={`author:${post.id}:${auth.user?.id}`} post={post} menu={menu} />
       <Link className="post-summary" to={`/post/${post.id}`} state={back}>
-        {post.title && <h3 className="post-title">{post.title}</h3>}
-        {post.content && <p className={`post-body ${post.title ? "" : "post-text-only"}`}>{post.content.slice(0, 220)}{post.content.length > 220 && "…"}</p>}
-        {post.content?.length > 220 && <span className="post-read-more">查看全文 <span aria-hidden="true">→</span></span>}
+        {post.title && <h3 className="post-title"><EmojiText text={post.title} /></h3>}
+        {preview && <p className={`post-body ${post.title ? "" : "post-text-only"}`}><EmojiText text={preview.text} />{preview.truncated && "…"}</p>}
+        {preview?.truncated && <span className="post-read-more">查看全文</span>}
       </Link>
       <MediaGallery items={post.images} title={post.title || "帖子图片"} />
       <PostActions key={`actions:${post.id}:${auth.user?.id}`} post={post} from={back.from} />
@@ -341,7 +371,14 @@ export function Community({ market = false }: { market?: boolean }) {
           </select>
         )}
       </div>
-      {market && <div className="market-results-head"><div role="group" aria-label="闲置分类" className="market-types" ref={marketTypes}>{(mobile ? [["", "全部"], ["sell", "出售"], ["buy", "求购"], ["lost", "寻物"], ["found", "招领"], ["proxy", "办事"]] : [["", "全部闲置"], ["marketplace_sell", "出售"], ["marketplace_buy", "求购"]]).map(([value, label]) => <button type="button" key={value} aria-pressed={(params.get("type") || "") === value} onClick={() => filter("type", value)}>{label}</button>)}</div>{q.data && !q.error && <span>本页 {posts.length} 件</span>}</div>}
+      {market && (() => {
+        const rawType = params.get("type") || "";
+        const activeType = mobile ? ({ marketplace_sell: "sell", marketplace_buy: "buy" }[rawType] || rawType) : ({ sell: "marketplace_sell", buy: "marketplace_buy" }[rawType] || rawType);
+        const options = mobile
+          ? [["", "全部"], ["sell", "出售"], ["buy", "求购"], ["lost", "寻物"], ["found", "招领"], ["proxy", "办事"]]
+          : [["", "全部闲置"], ["marketplace_sell", "出售"], ["marketplace_buy", "求购"], ["lost", "寻物"], ["found", "招领"], ["proxy", "办事"]];
+        return <div className="market-results-head"><div role="group" aria-label="闲置分类" className="market-types" ref={marketTypes}>{options.map(([value, label]) => <button type="button" key={value} aria-pressed={activeType === value} onClick={() => filter("type", value)}>{label}</button>)}</div>{q.data && !q.error && <span>本页 {posts.length} 件</span>}</div>;
+      })()}
       <QueryState query={q} skeleton={market ? undefined : "feed"}>
         {!market && !personal && page === 1 && publicPosts.length > 0 && <PublicPosts posts={publicPosts} />}
         <div className={market ? "market-grid" : "panel community-feed"}>
@@ -373,6 +410,16 @@ const MARKET_TYPE_LABELS: Record<string, string> = {
   marketplace_buy: "求购",
   exposure: "曝光",
 };
+function formatMarketCompactLabel(item: Entity): string {
+  const numeric = item.price == null || item.price === "" ? NaN : Number(item.price);
+  if (Number.isFinite(numeric) && numeric > 0) return `¥${item.price}`;
+  const kind = String(item.post_type || item.type || "");
+  if (kind === "found") return "待认领";
+  if (kind === "lost") return "寻找中";
+  if (kind === "proxy") return "报酬待议";
+  if (kind === "buy" || kind === "marketplace_buy") return "预算待议";
+  return numeric === 0 ? "免费送" : "价格待议";
+}
 const TEAM_STATUS_LABELS: Record<string, string> = {
   recruiting: "招募中",
   full: "已满员",
@@ -403,6 +450,7 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
   const authorInfo = authorProfile.data?.id
     ? { ...p.author, ...authorProfile.data, level: p.author?.level ?? authorProfile.data?.level }
     : p.author;
+  const content = aiBotDisplayContent(p.content, authorInfo);
   const followState = useAuthorFollow(
     authorId,
     Boolean(authorInfo?.is_following || p.is_following),
@@ -524,7 +572,7 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
       {sectionLabel && (
         <>
           <span aria-hidden="true"> · </span>
-          <Link className="post-meta-section" to={`/community?type=${encodeURIComponent(p.post_type)}`}>{sectionLabel}</Link>
+          <Link className="post-meta-section is-board" to={`/community?type=${encodeURIComponent(p.post_type)}`}>{sectionLabel}</Link>
         </>
       )}
       {marketTypeLabel && (
@@ -566,68 +614,145 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
       <QueryState query={q} skeleton="post">
         <div className="post-detail-layout">
           <div className="post-detail-main">
-            <article className="panel post-full">
-              {p.poll_meta ? <PollCard key={`${p.id}:${auth.user?.id}`} post={p} /> : <>
-                <PostAuthor
-                  key={`author:${p.id}:${auth.user?.id}`}
-                  post={p}
-                  authorOverride={authorInfo}
-                  badges={postBadges}
-                  meta={postMeta}
-                  followed={followState.followed}
-                  followPending={followState.pending}
-                  onToggleFollow={followState.toggle}
-                />
-                {p.title && <h1>{p.title}</h1>}
-                {p.board_id === 2 && (
-                  <div className="post-market-summary">
-                    {!mobile && p.price === 0 ? <strong className="post-market-price is-free">免费送</strong> : <strong className="post-market-price"><small>¥</small> {p.price ?? "待议"}</strong>}
-                    <span>{p.status === "sold" ? "已售出" : p.status === "closed" ? "已结束" : "交易中"}</span>
-                    {marketTags.map((tag: string) => <span className="post-market-tag" key={tag}>{tag}</span>)}
+            {(() => {
+              const detailType = String(p.post_type || p.type || "");
+              const numericPrice = p.price == null || p.price === "" ? NaN : Number(p.price);
+              const hasNumericPrice = Number.isFinite(numericPrice) && numericPrice > 0;
+              const isFreeSell = numericPrice === 0 && (detailType === "sell" || detailType === "marketplace_sell" || !detailType);
+              const dedupedTags = marketTags.filter((tag: string) => !(!hasNumericPrice && ((detailType === "found" && tag === "待认领") || (detailType === "lost" && tag === "寻找中"))));
+              const contactLabel = ({ wechat: "微信", qq: "QQ", phone: "电话" } as Record<string, string>)[String(p.contact_type || "").toLowerCase()] || String(p.contact_type || "").trim();
+              const hasImages = Array.isArray(p.images) && p.images.length > 0;
+              const isDesktopMarket = !mobile && p.board_id === 2 && !p.poll_meta;
+              const marketSummaryNode = p.board_id === 2 ? (
+                <div className={`post-market-summary ${hasNumericPrice || isFreeSell ? "" : "is-nonprice"}`}>
+                  {mobile
+                    ? <strong className="post-market-price"><small>¥</small> {p.price ?? "待议"}</strong>
+                    : renderMarketPrice(detailType, p.price, "post-market-price")}
+                  <span className="post-market-state">{p.status === "sold" ? "已售出" : p.status === "closed" ? "已结束" : ["lost", "found", "proxy", "exposure"].includes(detailType) ? (marketTypeLabel || "进行中") : "交易中"}</span>
+                  {dedupedTags.map((tag: string) => <span className="post-market-tag" key={tag}>{tag}</span>)}
+                </div>
+              ) : null;
+              const marketContactNode = p.board_id === 2 ? (
+                mobile ? (
+                  <div className="info-box">
+                    <p>{p.contact ? `${contactLabel ? `${contactLabel}：` : ""}${p.contact}` : "请通过评论联系"}</p>
                   </div>
-                )}
-                {p.content && <div className="post-body details-text">{p.content}</div>}
-                {Array.isArray(p.topics) && p.topics.length > 0 && (
-                  <div className="post-detail-topics" aria-label="帖子话题">
-                    {p.topics.map((topic: Entity | string, index: number) => {
-                      const label = (typeof topic === "string" ? topic : topic?.name || topic?.title || "").replace(/^#+/, "").trim();
-                      if (!label) return null;
-                      return (
-                        <Link key={(typeof topic === "object" && topic?.id) || `${label}-${index}`} className="post-topic-tag" to={`/community?q=${encodeURIComponent(label)}`}>
-                          #{label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
-                {teamMeta && (
-                  <div className="post-team-box">
-                    <div className="post-team-box-head">
-                      <span className={`post-team-status ${(teamMeta.effective_status || teamMeta.status) === "recruiting" ? "is-active" : ""}`}>
-                        {TEAM_STATUS_LABELS[teamMeta.effective_status || teamMeta.status] || "组队招募"}
-                      </span>
-                      {teamMeta.remaining_count != null && <b>还需 {teamMeta.remaining_count} 人</b>}
-                      {teamMeta.deadline && <small>截止 <PostTime value={teamMeta.deadline} /></small>}
+                ) : p.contact ? (
+                  <div className="post-contact-card">
+                    <div className="post-contact-copy">
+                      <small>联系方式</small>
+                      <b>{contactLabel ? `${contactLabel}：` : ""}{p.contact}</b>
                     </div>
-                    {Array.isArray(teamMeta.roles) && teamMeta.roles.length > 0 && (
-                      <div className="post-team-roles">
-                        {teamMeta.roles.map((role: string, index: number) => <span key={`${role}-${index}`}>{role}</span>)}
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(String(p.contact));
+                          ui.notify("已复制联系方式");
+                        } catch {
+                          ui.notify("请直接选中复制联系方式");
+                        }
+                      }}
+                    >
+                      复制联系方式
+                    </button>
+                  </div>
+                ) : (
+                  <div className="post-contact-card is-empty">
+                    <div className="post-contact-copy">
+                      <small>联系发布者</small>
+                      <span>未填写外部联系方式，可在下方评论区留言联系</span>
+                    </div>
+                    <button type="button" className="btn" onClick={focusComments}>
+                      <Icon name="community" size={15} />去留言
+                    </button>
+                  </div>
+                )
+              ) : null;
+
+              if (isDesktopMarket) {
+                return (
+                  <article className={`panel post-full post-full-market ${hasImages ? "has-media" : ""}`}>
+                    {hasImages && (
+                      <div className="post-market-showcase">
+                        <MediaGallery items={p.images} title={p.title || "帖子图片"} className="post-detail-gallery" maxVisible={9} variant="detail" />
                       </div>
                     )}
-                    <Link className="post-team-link" to="/polls?tab=team">前往组队广场查看详情 <span aria-hidden="true">→</span></Link>
-                  </div>
-                )}
-                <MediaGallery items={p.images} title={p.title || "帖子图片"} className="post-detail-gallery" maxVisible={9} variant="detail" />
-                {p.board_id === 2 && (
-                  <div className="info-box">
-                    <p>
-                      {p.contact_type}：{p.contact || "请通过评论联系"}
-                    </p>
-                  </div>
-                )}
-              </>}
-              <PostActions key={`actions:${p.id}:${auth.user?.id}`} post={p} onComment={focusComments} more={mobile ? undefined : moreActions} />
-            </article>
+                    <div className="post-market-body">
+                      <PostAuthor
+                        key={`author:${p.id}:${auth.user?.id}`}
+                        post={p}
+                        authorOverride={authorInfo}
+                        badges={postBadges}
+                        meta={postMeta}
+                        followed={followState.followed}
+                        followPending={followState.pending}
+                        onToggleFollow={followState.toggle}
+                      />
+                      {p.title && <h1><EmojiText text={p.title} /></h1>}
+                      {marketSummaryNode}
+                      {content && <div className="post-body details-text"><EmojiText text={content} /></div>}
+                      {marketContactNode}
+                      <PostActions key={`actions:${p.id}:${auth.user?.id}`} post={p} onComment={focusComments} more={moreActions} />
+                    </div>
+                  </article>
+                );
+              }
+
+              return (
+                <article className="panel post-full">
+                  {p.poll_meta ? <PollCard key={`${p.id}:${auth.user?.id}`} post={p} /> : <>
+                    <PostAuthor
+                      key={`author:${p.id}:${auth.user?.id}`}
+                      post={p}
+                      authorOverride={authorInfo}
+                      badges={postBadges}
+                      meta={postMeta}
+                      followed={followState.followed}
+                      followPending={followState.pending}
+                      onToggleFollow={followState.toggle}
+                    />
+                    {p.title && <h1><EmojiText text={p.title} /></h1>}
+                    {marketSummaryNode}
+                    {content && <div className="post-body details-text"><EmojiText text={content} /></div>}
+                    {Array.isArray(p.topics) && p.topics.length > 0 && (
+                      <div className="post-detail-topics" aria-label="帖子话题">
+                        {p.topics.map((topic: Entity | string, index: number) => {
+                          const label = (typeof topic === "string" ? topic : topic?.name || topic?.title || "").replace(/^#+/, "").trim();
+                          if (!label) return null;
+                          return (
+                            <Link key={(typeof topic === "object" && topic?.id) || `${label}-${index}`} className="post-topic-tag" to={`/community?q=${encodeURIComponent(label)}`}>
+                              #{label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {teamMeta && (
+                      <div className="post-team-box">
+                        <div className="post-team-box-head">
+                          <span className={`post-team-status ${(teamMeta.effective_status || teamMeta.status) === "recruiting" ? "is-active" : ""}`}>
+                            {TEAM_STATUS_LABELS[teamMeta.effective_status || teamMeta.status] || "组队招募"}
+                          </span>
+                          {teamMeta.remaining_count != null && <b>还需 {teamMeta.remaining_count} 人</b>}
+                          {teamMeta.deadline && <small>截止 <PostTime value={teamMeta.deadline} /></small>}
+                        </div>
+                        {Array.isArray(teamMeta.roles) && teamMeta.roles.length > 0 && (
+                          <div className="post-team-roles">
+                            {teamMeta.roles.map((role: string, index: number) => <span key={`${role}-${index}`}>{role}</span>)}
+                          </div>
+                        )}
+                        <Link className="post-team-link" to="/polls?tab=team">前往组队广场查看详情</Link>
+                      </div>
+                    )}
+                    <MediaGallery items={p.images} title={p.title || "帖子图片"} className="post-detail-gallery" maxVisible={9} variant="detail" />
+                    {marketContactNode}
+                  </>}
+                  <PostActions key={`actions:${p.id}:${auth.user?.id}`} post={p} onComment={focusComments} more={mobile ? undefined : moreActions} />
+                </article>
+              );
+            })()}
             <section className="panel post-comments section" id="post-comments" ref={commentRef} tabIndex={-1} aria-label="评论区">
               <div className="post-comments-head"><h2>全部评论 <span>{comments.data?.pages[0]?.total ?? p.reply_count ?? 0}</span></h2><select aria-label="评论排序" value={commentSort} onChange={(event) => setCommentSort(event.target.value)}><option value="hot">热门</option><option value="latest">最新</option></select></div>
               {mobile ? <div className="post-comment-prompt"><button className="mobile-icon-button" aria-label="添加图片或表情回复" onClick={() => replyTo()}><Icon name="plus" size={24} /></button><button type="button" className="post-comment-start" onClick={() => replyTo()}><span>{auth.user ? "写下你的想法…" : "登录后参与讨论…"}</span><Icon name="community" size={19} /></button></div> : <InlineCommentPrompt key={`${id}:${auth.user?.id}`} postId={Number(id)} />}
@@ -699,6 +824,9 @@ function PostDetailRail({
   const posts = rows(more.data, "posts").filter((item) => Number(item.id) > 0 && Number(item.id) !== Number(post.id)).slice(0, 3);
   const browse = market ? "/market?sort=time" : "/community?sort=time";
   const level = userLevel(author, post.author_level);
+  const authorName = aiBotDisplayName(author);
+  const authorHref = post.is_anonymous ? null : userHref(authorId, auth.user?.id, author?.nickname);
+  const backState = { from: location.pathname + location.search };
   const personSub = author?.credit_score != null
     ? `信用分 ${author.credit_score}`
     : authorStats.length < 2 && author?.followers_count != null
@@ -722,13 +850,13 @@ function PostDetailRail({
         )}
       </div>
       <div className="post-context-person">
-        <PostAvatar author={author} />
+        <PostAvatar author={author} href={authorHref} state={backState} name={authorName} />
         <div className="post-context-person-copy">
           <div className="post-context-name">
-            <b>{author?.nickname || "校园同学"}</b>
-            <span className="post-context-level">Lv.{level}</span>
+            {authorHref ? <Link className="author-name-link" to={authorHref} state={backState}><b>{authorName}</b></Link> : <b>{authorName}</b>}
+            {!isAiBotUser(author) && <LevelBadge level={level} />}
+            <AiBotIdentity user={author} />
           </div>
-          <AiBotIdentity user={author} />
           {personSub && <span className="post-context-sub">{personSub}</span>}
         </div>
       </div>
@@ -751,18 +879,25 @@ function PostDetailRail({
                 key={item.id}
                 className="post-author-more-item"
                 to={`/post/${item.id}`}
-                state={{ from: location.pathname + location.search }}
+                state={backState}
               >
-                <span>{item.title || item.content?.slice(0, 60) || (market ? "校园闲置" : "校园动态")}</span>
-                <small>{market && item.price != null ? (item.price === 0 ? "免费送" : `¥${item.price}`) : `${item.reply_count || 0} 评`}</small>
+                <span><EmojiText text={item.title || truncateGraphemes(item.content || "", 60).text || (market ? "校园闲置" : "校园动态")} /></span>
+                <small>{market ? formatMarketCompactLabel(item) : `${item.reply_count || 0} 评`}</small>
               </Link>
             ))}
           </div>
         </div>
       )}
-      <button type="button" className="btn full-width post-context-comment" onClick={onComment}>
-        <Icon name="community" size={16} />查看评论
-      </button>
+      <div className="post-context-actions">
+        {authorHref && (
+          <Link className="btn post-context-home" to={authorHref} state={backState}>
+            <Icon name="profile" size={15} />{Number(auth.user?.id) === authorId ? "我的主页" : "TA 的主页"}
+          </Link>
+        )}
+        <button type="button" className={`btn post-context-comment ${authorHref ? "" : "full-width"}`} onClick={onComment}>
+          <Icon name="community" size={16} />查看评论
+        </button>
+      </div>
     </section>
     <section className="rail-card post-context-more" aria-labelledby="post-context-more-title">
       <div className="rail-title post-context-title">
@@ -770,12 +905,12 @@ function PostDetailRail({
           <span className="rail-heading-icon"><Icon name={market ? "market" : "trending"} size={16} /></span>
           {market ? "最新闲置" : "最新校园讨论"}
         </h2>
-        <Link to={browse}>全部 <span aria-hidden="true">→</span></Link>
+        <Link to={browse}>全部</Link>
       </div>
-      {more.isPending ? <p className="post-context-state" role="status">正在加载更多帖子…</p> : more.error ? <div className="post-context-state" role="alert"><p>暂时无法加载更多帖子</p><button type="button" className="btn" disabled={more.isFetching} onClick={() => more.refetch()}>{more.isFetching ? "正在重试…" : "重试"}</button></div> : posts.length ? <div className="post-context-list">{posts.map((item) => <Link key={item.id} className="post-context-item" to={`/post/${item.id}`} state={{ from: location.pathname + location.search }}>
-        <div className="post-context-copy"><b>{item.title || item.content?.slice(0, 80) || (market ? "校园闲置" : "校园讨论")}</b>
-          {item.title && item.content && <p>{item.content.slice(0, 100)}</p>}
-          <span>{market && item.price != null ? <strong>¥ {item.price}</strong> : <span>{item.author?.nickname || "校园同学"}</span>}<span><Icon name="community" size={13} />{item.reply_count || 0}</span></span><AiBotIdentity user={item.author} /></div>
+      {more.isPending ? <p className="post-context-state" role="status">正在加载更多帖子…</p> : more.error ? <div className="post-context-state" role="alert"><p>暂时无法加载更多帖子</p><button type="button" className="btn" disabled={more.isFetching} onClick={() => more.refetch()}>{more.isFetching ? "正在重试…" : "重试"}</button></div> : posts.length ? <div className="post-context-list">{posts.map((item) => <Link key={item.id} className="post-context-item" to={`/post/${item.id}`} state={backState}>
+        <div className="post-context-copy"><b><EmojiText text={item.title || truncateGraphemes(item.content || "", 80).text || (market ? "校园闲置" : "校园讨论")} /></b>
+          {item.title && item.content && <p><EmojiText text={truncateGraphemes(item.content, 100).text} /></p>}
+          <span>{market ? <strong className={Number(item.price) > 0 ? "" : "is-note"}>{formatMarketCompactLabel(item)}</strong> : <span>{displayName(item.author?.nickname)}</span>}<span><Icon name="community" size={13} />{item.reply_count || 0}</span></span><AiBotIdentity user={item.author} /></div>
         {!!item.images?.length && <PostThumbnail key={item.id} post={item} className="post-context-thumb" />}
       </Link>)}</div> : <p className="post-context-state">暂时没有其他帖子</p>}
       <Link className="post-context-browse" to={browse}>继续逛逛{market ? "二手集市" : "校园社区"}<Icon name="arrow" size={15} /></Link>
@@ -820,46 +955,57 @@ function InlineCommentPrompt({ postId }: { postId: number }) {
 function CommentRow({ postId, postAuthorId, reply, onReply }: { postId: number; postAuthorId?: number; reply: Entity; onReply: (reply: Entity) => void }) {
   const auth = useAuth(), ui = useUI();
   const mobile = useMobile();
+  const location = useLocation();
   const replyButton = useRef<HTMLButtonElement>(null);
   const [replyStarted, setReplyStarted] = useState(false), [replying, setReplying] = useState(false);
   const [pending, setPending] = useState(false);
   const locked = useRef(false);
   const deleted = reply.status === "deleted";
   const author = reply.author || reply.user;
-  const authorName = author?.nickname || "校园同学";
+  const authorName = aiBotDisplayName(author);
+  const content = aiBotDisplayContent(reply.content, author);
+  const authorHref = deleted || reply.is_anonymous ? null : userHref(reply.author_id || author?.id, auth.user?.id, author?.nickname);
+  const backState = { from: location.pathname + location.search };
   const isPostAuthor = !deleted && !!postAuthorId && Number(reply.author_id) === postAuthorId;
   const hasLevel = !deleted && (author?.exp != null || author?.level != null);
-  return <article className="post-comment" aria-label={`${reply.author?.nickname || "校园同学"}的评论`}>
-    <PostAvatar author={author} />
+  return <article className="post-comment" aria-label={`${authorName}的评论`}>
+    <PostAvatar author={author} href={authorHref} state={backState} name={authorName} />
     <div className="post-comment-main">
       <div className="post-comment-author">
-        <b>{authorName}</b>
-        {isPostAuthor && <span className="post-comment-op">作者</span>}
-        {hasLevel && <span className="post-comment-level">Lv.{userLevel(author)}</span>}
+        {authorHref ? <Link className="author-name-link" to={authorHref} state={backState}><b>{authorName}</b></Link> : <b>{authorName}</b>}
+        {hasLevel && !isAiBotUser(author) && <LevelBadge className="post-comment-level" level={userLevel(author)} />}
+        {isPostAuthor && <IdentityBadge kind="author" className="post-comment-op" />}
+        <AiBotIdentity user={author} />
         {!deleted && reply.reply_to_name && reply.parent_reply_id && (
           <span className="post-comment-reply-to">回复 <b>@{reply.reply_to_name}</b></span>
         )}
-        <PostTime value={reply.created_at} />
+        {deleted && <PostTime value={reply.created_at} />}
       </div>
-      <AiBotIdentity user={author} />
       {deleted ? <p className="post-comment-deleted">该评论已删除</p> : <>
-        {reply.content && reply.content !== "[表情]" && <p className="details-text">{reply.content}</p>}
+        {content && content !== "[表情]" && <p className="details-text">{splitMentionText(content, reply.mentions).map((part, index) => {
+          if (!part.userId) return <EmojiText key={index} text={part.text} />;
+          const href = userHref(part.userId, auth.user?.id, part.text.slice(1));
+          return href ? <Link key={index} className="comment-mention" to={href} state={backState}>{part.text}</Link> : <span key={index} className="comment-mention">{part.text}</span>;
+        })}</p>}
         {reply.sticker_id && <StickerRenderer stickerId={reply.sticker_id} assetKey={reply.asset_key} packId={reply.pack_id} />}
         {(reply.images || reply.attachments)?.length > 0 && <MediaGallery items={reply.images || reply.attachments} title="评论图片" maxVisible={4} />}
       </>}
-      {!deleted && <div className="post-comment-footer"><div className="post-comment-actions">
-        <button type="button" aria-label={`${reply.is_liked ? "取消点赞" : "点赞"}${authorName}的评论，${reply.like_count || 0}赞`} aria-pressed={!!reply.is_liked} aria-busy={pending} disabled={pending || auth.loading} onClick={async () => {
-          if (locked.current || !auth.requireUser()) return;
-          locked.current = true; setPending(true);
-          try { await ui.act(() => write(`/api/replies/${reply.id}/like`, {}, reply.is_liked ? "DELETE" : "POST"), reply.is_liked ? "已取消点赞" : "已点赞"); }
-          finally { locked.current = false; setPending(false); }
-        }}><Icon name="heart" size={16} /><span>{reply.like_count || "赞"}</span></button>
-        <button ref={replyButton} type="button" aria-expanded={mobile ? undefined : replying} onClick={() => {
-          if (mobile) { onReply(reply); return; }
-          if (!auth.requireUser()) return;
-          setReplyStarted(true); setReplying((value) => !value);
-        }}><Icon name="community" size={16} />回复</button>
-      </div></div>}
+      {!deleted && <div className="post-comment-footer">
+        <PostTime value={reply.created_at} />
+        <div className="post-comment-actions">
+          <button type="button" aria-label={`${reply.is_liked ? "取消点赞" : "点赞"}${authorName}的评论，${reply.like_count || 0}赞`} aria-pressed={!!reply.is_liked} aria-busy={pending} disabled={pending || auth.loading} onClick={async () => {
+            if (locked.current || !auth.requireUser()) return;
+            locked.current = true; setPending(true);
+            try { await ui.act(() => write(`/api/replies/${reply.id}/like`, {}, reply.is_liked ? "DELETE" : "POST"), reply.is_liked ? "已取消点赞" : "已点赞"); }
+            finally { locked.current = false; setPending(false); }
+          }}><Icon name="heart" size={16} /><span>{reply.like_count || "赞"}</span></button>
+          <button ref={replyButton} type="button" aria-expanded={mobile ? undefined : replying} onClick={() => {
+            if (mobile) { onReply(reply); return; }
+            if (!auth.requireUser()) return;
+            setReplyStarted(true); setReplying((value) => !value);
+          }}><Icon name="community" size={16} />回复</button>
+        </div>
+      </div>}
       {!mobile && replyStarted && <div className="post-thread-composer" hidden={!replying}><ReplyComposer inline active={replying} postId={postId} parentReplyId={Number(reply.parent_reply_id || reply.id)} replyToReplyId={reply.parent_reply_id ? Number(reply.id) : undefined} replyToUserId={reply.parent_reply_id ? Number(reply.author_id) : undefined} replyToName={authorName} onCancel={() => { setReplying(false); replyButton.current?.focus({ preventScroll: true }); }} onSent={() => { setReplying(false); setReplyStarted(false); }} /></div>}
     </div>
   </article>;

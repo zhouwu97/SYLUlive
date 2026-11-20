@@ -21,13 +21,13 @@ func (h *IntegrationHandler) managedBotView(owner uint) (gin.H, error) {
 		return nil, err
 	}
 	var actor, creator models.User
-	if err := h.db.Select("id", "nickname", "avatar").First(&actor, bot.UserID).Error; err != nil {
+	if err := h.db.Select("id", "nickname", "avatar", "exp").First(&actor, bot.UserID).Error; err != nil {
 		return nil, err
 	}
 	if err := h.db.Select("id", "nickname").First(&creator, owner).Error; err != nil {
 		return nil, err
 	}
-	return gin.H{"bot_user_id": bot.UserID, "name": strings.TrimPrefix(actor.Nickname, "[AI] "), "avatar": actor.Avatar, "enabled": bot.Enabled, "owner": gin.H{"id": creator.ID, "nickname": creator.Nickname}, "policy": services.ManagedBotPolicy(bot)}, nil
+	return gin.H{"bot_user_id": bot.UserID, "name": strings.TrimPrefix(actor.Nickname, "[AI] "), "avatar": actor.Avatar, "exp": actor.Exp, "enabled": bot.Enabled, "owner": gin.H{"id": creator.ID, "nickname": creator.Nickname}, "policy": services.ManagedBotPolicy(bot)}, nil
 }
 
 func (h *IntegrationHandler) BotStatus(c *gin.Context) {
@@ -116,11 +116,20 @@ func (h *IntegrationHandler) BotPolicy(c *gin.Context) {
 		writeIntegrationError(c, err, false)
 		return
 	}
+	result := gin.H{"runtime_supported": true, "binding": gin.H{"binding_id": b.ID, "epoch": b.Epoch}, "bot": gin.H{"bot_user_id": bot.UserID, "revision": bot.Revision, "enabled": bot.Enabled, "policy": services.ManagedBotPolicy(bot)}, "auto_reply_server_enabled": h.options.AutoReplyEnabled, "auto_reply_authorized": services.IntegrationHasScope(b, services.IntegrationAutoReplyScope), "auto_post_server_enabled": h.options.AutoPostEnabled, "auto_post_authorized": services.IntegrationHasScope(b, services.IntegrationAutoPostScope)}
+	if h.options.AutoReplyEnabled && c.Query("reply_targets") == "1" {
+		targets, err := h.actions().BotReplyTargets(c.Request.Context(), b, bot)
+		if err != nil {
+			writeIntegrationError(c, err, false)
+			return
+		}
+		result["reply_targets"] = targets
+	}
 	if err := h.auth.CheckBinding(c.Request.Context(), b); err != nil {
 		writeIntegrationError(c, err, false)
 		return
 	}
-	c.JSON(200, gin.H{"runtime_supported": true, "binding": gin.H{"binding_id": b.ID, "epoch": b.Epoch}, "bot": gin.H{"bot_user_id": bot.UserID, "revision": bot.Revision, "enabled": bot.Enabled, "policy": services.ManagedBotPolicy(bot)}, "auto_reply_server_enabled": h.options.AutoReplyEnabled, "auto_reply_authorized": services.IntegrationHasScope(b, services.IntegrationAutoReplyScope), "auto_post_server_enabled": h.options.AutoPostEnabled, "auto_post_authorized": services.IntegrationHasScope(b, services.IntegrationAutoPostScope)})
+	c.JSON(200, result)
 }
 
 func (h *IntegrationHandler) BotRuntimeHeartbeat(c *gin.Context) {

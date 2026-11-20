@@ -435,10 +435,12 @@ class Post {
         lastActivityAt = lastActivityAt ?? createdAt;
 
   factory Post.fromJson(Map<String, dynamic> json) {
+    final author =
+        json['author'] != null ? User.fromJson(json['author']) : null;
     return Post(
       id: json['id'] ?? 0,
       title: json['title'] ?? '',
-      content: json['content'] ?? '',
+      content: User.aiBotDisplayContent(json['content'] ?? '', author),
       boardId: json['board_id'] ?? 1,
       authorId: json['author_id'] ?? 0,
       postType: json['post_type'] ?? '',
@@ -507,7 +509,7 @@ class Post {
               ?.map((e) => PostImage.fromJson(e))
               .toList() ??
           [],
-      author: json['author'] != null ? User.fromJson(json['author']) : null,
+      author: author,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       updatedAt: DateTime.tryParse(json['updated_at'] ?? ''),
       lastActivityAt: DateTime.tryParse(json['last_activity_at'] ?? '') ??

@@ -13,19 +13,20 @@
 .market-types { display: flex; gap: 8px; }
 .market-types button { min-height: 44px; padding: 8px 16px; border: 0; border-radius: 12px; background: transparent; color: var(--text-2); font: inherit; font-size: 14px; cursor: pointer; }
 .market-types button[aria-pressed="true"] { background: var(--brand-soft); color: var(--brand-strong); font-weight: 650; }
-:is(.market-page, .profile-page, .public-user-mobile) .market-grid { grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr)); gap: 20px 16px; }
-:is(.market-page, .profile-page, .public-user-mobile) .market-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-radius: 16px; }
+:is(.market-page, .profile-page, .public-user-mobile) .market-grid { grid-template-columns: repeat(auto-fill, minmax(min(198px, 100%), 1fr)); gap: 14px; }
+:is(.market-page, .profile-page, .public-user-mobile) .market-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-radius: 14px; }
 :is(.market-page, .profile-page, .public-user-mobile) .market-img { position: relative; display: grid; place-items: center; width: 100%; height: auto; min-height: 0; aspect-ratio: 1; overflow: hidden; background: var(--surface-2); }
 :is(.market-page, .profile-page, .public-user-mobile) .market-img img { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: cover; }
 .post-thumbnail-empty { display: grid; justify-items: center; align-content: center; gap: 10px; color: var(--text-2); font-size: 12px; }
-:is(.market-page, .profile-page, .public-user-mobile) .market-info { flex: 1; display: flex; flex-direction: column; padding: 14px; background: var(--surface); }
-:is(.market-page, .profile-page, .public-user-mobile) .market-status { align-self: flex-start; height: 20px; padding-inline: 6px; font-size: 11px; border-radius: 8px; font-weight: 500; }
-:is(.market-page, .profile-page, .public-user-mobile) .market-info h3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-height: 46px; margin: 8px 0 12px; overflow: hidden; overflow-wrap: anywhere; font-size: 14px; line-height: 1.65; font-weight: 550; }
+:is(.market-page, .profile-page, .public-user-mobile) .market-info { flex: 1; display: flex; flex-direction: column; padding: 11px 12px; background: var(--surface); }
+:is(.market-page, .profile-page, .public-user-mobile) .market-status { align-self: flex-start; height: 20px; padding-inline: 6px; font-size: 11px; border-radius: 6px; font-weight: 500; }
+:is(.market-page, .profile-page, .public-user-mobile) .market-info h3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-height: 40px; margin: 6px 0 8px; overflow: hidden; overflow-wrap: anywhere; font-size: 13.5px; line-height: 1.5; font-weight: 550; }
 .market-price-row { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px; margin-top: auto; }
-.market-price-row .price { font-size: 23px; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; }
-.market-price-row .price small { font-size: 14px; }
+.market-price-row .price { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 20px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.market-price-row .price.is-note, .post-market-price.is-note { color: var(--text-2); font-size: 15px; font-weight: 600; }
+.market-price-row .price small { font-size: 13px; }
 .market-price-row > span { font-size: 11px; color: var(--text-2); }
-:is(.market-page, .profile-page, .public-user-mobile) .market-meta { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-2); color: var(--text-2); font-size: 11px; }
+:is(.market-page, .profile-page, .public-user-mobile) .market-meta { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line-2); color: var(--text-2); font-size: 11px; }
 .market-seller { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
 .market-seller > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .market-seller .post-avatar { width: 24px; height: 24px; flex-basis: 24px; border-radius: 50%; font-size: 11px; }

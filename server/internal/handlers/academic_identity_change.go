@@ -84,7 +84,7 @@ func (h *AcademicIdentityHandler) changeBinding(claims academicChallengeClaims, 
 				}
 			}
 		}
-		if err := services.InvalidateUserIntegrations(tx, claims.UserID, now); err != nil {
+		if err := services.InvalidateUserAcademicIntegrationData(tx, claims.UserID); err != nil {
 			return err
 		}
 		// 审计与身份更新同一事务，不记录密码、验证码、公钥挑战或学校会话。

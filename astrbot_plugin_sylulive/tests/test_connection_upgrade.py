@@ -57,10 +57,11 @@ async def test_group_readonly_checkin_connect_approve_then_checkin_uses_only_sen
     plugin, event, owner, _ = multiuser_group()
     plugin.origin = "https://fixture.invalid"
     requests = []
+    granted = ["community:read"]  # 服务端当前实际范围，批准后才加入 checkin:write
     def respond(request):
         requests.append(request)
         if request.url.path.endswith("/token"):
-            return httpx.Response(200, json={**tokens(), "scope": "checkin:write"})
+            return httpx.Response(200, json={**tokens(), "scope": granted[0]})
         if request.url.path.endswith("/me/checkin"):
             return httpx.Response(200, json={"data": {"already": False, "streak_days": 1,
                 "exp_earned": 5, "check_in_date": "2026-11-05"}})
@@ -72,12 +73,15 @@ async def test_group_readonly_checkin_connect_approve_then_checkin_uses_only_sen
     plugin.config["binding_link_delivery"] = "group"
     try:
         assert "没有签到权限" in await plugin.checkin_result(event, submit=True)
-        assert not requests
+        # 本地缺 scope 时只向服务端核对一次最新授权，核对期间不得代发签到请求。
+        assert any(r.url.path.endswith("/token") for r in requests)
+        assert not any(r.url.path.endswith("/me/checkin") for r in requests)
         replies = [r async for r in plugin.connect(event)]
         text = "".join(part.text for reply in replies for part in reply.chain if hasattr(part, "text"))
         assert "UPGD-1234" in text and "权限更新" in text
         assert "checkin:write" not in client.tokens["scope"]
         assert not any(r.url.path.endswith("/me/checkin") for r in requests)
+        granted[0] = "community:read checkin:write"  # 官网批准后的服务端授权状态
         client.pending["next"] = 0
         await client.poll()
         assert "签到成功" in await plugin.checkin_result(event, submit=True)

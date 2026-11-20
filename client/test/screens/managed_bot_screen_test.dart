@@ -564,7 +564,7 @@ void main() {
       });
       await appearance.setBackgroundImage('morenbeijing.jpeg',
           fillScreen: true);
-      await appearance.setComponentOpacity(.72);
+      await appearance.setComponentOpacityLevel(.72);
       await appearance.setFrostedGlass(true);
       dio.interceptors.add(InterceptorsWrapper(
           onRequest: (request, handler) => handler.resolve(Response(
@@ -586,8 +586,8 @@ void main() {
       expect(find.byType(AppCardSurface), findsWidgets);
       expect(activeBackdropFilters(), findsWidgets);
       expect(
-          _surfaceAlpha(tester, 'bot-management-surface'), closeTo(.72, .001));
-      expect(_surfaceAlpha(tester, 'bot-appbar-surface'), closeTo(.72, .001));
+          _surfaceAlpha(tester, 'bot-management-surface'), closeTo(.93, .001));
+      expect(_surfaceAlpha(tester, 'bot-appbar-surface'), closeTo(.93, .001));
       expect(
           await _appBarContrast(tester, boundary), greaterThanOrEqualTo(4.5));
       expect(tester.takeException(), isNull);
@@ -606,16 +606,16 @@ void main() {
               .dy,
           lessThan(before - 100));
       expect(
-          _surfaceAlpha(tester, 'bot-management-surface'), closeTo(.72, .001));
-      expect(_surfaceAlpha(tester, 'bot-appbar-surface'), closeTo(.72, .001));
+          _surfaceAlpha(tester, 'bot-management-surface'), closeTo(.93, .001));
+      expect(_surfaceAlpha(tester, 'bot-appbar-surface'), closeTo(.93, .001));
       expect(
           await _appBarContrast(tester, boundary), greaterThanOrEqualTo(4.5));
       await _capture(tester, boundary, 'app-bot-$label-glass-scroll');
-      await appearance.setComponentOpacity(.55);
+      await appearance.setComponentOpacityLevel(.55);
       await tester.pumpAndSettle();
       expect(
-          _surfaceAlpha(tester, 'bot-management-surface'), closeTo(.55, .001));
-      expect(_surfaceAlpha(tester, 'bot-appbar-surface'), closeTo(.55, .001));
+          _surfaceAlpha(tester, 'bot-management-surface'), closeTo(.8875, .001));
+      expect(_surfaceAlpha(tester, 'bot-appbar-surface'), closeTo(.8875, .001));
       expect(
           await _appBarContrast(tester, boundary), greaterThanOrEqualTo(4.5));
       await _capture(tester, boundary, 'app-bot-$label-glass-low-opacity');
@@ -623,8 +623,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(activeBackdropFilters(), findsNothing);
       expect(
-          _surfaceAlpha(tester, 'bot-management-surface'), closeTo(.55, .001));
-      expect(_surfaceAlpha(tester, 'bot-appbar-surface'), closeTo(.55, .001));
+          _surfaceAlpha(tester, 'bot-management-surface'), closeTo(.8875, .001));
+      expect(_surfaceAlpha(tester, 'bot-appbar-surface'), closeTo(.8875, .001));
       await _capture(tester, boundary, 'app-bot-$label-blur-off');
       await appearance.setFrostedGlass(true);
       await appearance.setCleanBackgroundMode();

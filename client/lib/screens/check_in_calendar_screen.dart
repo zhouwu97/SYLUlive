@@ -358,7 +358,9 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
         return AppAlertDialog(
           title: const Text('使用补签卡'),
           content: Text(
-            '确定补签 ${date.month} 月 ${date.day} 日吗？\n将消耗 1 张补签卡，并按连续签到规则补发经验。',
+            '确定补签 ${date.month} 月 ${date.day} 日吗？\n'
+            '补签只限本月，先使用最早到期的卡。补签卡到账满一个月自动过期。\n'
+            '将消耗 1 张补签卡，并按连续签到规则补发经验。',
           ),
           actions: [
             TextButton(
@@ -619,7 +621,10 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
             ? '签到中'
             : switch (selection) {
                 _CalendarDaySelection.makeup => '使用补签卡补签 $selectedDateText',
-                _CalendarDaySelection.signed => '$selectedDateText已签到',
+                _CalendarDaySelection.signed =>
+                  _records[_selectedDate]?.isCompensation == true
+                      ? '$selectedDateText已补偿'
+                      : '$selectedDateText已签到',
                 _CalendarDaySelection.noMakeupCard => '暂无补签卡',
                 _CalendarDaySelection.outsideMonth => '非本月日期不可补签',
                 _CalendarDaySelection.future => '未来日期不可补签',
@@ -906,9 +911,8 @@ class _CheckInSummary extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          AppCardDivider(
+          const AppCardDivider(
             height: 1,
-            color: foreground.withValues(alpha: 0.10),
           ),
           const SizedBox(height: 16),
           Row(
@@ -1142,13 +1146,16 @@ class _CalendarDay extends StatelessWidget {
             : isFuture
                 ? scheme.onSurface.withValues(alpha: 0.25)
                 : scheme.onSurface;
-    final dateState = isToday
-        ? (isSigned ? '，今天，已签到' : '，今天')
-        : isSigned
-            ? (record!.isMakeup ? '，已补签' : '，已签到')
-            : isMissed
-                ? '，未签到'
-                : '';
+    final isCompensation = record?.isCompensation == true;
+    final dateState = isCompensation
+        ? '${isToday ? '，今天' : ''}，已补偿'
+        : isToday
+            ? (isSigned ? '，今天，已签到' : '，今天')
+            : isSigned
+                ? (record!.isMakeup ? '，已补签' : '，已签到')
+                : isMissed
+                    ? '，未签到'
+                    : '';
     final semanticsState = '$dateState${selected ? '，已选择' : ''}';
 
     return Semantics(
@@ -1187,13 +1194,18 @@ class _CalendarDay extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 1),
-                      Icon(
-                        isSigned ? Icons.check_rounded : Icons.close_rounded,
-                        size: 10,
-                        color: isSigned
-                            ? const Color(0xFF758D7D)
-                            : const Color(0xFFB8867F),
-                      ),
+                      if (isCompensation)
+                        Text('补偿',
+                            style: TextStyle(
+                                color: textColor, fontSize: 10, height: 1))
+                      else
+                        Icon(
+                          isSigned ? Icons.check_rounded : Icons.close_rounded,
+                          size: 10,
+                          color: isSigned
+                              ? const Color(0xFF758D7D)
+                              : const Color(0xFFB8867F),
+                        ),
                     ],
                   )
                 : Text(
@@ -1338,12 +1350,14 @@ class CheckInDayRecord {
   final int streakDays;
   final int expEarned;
   final bool isMakeup;
+  final bool isCompensation;
 
   const CheckInDayRecord({
     required this.date,
     required this.streakDays,
     required this.expEarned,
     this.isMakeup = false,
+    this.isCompensation = false,
   });
 
   factory CheckInDayRecord.fromJson(Map<String, dynamic> json) {
@@ -1353,6 +1367,7 @@ class CheckInDayRecord {
       streakDays: _readInt(json['streak_days']),
       expEarned: _readInt(json['exp_earned']),
       isMakeup: json['is_makeup'] == true,
+      isCompensation: json['is_compensation'] == true,
     );
   }
 }

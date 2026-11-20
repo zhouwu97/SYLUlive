@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../widgets/app_page_background.dart';
 import '../providers/water_section_provider.dart';
-import '../models/water_section.dart';
 import '../widgets/water_section/section_avatar.dart';
 import 'water_section_manage_screen.dart';
 import '../widgets/app_card.dart';
@@ -133,14 +132,14 @@ class _AdminWaterSectionsScreenState extends State<AdminWaterSectionsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         text,
         style: TextStyle(
           fontSize: 11,
-          color: isDark ? color.withOpacity(0.9) : color,
+          color: isDark ? color.withValues(alpha: 0.9) : color,
           fontWeight: FontWeight.w500,
         ),
       ),

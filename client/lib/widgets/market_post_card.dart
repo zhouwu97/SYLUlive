@@ -1,3 +1,5 @@
+import '../theme/app_theme_style.dart';
+import '../theme/app_theme_tokens.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -16,32 +18,35 @@ import 'post_media/post_media_view.dart';
 import 'app_card.dart';
 
 final class _CardTokens {
-  static Color cardBg(bool isDark) =>
-      isDark ? const Color(0xFF1E2226) : Colors.white;
+  static Color cardBg(BuildContext context) => AppThemeTokens.of(context).card;
 
-  static Color borderColor(bool isDark) =>
-      isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFF1E5DC);
+  static Color borderColor(BuildContext context) =>
+      AppThemeTokens.of(context).cardBorder;
 
-  static Color titleColor(bool isDark) =>
-      isDark ? Colors.white : const Color(0xFF1F2328);
+  static Color titleColor(BuildContext context) =>
+      AppThemeTokens.of(context).textPrimary;
 
-  static Color subColor(bool isDark) =>
-      isDark ? Colors.grey.shade400 : const Color(0xFF747B82);
+  static Color subColor(BuildContext context) =>
+      AppThemeTokens.of(context).textSecondary;
 
-  static Color accent(bool isDark) =>
-      isDark ? const Color(0xFFFFA06D) : const Color(0xFFFF7A45);
+  static Color accent(BuildContext context, bool isDark) =>
+      AppThemeStyle.of(context).identity(isDark
+          ? const Color(0xFFFFA06D) // theme: fixed 集市模块识别色
+          : const Color(0xFFFF7A45)); // theme: fixed 集市模块识别色
 
-  static Color accentSoft(bool isDark) => isDark
-      ? const Color(0xFFFFA06D).withValues(alpha: 0.14)
-      : const Color(0xFFFFF0E8);
+  static Color accentSoft(BuildContext context, bool isDark) =>
+      AppThemeStyle.of(context).identity(isDark
+          ? const Color(0xFFFFA06D).withValues(alpha: 0.14) // theme: fixed 集市模块识别色
+          : const Color(0xFFFFF0E8)); // theme: fixed 集市模块识别色
 
-  static Color priceColor(bool _) => const Color(0xFFE76F51);
+  static Color priceColor(bool _) =>
+      const Color(0xFFE76F51); // theme: fixed 金额语义色
 
-  static Color skeletonBg(bool isDark) =>
-      isDark ? const Color(0xFF242833) : const Color(0xFFF1F3F6);
+  static Color skeletonBg(BuildContext context) =>
+      AppThemeTokens.of(context).surfaceMuted;
 
-  static Color skeletonIcon(bool isDark) =>
-      isDark ? Colors.white12 : const Color(0xFFC9CED6);
+  static Color skeletonIcon(BuildContext context) =>
+      AppThemeTokens.of(context).textDisabled;
 
   static const double cardRadius = 18;
 }
@@ -99,7 +104,7 @@ class MarketPostCard extends StatelessWidget {
     final validImages =
         post.images.where((img) => img.url.trim().isNotEmpty).toList();
     final isSold = post.status == 'sold' || post.status == 'closed';
-    final accent = _CardTokens.accent(isDark);
+    final accent = _CardTokens.accent(context, isDark);
     final title = post.title.isNotEmpty ? post.title : post.content;
     final typeLabel = _marketTypeLabel(post);
     final statusLabel = _marketStatusLabel(post);
@@ -114,9 +119,9 @@ class MarketPostCard extends StatelessWidget {
           child: AppCardSurface(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: _CardTokens.cardBg(isDark),
+              color: _CardTokens.cardBg(context),
               borderRadius: BorderRadius.circular(_CardTokens.cardRadius),
-              border: Border.all(color: _CardTokens.borderColor(isDark)),
+              border: Border.all(color: _CardTokens.borderColor(context)),
               boxShadow: [
                 if (!isDark)
                   BoxShadow(
@@ -135,7 +140,7 @@ class MarketPostCard extends StatelessWidget {
                   _buildCover(context, validImages, 96, 96, isDark,
                       isGrid: false)
                 else
-                  _buildNoImageCover(96, 96, isDark, isGrid: false),
+                  _buildNoImageCover(96, 96, context, isGrid: false),
                 const SizedBox(width: 10),
                 // Right: compact info
                 Expanded(
@@ -155,7 +160,7 @@ class MarketPostCard extends StatelessWidget {
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
                                 height: 1.2,
-                                color: _CardTokens.titleColor(isDark),
+                                color: _CardTokens.titleColor(context),
                               ),
                             ),
                           ),
@@ -164,7 +169,7 @@ class MarketPostCard extends StatelessWidget {
                             _formatTime(post.createdAt),
                             style: TextStyle(
                               fontSize: 11,
-                              color: _CardTokens.subColor(isDark),
+                              color: _CardTokens.subColor(context),
                             ),
                           ),
                         ],
@@ -182,7 +187,7 @@ class MarketPostCard extends StatelessWidget {
                                   fontSize: 11,
                                   fontWeight: FontWeight.w900,
                                   color: isSold
-                                      ? _CardTokens.subColor(isDark)
+                                      ? _CardTokens.subColor(context)
                                       : _CardTokens.priceColor(isDark),
                                 ),
                               ),
@@ -196,7 +201,7 @@ class MarketPostCard extends StatelessWidget {
                                   fontWeight: FontWeight.w900,
                                   height: 1.0,
                                   color: isSold
-                                      ? _CardTokens.subColor(isDark)
+                                      ? _CardTokens.subColor(context)
                                       : _CardTokens.priceColor(isDark),
                                 ),
                               ),
@@ -219,7 +224,7 @@ class MarketPostCard extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: isSold
                                     ? Colors.grey.withValues(alpha: 0.08)
-                                    : _CardTokens.accentSoft(isDark),
+                                    : _CardTokens.accentSoft(context, isDark),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
@@ -237,7 +242,7 @@ class MarketPostCard extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 5, vertical: 2),
                               decoration: BoxDecoration(
-                                color: _CardTokens.accentSoft(isDark),
+                                color: _CardTokens.accentSoft(context, isDark),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
@@ -264,7 +269,7 @@ class MarketPostCard extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: _CardTokens.subColor(isDark),
+                                  color: _CardTokens.subColor(context),
                                 ),
                               ),
                             ),
@@ -286,7 +291,7 @@ class MarketPostCard extends StatelessWidget {
   }
 
   Widget _buildUserLine(BuildContext context, bool isDark) {
-    final authUser = context.watch<AuthProvider>().user;
+    final authUser = context.watch<AuthProvider?>()?.user;
     final isMyPost = authUser != null && post.author?.id == authUser.id;
     final displayAvatar =
         isMyPost ? authUser.avatar : (post.author?.avatar ?? '');
@@ -315,7 +320,7 @@ class MarketPostCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 11,
-                color: _CardTokens.subColor(isDark),
+                color: _CardTokens.subColor(context),
               ),
             ),
           ),
@@ -339,9 +344,9 @@ class MarketPostCard extends StatelessWidget {
         child: AppCardSurface(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: _CardTokens.cardBg(isDark),
+            color: _CardTokens.cardBg(context),
             borderRadius: BorderRadius.circular(_CardTokens.cardRadius),
-            border: Border.all(color: _CardTokens.borderColor(isDark)),
+            border: Border.all(color: _CardTokens.borderColor(context)),
             boxShadow: [
               if (!isDark)
                 BoxShadow(
@@ -358,7 +363,7 @@ class MarketPostCard extends StatelessWidget {
                 _buildCover(context, validImages, double.infinity, null, isDark,
                     isGrid: true)
               else
-                _buildNoImageCover(double.infinity, 0, isDark, isGrid: true),
+                _buildNoImageCover(double.infinity, 0, context, isGrid: true),
               Padding(
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
                 child: Column(
@@ -371,7 +376,7 @@ class MarketPostCard extends StatelessWidget {
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                           height: 1.25,
-                          color: _CardTokens.titleColor(isDark),
+                          color: _CardTokens.titleColor(context),
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -418,7 +423,7 @@ class MarketPostCard extends StatelessWidget {
     final coverUrl = cover?.url ?? imgUrl;
     final access = resolvePostMediaAccess(context, post);
     Widget imageWidget = coverUrl.isEmpty
-        ? _buildSkeleton(isDark)
+        ? _buildSkeleton(context)
         : CachedNetworkImage(
             // 治理隐藏的帖子图片在服务端已降级为 private。作者在自己的主页
             // （/user/:id/market-posts 对作者本人会返回 moderated_hidden）里
@@ -436,14 +441,14 @@ class MarketPostCard extends StatelessWidget {
             memCacheWidth: cover?.decodeWidth,
             memCacheHeight: cover?.decodeHeight,
             fadeInDuration: const Duration(milliseconds: 200),
-            placeholder: (_, __) => _buildSkeleton(isDark),
+            placeholder: (_, __) => _buildSkeleton(context),
             errorWidget: (context, url, error) {
               // 鉴权模式下失败多半是权限已撤回，不是脏缓存；此时清理公开缓存
               // 既无效也危险（同一 URL 可能仍是别的帖子的公开资源）。
               if (!access.isAuthorized) {
                 Future.microtask(() => PostImageCache.manager.removeFile(url));
               }
-              return _buildSkeleton(isDark);
+              return _buildSkeleton(context);
             },
           );
 
@@ -548,23 +553,23 @@ class MarketPostCard extends StatelessWidget {
     );
   }
 
-  Widget _buildSkeleton(bool isDark) {
+  Widget _buildSkeleton(BuildContext context) {
     return Container(
-      color: _CardTokens.skeletonBg(isDark),
+      color: _CardTokens.skeletonBg(context),
       child: Center(
         child: Icon(Icons.image_outlined,
-            color: _CardTokens.skeletonIcon(isDark), size: 24),
+            color: _CardTokens.skeletonIcon(context), size: 24),
       ),
     );
   }
 
-  Widget _buildNoImageCover(double width, double height, bool isDark,
+  Widget _buildNoImageCover(double width, double height, BuildContext context,
       {required bool isGrid}) {
     final placeholder = Container(
       width: width,
       height: isGrid ? null : height,
       decoration: BoxDecoration(
-        color: _CardTokens.skeletonBg(isDark),
+        color: _CardTokens.skeletonBg(context),
         borderRadius: isGrid
             ? const BorderRadius.vertical(
                 top: Radius.circular(_CardTokens.cardRadius))
@@ -573,7 +578,7 @@ class MarketPostCard extends StatelessWidget {
       child: Center(
         child: Icon(
           _getCategoryIcon(),
-          color: _CardTokens.skeletonIcon(isDark),
+          color: _CardTokens.skeletonIcon(context),
           size: 28,
         ),
       ),
@@ -617,7 +622,7 @@ class MarketPostCard extends StatelessWidget {
       {bool showViews = false}) {
     final isLostOrFound = post.postType == 'lost' || post.postType == 'found';
     final isSold = post.status == 'sold' || post.status == 'closed';
-    final accent = _CardTokens.accent(isDark);
+    final accent = _CardTokens.accent(context, isDark);
     final statusLabel = _marketStatusLabel(post);
     final typeLabel = _marketTypeLabel(post);
 
@@ -632,7 +637,7 @@ class MarketPostCard extends StatelessWidget {
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
                 color: isSold
-                    ? _CardTokens.subColor(isDark)
+                    ? _CardTokens.subColor(context)
                     : _CardTokens.priceColor(isDark),
               ),
             ),
@@ -644,7 +649,7 @@ class MarketPostCard extends StatelessWidget {
                 fontWeight: FontWeight.w900,
                 height: 1.0,
                 color: isSold
-                    ? _CardTokens.subColor(isDark)
+                    ? _CardTokens.subColor(context)
                     : _CardTokens.priceColor(isDark),
               ),
             ),
@@ -666,7 +671,7 @@ class MarketPostCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: isSold
                   ? Colors.grey.withValues(alpha: 0.1)
-                  : _CardTokens.accentSoft(isDark),
+                  : _CardTokens.accentSoft(context, isDark),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -682,7 +687,7 @@ class MarketPostCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: _CardTokens.accentSoft(isDark),
+              color: _CardTokens.accentSoft(context, isDark),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -700,7 +705,7 @@ class MarketPostCard extends StatelessWidget {
             '${post.viewCount}浏览',
             style: TextStyle(
               fontSize: 11,
-              color: _CardTokens.subColor(isDark),
+              color: _CardTokens.subColor(context),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -712,7 +717,7 @@ class MarketPostCard extends StatelessWidget {
   Widget _buildMarketTags(BuildContext context, bool isDark,
       {int maxTags = 2}) {
     final tags = post.marketTags.take(maxTags).toList(growable: false);
-    final accent = _CardTokens.accent(isDark);
+    final accent = _CardTokens.accent(context, isDark);
     return Wrap(
       spacing: 6,
       runSpacing: 4,
@@ -721,7 +726,7 @@ class MarketPostCard extends StatelessWidget {
             (tag) => Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
               decoration: BoxDecoration(
-                color: _CardTokens.accentSoft(isDark),
+                color: _CardTokens.accentSoft(context, isDark),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
@@ -740,7 +745,7 @@ class MarketPostCard extends StatelessWidget {
   }
 
   Widget _buildGridUserInfo(BuildContext context, bool isDark) {
-    final authUser = context.watch<AuthProvider>().user;
+    final authUser = context.watch<AuthProvider?>()?.user;
     final isMyPost = authUser != null && post.author?.id == authUser.id;
     final displayAvatar =
         isMyPost ? authUser.avatar : (post.author?.avatar ?? '');
@@ -767,7 +772,7 @@ class MarketPostCard extends StatelessWidget {
               displayNickname,
               style: TextStyle(
                 fontSize: 12,
-                color: isDark ? Colors.white60 : Colors.black54,
+                color: AppThemeTokens.of(context).textSecondary,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

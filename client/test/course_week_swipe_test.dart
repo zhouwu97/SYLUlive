@@ -137,7 +137,8 @@ class _BoundEduProvider extends EduProvider {
 String? _weekHeaderText(WidgetTester tester) {
   final datePattern = RegExp(r'\d{1,2}/\d{1,2} - \d{1,2}/\d{1,2}');
   for (final text in tester.widgetList<Text>(find.byType(Text))) {
-    final data = text.data ?? '';
+    // 页头日期区间用 en dash 排版，这里统一成连字符再比较。
+    final data = (text.data ?? '').replaceAll('–', '-');
     if (datePattern.hasMatch(data)) return data;
   }
   return null;
@@ -370,7 +371,7 @@ void main() {
     const maxWeek = 20; // CourseTerm 默认值
     final lastWeekMonday = _mondayOf(DateTime.now());
     final semesterStart =
-        lastWeekMonday.subtract(Duration(days: (maxWeek - 1) * 7));
+        lastWeekMonday.subtract(const Duration(days: (maxWeek - 1) * 7));
     final page = await _pumpCourse(tester, semesterStart: semesterStart);
 
     final controller =

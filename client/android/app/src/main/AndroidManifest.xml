@@ -53,10 +53,6 @@
             <meta-data
                 android:name="flutter_deeplinking_enabled"
                 android:value="false" />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
             <!-- 课表小部件点击跳转深度链接 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -79,6 +75,15 @@
                     android:scheme="https"
                     android:host="sylulive.online"
                     android:pathPrefix="/team/" />
+                <data
+                    android:scheme="https"
+                    android:host="sylulive.online"
+                    android:pathPrefix="/theme/" />
+                <!-- 网页课表的同步二维码：系统相机扫码时直接交给 App 核对。 -->
+                <data
+                    android:scheme="https"
+                    android:host="sylulive.online"
+                    android:path="/web/app-scan" />
             </intent-filter>
             <!-- 网页落地页使用自定义协议作为未完成域名验证时的兼容入口。 -->
             <intent-filter>
@@ -87,7 +92,79 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="sylulive" android:host="team" />
             </intent-filter>
+            <!-- 主题分享自定义协议入口。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sylulive" android:host="theme" />
+            </intent-filter>
+            <!-- 网页同步落地页「在沈理校园 App 中打开」。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sylulive" android:host="academic-transfer" />
+            </intent-filter>
+            <!-- .sltheme 主题包系统文件打开（专用 MIME） -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/vnd.sylulive.theme+zip" />
+            </intent-filter>
+            <!-- .sltheme 主题包系统文件打开（通用流与多级点号文件名兼容） -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.sltheme" />
+                <data android:pathPattern=".*\\..*\\.sltheme" />
+                <data android:pathPattern=".*\\..*\\..*\\.sltheme" />
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.sltheme" />
+                <data android:pathPattern=".*\\..*\\..*\\..*\\..*\\.sltheme" />
+                <data android:pathPattern=".*\\..*\\..*\\..*\\..*\\..*\\.sltheme" />
+            </intent-filter>
         </activity>
+        <activity-alias
+            android:name=".LauncherDefaultStatic"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_main"
+            android:label="沈理校园"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherDefault"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_default_themed"
+            android:label="沈理校园"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <receiver
+            android:name=".LauncherIconUpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

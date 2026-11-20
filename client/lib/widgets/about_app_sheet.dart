@@ -1,4 +1,5 @@
 import '../providers/theme_provider.dart';
+import '../config/app_contacts.dart';
 import 'package:provider/provider.dart';
 import 'app_card.dart';
 import 'app_dialog.dart';
@@ -20,9 +21,6 @@ class AboutAppSheet extends StatefulWidget {
 class _AboutAppSheetState extends State<AboutAppSheet> {
   String _currentVersion = '加载中...';
   String _autoUpdateStatus = '加载中...';
-  static const String _pureHomozygoteEmail = '3170305904@qq.com';
-  static const String _scoreDropperEmail = '2350016823@qq.com';
-  static const String _nowEmail = '1517088507@qq.com';
 
   @override
   void initState() {
@@ -48,6 +46,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
 
     // 颜色令牌
     final pageBg = isDark ? const Color(0xFF101219) : const Color(0xFFFFFAF4);
@@ -158,7 +158,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                       _buildSectionTitle('版本信息', text),
                       Container(
                         decoration: BoxDecoration(
-                          color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : cardBg,
+                          color: customBackground ? Colors.transparent : cardBg,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : border),
                         ),
@@ -167,17 +167,15 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                             _buildInfoRow(
                                 '当前版本', _currentVersion, text, subText,
                                 height: 52),
-                            AppCardDivider(
+                            const AppCardDivider(
                                 height: 1,
-                                color: border,
                                 indent: 16,
                                 endIndent: 16),
                             _buildInfoRow(
                                 '自动更新状态', _autoUpdateStatus, text, subText,
                                 height: 52),
-                            AppCardDivider(
+                            const AppCardDivider(
                                 height: 1,
-                                color: border,
                                 indent: 16,
                                 endIndent: 16),
                             InkWell(
@@ -188,9 +186,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                               child: _buildActionRow('检查更新', text, subText,
                                   height: 52),
                             ),
-                            AppCardDivider(
+                            const AppCardDivider(
                                 height: 1,
-                                color: border,
                                 indent: 16,
                                 endIndent: 16),
                             InkWell(
@@ -216,7 +213,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 16),
                         decoration: BoxDecoration(
-                          color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : cardBg,
+                          color: customBackground ? Colors.transparent : cardBg,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : border),
                         ),
@@ -238,7 +235,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '纯合子、掉分员、Now',
+                                    AppContacts.developerNames,
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.bold,
@@ -266,7 +263,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                       _buildSectionTitle('相关链接', text),
                       Container(
                         decoration: BoxDecoration(
-                          color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : cardBg,
+                          color: customBackground ? Colors.transparent : cardBg,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : border),
                         ),
@@ -283,9 +280,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                               onTap: () => _launchUrl(
                                   'https://github.com/zhouwu97/SYLUlive'),
                             ),
-                            AppCardDivider(
+                            const AppCardDivider(
                                 height: 1,
-                                color: border,
                                 indent: 56,
                                 endIndent: 16),
                             _buildLinkRow(
@@ -302,9 +298,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                               border: border,
                               onTap: () => showGroupChatDialog(context),
                             ),
-                            AppCardDivider(
+                            const AppCardDivider(
                                 height: 1,
-                                color: border,
                                 indent: 56,
                                 endIndent: 16),
                             _buildLinkRow(
@@ -518,8 +513,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
               _buildAuthorEmailRow(
                 context: context,
                 dialogContext: dialogContext,
-                author: '纯合子',
-                email: _pureHomozygoteEmail,
+                author: AppContacts.pureHomozygoteName,
+                email: AppContacts.pureHomozygoteEmail,
                 titleColor: titleColor,
                 labelColor: labelColor,
                 panelColor: valuePanelColor,
@@ -529,8 +524,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
               _buildAuthorEmailRow(
                 context: context,
                 dialogContext: dialogContext,
-                author: '掉分员',
-                email: _scoreDropperEmail,
+                author: AppContacts.scoreDropperName,
+                email: AppContacts.scoreDropperEmail,
                 titleColor: titleColor,
                 labelColor: labelColor,
                 panelColor: valuePanelColor,
@@ -540,8 +535,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
               _buildAuthorEmailRow(
                 context: context,
                 dialogContext: dialogContext,
-                author: 'Now',
-                email: _nowEmail,
+                author: AppContacts.nowName,
+                email: AppContacts.nowEmail,
                 titleColor: titleColor,
                 labelColor: labelColor,
                 panelColor: valuePanelColor,

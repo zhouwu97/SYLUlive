@@ -11,6 +11,34 @@ import '../helpers/golden_viewport.dart';
 
 void main() {
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
+
+  testWidgets('文字弹层与卡片共用新刻度，模糊启停不截断过渡', (tester) async {
+    final appearance = ThemeProvider(loadOnStart: false);
+    addTearDown(appearance.dispose);
+    await appearance.setBackgroundImage('morenbeijing.jpeg');
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: appearance,
+      child: MaterialApp(home: Scaffold(body: Builder(builder: (context) {
+        return AppCardSurface(
+          surfaceOpacity: appTextSheetSurfaceOpacity(context),
+          child: const Text('文字弹层'),
+        );
+      }))),
+    ));
+    for (final strength in [0.0, .35, 1.0]) {
+      await appearance.setFrostedGlassStrength(strength);
+      for (final level in [0.0, .25, .5, .75, 1.0]) {
+        await appearance.setComponentOpacityLevel(level);
+        await tester.pumpAndSettle();
+        final card = tester.widget<AppCardSurface>(find.byType(AppCardSurface));
+        expect(card.surfaceOpacity, .75 + .25 * level);
+      }
+    }
+    await appearance.setCleanBackgroundMode();
+    await tester.pumpAndSettle();
+    expect(tester.widget<AppCardSurface>(find.byType(AppCardSurface)).surfaceOpacity, 1);
+    expect(tester.takeException(), isNull);
+  });
   for (final dark in [false, true]) {
     for (final kind in [
       'surface',
@@ -25,7 +53,7 @@ void main() {
         final appearance = ThemeProvider(loadOnStart: false);
         addTearDown(appearance.dispose);
         await appearance.setBackgroundImage('morenbeijing.jpeg');
-        await appearance.setComponentOpacity(.6);
+        await appearance.setComponentOpacityLevel(.6);
         const tint = Color(0x14FF9800);
         const content = SizedBox(key: Key('content'), width: 220, height: 100);
         final surface = switch (kind) {
@@ -54,7 +82,7 @@ void main() {
         for (final glass in [false, true, false]) {
           await appearance.setFrostedGlass(glass);
           await tester.pumpAndSettle();
-          final alpha = kind == 'course' ? .45 : .6;
+          final alpha = kind == 'course' ? .45 : .9;
           final base = dark
               ? AppColors.surfaceSecondaryDark
               : AppColors.surfaceSecondaryLight;

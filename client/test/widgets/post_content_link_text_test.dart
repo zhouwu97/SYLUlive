@@ -407,8 +407,8 @@ void main() {
       '注册',
     );
 
-    final draggedSelection =
-        const TextSelection(baseOffset: 4, extentOffset: 5);
+    const draggedSelection =
+        TextSelection(baseOffset: 4, extentOffset: 5);
     state.userUpdateTextEditingValue(
       state.textEditingValue.copyWith(selection: draggedSelection),
       SelectionChangedCause.drag,

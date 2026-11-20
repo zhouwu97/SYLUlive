@@ -166,10 +166,8 @@ class _CanteenRankingCardState extends State<CanteenRankingCard> {
           ),
         ),
         const SizedBox(height: 12),
-        AppCardDivider(
+        const AppCardDivider(
           height: 1,
-          thickness: 0.5,
-          color: CanteenTheme.borderColor(isDark),
         ),
         const SizedBox(height: 12),
       ],

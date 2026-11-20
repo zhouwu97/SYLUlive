@@ -26,25 +26,34 @@ const _reportReasons = [
 ];
 
 /// 弹出举报 BottomSheet
-/// [targetType] = "post" 或 "reply"
+/// [targetType] = "post"、"reply" 或 "theme"
 void showReportSheet(
   BuildContext context, {
-  required int targetId,
+  int targetId = 0,
+  String? targetKey,
   String targetType = 'post',
 }) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (ctx) =>
-        _ReportSheetContent(targetId: targetId, targetType: targetType),
+    builder: (ctx) => _ReportSheetContent(
+      targetId: targetId,
+      targetKey: targetKey,
+      targetType: targetType,
+    ),
   );
 }
 
 class _ReportSheetContent extends StatefulWidget {
   final int targetId;
+  final String? targetKey;
   final String targetType;
-  const _ReportSheetContent({required this.targetId, required this.targetType});
+  const _ReportSheetContent({
+    required this.targetId,
+    this.targetKey,
+    required this.targetType,
+  });
 
   @override
   State<_ReportSheetContent> createState() => _ReportSheetContentState();
@@ -69,15 +78,17 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
       return;
     }
 
+    final targetIdentity = widget.targetKey ?? '${widget.targetId}';
     await _actionGuard.run<void>(
-      'report:${widget.targetType}:${widget.targetId}',
+      'report:${widget.targetType}:$targetIdentity',
       _submitOnce,
     );
   }
 
   Future<void> _submitOnce() async {
+    final targetIdentity = widget.targetKey ?? '${widget.targetId}';
     final fingerprint =
-        '${widget.targetType}:${widget.targetId}:$_selectedReason:${_reasonController.text}';
+        '${widget.targetType}:$targetIdentity:$_selectedReason:${_reasonController.text}';
     if (_idempotencyFingerprint != fingerprint) {
       _idempotencyFingerprint = fingerprint;
       _idempotencyKey = null;
@@ -86,14 +97,31 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
 
     try {
       final dio = context.read<AuthProvider>().dio;
+      final detailText = _reasonController.text.trim();
+      final selectedLabel = _reportReasons
+          .firstWhere(
+            (r) => r.value == _selectedReason,
+            orElse: () => const ReportReason('其他', 'other', Icons.more_horiz),
+          )
+          .label;
+      final payload = widget.targetType == 'theme'
+          ? <String, dynamic>{
+              'target_type': 'theme',
+              'target_id': widget.targetKey ?? '',
+              'reason_code': _selectedReason,
+              'reason': detailText.isEmpty
+                  ? selectedLabel
+                  : '$selectedLabel：$detailText',
+            }
+          : <String, dynamic>{
+              'target_type': widget.targetType,
+              'target_id': widget.targetId,
+              'reason': _selectedReason,
+              'detail': _reasonController.text,
+            };
       await dio.post(
         '/reports',
-        data: {
-          'target_type': widget.targetType,
-          'target_id': widget.targetId,
-          'reason': _selectedReason,
-          'detail': _reasonController.text,
-        },
+        data: payload,
         options: Options(headers: <String, dynamic>{
           'Idempotency-Key': _idempotencyKey ??= newIdempotencyKey('report'),
         }),
@@ -142,7 +170,11 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final targetLabel = widget.targetType == 'reply' ? '举报评论' : '举报帖子';
+    final targetLabel = switch (widget.targetType) {
+      'reply' => '举报评论',
+      'theme' => '举报主题',
+      _ => '举报帖子',
+    };
 
     return AppCardSurface(
       constraints: BoxConstraints(

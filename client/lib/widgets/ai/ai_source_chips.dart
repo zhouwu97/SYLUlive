@@ -1,10 +1,10 @@
 import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 
+import '../../theme/app_theme_tokens.dart';
 import '../../models/ai_personal_data_evidence.dart';
 import '../../models/ai_source.dart';
-import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import 'ai_evidence_card.dart';
 import 'ai_source_card.dart';
 
@@ -69,9 +69,7 @@ class AiSourceChips extends StatelessWidget {
         constraints: const BoxConstraints(maxHeight: 720),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
         decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? AppColors.surfaceSecondaryDark
-              : Colors.white,
+          color: AppThemeTokens.of(context).card,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: SingleChildScrollView(child: child),
@@ -102,9 +100,7 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor =
-        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
+    final textColor = AppThemeTokens.of(context).textSecondary;
     return Semantics(
       button: true,
       label: '查看来源：$label',
@@ -112,24 +108,23 @@ class _Chip extends StatelessWidget {
         height: 44,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
+          borderRadius: BorderRadius.circular(AppShape.of(context).sm),
           child: Center(
             child: Container(
               constraints: const BoxConstraints(minHeight: 30, maxWidth: 240),
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
               decoration: BoxDecoration(
-                color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
+                color: AppThemeTokens.of(context).card,
                 border: Border.all(
-                  color: isDark
-                      ? AppColors.borderNormalDark
-                      : AppColors.borderNormalLight,
+                  color: AppThemeTokens.of(context).cardBorder,
                 ),
-                borderRadius: BorderRadius.circular(AppRadius.sm),
+                borderRadius: BorderRadius.circular(AppShape.of(context).sm),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(icon, size: 14, color: AppColors.brandPrimary),
+                  Icon(icon,
+                      size: 14, color: AppThemeTokens.of(context).primary),
                   const SizedBox(width: 5),
                   Flexible(
                     child: Text(
@@ -145,8 +140,8 @@ class _Chip extends StatelessWidget {
                   if (trailing.isNotEmpty) ...[
                     const SizedBox(width: 4),
                     Text(trailing,
-                        style: const TextStyle(
-                            color: AppColors.brandPrimary,
+                        style: TextStyle(
+                            color: AppThemeTokens.of(context).primary,
                             fontSize: 10.5,
                             fontWeight: FontWeight.w700)),
                   ],

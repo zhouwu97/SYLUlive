@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
@@ -229,4 +231,60 @@ func TestCancelAccountAnonymizesIdentityAndInvalidatesSession(t *testing.T) {
 	if err := db.Where("user_id = ? AND request_type = ?", user.ID, models.PersonalDataRequestAccountCancelled).First(&request).Error; err != nil {
 		t.Fatalf("missing cancellation audit: %v", err)
 	}
+}
+
+func TestRetireSuperAdminRequiresSeedHandoffAndRevokesSessions(t *testing.T) {
+	handler, db, target := newPrivacyTestHandler(t)
+	require.NoError(t, db.AutoMigrate(&models.AdminLog{}, &models.RefreshToken{}))
+	require.NoError(t, db.Model(&target).Update("role", models.RoleSuperAdmin).Error)
+	token := models.RefreshToken{UserID: target.ID, TokenHash: "handoff-test-refresh", TokenFamily: "handoff-fixture", ExpiresAt: time.Now().Add(time.Hour)}
+	require.NoError(t, db.Create(&token).Error)
+	now := time.Now()
+	keeper := models.User{
+		StudentID: "seed-fixture-keeper", StudentVerifiedAt: &now, Role: models.RoleSuperAdmin,
+		AccountStatus: "active", PasswordHash: "fixture", Nickname: "保留超管",
+	}
+	require.NoError(t, db.Create(&keeper).Error)
+
+	c, rec := privacyContext(http.MethodDelete, "/api/user/account", `{"password":"password123","confirmed":true}`, target.ID)
+	handler.CancelAccount(c)
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	_, err := handler.RetireSuperAdmin(context.Background(), keeper.ID, target.ID, target.StudentID)
+	require.ErrorContains(t, err, "当前生产种子超管")
+	var unchanged models.User
+	require.NoError(t, db.First(&unchanged, target.ID).Error)
+	require.Equal(t, models.RoleSuperAdmin, unchanged.Role)
+	require.Equal(t, "active", unchanged.AccountStatus)
+
+	require.NoError(t, db.Exec(`CREATE TRIGGER require_handoff_audit BEFORE INSERT ON admin_logs BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END`).Error)
+	_, err = handler.RetireSuperAdmin(context.Background(), keeper.ID, target.ID, keeper.StudentID)
+	require.ErrorContains(t, err, "audit unavailable")
+	require.NoError(t, db.First(&unchanged, target.ID).Error)
+	require.Equal(t, models.RoleSuperAdmin, unchanged.Role)
+	require.Equal(t, "active", unchanged.AccountStatus)
+	require.NoError(t, db.First(&token, token.ID).Error)
+	require.Nil(t, token.RevokedAt)
+	require.NoError(t, db.Exec("DROP TRIGGER require_handoff_audit").Error)
+
+	pending, err := handler.RetireSuperAdmin(context.Background(), keeper.ID, target.ID, keeper.StudentID)
+	require.NoError(t, err)
+	require.True(t, pending)
+	var cancelled models.User
+	require.NoError(t, db.First(&cancelled, target.ID).Error)
+	require.Equal(t, "cancelled", cancelled.AccountStatus)
+	require.Equal(t, models.RoleUser, cancelled.Role)
+	require.Empty(t, cancelled.StudentID)
+	require.Empty(t, cancelled.EduCookie)
+	require.Equal(t, target.TokenVersion+1, cancelled.TokenVersion)
+	require.NoError(t, db.First(&token, token.ID).Error)
+	require.NotNil(t, token.RevokedAt)
+	require.NoError(t, db.First(&keeper, keeper.ID).Error)
+	require.Equal(t, models.RoleSuperAdmin, keeper.Role)
+	require.Equal(t, "active", keeper.AccountStatus)
+	var audit models.AdminLog
+	require.NoError(t, db.Take(&audit).Error)
+	require.Equal(t, keeper.ID, audit.AdminID)
+	require.Equal(t, "超级管理员交接并注销原账号", audit.Action)
+	var job models.EduCredentialCleanupJob
+	require.NoError(t, db.Where("user_id = ?", target.ID).First(&job).Error)
 }

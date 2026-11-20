@@ -277,6 +277,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
     required Widget child,
   }) {
     return AppCardSurface(
+      themeArt: false,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.zero,
         color: widget.embedded ? Colors.transparent : isDark

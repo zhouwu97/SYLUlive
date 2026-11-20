@@ -25,6 +25,8 @@ Streamable HTTP 请求使用：
 Authorization: Bearer g_<run-scoped-token>
 ```
 
+HTTP 的初始化、调用、SSE 和关闭请求都必须带同一个 Run Grant。适配器用凭据摘要将 SDK 会话绑定到该 Run，缺少 Bearer 返回 401，复用会话 ID 但更换 Grant 返回 403；不会把会话 ID 当作授权。Grant 的权限、撤销和真正有效期仍由主服务在每次工具调用时校验。
+
 stdio 仅用于明确绑定单个本地 Run：
 
 ```powershell
@@ -45,3 +47,5 @@ go run .\cmd\sylulive-mcp -stdio
 ```powershell
 go test ./...
 ```
+
+`go test -race ./...` 同时验证 Streamable HTTP 和真实 stdio 子进程的初始化、工具调用、关闭、重连，以及不同 Grant 的会话隔离。测试只启动本机临时上游，使用合成 Grant，不读取真实学校资料。

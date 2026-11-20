@@ -849,7 +849,7 @@ void main() {
       ),
       cleanupCoordinator: AccountSessionCleanupCoordinator(),
     );
-    final term = const CourseTerm(
+    const term = CourseTerm(
       id: 'provider_graduate_term_2026_1',
       year: 'provider_graduate_term_2026',
       semester: 1,
@@ -1037,14 +1037,14 @@ void main() {
     }
     expect(provider.isSessionReady, isTrue);
 
-    final termA = CourseTerm(
+    const termA = CourseTerm(
       id: '2025_1',
       year: '2025',
       semester: 1,
       title: '2025-2026 第一学期',
       maxWeek: 20,
     );
-    final termB = CourseTerm(
+    const termB = CourseTerm(
       id: '2025_2',
       year: '2025',
       semester: 2,

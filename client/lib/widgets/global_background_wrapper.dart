@@ -10,10 +10,24 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
+import '../features/theme_pack/theme_hero_layer.dart';
+import '../features/theme_pack/themed_wallpaper_layer.dart';
+import '../theme/app_theme_tokens.dart';
 import '../services/wallpaper_prefetch_service.dart';
 
 final GlobalKey<BackgroundWrapperState> backgroundWrapperKey =
     GlobalKey<BackgroundWrapperState>();
+
+/// 分栏内容透出外壳的完整背景，避免每个局部页面重新裁切壁纸。
+class SharedPageBackground extends InheritedWidget {
+  const SharedPageBackground({super.key, required super.child});
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<SharedPageBackground>() != null;
+
+  @override
+  bool updateShouldNotify(SharedPageBackground oldWidget) => false;
+}
 
 class GlobalBackgroundWrapper extends StatefulWidget {
   final Widget child;
@@ -39,7 +53,8 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
       fit: StackFit.expand,
       children: [
         const CustomBackgroundLayer(),
-        widget.child,
+        // 页面里的卡片毛玻璃共用一次背景采样；弹窗、底部弹层是独立路由，不在组内。
+        BackdropGroup(child: widget.child),
       ],
     );
   }
@@ -50,16 +65,42 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
 /// 二级路由覆盖全局壳时必须自行绘制背景；集中实现可避免不同页面的
 /// 模糊半径、明暗遮罩与横竖屏回退出现漂移。
 class CustomBackgroundLayer extends StatelessWidget {
-  const CustomBackgroundLayer({super.key});
+  const CustomBackgroundLayer({super.key, this.canvasSize});
+
+  /// 首页在 Scaffold 调整键盘避让前传入窗口尺寸，壁纸不随内容区收缩重裁切。
+  final Size? canvasSize;
 
   @override
   Widget build(BuildContext context) {
+    if (SharedPageBackground.of(context)) return const SizedBox.expand();
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    if (themeProvider.shouldShowCustomBackground) {
-      return _buildBackgroundImageLayer(context, themeProvider, isDark);
-    }
-    return _buildCleanBackground(isDark);
+    final layer = themeProvider.usesThemeWallpapers
+        ? ThemedWallpaperLayer(
+            settings: themeProvider.themeWallpaperFor(
+                secondary: ModalRoute.of(context)?.isFirst == false),
+            backdrop: themeProvider.themeBackdrop)
+        : themeProvider.shouldShowCustomBackground
+        ? _buildBackgroundImageLayer(context, themeProvider, isDark)
+        : themeProvider.hasThemeColors
+            ? ColoredBox(color: AppThemeTokens.of(context).background)
+            : _buildCleanBackground(isDark);
+    final canvas = canvasSize;
+    if (canvas == null) return layer;
+    // 只有主壳（首页传入 canvasSize）承载沉浸页头的 hero 图。
+    return ClipRect(
+      child: OverflowBox(
+        alignment: Alignment.topLeft,
+        minWidth: canvas.width,
+        maxWidth: canvas.width,
+        minHeight: canvas.height,
+        maxHeight: canvas.height,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [layer, const ThemeHeroLayer()],
+        ),
+      ),
+    );
   }
 
   Widget _buildBackgroundImageLayer(

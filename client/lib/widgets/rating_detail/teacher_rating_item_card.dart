@@ -130,11 +130,10 @@ class TeacherRatingItemCard extends StatelessWidget {
                     : RankingTokens.subColor(isDark),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 3),
+            const Padding(
+              padding: EdgeInsets.only(top: 8, bottom: 3),
               child: AppCardDivider(
                 height: 1,
-                color: RankingTokens.borderColor(isDark),
               ),
             ),
             RatingActionRow(

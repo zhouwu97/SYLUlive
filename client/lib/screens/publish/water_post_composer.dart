@@ -824,14 +824,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                           ),
                         ),
                       ),
-                      Padding(
+                      const Padding(
                         padding:
-                            const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                            EdgeInsets.symmetric(horizontal: AppSpacing.sm),
                         child: AppCardDivider(
                           height: 1,
-                          color: isDark
-                              ? AppColors.composerDividerDark
-                              : AppColors.composerDividerLight,
                         ),
                       ),
                       Padding(

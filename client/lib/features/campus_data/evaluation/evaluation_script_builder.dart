@@ -314,7 +314,7 @@ String buildProbeScript() {
 
     var bodyText = '';
     try {
-      bodyText = fullBody.replace(/\s+/g, ' ').trim().substring(0, MAX_TEXT_SAMPLE);
+      bodyText = fullBody.replace(/s+/g, ' ').trim().substring(0, MAX_TEXT_SAMPLE);
     } catch (e) {}
 
     var title = '';

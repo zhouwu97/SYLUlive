@@ -2,6 +2,75 @@ import Foundation
 import WidgetKit
 import SwiftUI
 
+// ── 主题调色板（契约 3.1：支持跟随 App 主题与系统明暗，回退至既有常量） ──
+
+struct WidgetPalette {
+    let background: Color
+    let primaryText: Color
+    let secondaryText: Color
+    let mutedText: Color
+    let accent: Color
+    let divider: Color
+
+    static func defaultCourse() -> WidgetPalette {
+        WidgetPalette(
+            background: Color.white,
+            primaryText: Color(hex: "1A1A2E"),
+            secondaryText: Color(hex: "6366F1"),
+            mutedText: Color(hex: "9CA3AF"),
+            accent: Color(hex: "6366F1"),
+            divider: Color(hex: "E5E7EB")
+        )
+    }
+
+    static func defaultExam() -> WidgetPalette {
+        WidgetPalette(
+            background: Color.white,
+            primaryText: Color(hex: "1A1A2E"),
+            secondaryText: Color(hex: "EC4899"),
+            mutedText: Color(hex: "9CA3AF"),
+            accent: Color(hex: "EC4899"),
+            divider: Color(hex: "FBCFE8")
+        )
+    }
+
+    static func resolve(
+        themeKey: String,
+        glassKey: String,
+        colorScheme: ColorScheme,
+        fallback: WidgetPalette
+    ) -> WidgetPalette {
+        let defaults = UserDefaults(suiteName: "group.com.sylu.sylulive")
+        let theme = defaults?.string(forKey: themeKey) ?? "system"
+        guard theme == "appTheme",
+              let raw = defaults?.string(forKey: "widget_app_palette_v1"),
+              let data = raw.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return fallback
+        }
+        let variantName = colorScheme == .dark ? "dark" : "light"
+        guard let variant = json[variantName] as? [String: Any],
+              let bgHex = variant["background"] as? String,
+              let primaryHex = variant["primaryText"] as? String,
+              let secondaryHex = variant["secondaryText"] as? String,
+              let mutedHex = variant["mutedText"] as? String,
+              let accentHex = variant["accent"] as? String,
+              let dividerHex = variant["divider"] as? String else {
+            return fallback
+        }
+        let frosted = defaults?.bool(forKey: glassKey) ?? false
+        let baseBg = Color(hex: bgHex, overrideOpacity: frosted ? 0.82 : 1.0)
+        return WidgetPalette(
+            background: baseBg,
+            primaryText: Color(hex: primaryHex),
+            secondaryText: Color(hex: secondaryHex),
+            mutedText: Color(hex: mutedHex),
+            accent: Color(hex: accentHex),
+            divider: Color(hex: dividerHex)
+        )
+    }
+}
+
 // ── 数据模型 ──
 // 与 Flutter 端 HomeWidgetService 的 key 保持一致
 
@@ -18,6 +87,7 @@ struct CourseItem: Identifiable {
     let name: String
     let time: String
     let location: String
+    let color: String
 }
 
 // ── Provider ──
@@ -31,8 +101,8 @@ struct Provider: TimelineProvider {
             dateInfo: "5.19 第12周 周二",
             isEmpty: false,
             courses: [
-                CourseItem(name: "高等数学", time: "08:00-09:40", location: "综合楼A201"),
-                CourseItem(name: "大学物理", time: "10:00-11:40", location: "综合楼B103"),
+                CourseItem(name: "高等数学", time: "08:00-09:40", location: "综合楼A201", color: "#448AFF"),
+                CourseItem(name: "大学物理", time: "10:00-11:40", location: "综合楼B103", color: "#00C853"),
             ]
         )
     }
@@ -118,7 +188,12 @@ struct Provider: TimelineProvider {
                     let time = "\(starts[startSection - 1])-\(ends[endSection - 1])"
                     candidateCourses.append((
                         startSection: startSection,
-                        item: CourseItem(name: name, time: time, location: item["location"] as? String ?? "")
+                        item: CourseItem(
+                            name: name,
+                            time: time,
+                            location: item["location"] as? String ?? "",
+                            color: item["color"] as? String ?? "6366F1"
+                        )
                     ))
                 }
 
@@ -144,7 +219,8 @@ struct Provider: TimelineProvider {
                     return CourseItem(
                         name: name,
                         time: time,
-                        location: item["location"] as? String ?? ""
+                        location: item["location"] as? String ?? "",
+                        color: item["color"] as? String ?? "6366F1"
                     )
                 }
             }
@@ -174,32 +250,38 @@ struct CourseScheduleWidgetEntryView: View {
     var entry: Provider.Entry
 
     @Environment(\.widgetFamily) var family
+    @Environment(\.colorScheme) var colorScheme
 
     var body: some View {
+        let palette = WidgetPalette.resolve(
+            themeKey: "widget_course_theme",
+            glassKey: "widget_course_frosted_glass",
+            colorScheme: colorScheme,
+            fallback: .defaultCourse()
+        )
         VStack(alignment: .leading, spacing: 8) {
-            // 标题栏
             HStack {
                 Text(entry.title)
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(Color(hex: "1A1A2E"))
+                    .foregroundColor(palette.primaryText)
                 Spacer()
                 Text(entry.dateInfo)
                     .font(.system(size: 11))
-                    .foregroundColor(Color(hex: "6366F1"))
+                    .foregroundColor(palette.secondaryText)
             }
 
             Divider()
+                .background(palette.divider)
 
-            // 内容区
             if entry.isEmpty {
                 VStack(spacing: 4) {
                     Spacer()
                     Text("( 〃'▽'〃 )")
                         .font(.system(size: 16))
-                        .foregroundColor(Color(hex: "9CA3AF"))
+                        .foregroundColor(palette.mutedText)
                     Text("今天没有课啦")
                         .font(.system(size: 13))
-                        .foregroundColor(Color(hex: "9CA3AF"))
+                        .foregroundColor(palette.mutedText)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
@@ -208,22 +290,22 @@ struct CourseScheduleWidgetEntryView: View {
                     ForEach(entry.courses.prefix(family == .systemSmall ? 2 : 5)) { course in
                         HStack(spacing: 8) {
                             Rectangle()
-                                .fill(Color(hex: "6366F1"))
+                                .fill(Color(hex: course.color))
                                 .frame(width: 3)
                                 .cornerRadius(1.5)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(course.name)
                                     .font(.system(size: 13, weight: .bold))
-                                    .foregroundColor(Color(hex: "1A1A2E"))
+                                    .foregroundColor(palette.primaryText)
                                     .lineLimit(1)
                                 Text(course.time)
                                     .font(.system(size: 11))
-                                    .foregroundColor(Color(hex: "6366F1"))
+                                    .foregroundColor(palette.secondaryText)
                             }
                             Spacer()
                             Text(course.location)
                                 .font(.system(size: 11))
-                                .foregroundColor(Color(hex: "9CA3AF"))
+                                .foregroundColor(palette.mutedText)
                                 .lineLimit(1)
                         }
                     }
@@ -231,11 +313,11 @@ struct CourseScheduleWidgetEntryView: View {
             }
         }
         .padding(12)
-        .background(Color.white)
+        .background(palette.background)
         .cornerRadius(16)
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color(hex: "E5E7EB"), lineWidth: 0.5)
+                .stroke(palette.divider, lineWidth: 0.5)
         )
         .widgetURL(URL(string: "sylulive://schedule"))
     }
@@ -306,53 +388,62 @@ struct ExamProvider: TimelineProvider {
 struct ExamScheduleWidgetEntryView: View {
     var entry: ExamProvider.Entry
 
+    @Environment(\.colorScheme) var colorScheme
+
     var body: some View {
+        let palette = WidgetPalette.resolve(
+            themeKey: "widget_exam_theme",
+            glassKey: "widget_exam_frosted_glass",
+            colorScheme: colorScheme,
+            fallback: .defaultExam()
+        )
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("考试安排")
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(Color(hex: "1A1A2E"))
+                    .foregroundColor(palette.primaryText)
                 Spacer()
                 Text("沈理院")
                     .font(.system(size: 11))
-                    .foregroundColor(Color(hex: "EC4899"))
+                    .foregroundColor(palette.accent)
             }
             Divider()
+                .background(palette.divider)
             if entry.exams.isEmpty {
                 Spacer()
                 Text("近期没有考试")
                     .font(.system(size: 13))
-                    .foregroundColor(Color(hex: "9CA3AF"))
+                    .foregroundColor(palette.mutedText)
                     .frame(maxWidth: .infinity)
                 Spacer()
             } else {
                 ForEach(entry.exams.prefix(3)) { exam in
                     HStack(spacing: 8) {
                         Rectangle()
-                            .fill(Color(hex: "EC4899"))
+                            .fill(palette.accent)
                             .frame(width: 3)
                             .cornerRadius(1.5)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(exam.name)
                                 .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(Color(hex: "1A1A2E"))
+                                .foregroundColor(palette.primaryText)
                                 .lineLimit(1)
                             Text([exam.date, exam.time].filter { !$0.isEmpty }.joined(separator: " "))
                                 .font(.system(size: 11))
-                                .foregroundColor(Color(hex: "EC4899"))
+                                .foregroundColor(palette.secondaryText)
                         }
                         Spacer()
                         Text(exam.countdown)
                             .font(.system(size: 11))
-                            .foregroundColor(Color(hex: "9CA3AF"))
+                            .foregroundColor(palette.mutedText)
                     }
                 }
             }
         }
         .padding(12)
-        .background(Color.white)
+        .background(palette.background)
         .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(hex: "FBCFE8"), lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(palette.divider, lineWidth: 0.5))
         .widgetURL(URL(string: "sylulive://exam"))
     }
 }
@@ -396,7 +487,7 @@ struct SYLUliveWidgetBundle: WidgetBundle {
 // ── 辅助：十六进制颜色 ──
 
 extension Color {
-    init(hex: String) {
+    init(hex: String, overrideOpacity: Double? = nil) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
         Scanner(string: hex).scanHexInt64(&int)
@@ -414,7 +505,7 @@ extension Color {
             red: Double(r) / 255,
             green: Double(g) / 255,
             blue: Double(b) / 255,
-            opacity: Double(a) / 255
+            opacity: overrideOpacity ?? (Double(a) / 255)
         )
     }
 }

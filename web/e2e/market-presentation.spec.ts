@@ -81,6 +81,8 @@ test("社区与集市网络中断显示中文恢复入口，重试保留筛选",
     await expect(page.getByRole("heading", { name: "网络连接暂不可用", exact: true })).toBeVisible();
     await expect(page.getByText("暂时无法连接服务器，请检查网络后重试。", { exact: true })).toBeVisible();
     await expect(page.getByText("Failed to fetch", { exact: true })).toHaveCount(0);
+    // 等初次身份恢复及其查询失效完成，避免后台刷新抢先移除重试按钮。
+    await page.waitForLoadState("networkidle");
     const before = new URL(page.url()).search;
     disconnected = false;
     await page.locator(route.startsWith("market") ? ".market-page" : ".community-page").getByRole("button", { name: "重试", exact: true }).click();
@@ -155,8 +157,8 @@ test("进入集市导航收成图标，离开与浏览器返回恢复，快速�
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).click();
   await expect.poll(sidebarWidth).toBe(64);
   expect(await page.evaluate(() => (window as any).__navWidths.some((width: number) => width > 64 && width < 214))).toBe(true);
-  await expect(sidebar.getByRole("link", { name: "校园社区", exact: true })).toHaveAttribute("title", "校园社区");
-  await sidebar.getByRole("link", { name: "校园社区", exact: true }).click();
+  await expect(sidebar.getByRole("link", { name: "食堂", exact: true })).toHaveAttribute("title", "食堂");
+  await sidebar.getByRole("link", { name: "食堂", exact: true }).click();
   await expect.poll(sidebarWidth).toBe(214);
   await page.goBack();
   await expect.poll(sidebarWidth).toBe(64);
@@ -165,7 +167,7 @@ test("进入集市导航收成图标，离开与浏览器返回恢复，快速�
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).press("Enter");
   await expect(page.locator(".app-shell")).toHaveClass(/market-shell/);
   expect(await sidebar.evaluate((el) => getComputedStyle(el).transitionProperty)).toBe("none");
-  await sidebar.getByRole("link", { name: "校园社区", exact: true }).click();
+  await sidebar.getByRole("link", { name: "食堂", exact: true }).click();
   await expect.poll(sidebarWidth).toBe(214);
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).click();
   await sidebar.getByRole("link", { name: "校园首页", exact: true }).click();
@@ -309,7 +311,7 @@ test("过渡中途反向沿当前位置继续，缩放、键盘与减少动态�
   await page.getByLabel("主导航").getByRole("link", { name: "二手集市", exact: true }).press("Enter");
   expect(await page.locator(".workspace").evaluate((el) => el.getAnimations().length)).toBe(0);
   expect(await page.locator(".sidebar .nav-text").first().evaluate((el) => getComputedStyle(el).transitionProperty)).toBe("none");
-  await page.getByLabel("主导航").getByRole("link", { name: "校园社区", exact: true }).click();
+  await page.getByLabel("主导航").getByRole("link", { name: "食堂", exact: true }).click();
   await page.setViewportSize({ width: 820, height: 900 });
   expect(await page.locator(".workspace").evaluate((el) => getComputedStyle(el).transform)).toBe("none");
   await page.emulateMedia({ reducedMotion: "reduce" });

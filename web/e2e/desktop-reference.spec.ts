@@ -1,5 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 
+async function revealFeedEnd(page: Page) {
+  const end = page.locator('.dashboard-feed-end');
+  // 等加载入口布局稳定后滚到它，避免用旧文档高度推断已到达分页触发区。
+  await end.scrollIntoViewIfNeeded();
+  await expect(end).toBeInViewport();
+}
+
 test("校园资讯按真实 item 封装进入详情并完整显示正文与官方来源", async ({ page }) => {
   await fixture(page, true);
   const article = { id: 600, title: "校园公开通知的完整标题", author_department: "校园服务中心", publish_date: "2026-11-03", content_text: "这是一则学校公开通知的完整正文。", source_url: "https://www.sylu.edu.cn/notice/test.htm" };
@@ -47,7 +54,7 @@ test("普通桌面高度向下阅读时两侧组件保持可见且底部入口�
     await expect(page.getByRole("region", { name: "校园个人资料" })).toBeInViewport();
     await expect(page.locator(".right-rail .today-card")).toBeInViewport();
     if (width === 1750) await page.screenshot({ path: ".codex-captures/desktop-bugs/reading-fixed.png" });
-    const services = page.locator(".right-rail .rail-footer").getByRole("link", { name: "意见反馈", exact: true });
+    const services = page.locator(".right-rail .rail-footer").getByRole("link", { name: "我的工单", exact: true });
     await services.scrollIntoViewIfNeeded();
     await expect(services).toBeInViewport();
     const tools = page.getByLabel("主导航").getByRole("link", { name: "工具箱", exact: true });
@@ -75,7 +82,8 @@ test("桌面首页滚到底继续快照分页，失败重试保留原帖并合�
   });
   await page.goto("./");
   await expect(page.locator(".dashboard-feed .feed-card")).toHaveCount(12);
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await revealFeedEnd(page);
+  await expect.poll(() => nextAttempts).toBe(1);
   await expect(page.getByRole("alert").filter({ hasText: "后续内容加载失败" })).toBeVisible();
   await expect(page.locator(".dashboard-feed .feed-card")).toHaveCount(12);
   await page.getByRole("button", { name: "重试加载", exact: true }).click();
@@ -116,7 +124,7 @@ test("桌面快照过期可刷新，空短页仍按服务端偏移继续加载",
   });
   await page.goto("./");
   await expect(page.locator(".dashboard-feed .feed-card")).toHaveCount(8);
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await revealFeedEnd(page);
   await expect(page.getByRole("alert")).toContainText("信息流已更新");
   await expect(page.locator(".dashboard-feed .feed-card")).toHaveCount(8);
   refreshed = true;
@@ -149,7 +157,7 @@ test("首页后续页迟到不会覆盖已切换的排序，排序从页首开�
   try {
     await page.goto("./");
     await expect(page.locator(".dashboard-feed .feed-card")).toHaveCount(8);
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await revealFeedEnd(page);
     await expect.poll(() => pending).toBe(true);
     await page.getByRole("tab", { name: "最新", exact: true }).click();
     await expect(page.locator(".dashboard-feed")).toContainText("只属于最新排序的内容");
@@ -181,7 +189,7 @@ test("切换账号隔离迟到后续页与等级，游客关注页有明确登�
     await page.goto("./");
     await expect(page.locator(".profile-rail-card")).toContainText("Lv.7");
     await expect(page.locator(".dashboard-feed .feed-card")).toHaveCount(8);
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await revealFeedEnd(page);
     await expect.poll(() => pending).toBe(true);
     account = 992;
     await changeAccount();
@@ -272,11 +280,14 @@ test("桌面按参考呈现三栏、公共帖子与真实筛选，并保留详�
   await page.getByRole("tab", { name: "最新", exact: true }).click();
   await expect.poll(() => state.queries.some(query => query.includes("sort=time"))).toBe(true);
   await page.getByRole("button", { name: "分享校园日常", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "发布内容", exact: true })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("button", { name: "分享校园日常", exact: true })).toBeFocused();
+  await expect(page).toHaveURL(/\/compose$/);
+  await expect(page.getByRole('heading', {name: '发布帖子', exact: true})).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', {name: '返回上一页', exact: true}).click();
+  await expect(page.getByRole("button", { name: "分享校园日常", exact: true })).toBeVisible();
   await page.goto("community");
   await expect(publicPosts).toContainText(state.posts[0].title);
+  await expect(page.locator(".sidebar-scroll > .nav-ind")).toHaveCSS("opacity", "0");
   await page.screenshot({ path: ".codex-captures/desktop-white-blue/community-1480.png" });
   await page.locator(".sidebar-more summary").click();
   const grades = page.getByLabel("主导航").getByRole("link", { name: "成绩与学业", exact: true });
@@ -371,7 +382,7 @@ test("长标题与宽窗口保留参考侧栏比例，资料、数量和热榜�
   }
 });
 
-test("侧栏加载、失败重试、空数据和恢复后保持卡片比例", async ({ page }) => {
+test("侧栏加载占位、失败与空态收拢，恢复后展示完整内容", async ({ page }) => {
   await fixture(page);
   let phase: "error" | "empty" | "filled" = "error";
   let release = () => {};
@@ -393,18 +404,20 @@ test("侧栏加载、失败重试、空数据和恢复后保持卡片比例", as
   release();
   await expect(news.getByRole("alert")).toBeVisible();
   await expect(hot.getByRole("alert")).toBeVisible();
-  expect(await heights()).toEqual([416, 304]);
+  for (const height of await heights()) {expect(height).toBeLessThan(190); expect(height).toBeGreaterThan(80);}
   phase = "empty";
   await news.getByRole("button", { name: "重试", exact: true }).click();
   await hot.getByRole("button", { name: "重试", exact: true }).click();
   await expect(news).toContainText("暂时没有新内容");
   await expect(hot).toContainText("暂时没有新内容");
-  expect(await heights()).toEqual([416, 304]);
+  for (const height of await heights()) {expect(height).toBeLessThan(190); expect(height).toBeGreaterThan(80);}
   phase = "filled";
   await page.reload();
   await expect(news.locator(".campus-event")).toHaveCount(4);
   await expect(hot.locator(".campus-hot-item")).toHaveCount(5);
   expect(await heights()).toEqual([416, 304]);
+  await expect(page.getByRole('region', {name: '通知日历', exact: true})).toBeVisible();
+  await expect(page.getByRole('region', {name: '通知日历', exact: true}).getByRole('link', {name: '查看校园通知', exact: true})).toHaveAttribute('href', '/web/campus');
 });
 
 test("侧栏组件外框、内部排版和首页常用入口可见可用", async ({ page }) => {
@@ -450,7 +463,8 @@ test("帖子独立边界、内容对齐、图片比例和全文入口在深浅�
             border: getComputedStyle(card).borderBottomWidth,
             radius: getComputedStyle(card).borderRadius,
             gap: previous ? bounds.top - previous.bottom : 16,
-            aligned: Math.abs(author.left - summary.left) < 1 && Math.abs(summary.left - toolbar.left) < 1,
+            // 桌面操作行向左外扩 8px，让图标和正文光学对齐；手机端三者同一左边线。
+            aligned: Math.abs(author.left - summary.left) < 1 && Math.abs(summary.left - toolbar.left - (innerWidth > 600 ? 8 : 0)) < 1,
             mediaFits: !picture || picture.width <= 560 && picture.left >= bounds.left && picture.right <= bounds.right,
             readMoreFits: !readMore || readMore.top >= card.querySelector(".post-body")!.getBoundingClientRect().bottom && readMore.bottom <= summary.bottom,
             actionsFit: [...card.querySelectorAll(".post-interaction")].every(action => {
@@ -459,11 +473,17 @@ test("帖子独立边界、内容对齐、图片比例和全文入口在深浅�
             }),
           };
         }));
-        for (const card of geometry) {
+        for (const [index, card] of geometry.entries()) {
           expect(card.border).toBe("1px");
-          expect(card.radius).toBe(width <= 600 && route === "./" ? "12px" : "16px");
-          expect(card.gap).toBeGreaterThanOrEqual(width <= 600 && route === "./" ? 6 : 16);
           expect(card.aligned && card.mediaFits && card.readMoreFits && card.actionsFit).toBe(true);
+          if (width > 600) {
+            // 桌面信息流连成一块列表：条目紧贴，只有首尾保留外圆角。
+            expect(card.gap).toBe(index ? 0 : 16);
+            expect(card.radius).toBe(index === 0 ? "16px 16px 0px 0px" : index === geometry.length - 1 ? "0px 0px 16px 16px" : "0px");
+          } else {
+            expect(card.radius).toBe(route === "./" ? "12px" : "16px");
+            expect(card.gap).toBeGreaterThanOrEqual(route === "./" ? 6 : 16);
+          }
         }
         await expect(cards.first().getByText("查看全文", { exact: false })).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);

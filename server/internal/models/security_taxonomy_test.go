@@ -21,6 +21,8 @@ func TestSecurityEventActionableClassification(t *testing.T) {
 		"content_reply_flood",
 		"private_message_flood",
 		"feedback_ticket_flood",
+		"login_bruteforce", "verification_source_rate", "email_target_flood",
+		"verification_spray", "password_reset_spray", "search_abuse",
 	}
 	for _, eventType := range auditTypes {
 		if SecurityEventActionable(eventType) {
@@ -30,11 +32,7 @@ func TestSecurityEventActionableClassification(t *testing.T) {
 
 	actionableTypes := []string{
 		"login_password_spray",
-		"login_bruteforce",
 		"admin_login_new_device",
-		"password_reset_spray",
-		"verification_spray",
-		"email_target_flood",
 		"verification_code_bruteforce",
 		"suspicious_password_reset_succeeded",
 		"refresh_token_reused",
@@ -50,6 +48,20 @@ func TestSecurityEventActionableClassification(t *testing.T) {
 	// 大小写与空白不应影响判定。
 	if SecurityEventActionable("  LOGIN_FAILED  ") {
 		t.Fatal("判定应忽略大小写与首尾空白")
+	}
+}
+
+func TestSecurityAuditSeverityAndEvidenceAreIndependent(t *testing.T) {
+	for _, kind := range SecurityAuditEventTypes() {
+		if SecuritySeverityRank(SecurityEventEffectiveSeverity(kind, SecuritySeverityCritical)) > SecuritySeverityRank(SecuritySeverityLow) {
+			t.Fatalf("普通记录 %s 不能因历史高等级而变成高危", kind)
+		}
+	}
+	if !SecurityEventRetainsEvidence("login_bruteforce") || SecurityEventRetainsEvidence("login_failed") {
+		t.Fatal("登录冷却保留原有定位字段，普通单次失败仍只保留摘要")
+	}
+	if !SecurityEventActionable("login_password_spray") || SecurityEventEffectiveSeverity("login_password_spray", SecuritySeverityHigh) != SecuritySeverityHigh {
+		t.Fatal("有异常模式的登录事件必须继续待核查")
 	}
 }
 

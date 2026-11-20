@@ -2,6 +2,8 @@
 ///
 /// 对应 Python 教务服务返回的 credit-requirement-v2 结构。
 
+library;
+
 class EduCreditRequirementOverview {
   final bool success;
   final String sourceKind;

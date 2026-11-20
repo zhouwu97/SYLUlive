@@ -120,11 +120,68 @@ func TestApplyFeedVisibilityRespectsExpiry(t *testing.T) {
 	}
 	require.ElementsMatch(t, []uint{posts[0].ID, posts[2].ID}, visibleIDs)
 
-	// time Tab：not_interested 不生效，三条都在。
-	queryTime := svc.ApplyFeedVisibility(db.Model(&models.Post{}).Where("author_id = ?", uint(50)), 1, "time", now)
-	var visibleTime []models.Post
-	require.NoError(t, queryTime.Find(&visibleTime).Error)
-	require.Len(t, visibleTime, 3)
+	// 首页其他 Tab 同样不再展示被标记的帖子（2026-11-13 起不感兴趣对首页全部 Tab 生效）。
+	for _, kind := range []string{"time", "featured", "following", "hot"} {
+		queryKind := svc.ApplyFeedVisibility(db.Model(&models.Post{}).Where("author_id = ?", uint(50)), 1, kind, now)
+		var visibleKind []models.Post
+		require.NoError(t, queryKind.Find(&visibleKind).Error)
+		var kindIDs []uint
+		for _, p := range visibleKind {
+			kindIDs = append(kindIDs, p.ID)
+		}
+		require.ElementsMatch(t, []uint{posts[0].ID, posts[2].ID}, kindIDs, "不感兴趣对 %s Tab 生效", kind)
+	}
+
+	// 其他用户不受影响。
+	other := svc.ApplyFeedVisibility(db.Model(&models.Post{}).Where("author_id = ?", uint(50)), 2, "all", now)
+	var otherVisible []models.Post
+	require.NoError(t, other.Find(&otherVisible).Error)
+	require.Len(t, otherVisible, 3)
+}
+
+func TestNegativeProfilePenalizesAuthorMoreThanSection(t *testing.T) {
+	db := newVisibilityTestDB(t)
+	svc := NewFeedVisibilityService(db)
+	now := time.Now()
+
+	marked := createTestPosts(t, db, 70, 2)
+	require.NoError(t, db.Model(&models.Post{}).Where("author_id = ?", uint(70)).Update("post_type", "chat").Error)
+	require.NoError(t, svc.MarkNotInterested(1, marked[0].ID, "all"))
+	// 过期反馈不计入画像。
+	expired := now.Add(-time.Hour)
+	expiredPost := createTestPosts(t, db, 80, 1)[0]
+	require.NoError(t, db.Create(&models.FeedFeedback{
+		UserID: 1, PostID: expiredPost.ID, Action: models.FeedFeedbackActionNotInterested,
+		Source: "all", CreatedAt: expired, ExpiresAt: &expired,
+	}).Error)
+
+	profile, err := svc.NegativeProfile(context.Background(), 1, now)
+	require.NoError(t, err)
+	require.False(t, profile.Empty())
+
+	sameAuthor := profile.Penalty(70, "chat")
+	sameSection := profile.Penalty(71, "chat")
+	unrelated := profile.Penalty(72, "study")
+	require.Greater(t, sameAuthor, sameSection, "同作者降权应强于同版块")
+	require.Greater(t, sameSection, 0.0)
+	require.Zero(t, unrelated)
+	require.Zero(t, profile.Penalty(80, ""), "过期反馈不应降权")
+	require.LessOrEqual(t, sameAuthor, MaxFeedbackPenalty)
+
+	// 多次标记同作者后降权增加，但不超过上限。
+	require.NoError(t, svc.MarkNotInterested(1, marked[1].ID, "time"))
+	again, err := svc.NegativeProfile(context.Background(), 1, now)
+	require.NoError(t, err)
+	require.Greater(t, again.Penalty(70, "chat"), sameAuthor)
+	require.LessOrEqual(t, again.Penalty(70, "chat"), MaxFeedbackPenalty)
+
+	// 其他用户、未登录用户没有画像。
+	empty, err := svc.NegativeProfile(context.Background(), 2, now)
+	require.NoError(t, err)
+	require.True(t, empty.Empty())
+	anonymous, err := svc.NegativeProfile(context.Background(), 0, now)
+	require.NoError(t, err)
+	require.True(t, anonymous.Empty())
 }
 
 func TestApplyFeedVisibilityHiddenAuthorAllKinds(t *testing.T) {

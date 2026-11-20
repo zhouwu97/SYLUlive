@@ -60,7 +60,7 @@ class PollSettingRow extends StatelessWidget {
         if (showDivider)
           const Padding(
             padding: EdgeInsets.only(left: 47),
-            child: AppCardDivider(height: 1, thickness: 0.5, color: Color(0xFFE2EFEA)),
+            child: AppCardDivider(height: 1),
           ),
       ],
     );

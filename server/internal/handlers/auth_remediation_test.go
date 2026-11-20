@@ -67,16 +67,16 @@ func testEmailResetRecovery(t *testing.T, h *AuthHandler, db *gorm.DB, user mode
 	aliases := []string{user.Email, user.QQ, "202600001"}
 	now := time.Now()
 	for _, account := range append(aliases, "other@example.com") {
-		for i := 0; i < 3; i++ {
+		for i := 0; i < loginAccountFailureLimit; i++ {
 			h.registerLoginFailure(loginThrottleScope("account", account), now)
 		}
 	}
 	// 同时覆盖数据库故障时留下的进程内回退计数。
-	for i := 0; i < 3; i++ {
+	for i := 0; i < loginAccountFailureLimit; i++ {
 		registerLoginFailure(loginThrottleScope("account", user.Email), now)
 	}
 	t.Cleanup(func() { clearLoginFailures(loginThrottleScope("account", user.Email)) })
-	for i := 0; i < 10; i++ {
+	for i := 0; i < loginSourceFailureLimit; i++ {
 		h.registerLoginFailure(loginThrottleScope("ip", "203.0.113.9"), now)
 	}
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -136,7 +136,7 @@ func TestResetDoesNotClearAmbiguousOrOtherOwnersLoginNames(t *testing.T) {
 	}
 	now := time.Now()
 	for _, account := range []string{user.Email, user.QQ, "202600001"} {
-		for i := 0; i < 3; i++ {
+		for i := 0; i < loginAccountFailureLimit; i++ {
 			h.registerLoginFailure(loginThrottleScope("account", account), now)
 		}
 	}
@@ -151,7 +151,7 @@ func TestResetDoesNotClearAmbiguousOrOtherOwnersLoginNames(t *testing.T) {
 
 func TestInvalidResetPreservesPasswordSessionsAndAccountLock(t *testing.T) {
 	h, db, user, _ := remediationAuthFixture(t)
-	for i := 0; i < 3; i++ {
+	for i := 0; i < loginAccountFailureLimit; i++ {
 		h.registerLoginFailure(loginThrottleScope("account", user.Email), time.Now())
 	}
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())

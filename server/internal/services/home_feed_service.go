@@ -59,7 +59,8 @@ func (s *HomeFeedService) PinnedPosts(ctx context.Context, now time.Time) ([]mod
 }
 
 // BuildSnapshot 构建首页推荐快照。
-// userID > 0 时应用 Feed 负反馈过滤（不看TA 对所有 Tab 生效，不感兴趣仅 all 生效）。
+// userID > 0 时应用 Feed 负反馈过滤（不看TA、不感兴趣对首页所有 Tab 生效），
+// 并按「不感兴趣」画像给同作者、同版块的候选降权。
 // FEED-5：shadow 个性化在此串联（UserFeatures → PersonalDelta → 探索 → trace）。
 func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, userID uint) ([]uint, error) {
 	db := s.db
@@ -150,6 +151,14 @@ func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, user
 			candidate.PollEnded = poll.Status != models.PollStatusActive || !now.Before(poll.EndsAt)
 		}
 		candidates = append(candidates, candidate)
+	}
+	// 「不感兴趣」降权对所有登录用户生效，不依赖个性化灰度；读取失败只放弃降权，不影响首页。
+	if userID > 0 {
+		if profile, err := s.visibility.NegativeProfile(ctx, userID, now); err == nil && !profile.Empty() {
+			for i := range candidates {
+				candidates[i].FeedbackPenalty = profile.Penalty(candidates[i].Post.AuthorID, candidates[i].Post.PostType)
+			}
+		}
 	}
 	ranked := RankHomeFeed(candidates, now)
 	if s.includePoll {

@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useCallback,
   useRef,
   useState,
   useId,
@@ -12,6 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { paths } from "./icons";
 import { useSlidingIndicator } from "./desktop-motion";
 import { ApiError, write, errorText, isNetworkError, type Entity } from "./api";
+import {LegalConfirmation} from './legal-consent';
 export function Icon({ name, size }: { name: string; size?: number }) {
   return (
     <svg
@@ -26,11 +28,15 @@ export function Icon({ name, size }: { name: string; size?: number }) {
     />
   );
 }
-type Dialog = { title: string; body: ReactNode };
+// drawer：桌面端从右侧滑出的编辑面板，适合需要边改边看列表的管理表单；手机端仍是底部弹层。
+export type DialogVariant = "modal" | "drawer" | "media";
+type Dialog = { title: string; body: ReactNode; variant?: DialogVariant };
 const UIContext = createContext<{
   dialog: Dialog | null;
-  open: (title: string, body: ReactNode) => void;
+  open: (title: string, body: ReactNode, variant?: DialogVariant) => void;
   close: () => void;
+  requestClose: () => void;
+  registerCloseGuard: (guard: () => boolean) => () => void;
   notify: (s: string) => void;
   act: (fn: () => Promise<unknown>, success?: string) => Promise<boolean>;
 }>({} as never);
@@ -39,13 +45,19 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [dialog, setDialog] = useState<Dialog | null>(null),
     [toast, setToast] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const closeGuard = useRef<(() => boolean) | null>(null);
+  const registerCloseGuard = useCallback((guard: () => boolean) => {
+    closeGuard.current = guard;
+    return () => {if (closeGuard.current === guard) closeGuard.current = null;};
+  }, []);
   const qc = useQueryClient();
   function notify(s: string) {
     setToast(s);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setToast(""), 4200);
   }
-  const close = () => setDialog(null);
+  const close = () => {closeGuard.current = null; setDialog(null);};
+  const requestClose = () => {if (!closeGuard.current || closeGuard.current()) close();};
   async function act(fn: () => Promise<unknown>, success = "操作已完成") {
     try {
       await fn();
@@ -53,7 +65,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
       notify(success);
       return true;
     } catch (e) {
-      notify(errorText(e));
+      notify(e instanceof ApiError && e.code === 'legal_consent_required' ? '请在“我的主页 → 协议与隐私”确认最新协议后，重新提交当前操作' : errorText(e));
       return false;
     }
   }
@@ -61,8 +73,14 @@ export function UIProvider({ children }: { children: ReactNode }) {
     <UIContext.Provider
       value={{
         dialog,
-        open: (title, body) => setDialog({ title, body }),
+        open: (title, body, variant) => {
+          if (closeGuard.current && !closeGuard.current()) return;
+          closeGuard.current = null;
+          setDialog({ title, body, variant });
+        },
         close,
+        requestClose,
+        registerCloseGuard,
         notify,
         act,
       }}
@@ -78,14 +96,21 @@ export function UIProvider({ children }: { children: ReactNode }) {
     </UIContext.Provider>
   );
 }
+export function useDialogCloseGuard(guard: () => boolean) {
+  const {registerCloseGuard} = useUI();
+  const current = useRef(guard); current.current = guard;
+  useEffect(() => registerCloseGuard(() => current.current()), [registerCloseGuard]);
+}
 export function Modal({
   title,
   close,
   children,
+  variant = "modal",
 }: {
   title: string;
   close: () => void;
   children: ReactNode;
+  variant?: DialogVariant;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -100,9 +125,9 @@ export function Modal({
         close();
       }
       if (e.key === "Tab") {
-        const all = ref.current?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]',
-        );
+        const all = [...(ref.current?.querySelectorAll<HTMLElement>(
+          'button,a[href],input:not([type="hidden"]),select,textarea,[tabindex="0"]',
+        ) || [])].filter(element => element.getClientRects().length > 0 && !element.matches(':disabled'));
         if (!all?.length) return;
         const first = all[0],
           last = all[all.length - 1];
@@ -124,14 +149,14 @@ export function Modal({
   }, []);
   return (
     <div
-      className="overlay open"
+      className={`overlay open${variant === "modal" ? "" : ` overlay-${variant}`}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) close();
       }}
     >
       <div
         ref={ref}
-        className="modal"
+        className={`modal${variant === "modal" ? "" : ` modal-${variant}`}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -166,16 +191,19 @@ export function Form({
   fields,
   onSubmit,
   submit = "保存",
+  submitDisabled = false,
   children,
 }: {
   fields: Field[];
   onSubmit: (data: Entity, form: FormData) => Promise<void>;
   submit?: string;
+  submitDisabled?: boolean;
   children?: ReactNode;
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [rulesRequired, setRulesRequired] = useState(false);
+    [rulesRequired, setRulesRequired] = useState(false),
+    [legalRequired, setLegalRequired] = useState(false);
   async function send(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
@@ -187,6 +215,7 @@ export function Form({
     } catch (err) {
       setError(errorText(err));
       if (err instanceof ApiError && err.code === 'community_rules_required') setRulesRequired(true);
+      if (err instanceof ApiError && err.code === 'legal_consent_required') setLegalRequired(true);
     } finally {
       setBusy(false);
     }
@@ -250,13 +279,14 @@ export function Form({
       ))}
       {children}
       {rulesRequired && <div className="panel panel-pad"><b>社区规则 · 2026-07-18</b><p>不得发布违法违规、侵犯隐私、侮辱诽谤、诈骗、色情低俗、暴力恐怖、违禁交易或侵犯知识产权的内容。发布他人信息、照片、联系方式或试卷资料前，应取得合法授权。</p><p>二手交易仅用于信息交流。请自行核验交易对象与商品，不要在平台外泄露密码、验证码或支付凭证。平台可依据举报和审核规则处理违规内容，并向内容发布者说明处置理由和申诉渠道。</p><button className="btn" type="button" disabled={busy} onClick={async()=>{setBusy(true);try{await write('/api/user/community-rules',{accepted:true});setRulesRequired(false);setError('规则已确认，请重新提交当前内容');}catch(error){setError(errorText(error))}finally{setBusy(false)}}}>我已阅读并同意社区规则</button></div>}
+      {legalRequired && <LegalConfirmation onAccepted={() => {setLegalRequired(false);setError('协议已确认，请重新提交当前内容');}}/>}
       {error && (
         <p className="field-error" role="alert">
           {error}
         </p>
       )}
       <div className="form-actions">
-        <button className="btn primary" disabled={busy}>
+        <button className="btn primary" disabled={busy || submitDisabled} aria-busy={busy}>
           {busy ? "正在提交…" : submit}
         </button>
       </div>
@@ -269,17 +299,21 @@ export function Head({
   subtitle,
   action,
   children,
+  level = 1,
 }: {
   title: string;
   description?: string;
   subtitle?: string;
   action?: ReactNode;
   children?: ReactNode;
+  /** 嵌在其它页面里的分区标题用 2，避免一页出现两个 h1。 */
+  level?: 1 | 2;
 }) {
+  const Heading = level === 2 ? "h2" : "h1";
   return (
-    <div className="page-head">
+    <div className={level === 2 ? "page-head section-head" : "page-head"}>
       <div className="page-title">
-        <h1>{title}</h1>
+        <Heading>{title}</Heading>
         {(description || subtitle) && <p>{description || subtitle}</p>}
       </div>
       <div className="head-actions">
@@ -311,21 +345,43 @@ export function Empty({
     </div>
   );
 }
+/** 信息流加载骨架：按帖子卡片的结构占位，加载完成后内容在同一位置出现，不跳动。 */
+export function FeedSkeleton({ count = 3, label = "正在加载…" }: { count?: number; label?: string }) {
+  return (
+    <div className="loading-state loading-skeleton" role="status">
+      <span className="loading-label">{label}</span>
+      {Array.from({ length: count }, (_, index) => (
+        <div className="skeleton-card" aria-hidden="true" key={index}>
+          <div className="skeleton-author"><span className="skeleton-block skeleton-avatar" /><span className="skeleton-lines"><span className="skeleton-block" /><span className="skeleton-block" /></span></div>
+          <span className="skeleton-block skeleton-title" />
+          <span className="skeleton-block" />
+          <span className="skeleton-block skeleton-short" />
+          {index === 0 && <span className="skeleton-block skeleton-media" />}
+        </div>
+      ))}
+    </div>
+  );
+}
 export function QueryState({
   query,
   children,
   empty = false,
+  skeleton,
 }: {
   query: { isPending: boolean; error: Error | null; refetch: () => unknown };
   children: ReactNode;
   empty?: boolean;
+  /** feed / post：用帖子卡片骨架代替通用加载条（列表三张、详情一张）。 */
+  skeleton?: "feed" | "post";
 }) {
   if (query.isPending)
-    return (
+    return skeleton ? <FeedSkeleton count={skeleton === "post" ? 1 : 3} /> : (
       <div className="loading-state" role="status">
-        正在加载…
+        <span className="loading-label">正在加载…</span>
       </div>
     );
+  if (query.error instanceof ApiError && query.error.code === 'legal_consent_required')
+    return <LegalConfirmation/>;
   if (query.error)
     return (
       <Empty icon="info" title={isNetworkError(query.error) ? "网络连接暂不可用" : "加载未完成"} description={errorText(query.error)}>
@@ -427,9 +483,9 @@ export function Pagination({
 }
 
 export function DialogOutlet() {
-  const { dialog, close } = useUI();
+  const { dialog, requestClose } = useUI();
   return dialog ? (
-    <Modal title={dialog.title} close={close}>
+    <Modal title={dialog.title} close={requestClose} variant={dialog.variant}>
       {dialog.body}
     </Modal>
   ) : null;

@@ -1,7 +1,9 @@
 import { CompetitionPersonal } from "./competition-personal";
 import {CampusMap} from './campus-map';
-import {CanteenReviewForm,CanteenReviews,CanteenContributions,DishDetail} from './canteen';
+import {SchoolCalendar} from './school-calendar';
+import {CanteenDetailActions,CanteenReviewForm,CanteenReviews,CanteenContributions,CanteenArchiveManagement,DishDetail,OFFLINE_READONLY_TEXT} from './canteen';
 import {formatScore} from './canteen-data';
+import {CanteenDetailPage} from './canteen-detail';
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { entity, query, rows, time, useApi, write, asset } from "./api";
 import { Empty, Form, Head, Pagination, QueryState, Tabs, useUI } from "./ui";
@@ -58,7 +60,7 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
         {kind === "campus" && (
           <button
             className="btn"
-            onClick={() => ui.open("学校校历", <Calendar />)}
+            onClick={() => ui.open("学校校历", <SchoolCalendar />)}
           >
             查看校历
           </button>
@@ -145,22 +147,6 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
     </>
   );
 }
-function Calendar() {
-  const q = useApi("/api/campus-calendars/current");
-  const d = entity(q.data, "calendar", "data");
-  return (
-    <QueryState query={q}>
-      <h3>{d.academic_year || "当前校历"}</h3>
-      <p>{d.term_start || d.start_date || d.description}</p>
-      {(d.image_url || d.url) && (
-        <a href={asset(d.image_url || d.url)} target="_blank" rel="noreferrer">
-          打开学校校历
-        </a>
-      )}
-      <p>{d.updated_at ? `更新时间：${time(d.updated_at)}` : ""}</p>
-    </QueryState>
-  );
-}
 function Plans() {
   const q = useApi("/api/user/competition-calendar");
   return (
@@ -176,6 +162,9 @@ function Plans() {
   );
 }
 export function CatalogDetail({ kind }: { kind: CatalogKind }) {
+  return kind === 'canteen' ? <CanteenDetailPage/> : <CatalogRecordDetail kind={kind}/>;
+}
+function CatalogRecordDetail({ kind }: { kind: CatalogKind }) {
   const { id } = useParams(),
     [params] = useSearchParams(),
     ui = useUI(),
@@ -200,10 +189,13 @@ export function CatalogDetail({ kind }: { kind: CatalogKind }) {
   const dishes = useApi(
     kind === "canteen" ? `/api/canteens/${id}/dishes` : null,
   );
+  // 商家下架后评价、图片和投票只读，与 App 和服务端保持一致。
+  const canteenOffline =
+    kind === "canteen" && (d.is_offline === true || d.operating_status === "offline");
   return (
     <>
       <Head title={d.title || d.name || "详情"}>
-        <Link className="btn" to={`/${kind}`}>
+        <Link className="btn" to={canteenOffline?'/canteen?tab=nostalgia':`/${kind}`}>
           返回列表
         </Link>
         {kind === "competition" && (
@@ -222,14 +214,18 @@ export function CatalogDetail({ kind }: { kind: CatalogKind }) {
             加入计划
           </button>
         )}
-        {(kind === "ratings" || kind === "canteen") && (
+        {kind === "canteen" && q.data && (
+          <CanteenDetailActions id={id!} name={String(d.name || "")} favorite={q.data.is_favorite === true} />
+        )}
+        {canteenOffline&&<CanteenArchiveManagement id={id!} item={d} onSaved={()=>void q.refetch()}/>}
+        {(kind === "ratings" || (kind === "canteen" && !canteenOffline)) && (
           <button
             className="btn primary"
             onClick={() =>
               auth.requireUser() &&
               ui.open(
                 "发表评价",
-                kind === 'canteen' ? <CanteenReviewForm id={id!}/> : <Form
+                kind === 'canteen' ? <CanteenReviewForm id={id!} onSaved={() => void q.refetch()}/> : <Form
                   fields={[
                     {
                       name: "star",
@@ -266,8 +262,9 @@ export function CatalogDetail({ kind }: { kind: CatalogKind }) {
       <QueryState query={q}>
         <div className="panel panel-pad">
           <h2>{d.title || d.name}</h2>
+          {canteenOffline && <p className="notice">{OFFLINE_READONLY_TEXT}{d.offline_reason ? `下架原因：${d.offline_reason}` : ""}</p>}
           <p className="muted">
-            {d.course || d.category || d.location || d.author_department}
+            {d.course || d.category || d.location || [d.location_area, d.location_floor].filter(Boolean).join(" · ") || d.author_department}
           </p>
           <p className="details-text">
             {d.content_text || d.description || d.summary || ""}
@@ -282,7 +279,8 @@ export function CatalogDetail({ kind }: { kind: CatalogKind }) {
               查看官方来源
             </a>
           )}
-          {rows(q.data, "ratings", "reviews").map((r) => (
+          {/* 食堂评价在下方“就餐评价”单独分页展示，这里只用于教师/专业评价。 */}
+          {kind !== "canteen" && rows(q.data, "ratings", "reviews").map((r) => (
             <div className="comment-row" key={r.id}>
               <b>{r.user_name || r.user?.nickname || "同学"}</b>
               <span> · {formatScore(r.star || r.overall_score)} 分</span>
@@ -320,7 +318,7 @@ export function CatalogDetail({ kind }: { kind: CatalogKind }) {
         </div>
         {kind === "canteen" && (
           <div className="section">
-            <h2>就餐评价</h2><CanteenReviews id={id!}/>
+            <h2>就餐评价</h2><CanteenReviews id={id!} offline={canteenOffline}/>
             <h2>菜品</h2>
             <QueryState query={dishes}>
               <div className="dish-list">

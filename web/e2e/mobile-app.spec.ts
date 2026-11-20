@@ -151,7 +151,10 @@ test("手机校园入口与个人统计进入真实页面，返回与滚动位�
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("./");
   await expect(page.locator(".mobile-feed-poll")).toBeVisible();
+  // 初始化认证会触发信息流重取；等页面稳定后再记录真实滚动位置。
+  await page.waitForLoadState("networkidle");
   await page.evaluate(() => window.scrollTo(0, 200));
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(200);
   const position = await page.evaluate(() => scrollY);
   const dock = page.getByRole("navigation", { name: "底部导航" });
   await dock.getByRole("link", { name: "校园", exact: true }).click();
@@ -186,12 +189,17 @@ test("游客手机发布与个人入口先登录，桌面恢复既有三栏与�
   await page.goto('community?sort=bookmarks');
   await expect(page.getByRole('heading', { name: '登录后查看我的收藏' })).toBeVisible();
   await expect(page.locator('.loading-state')).toHaveCount(0);
+  const desktopStart = state.queries.length;
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("./");
   await expect(page.locator(".campus-composer")).toBeVisible();
   await expect(page.locator(".mobile-bottom-nav, .mobile-header, .mobile-app-feed")).toHaveCount(0);
   await expect(page.locator(".sidebar")).toHaveCSS("width", "214px");
   await expect(page.locator(".right-rail")).toBeVisible();
-  expect(state.queries.at(-1)?.searchParams.has("feed_version")).toBe(false);
+  // 热榜、集市和首页会并发读取，不能用最后一个响应判断桌面信息流协议。
+  const desktopFeed = () => state.queries.slice(desktopStart).find(url => url.searchParams.get('board') === '1' && url.searchParams.get('sort') === 'all' && url.searchParams.get('limit') === '20');
+  await expect.poll(() => desktopFeed()?.searchParams.get('feed_version')).toBe('3');
+  expect(desktopFeed()!.searchParams.get('capabilities')?.split(',')).toEqual(expect.arrayContaining(['feed_pagination_meta_v1', 'poll_v1']));
   expect(state.votes).toEqual([]);
+  expect(state.errors).toEqual([]);
 });

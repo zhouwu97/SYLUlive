@@ -9,6 +9,7 @@
 | `WAKE_LOCK` | 保活/提醒 | 对应任务运行时 | 任务可能延后 | 是 | 是 | 保留 |
 | `FOREGROUND_SERVICE*` | 前台保活服务 | 用户主动开启保活 | 不启动保活 | 是 | 是 | 保留并按需 |
 | `REQUEST_INSTALL_PACKAGES` | 用户主动安装应用更新 | 点击安装时 | 使用浏览器/手动更新 | 是 | 是 | 保留并按需 |
+| `CAMERA`（由 `mobile_scanner` 合并声明） | 课表「扫码同步到网页」实时扫码；声明后 `image_picker` 拍照也会先申请相机权限 | 用户打开扫码页或拍照时 | 扫码页提示开启权限，可截图后「从相册识别」；拍照不可用时仍可从相册选择 | 按需 | 按需 | 保留并按需；`android.hardware.camera` 为非必需特性 |
 | `READ_MEDIA_IMAGES`/Photo Picker | 图片选择 | 用户选择图片时 | 选择器降级 | 是 | 是 | 优先 Photo Picker |
 | `READ_MEDIA_VIDEO` | 当前未核验到真实视频功能 | 不应请求 | 无 | 否 | 否 | 待确认后删除 |
 | `usesCleartextTraffic` | 本地联调 | Debug | Release 默认禁止明文 | 是 | 否 | 分离配置 |

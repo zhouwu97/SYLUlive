@@ -25,6 +25,8 @@ import 'canteen_review_editor_screen.dart';
 import 'canteen_review_history_screen.dart';
 import 'image_viewer_screen.dart';
 import '../utils/app_feedback.dart';
+import '../utils/canteen_share_link.dart';
+import 'package:share_plus/share_plus.dart';
 
 enum _ContributionAction { review }
 
@@ -83,6 +85,10 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   // 避免「with_image 失败 → 回滚到 high → 标签 high 但数据仍是 all」错位。
   String _appliedReviewSort = 'best';
   String _appliedReviewFilter = 'all';
+
+  // 评价分页：首屏由详情接口带回第一页，其余按需加载。
+  bool _reviewsHasMore = false;
+  bool _loadingMoreReviews = false;
 
   // 菜品/实拍统计：初值来自列表页入口快照，随后由图鉴区真实数据刷新
   late int _dishCount;
@@ -166,6 +172,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       _dishesLoadError = dishesError;
       if (data.isNotEmpty && data['canteen'] != null) {
         _canteenData = data;
+        _favoriteOverride = null;
+        _reviewsHasMore = data['display_reviews_has_more'] == true;
         _appliedReviewSort = _reviewSort;
         _appliedReviewFilter = _reviewFilter;
         _reviewDataVersion++;
@@ -186,23 +194,79 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   }) async {
     final generation = ++_requestGeneration;
     setState(() => _reviewsRefreshing = true);
-    final data = await context.read<CanteenProvider>().loadCanteenDetail(
-          widget.canteenId,
-          reviewSort: sort,
-          reviewFilter: filter,
-        );
+    final provider = context.read<CanteenProvider>();
+    final page = await provider.loadDisplayReviews(
+      widget.canteenId,
+      sort: sort,
+      filter: filter,
+    );
     if (!mounted || generation != _requestGeneration) return null;
-    final success = data.isNotEmpty && data['canteen'] != null;
+    if (page != null && page.unsupported) {
+      // 旧服务端没有分页接口：回退到重新拉整页详情。
+      final data = await provider.loadCanteenDetail(
+        widget.canteenId,
+        reviewSort: sort,
+        reviewFilter: filter,
+      );
+      if (!mounted || generation != _requestGeneration) return null;
+      final success = data.isNotEmpty && data['canteen'] != null;
+      setState(() {
+        if (success) {
+          _canteenData = data;
+          _reviewsHasMore = false;
+          _appliedReviewSort = sort;
+          _appliedReviewFilter = filter;
+          _reviewDataVersion++;
+        }
+        _reviewsRefreshing = false;
+      });
+      return success;
+    }
     setState(() {
-      if (success) {
-        _canteenData = data;
+      if (page != null && _canteenData != null) {
+        _canteenData = {..._canteenData!, 'display_reviews': page.items};
+        _reviewsHasMore = page.hasMore;
         _appliedReviewSort = sort;
         _appliedReviewFilter = filter;
         _reviewDataVersion++;
       }
       _reviewsRefreshing = false;
     });
-    return success;
+    return page != null;
+  }
+
+  /// 追加下一页评价；失败只提示，不清空已显示的内容。
+  Future<void> _loadMoreReviews() async {
+    if (_loadingMoreReviews || !_reviewsHasMore || _canteenData == null) return;
+    final generation = _requestGeneration;
+    final current = (_canteenData!['display_reviews'] as List?) ?? const [];
+    setState(() => _loadingMoreReviews = true);
+    final provider = context.read<CanteenProvider>();
+    final page = await provider.loadDisplayReviews(
+      widget.canteenId,
+      sort: _appliedReviewSort,
+      filter: _appliedReviewFilter,
+      offset: current.length,
+    );
+    if (!mounted) return;
+    if (generation != _requestGeneration) {
+      // 期间切换了排序/筛选或整页刷新，这一页已经过期。
+      setState(() => _loadingMoreReviews = false);
+      return;
+    }
+    setState(() {
+      _loadingMoreReviews = false;
+      if (page == null || page.unsupported) return;
+      _canteenData = {
+        ..._canteenData!,
+        'display_reviews': [...current, ...page.items],
+      };
+      _reviewsHasMore = page.hasMore;
+    });
+    if (page == null) {
+      AppFeedback.error(provider.errorMessage ?? '评价加载失败，请重试',
+          context: context);
+    }
   }
 
   /// 静默整页刷新（评价提交 / 菜品页返回后），不显示任何 loading。
@@ -221,6 +285,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     setState(() {
       if (data.isNotEmpty && data['canteen'] != null) {
         _canteenData = data;
+        _favoriteOverride = null;
+        _reviewsHasMore = data['display_reviews_has_more'] == true;
         _reviewDataVersion++;
       }
     });
@@ -241,7 +307,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         isDark: isDark,
         slivers: [
           SliverToBoxAdapter(child: _buildHeroSection()),
-          SliverToBoxAdapter(
+          const SliverToBoxAdapter(
             child: CanteenDetailSkeleton(includeHero: false),
           ),
         ],
@@ -333,6 +399,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 dishPhotoCount: _dishPhotoCount,
                 offline: _isOffline,
               ),
+              if (_isOffline) _buildOfflineReadonlyNotice(isDark),
               _buildDimensionSummary(isDark),
               DishGallerySection(
                 canteenId: widget.canteenId,
@@ -401,10 +468,15 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 canWriteReview:
                     !_isOffline && (_canCreateReview || _canEditLatest),
                 latestReviewId: _latestReviewId,
-                onEditLatestReview: _openEditLatestReviewEditor,
+                // 商家下架后评价只读：不提供修改、删除入口，举报仍可用于治理。
+                onEditLatestReview:
+                    _isOffline ? null : _openEditLatestReviewEditor,
                 onReport: _reportReview,
-                onDelete: _deleteReview,
+                onDelete: _isOffline ? null : _deleteReview,
                 onOpenHistory: _openOwnReviewHistory,
+                hasMore: _reviewsHasMore,
+                isLoadingMore: _loadingMoreReviews,
+                onLoadMore: _loadMoreReviews,
                 onOpenDish: (dishId, dishName) {
                   Navigator.of(context).push(
                     MaterialPageRoute(
@@ -720,9 +792,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     final heroHeight =
         (MediaQuery.of(context).size.width * 0.5).clamp(190.0, 230.0);
 
-    final authUser = context.read<AuthProvider>().user;
-    final isAdmin =
-        authUser?.role == 'admin' || authUser?.role == 'super_admin';
+    final authUser = context.watch<AuthProvider>().user;
+    final isAdmin = _canteenData != null &&
+        (authUser?.role == 'super_admin' || (!offline && authUser?.role == 'admin'));
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(
@@ -771,15 +843,38 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 onTap: () => Navigator.pop(context),
               ),
             ),
-            if (isAdmin)
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 10,
-                right: 16,
-                child: _buildCircleButton(
-                  icon: Icons.edit_rounded,
-                  onTap: _showEditImageSheet,
-                ),
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 10,
+              right: 16,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_canteenData != null) ...[
+                    _buildCircleButton(
+                      icon: Icons.ios_share_rounded,
+                      tooltip: '分享商家',
+                      onTap: _share,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildCircleButton(
+                      icon: _isFavorite
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      tooltip: _isFavorite ? '取消收藏' : '收藏商家',
+                      onTap: _toggleFavorite,
+                    ),
+                  ],
+                  if (isAdmin) ...[
+                    const SizedBox(width: 8),
+                    _buildCircleButton(
+                      icon: Icons.edit_rounded,
+                      tooltip: '修改封面',
+                      onTap: _showEditImageSheet,
+                    ),
+                  ],
+                ],
               ),
+            ),
           ],
         ),
       ),
@@ -825,8 +920,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   Widget _buildCircleButton({
     required IconData icon,
     required VoidCallback onTap,
+    String? tooltip,
   }) {
-    return Material(
+    final button = Material(
       color: Colors.black.withValues(alpha: 0.35),
       shape: const CircleBorder(),
       child: InkWell(
@@ -836,6 +932,130 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           width: 36,
           height: 36,
           child: Icon(icon, color: Colors.white, size: 20),
+        ),
+      ),
+    );
+    return tooltip == null ? button : Tooltip(message: tooltip, child: button);
+  }
+
+  // ── 收藏与分享 ────────────────────────────────────────────────
+
+  bool? _favoriteOverride;
+  bool _favoriteBusy = false;
+
+  bool get _isFavorite =>
+      _favoriteOverride ?? (_canteenData?['is_favorite'] == true);
+
+  Future<void> _toggleFavorite() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      AppFeedback.info('登录后可以收藏常去的商家', context: context);
+      return;
+    }
+    if (_favoriteBusy) return;
+    final next = !_isFavorite;
+    // 先切换图标给即时反馈，失败再回滚。
+    setState(() {
+      _favoriteBusy = true;
+      _favoriteOverride = next;
+    });
+    final provider = context.read<CanteenProvider>();
+    final ok = await provider.setFavorite(widget.canteenId, next);
+    if (!mounted) return;
+    setState(() {
+      _favoriteBusy = false;
+      if (!ok) _favoriteOverride = !next;
+    });
+    if (ok) {
+      AppFeedback.success(next ? '已收藏，可在餐饮首页“我常去”找到' : '已取消收藏',
+          context: context);
+      final userId = context.read<AuthProvider>().user?.id;
+      if (userId != null) provider.loadFavorites(userId: userId);
+    } else {
+      AppFeedback.error(provider.errorMessage ?? '操作失败，请稍后重试',
+          context: context);
+    }
+  }
+
+  Future<void> _share() async {
+    final canteen = _canteenData?['canteen'];
+    final name = canteen is Map
+        ? canteen['name']?.toString() ?? widget.canteenName
+        : widget.canteenName;
+    final text = canteenShareText(
+      canteenId: widget.canteenId,
+      name: name,
+      location: _canteenLocationLabel(),
+      averageStar: (_canteenData?['average_star'] as num?)?.toDouble() ?? 0,
+      ratingCount: (_canteenData?['reviewer_count'] as num?)?.toInt() ??
+          (_canteenData?['rating_count'] as num?)?.toInt() ??
+          0,
+    );
+    final renderObject = context.findRenderObject();
+    final origin = renderObject is RenderBox
+        ? renderObject.localToGlobal(Offset.zero) & renderObject.size
+        : null;
+    try {
+      await Share.share(text,
+          subject: '$name - 沈理校园餐饮', sharePositionOrigin: origin);
+    } catch (_) {
+      if (!mounted) return;
+      AppFeedback.error('暂时无法调起分享，请稍后重试', context: context);
+    }
+  }
+
+  static const _offlineReadonlyMessage = '该商家已下架，评价和图片仅供查看；食堂资料仅超级管理员可维护';
+
+  /// 下架商家的评价、图片和投票只读，食堂资料仅超级管理员可维护。
+  Widget _buildOfflineReadonlyNotice(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Semantics(
+        container: true,
+        label: '该商家已下架，只读',
+        child: AppCardSurface(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          decoration: BoxDecoration(
+            color: CanteenTheme.surfaceMutedBg(isDark),
+            borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+            border: Border.all(color: CanteenTheme.borderColor(isDark)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.lock_outline_rounded,
+                size: 18,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '商家已下架 · 内容只读',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: CanteenTheme.textPrimaryColor(isDark),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '历史评价、图片和投票保留供参考，不能再发布、修改、删除或投票。'
+                      '如有问题可以举报，由管理员处理。',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.45,
+                        color: CanteenTheme.textSecondaryColor(isDark),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -859,7 +1079,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       child: FilledButton.icon(
         onPressed: canContribute ? () => _showContributionSheet(isDark) : null,
         icon: const Icon(Icons.add_rounded, size: 18),
-        label: Text(canContribute ? '贡献内容' : '暂不能贡献内容'),
+        label: Text(canContribute ? '贡献内容' : '商家已下架，内容仅供查看'),
         style: FilledButton.styleFrom(
           backgroundColor: accent,
           foregroundColor: Colors.white,
@@ -996,6 +1216,10 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   Future<void> _voteRating(int ratingId, String source, String vote) async {
     if (_isVoting) return;
+    if (_isOffline) {
+      AppFeedback.info(_offlineReadonlyMessage, context: context);
+      return;
+    }
     if (!context.read<AuthProvider>().isLoggedIn) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('请先登录后操作')));
@@ -1129,6 +1353,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   Future<void> _openCreateReviewEditor() async {
     if (!await _ensureCanReview()) return;
+    if (!mounted) return;
 
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -1154,6 +1379,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   Future<void> _openEditLatestReviewEditor() async {
     if (!await _ensureCanReview()) return;
+    if (!mounted) return;
     final latest = _canteenData?['my_latest_review'];
     if (!_canEditLatest || latest is! Map || _latestReviewId == null) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -149,10 +149,11 @@ func (h *CheckInHandler) GetCalendar(c *gin.Context) {
 	records := make([]gin.H, 0, len(calendar.Records))
 	for _, record := range calendar.Records {
 		records = append(records, gin.H{
-			"check_in_date": services.FormatCheckInDate(record.CheckInDate),
-			"streak_days":   record.StreakDays,
-			"exp_earned":    record.ExpEarned,
-			"is_makeup":     record.IsMakeup,
+			"check_in_date":   services.FormatCheckInDate(record.CheckInDate),
+			"streak_days":     record.StreakDays,
+			"exp_earned":      record.ExpEarned,
+			"is_makeup":       record.IsMakeup,
+			"is_compensation": record.IsCompensation,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -200,6 +201,37 @@ func (h *CheckInHandler) RebuildUserStats(c *gin.Context) {
 		"last_check_in_date": lastDate,
 		"current_streak":     rebuilt.CurrentStreak,
 		"longest_streak":     rebuilt.LongestStreak,
+	})
+}
+
+// InspectStats 检查所有账号的签到连续天数一致性，只允许超级管理员调用。
+func (h *CheckInHandler) InspectStats(c *gin.Context) {
+	inconsistencies, err := h.service.InspectStats()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查签到数据失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success":      true,
+		"total_count":  len(inconsistencies),
+		"inconsistent": inconsistencies,
+	})
+}
+
+// RebuildAllStats 批量检查并修复所有签到连续天数不正确的账号，只允许超级管理员调用。
+func (h *CheckInHandler) RebuildAllStats(c *gin.Context) {
+	operatorID := c.GetUint("user_id")
+	report, err := h.service.ReconcileAll(operatorID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "批量修复签到数据失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success":             true,
+		"total_users_scanned": report.TotalUsersScanned,
+		"inconsistent_count":  report.InconsistentCount,
+		"repaired_count":      report.RepairedCount,
+		"details":             report.Details,
 	})
 }
 

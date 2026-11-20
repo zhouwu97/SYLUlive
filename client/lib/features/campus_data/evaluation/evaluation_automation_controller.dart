@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'evaluation_models.dart';
 import 'evaluation_automation_models.dart';
-import 'evaluation_page_detector.dart';
 import 'evaluation_webview_controller.dart';
 import 'evaluation_scripts/evaluation_list_script.dart';
 import 'evaluation_scripts/evaluation_navigation_script.dart';
@@ -24,7 +23,6 @@ class EvaluationAutomationController extends ChangeNotifier {
   final Set<String> _processedFingerprints = {};
 
   // Anti-loop limits
-  static const int _maxRetriesPerItem = 1;
   static const int _maxTotalItems = 100; // 已放开上限，支持全部自动完成
 
   int _consecutiveIdenticalFingerprint = 0;
@@ -32,14 +30,6 @@ class EvaluationAutomationController extends ChangeNotifier {
   bool _submitMode = false;
 
   EvaluationAutomationController({required this.webViewController});
-
-  InAppWebViewController? get _rawCtrl =>
-      // We need a way to access the raw InAppWebViewController.
-      // Instead of coupling tightly, we'll expose a getter or pass it, but since
-      // we need to run JS, we must either expose it on EvaluationWebViewController
-      // or find another way. Let's assume EvaluationWebViewController has an internal way
-      // or we can just add `InAppWebViewController? get webView` to it.
-      null; // WILL FIX THIS BY ADDING IT TO EvaluationWebViewController
 
   /// Attempt to fill and save the current single item immediately.
   Future<void> fillAndSaveCurrent() async {
@@ -344,8 +334,9 @@ class EvaluationAutomationController extends ChangeNotifier {
             jsonDecode(raw as String) as Map<String, dynamic>);
 
         // Success Conditions
-        if (current.successMarkerCount > preSave.successMarkerCount)
+        if (current.successMarkerCount > preSave.successMarkerCount) {
           return true;
+        }
         if (current.savedCount > preSave.savedCount) return true;
         if (current.rowStatus != null &&
             current.rowStatus != preSave.rowStatus &&
@@ -379,8 +370,9 @@ class EvaluationAutomationController extends ChangeNotifier {
       final Map<String, dynamic> listData =
           jsonDecode(rawList as String) as Map<String, dynamic>;
       if (listData['error'] != null) {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint('[EvaluationFlow] list error: ${listData['error']}');
+        }
         return null;
       }
 

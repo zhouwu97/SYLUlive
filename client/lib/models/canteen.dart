@@ -19,6 +19,13 @@ class Canteen {
   final int dishPhotoCount;
   final double rankingScore;
 
+  /// 服务端返回的综合排行名次；0 表示未知（旧服务端或列表接口），不能展示名次。
+  final int rank;
+
+  /// 下架时间与原因：只有管理端列表返回，公开接口不含原因。
+  final DateTime? offlinedAt;
+  final String offlineReason;
+
   Canteen({
     required this.id,
     required this.name,
@@ -37,6 +44,9 @@ class Canteen {
     this.dishWithPhotoCount = 0,
     this.dishPhotoCount = 0,
     this.rankingScore = 0,
+    this.rank = 0,
+    this.offlinedAt,
+    this.offlineReason = '',
   });
 
   factory Canteen.fromJson(Map<String, dynamic> json) {
@@ -65,6 +75,9 @@ class Canteen {
       dishWithPhotoCount: json['dish_with_photo_count'] ?? 0,
       dishPhotoCount: json['dish_photo_count'] ?? 0,
       rankingScore: (json['ranking_score'] ?? 0).toDouble(),
+      rank: (json['rank'] as num?)?.toInt() ?? 0,
+      offlinedAt: DateTime.tryParse(json['offlined_at']?.toString() ?? ''),
+      offlineReason: json['offline_reason']?.toString() ?? '',
     );
   }
 

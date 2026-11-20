@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/ai_run_feedback.dart';
 import '../../theme/app_motion.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 
 class AiRunFeedbackButtons extends StatelessWidget {
   const AiRunFeedbackButtons({
@@ -37,8 +37,8 @@ class AiRunFeedbackButtons extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               color: colors.surface,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppRadius.sheet),
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(AppShape.of(context).sheet),
               ),
             ),
             child: Column(

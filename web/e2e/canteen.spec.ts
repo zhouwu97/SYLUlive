@@ -1,5 +1,16 @@
 import {test,expect} from '@playwright/test';
 
+test.beforeEach(async({page})=>{
+  // 导航栏使用隔离夹具；业务路由由各用例覆盖，禁止落到本机或生产服务。
+  await page.route('**/api/**',route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(path==='/api/user/profile'||path==='/api/refresh')return route.fulfill({status:401,json:{error:'未登录'}});
+    if(path==='/api/water/sections')return route.fulfill({json:[]});
+    if(path==='/api/user/notifications/unread-count'||path==='/api/messages/unread_count')return route.fulfill({json:{count:0}});
+    return route.fulfill({status:404,json:{error:'此用例未配置该接口'}});
+  });
+});
+
 test('贡献列表按真实接口结构展示一次，并保留审核原因和合并结果',async({page})=>{
   await page.route('**/api/user/profile',route=>route.fulfill({json:{id:991,nickname:'测试用户',role:'user'}}));
   await page.route('**/api/user/canteen-contributions',route=>route.fulfill({json:{items:[
@@ -45,4 +56,140 @@ test('编辑评价先读取权威上下文，保存保留菜品与实拍',async(
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(saved).toMatchObject({comment:'修改文字',images:['/uploads/old.jpg'],tags:['午餐'],
     base_updated_at:'2026-09-20T10:00:00Z',dishes:[{dish_id:7,photo_file_ids:[81]}]});
+});
+
+test('下架商家只读：不显示写评价、编辑和删除，并说明原因',async({page})=>{
+  await page.route('**/api/user/profile',route=>route.fulfill({json:{id:991,nickname:'测试用户',role:'user'}}));
+  await page.route('**/api/canteens/2',route=>route.fulfill({json:{canteen:{id:2,name:'停业小炒',is_offline:true,operating_status:'offline',offline_reason:'商家已搬走'},is_favorite:false}}));
+  await page.route('**/api/canteens/2/dishes',route=>route.fulfill({json:{items:[]}}));
+  await page.route('**/api/canteens/2/reviews',route=>route.fulfill({json:{items:[{id:5,user_id:991,user_name:'测试用户',comment:'以前常来',overall_score:4,created_at:'2026-10-01T04:00:00Z',updated_at:'2026-10-01T04:00:00Z'}]}}));
+  await page.goto('canteen/2');
+  await expect(page.getByText('以前常来')).toBeVisible();
+  await expect(page.getByRole('button',{name:'发表评价',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'编辑',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'删除',exact:true})).toHaveCount(0);
+  await expect(page.getByText('下架原因：商家已搬走')).toBeVisible();
+});
+
+test('收藏商家后在食堂主页“我常去”出现，评价支持加载更多',async({page})=>{
+  let favorited=false;
+  await page.route('**/api/user/profile',route=>route.fulfill({json:{id:991,nickname:'测试用户',role:'user'}}));
+  await page.route('**/api/canteens/3',route=>route.fulfill({json:{canteen:{id:3,name:'川渝椒香',location_area:'一食堂',location_floor:'二楼'},is_favorite:favorited}}));
+  await page.route('**/api/canteens/3/dishes',route=>route.fulfill({json:{items:[]}}));
+  await page.route('**/api/canteens/3/reviews**',route=>{
+    const more=route.request().url().includes('cursor=');
+    return route.fulfill({json:more?{items:[{id:2,user_id:2,user_name:'乙',comment:'第二页评价',overall_score:4}]}:{items:[{id:1,user_id:1,user_name:'甲',comment:'第一页评价',overall_score:5}],next_cursor:'c1'}});
+  });
+  await page.route('**/api/user/canteen-favorites/3',async route=>{favorited=route.request().method()==='PUT';await route.fulfill({json:{favorited}})});
+  await page.route('**/api/user/canteen-favorites',route=>route.fulfill({json:{items:favorited?[{id:3,name:'川渝椒香',rating_count:9,average_star:4.7}]:[]}}));
+  await page.route('**/api/canteens/home',route=>route.fulfill({json:{hot_dishes:[],feed:[],recent_reviews:[],ranking_entry:{total:131,rated_total:63}}}));
+  await page.goto('canteen/3');
+  await page.getByRole('button',{name:'加载更多评价',exact:true}).click();
+  await expect(page.getByText('第二页评价')).toBeVisible();
+  await expect(page.getByRole('button',{name:'加载更多评价',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'收藏',exact:true}).click();
+  await expect(page.getByRole('button',{name:'已收藏',exact:true})).toHaveAttribute('aria-pressed','true');
+  await page.goto('canteen');
+  await expect(page.getByRole('heading',{name:'我常去'})).toBeVisible();
+  await expect(page.getByRole('link',{name:/川渝椒香/}).first()).toBeVisible();
+});
+
+test('排行排除下架商家，怀旧版块单独展示且没有名次',async({page})=>{
+  const seen:string[]=[];
+  await page.route('**/api/canteens/rankings**',route=>{seen.push(route.request().url());return route.fulfill({json:{items:[
+    {rank:1,ranked:true,id:1,name:'有评价店',rating_count:3,average_star:4.5},
+    {rank:2,ranked:true,id:4,name:'旧店',rating_count:2,average_star:4.2,is_offline:true},
+    {rank:3,ranked:false,id:2,name:'新开店',rating_count:0},
+  ]}})});
+  await page.goto('canteen?tab=ranking');
+  await expect(page.getByLabel('暂无评价，不参与排名')).toHaveText('—');
+  await expect(page.getByLabel('第1名')).toHaveText('1');
+  await expect(page.getByRole('link',{name:/旧店/})).toHaveCount(0);
+  await expect(page.getByLabel('范围',{exact:true})).toHaveCount(0);
+  expect(seen.some(url=>url.includes('scope=all'))).toBe(false);
+  await page.route('**/api/canteens?**',route=>route.fulfill({json:[{id:4,name:'旧店',rating_count:2,average_star:4.2,is_offline:true}]}));
+  await page.getByRole('tab',{name:'怀旧食堂',exact:true}).click();
+  await expect(page.getByRole('link',{name:/旧店/})).toBeVisible();
+  await expect(page.getByText('已下架',{exact:true})).toBeVisible();
+  await expect(page.getByLabel(/第\d+名/)).toHaveCount(0);
+});
+
+for(const role of ['user','admin','super_admin'])test(`怀旧详情 ${role} 维护权限与保存失败恢复`,async({page})=>{
+  let name='记忆里的面馆',attempts=0;
+  await page.route('**/api/user/profile',route=>route.fulfill({json:{id:991,nickname:'测试用户',role}}));
+  await page.route('**/api/canteens/2',route=>{
+    if(route.request().method()==='PATCH'){
+      attempts++;
+      if(attempts===1)return route.fulfill({status:403,json:{error:'怀旧食堂仅超级管理员可以修改'}});
+      name=route.request().postDataJSON().name;
+      return route.fulfill({json:{message:'已保存'}});
+    }
+    return route.fulfill({json:{canteen:{id:2,name,is_offline:true,location_area:'一食堂',location_floor:'二楼'}}});
+  });
+  await page.route('**/api/canteens/2/dishes',route=>route.fulfill({json:[]}));
+  await page.route('**/api/canteens/2/reviews',route=>route.fulfill({json:{items:[]}}));
+  await page.goto('canteen/2');
+  const maintain=page.getByRole('button',{name:'维护怀旧食堂',exact:true});
+  await expect(maintain).toHaveCount(role==='super_admin'?1:0);
+  await expect(page.getByRole('button',{name:'发表评价',exact:true})).toHaveCount(0);
+  if(role!=='super_admin')return;
+  await maintain.click();
+  const dialog=page.getByRole('dialog');
+  await dialog.getByLabel('食堂名称',{exact:true}).fill('保留下来的味道');
+  await dialog.getByRole('button',{name:'保存',exact:true}).click();
+  await expect(dialog.getByText('怀旧食堂仅超级管理员可以修改',{exact:true})).toBeVisible();
+  await expect(dialog.getByLabel('食堂名称',{exact:true})).toHaveValue('保留下来的味道');
+  await dialog.getByRole('button',{name:'保存',exact:true}).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'保留下来的味道'}).first()).toBeVisible();
+  expect(attempts).toBe(2);
+});
+
+for(const mobile of [false,true])test(`怀旧列表加载失败重试、空态和真实渲染 ${mobile?'手机':'桌面'}`,async({page},testInfo)=>{
+  if(mobile)await page.setViewportSize({width:390,height:844});
+  let phase='error';
+  await page.route('**/api/canteens?**',route=>{
+    expect(new URL(route.request().url()).searchParams.get('status')).toBe('offline');
+    if(phase==='error')return route.fulfill({status:500,json:{error:'加载怀旧食堂失败'}});
+    return route.fulfill({json:phase==='empty'?[]:[{id:4,name:'记忆里的面馆',location_area:'一食堂',location_floor:'二楼',rating_count:12,average_star:4.6,is_offline:true}]});
+  });
+  await page.goto('canteen?tab=nostalgia');
+  await expect(page.getByText('加载怀旧食堂失败',{exact:true})).toBeVisible();
+  phase='empty';
+  await page.locator('#mainContent').getByRole('button',{name:'重试',exact:true}).click();
+  await expect(page.getByText('暂无符合条件的怀旧食堂',{exact:true})).toBeVisible();
+  phase='items';
+  await page.getByLabel('搜索食堂',{exact:true}).fill('面馆');
+  await page.getByRole('button',{name:'搜索',exact:true}).click();
+  await expect(page.getByRole('link',{name:/记忆里的面馆/})).toBeVisible();
+  await expect(page.getByLabel(/第\d+名/)).toHaveCount(0);
+  await page.screenshot({path:testInfo.outputPath(`nostalgia-${mobile?'mobile':'desktop'}.png`),fullPage:true});
+});
+
+test('我的贡献展示提交的商家',async({page})=>{
+  await page.route('**/api/user/profile',route=>route.fulfill({json:{id:991,nickname:'测试用户',role:'user'}}));
+  await page.route('**/api/user/canteen-contributions',route=>route.fulfill({json:{items:[
+    {type:'canteen',canteen_id:5,canteen_name:'新提交的面馆',status:'pending',submitted_at:'2026-11-10T04:00:00Z'},
+    {type:'canteen',canteen_id:6,canteen_name:'被驳回的店',status:'rejected',reject_reason:'信息不完整'},
+  ]}}));
+  await page.goto('canteen?tab=mine');
+  await expect(page.getByText('新提交的面馆',{exact:true})).toBeVisible();
+  await expect(page.getByText('商家 · 待审核',{exact:true})).toBeVisible();
+  await expect(page.getByText('信息不完整',{exact:true})).toBeVisible();
+});
+
+test('怀旧加载中切到排行，旧响应不会覆盖当前列表',async({page})=>{
+  let release!:()=>void;
+  const pending=new Promise<void>(resolve=>{release=resolve});
+  await page.route('**/api/canteens?**',async route=>{
+    await pending;
+    await route.fulfill({json:[{id:4,name:'晚到的怀旧面馆',is_offline:true}]});
+  });
+  await page.route('**/api/canteens/rankings**',route=>route.fulfill({json:{items:[{id:1,name:'营业店',rank:1,ranked:true,rating_count:3,average_star:4.5}]}}));
+  await page.goto('canteen?tab=nostalgia');
+  await expect(page.locator('#mainContent').getByText('正在加载…',{exact:true})).toBeVisible();
+  await page.getByRole('tab',{name:'食堂排行',exact:true}).click();
+  release();
+  await expect(page.getByRole('link',{name:/营业店/})).toBeVisible();
+  await expect(page.getByText('晚到的怀旧面馆',{exact:true})).toHaveCount(0);
 });

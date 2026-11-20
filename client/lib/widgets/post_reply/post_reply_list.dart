@@ -462,6 +462,8 @@ class _ChildReplySummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     final visibleReplies = replies.take(2);
     final totalReplies = total > replies.length ? total : replies.length;
     return Container(
@@ -469,7 +471,7 @@ class _ChildReplySummary extends StatelessWidget {
       margin: const EdgeInsets.only(left: 46, top: 4),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: context.watch<ThemeProvider?>()?.frostedGlass == true
+        color: customBackground
             ? Colors.transparent
             : isDark
                 ? Colors.white.withValues(alpha: 0.03)

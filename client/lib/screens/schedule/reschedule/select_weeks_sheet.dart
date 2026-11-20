@@ -116,6 +116,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
     return SafeArea(
       top: false,
       child: AppCardSurface(
+        surfaceOpacity: appTextSheetSurfaceOpacity(context),
         padding: EdgeInsets.only(
           left: 20,
           right: 20,
@@ -175,7 +176,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
               style: TextStyle(fontSize: 12, color: tokens.textSecondary),
             ),
             const SizedBox(height: 16),
-            AppCardDivider(color: tokens.divider),
+            const AppCardDivider(),
             const SizedBox(height: 12),
             Text(
               '修改范围',
@@ -187,26 +188,29 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
             ),
             const SizedBox(height: 8),
             // 仅本周
-            RadioListTile<bool>(
-              value: true,
+            RadioGroup<bool>(
               groupValue: _onlyCurrentWeek,
-              activeColor: tokens.primary,
-              contentPadding: EdgeInsets.zero,
-              title: Text('仅本周 (第${widget.currentAcademicWeek}周)',
-                  style: TextStyle(color: tokens.textPrimary, fontSize: 14)),
-              onChanged: (val) =>
-                  setState(() => _onlyCurrentWeek = val ?? false),
-            ),
-            // 指定范围
-            RadioListTile<bool>(
-              value: false,
-              groupValue: _onlyCurrentWeek,
-              activeColor: tokens.primary,
-              contentPadding: EdgeInsets.zero,
-              title: Text('指定周次范围',
-                  style: TextStyle(color: tokens.textPrimary, fontSize: 14)),
-              onChanged: (val) =>
-                  setState(() => _onlyCurrentWeek = val ?? false),
+              onChanged: (value) =>
+                  setState(() => _onlyCurrentWeek = value ?? false),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                RadioListTile<bool>(
+                  value: true,
+                  activeColor: tokens.primary,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('仅本周 (第${widget.currentAcademicWeek}周)',
+                      style:
+                          TextStyle(color: tokens.textPrimary, fontSize: 14)),
+                ),
+                // 指定范围
+                RadioListTile<bool>(
+                  value: false,
+                  activeColor: tokens.primary,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('指定周次范围',
+                      style:
+                          TextStyle(color: tokens.textPrimary, fontSize: 14)),
+                ),
+              ]),
             ),
             if (!_onlyCurrentWeek) ...[
               const SizedBox(height: 8),
@@ -287,7 +291,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
               height: 46,
               child: FilledButton(
                 style: FilledButton.styleFrom(
-                    textStyle: Theme.of(context).textTheme.labelLarge,
+                  textStyle: Theme.of(context).textTheme.labelLarge,
                   backgroundColor: tokens.primary,
                   foregroundColor: tokens.onPrimary,
                   shape: RoundedRectangleBorder(

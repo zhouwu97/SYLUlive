@@ -5,8 +5,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../features/theme_pack/theme_appearance.dart';
+import '../features/theme_pack/theme_widget_palette.dart';
 import '../models/home_widget_config.dart';
 import '../providers/course_schedule_provider.dart';
+import '../theme/app_palette.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 class HomeWidgetExamEntry {
@@ -232,6 +235,12 @@ class HomeWidgetService {
         appearance.theme.storageName,
       ),
       prefs.setString(
+        appearance.kind == HomeWidgetKind.course
+            ? HomeWidgetPreferenceKeys.manualCourseTheme
+            : HomeWidgetPreferenceKeys.manualExamTheme,
+        appearance.theme.storageName,
+      ),
+      prefs.setString(
         HomeWidgetPreferenceKeys.title(appearance.kind),
         appearance.title.trim().isEmpty
             ? appearance.kind.defaultTitle
@@ -269,6 +278,8 @@ class HomeWidgetService {
     ));
     try {
       final now = DateTime.now();
+      final prefs = await AppPreferencesStore.getInstance();
+      final coursePalette = _readActiveCoursePalette(prefs);
       final semesterStartStr = provider.semesterStart != null
           ? _date(provider.semesterStart!)
           : null;
@@ -276,13 +287,19 @@ class HomeWidgetService {
       final courses = provider.courses.map((course) {
         return {
           'name': course.name,
+          'course_code': course.courseCode,
           'weekday': course.weekday,
           'start_section': course.startSection,
           'end_section': course.endSection,
           'weeks': course.weeks,
           'location': course.location ?? '',
           'teacher': course.teacher ?? '',
-          'color': course.color,
+          'color': ThemeWidgetPalette.resolveCourseHex(
+            course.name,
+            palette: coursePalette,
+            courseCode: course.courseCode,
+            location: course.location,
+          ),
         };
       }).toList();
 
@@ -296,7 +313,6 @@ class HomeWidgetService {
         'courses': courses,
       };
 
-      final prefs = await AppPreferencesStore.getInstance();
       final saved = await prefs.setString(_courseDataKey, jsonEncode(payload));
       if (!saved) {
         throw StateError('共享存储写入失败');
@@ -659,12 +675,90 @@ class HomeWidgetService {
     }
   }
 
+  static List<Color> _readActiveCoursePalette(AppPreferencesStore prefs) {
+    final raw = prefs.getString('theme_appearance_v1');
+    if (raw == null || raw.isEmpty) {
+      return AppPalette.defaults(Brightness.light).coursePalette;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        return AppPalette.defaults(Brightness.light).coursePalette;
+      }
+      return ThemeWidgetPalette.coursePaletteFromAppearance(
+        ThemeAppearance(decoded),
+      );
+    } catch (_) {
+      return AppPalette.defaults(Brightness.light).coursePalette;
+    }
+  }
+
+  /// 在启动、应用主题和恢复外观时写入 widget_app_palette_v1，重算已存课程色板并触发两个小部件更新。
+  static Future<void> syncThemeAppearance(
+    ThemeAppearance appearance, {
+    required AppPreferencesStore prefs,
+    String? courseThemeOverride,
+    String? examThemeOverride,
+  }) async {
+    await prefs.setString(
+      HomeWidgetPreferenceKeys.appPalette,
+      ThemeWidgetPalette.encodePayload(appearance),
+    );
+    if (courseThemeOverride != null) {
+      await prefs.setString(
+        HomeWidgetPreferenceKeys.courseTheme,
+        courseThemeOverride,
+      );
+    }
+    if (examThemeOverride != null) {
+      await prefs.setString(
+        HomeWidgetPreferenceKeys.examTheme,
+        examThemeOverride,
+      );
+    }
+    if (_lastCourseProvider == null) {
+      final rawCourse = prefs.getString(_courseDataKey);
+      if (rawCourse != null && rawCourse.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(rawCourse);
+          if (decoded is Map<String, dynamic> &&
+              decoded['schema_version'] == courseWidgetSchemaVersion &&
+              decoded['courses'] is List) {
+            final palette =
+                ThemeWidgetPalette.coursePaletteFromAppearance(appearance);
+            final updatedCourses = [
+              for (final item in decoded['courses'] as List)
+                if (item is Map<String, dynamic>)
+                  {
+                    ...item,
+                    'color': ThemeWidgetPalette.resolveCourseHex(
+                      item['name']?.toString() ?? '',
+                      palette: palette,
+                      courseCode: item['course_code']?.toString(),
+                      location: item['location']?.toString(),
+                    ),
+                  }
+                else
+                  item,
+            ];
+            await prefs.setString(
+              _courseDataKey,
+              jsonEncode({...decoded, 'courses': updatedCourses}),
+            );
+          }
+        } catch (_) {}
+      }
+    }
+    await syncAll();
+  }
+
   static Future<void> _refreshNative() async {
     try {
       final prefs = await AppPreferencesStore.getInstance();
       await _channel.invokeMethod<void>('updateWidget', {
         'course_data': prefs.getString(_courseDataKey),
         'exam_data': prefs.getString(_examDataKey),
+        'app_palette': prefs.getString(HomeWidgetPreferenceKeys.appPalette),
         for (final kind in HomeWidgetKind.values) ...{
           '${kind.storageName}_theme':
               prefs.getString(HomeWidgetPreferenceKeys.theme(kind)),

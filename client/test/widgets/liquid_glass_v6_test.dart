@@ -83,6 +83,11 @@ void main() {
         0,
         1,
         0,
+        // 固定方向和着色输入，DPR 对比不能读取未初始化的 uniform。
+        0,
+        .93,
+        .94,
+        .96,
       ];
       for (var i = 0; i < values.length; i++) {
         shader.setFloat(i, values[i]);

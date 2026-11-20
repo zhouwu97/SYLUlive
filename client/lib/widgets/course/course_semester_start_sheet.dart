@@ -1,3 +1,4 @@
+import '../../theme/app_theme_tokens.dart';
 import '../app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -86,7 +87,6 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
   }
 
   Widget _buildInlineYearMonthPicker() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = Theme.of(context).colorScheme.primary;
     final currentMonth = _monthForPage(_currentPage).month;
 
@@ -105,7 +105,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 decoration: BoxDecoration(
-                  color: primaryColor.withOpacity(0.1),
+                  color: primaryColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -145,14 +145,12 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
                   decoration: BoxDecoration(
                     color: isSelected
                         ? primaryColor
-                        : (isDark ? Colors.white.withOpacity(0.06) : Colors.grey[100]),
+                        : (AppThemeTokens.of(context).surfaceMuted),
                     borderRadius: BorderRadius.circular(12),
                     border: isSelected
                         ? null
                         : Border.all(
-                            color: isDark
-                                ? Colors.white.withOpacity(0.1)
-                                : Colors.grey.withOpacity(0.15),
+                            color: AppThemeTokens.of(context).outline,
                           ),
                   ),
                   alignment: Alignment.center,
@@ -160,10 +158,11 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
                     '$month月',
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.w500,
                       color: isSelected
-                          ? Colors.white
-                          : (isDark ? Colors.white70 : Colors.black87),
+                          ? AppThemeTokens.of(context).onPrimary
+                          : (AppThemeTokens.of(context).textPrimary),
                     ),
                   ),
                 ),
@@ -214,7 +213,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
                 child: Icon(
                   Icons.arrow_drop_down,
                   size: 20,
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
               ),
             ],
@@ -246,7 +245,9 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
             child: Text(
               day,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.grey, fontSize: 13),
+              style: TextStyle(
+                  color: AppThemeTokens.of(context).textSecondary,
+                  fontSize: 13),
             ),
           );
         }).toList(),
@@ -280,7 +281,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
               margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 12),
               decoration: isSelected
                   ? BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: Theme.of(context).colorScheme.primary,
@@ -306,11 +307,10 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
                           color: isCurrentMonth
                               ? (isSelected
                                   ? Theme.of(context).colorScheme.primary
-                                  : (Theme.of(context).brightness == Brightness.dark
-                                      ? Colors.white
-                                      : Colors.black87))
-                              : Colors.grey.withOpacity(0.5),
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  : (AppThemeTokens.of(context).textPrimary))
+                              : AppThemeTokens.of(context).textDisabled,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.normal,
                           fontSize: 15,
                         ),
                       ),
@@ -328,8 +328,8 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
   }
 
   Widget _buildBottomArea() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
 
     return Container(
       padding: EdgeInsets.only(
@@ -339,23 +339,28 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
         bottom: MediaQuery.of(context).padding.bottom + 16,
       ),
       decoration: BoxDecoration(
-        color: glass
+        color: customBackground
             ? Colors.transparent
-            : (isDark ? const Color(0xFF2A2A2A) : Colors.white),
-        boxShadow: glass ? null : [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, -4),
-          )
-        ],
+            : (AppThemeTokens.of(context).card),
+        boxShadow: customBackground
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 10,
+                  offset: const Offset(0, -4),
+                )
+              ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_selectedMonday != null) ...[
-            const Text('已选择', style: TextStyle(color: Colors.grey, fontSize: 13)),
+            Text('已选择',
+                style: TextStyle(
+                    color: AppThemeTokens.of(context).textSecondary,
+                    fontSize: 13)),
             const SizedBox(height: 4),
             Text(
               '第1周 · ${_formatDate(_selectedMonday!)}—${_formatDate(_selectedMonday!.add(const Duration(days: 6)))}',
@@ -364,12 +369,17 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
             const SizedBox(height: 2),
             Text(
               '周一 ${_formatDate(_selectedMonday!)}作为开学日期',
-              style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 13),
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary, fontSize: 13),
             ),
           ] else ...[
-            const Text('尚未选择', style: TextStyle(color: Colors.grey, fontSize: 13)),
+            Text('尚未选择',
+                style: TextStyle(
+                    color: AppThemeTokens.of(context).textSecondary,
+                    fontSize: 13)),
             const SizedBox(height: 4),
-            const Text('--', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('--',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 2),
             const Text('请在上方日历中选择',
                 style: TextStyle(color: Colors.transparent, fontSize: 13)),
@@ -395,7 +405,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     elevation: 0,
                     backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.white,
+                    foregroundColor: AppThemeTokens.of(context).onPrimary,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
@@ -414,12 +424,10 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return AppCardSurface(
       height: MediaQuery.of(context).size.height * 0.72,
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[50],
+        color: AppThemeTokens.of(context).surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: Column(
@@ -432,7 +440,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
               width: 40,
               height: 5,
               decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(0.3),
+                color: AppThemeTokens.of(context).textTertiary,
                 borderRadius: BorderRadius.circular(2.5),
               ),
             ),
@@ -450,14 +458,16 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
                 const SizedBox(height: 4),
                 Text(
                   widget.term.title,
-                  style: const TextStyle(color: Colors.grey, fontSize: 14),
+                  style: TextStyle(
+                      color: AppThemeTokens.of(context).textSecondary,
+                      fontSize: 14),
                 ),
                 const SizedBox(height: 12),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(

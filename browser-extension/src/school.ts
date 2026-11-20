@@ -1,4 +1,5 @@
 import CryptoJS from "crypto-js";
+import {storeBuild} from './build-flavor';
 import {
   BridgeFailure,
   type AcademicProvider,
@@ -22,7 +23,7 @@ export const origins: Record<AcademicProvider, string> = {
   undergraduate: "https://jxw.sylu.edu.cn",
   graduate: "https://yjsgl.sylu.edu.cn",
   erke: "https://webvpn.sylu.edu.cn",
-  physical: "http://47.92.231.221",
+  physical: storeBuild ? '' : "http://47.92.231.221",
 };
 export const entrances: Record<AcademicProvider, string> = {
   undergraduate: origins.undergraduate + "/xtgl/login_slogin.html",
@@ -34,11 +35,18 @@ const physicalProviderOptInKey = "physicalProviderEnabled";
 
 // 体测服务仍是 HTTP 明文协议，默认不启用；开关只保存在扩展本机，不上传业务服务器。
 export async function isPhysicalProviderEnabled() {
+  if (storeBuild) return false;
   const value = await chrome.storage.local.get(physicalProviderOptInKey);
   return value[physicalProviderOptInKey] === true;
 }
 
 export async function setPhysicalProviderEnabled(enabled: boolean) {
+  if (storeBuild && enabled) throw new BridgeFailure('unsupported_query', '商店版不提供明文体测连接');
+  if (storeBuild) {
+    await chrome.storage.local.remove(physicalProviderOptInKey);
+    await chrome.storage.session.remove('physicalLogin');
+    return;
+  }
   if (enabled) {
     await chrome.storage.local.set({ [physicalProviderOptInKey]: true });
     return;
@@ -74,6 +82,8 @@ export async function schoolRequest(
   json = false,
   headers: Record<string, string> = {},
 ): Promise<string> {
+  if (storeBuild && provider === 'physical')
+    throw new BridgeFailure('unsupported_query', '商店版不提供明文体测连接');
   if (
     !path.startsWith("/") ||
     path.startsWith("//") ||
@@ -81,10 +91,11 @@ export async function schoolRequest(
   )
     throw new Error("学校请求目标无效");
   let prefix = "";
-  const tabs = await chrome.tabs.query({ url: origins[provider] + "/*" });
-  const tab = tabs.find((t) => t.active) || tabs[0];
-  if (provider === "graduate" && tab?.url)
-    prefix = new URL(tab.url).pathname.match(/^\/\(S\([^)]+\)\)/i)?.[0] || "";
+  if (provider === "graduate") {
+    const tabs = await chrome.tabs.query({ url: origins[provider] + "/*" });
+    const tab = tabs.find((t) => t.active) || tabs[0];
+    if (tab?.url) prefix = new URL(tab.url).pathname.match(/^\/\(S\([^)]+\)\)/i)?.[0] || "";
+  }
   const url = origins[provider] + prefix + path;
   const init: RequestInit = {
     method: body ? "POST" : "GET",

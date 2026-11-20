@@ -203,6 +203,8 @@ func revokeExamPaperReward(tx *gorm.DB, paper *models.ExamPaper, now time.Time) 
 	return true, nil
 }
 
+const examPaperLocalDeclarationMessage = "已在手机上连接教务，但服务器尚未核验学号。请将 App 更新到最新版本后打开一次，会自动完成核验，无需解绑重绑"
+
 func writeExamPaperError(c *gin.Context, status int, code, message string) {
 	c.JSON(status, gin.H{"error": message, "code": code})
 }
@@ -242,7 +244,13 @@ func (h *ExamPaperHandler) currentExamPaperUser(c *gin.Context) (models.User, bo
 		}
 	}
 	if !verified {
-		writeExamPaperError(c, http.StatusForbidden, "edu_verification_required", "完成教务认证后才能使用试卷库")
+		// 旧版 App 只上报本机声明，服务器无法据此核验学号；提示升级后自动补交，
+		// 避免学生误以为需要反复解绑重绑。错误码保持不变，客户端判断不受影响。
+		message := "完成教务认证后才能使用试卷库"
+		if declared, err := models.HasLocalAcademicDeclaration(h.db, userID); err == nil && declared {
+			message = examPaperLocalDeclarationMessage
+		}
+		writeExamPaperError(c, http.StatusForbidden, "edu_verification_required", message)
 		return models.User{}, false
 	}
 	return user, true

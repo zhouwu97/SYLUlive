@@ -38,6 +38,11 @@ class CanteenReviewSection extends StatelessWidget {
   final VoidCallback? onOpenHistory;
   final void Function(int dishId, String dishName)? onOpenDish;
 
+  /// 还有未加载的评价时显示“加载更多”；[onLoadMore] 为空表示不分页（旧服务端）。
+  final bool hasMore;
+  final bool isLoadingMore;
+  final VoidCallback? onLoadMore;
+
   const CanteenReviewSection({
     super.key,
     required this.reviews,
@@ -58,6 +63,9 @@ class CanteenReviewSection extends StatelessWidget {
     this.onDelete,
     this.onOpenHistory,
     this.onOpenDish,
+    this.hasMore = false,
+    this.isLoadingMore = false,
+    this.onLoadMore,
   });
 
   @override
@@ -167,10 +175,8 @@ class CanteenReviewSection extends StatelessWidget {
                     children: [
                       for (var i = 0; i < reviews.length; i++) ...[
                         if (i > 0)
-                          AppCardDivider(
+                          const AppCardDivider(
                             height: 1,
-                            thickness: 0.5,
-                            color: CanteenTheme.borderColor(isDark),
                           ),
                         _ReviewItem(
                           review: reviews[i],
@@ -195,6 +201,30 @@ class CanteenReviewSection extends StatelessWidget {
                           onEditLatestReview: onEditLatestReview,
                         ),
                       ],
+                      if (onLoadMore != null && (hasMore || isLoadingMore))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: isLoadingMore
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  ),
+                                )
+                              : TextButton.icon(
+                                  onPressed: onLoadMore,
+                                  style: TextButton.styleFrom(
+                                    foregroundColor:
+                                        CanteenTheme.accentStrongColor(isDark),
+                                  ),
+                                  icon: const Icon(Icons.expand_more_rounded,
+                                      size: 18),
+                                  label: const Text('加载更多评价'),
+                                ),
+                        ),
                     ],
                   ),
           ),
@@ -1068,11 +1098,9 @@ class _ReviewItemContent extends StatelessWidget {
         .toList(growable: false);
   }
 
-  String _reviewAuthorText(String nickname, Map<String, dynamic> review) {
-    final date = _reviewDate(review);
-    if (date.isEmpty) return nickname;
-    return '$nickname · $date';
-  }
+  // 时间已在评分行右侧显示，作者行不再重复。
+  String _reviewAuthorText(String nickname, Map<String, dynamic> review) =>
+      nickname;
 
   String _reviewDate(Map<String, dynamic> review) => formatCanteenReviewDate(
         DateTime.tryParse(review['created_at']?.toString() ?? ''),

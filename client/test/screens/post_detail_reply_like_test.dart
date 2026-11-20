@@ -208,13 +208,26 @@ class LikeTestThemeProvider extends Fake
     with ChangeNotifier
     implements ThemeProvider {
   @override
+  bool get usesThemeWallpapers => false;
+  @override
+  bool get hasThemeColors => false;
+  @override
+  bool get canCustomizeCardMaterial => false;
+
+  @override
   bool get isDarkMode => false;
 
   @override
   bool get shouldShowCustomBackground => false;
 
   @override
+  double get effectiveComponentOpacity => 1;
+
+  @override
   bool get frostedGlass => false;
+
+  @override
+  ThemeTrialSession? get trial => null;
 }
 
 Map<String, dynamic> replyJson(int id, {int likeCount = 12, bool isLiked = false}) {

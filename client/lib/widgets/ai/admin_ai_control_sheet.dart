@@ -1,3 +1,4 @@
+import '../../theme/app_theme_tokens.dart';
 import '../app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -8,12 +9,10 @@ import '../../features/ai_runtime/ai_model_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../screens/ai/ai_model_settings_screen.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 
 Color _secondaryColor(BuildContext context) =>
-    Theme.of(context).brightness == Brightness.dark
-        ? AppColors.textSecondaryDark
-        : AppColors.textSecondaryLight;
+    AppThemeTokens.of(context).textSecondary;
 
 /// 管理员专属 AI 控制面板。官方运行数据只显示服务端返回值，不填充演示数字。
 class AdminAiControlSheet extends StatefulWidget {
@@ -82,13 +81,12 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return AppCardSurface(
       constraints: const BoxConstraints(maxHeight: 760),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
-        borderRadius:
-            const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+        color: AppThemeTokens.of(context).card,
+        borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppShape.of(context).sheet)),
       ),
       child: Column(
         children: [
@@ -97,10 +95,9 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                  color: isDark
-                      ? AppColors.borderNormalDark
-                      : AppColors.borderNormalLight,
-                  borderRadius: BorderRadius.circular(AppRadius.pill))),
+                  color: AppThemeTokens.of(context).cardBorder,
+                  borderRadius:
+                      BorderRadius.circular(AppShape.of(context).pill))),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 14, 12, 12),
             child: Row(
@@ -146,10 +143,8 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
         AppCardSurface(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? AppColors.brandSurfaceDark
-                  : AppColors.brandSurfaceLight,
-              borderRadius: BorderRadius.circular(AppRadius.md)),
+              color: AppThemeTokens.of(context).primaryContainer,
+              borderRadius: BorderRadius.circular(AppShape.of(context).md)),
           child: Row(
             children: [
               Expanded(
@@ -168,10 +163,9 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                   decoration: BoxDecoration(
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? AppColors.surfaceMutedDark
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(AppRadius.pill)),
+                      color: AppThemeTokens.of(context).surfaceMuted,
+                      borderRadius:
+                          BorderRadius.circular(AppShape.of(context).pill)),
                   child: Text(
                       _loading
                           ? '检查中'
@@ -398,10 +392,8 @@ class _Metric extends StatelessWidget {
   Widget build(BuildContext context) => AppCardSurface(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? AppColors.surfaceMutedDark
-              : const Color(0xFFF8FBF8),
-          borderRadius: BorderRadius.circular(AppRadius.sm)),
+          color: AppThemeTokens.of(context).surfaceMuted,
+          borderRadius: BorderRadius.circular(AppShape.of(context).sm)),
       child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
@@ -426,14 +418,9 @@ class _Section extends StatelessWidget {
   Widget build(BuildContext context) => AppCardSurface(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? AppColors.surfaceMutedDark
-              : Colors.white,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? AppColors.borderNormalDark
-                  : AppColors.borderNormalLight)),
+          color: AppThemeTokens.of(context).surfaceMuted,
+          borderRadius: BorderRadius.circular(AppShape.of(context).md),
+          border: Border.all(color: AppThemeTokens.of(context).cardBorder)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(title,
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),

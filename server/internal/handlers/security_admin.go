@@ -30,7 +30,7 @@ func actionableScope(query *gorm.DB) *gorm.DB {
 		// 没有登记任何审计类型时，全部事件都算待处置：宁可多显示，不能漏。
 		return query
 	}
-	return query.Where("event_type NOT IN ?", auditTypes)
+	return query.Where("lower(trim(event_type)) NOT IN ?", auditTypes)
 }
 
 // auditScope 是 actionableScope 的反面，供「只看审计流水」的调查场景使用。
@@ -39,10 +39,10 @@ func auditScope(query *gorm.DB) *gorm.DB {
 	if len(auditTypes) == 0 {
 		return query.Where("1 = 0")
 	}
-	return query.Where("event_type IN ?", auditTypes)
+	return query.Where("lower(trim(event_type)) IN ?", auditTypes)
 }
 
-// SecurityAdminHandler 提供独立于 AdminLog 的攻击事件查询和临时处置接口。
+// SecurityAdminHandler 提供独立于 AdminLog 的安全观察、异常查询和临时处置接口。
 type SecurityAdminHandler struct {
 	db                   *gorm.DB
 	security             *services.SecurityEventService
@@ -97,6 +97,8 @@ type securityEventResponse struct {
 	ActorUserID               *uint      `json:"actor_user_id,omitempty"`
 	TargetType                string     `json:"target_type"`
 	TargetMasked              string     `json:"target_masked"`
+	TargetAccount             string     `json:"target_account,omitempty"`
+	TargetAccountStatus       string     `json:"target_account_status,omitempty"`
 	RequestIDSample           string     `json:"request_id_sample"`
 	AttemptCount              int        `json:"attempt_count"`
 	BlockedCount              int        `json:"blocked_count"`
@@ -203,22 +205,19 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND status = ? AND severity IN ?", since, models.SecurityEventStatusActive, []string{models.SecuritySeverityHigh, models.SecuritySeverityCritical}).Count(&activeHigh).Error; err != nil {
-		h.securityDatabaseError(c)
-		return
-	}
 	// 首页「高危待处理」的正确口径：待处置 + 未处理 + 高危/严重。
 	//
 	// active_high_count 是早期字段，按 status+severity 统计，会把已由封禁层处置掉的
 	// security_blocked_request 也算进去，于是卡片上的数字远大于列表里真正要处理的事。
-	// 新字段把 actionable 一并纳入，客户端首页应当使用它；旧字段保留以兼容未升级客户端。
+	// 兼容字段也使用待核查口径，避免旧客户端继续把普通记录计入高危。
 	highSeverities := []string{models.SecuritySeverityHigh, models.SecuritySeverityCritical}
 	if err := actionableScope(scoped.Model(&models.SecurityEvent{}).
-		Where("last_seen_at >= ? AND status = ? AND severity IN ?", since, models.SecurityEventStatusActive, highSeverities)).
+		Where("last_seen_at >= ? AND status = ? AND "+models.SecurityEventSeveritySQL("event_type", "severity")+" IN ?", since, models.SecurityEventStatusActive, highSeverities)).
 		Count(&actionableHigh).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
+	activeHigh = actionableHigh
 	if err := actionableScope(scoped.Model(&models.SecurityEvent{}).
 		Where("last_seen_at >= ? AND status = ?", since, models.SecurityEventStatusActive)).
 		Count(&actionablePending).Error; err != nil {
@@ -247,7 +246,7 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND severity = ?", since, models.SecuritySeverityCritical).Count(&critical).Error; err != nil {
+	if err := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND "+models.SecurityEventSeveritySQL("event_type", "severity")+" = ?", since, models.SecuritySeverityCritical).Count(&critical).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
@@ -321,7 +320,7 @@ func (h *SecurityAdminHandler) ListEvents(c *gin.Context) {
 		query = query.Where("event_type = ?", eventType)
 	}
 	if severity := strings.TrimSpace(c.Query("severity")); severity != "" && severity != "all" {
-		query = query.Where("severity = ?", severity)
+		query = query.Where(models.SecurityEventSeveritySQL("event_type", "severity")+" = ?", severity)
 	}
 	if status := strings.TrimSpace(c.Query("status")); status != "" && status != "all" {
 		query = query.Where("status = ?", status)
@@ -344,10 +343,19 @@ func (h *SecurityAdminHandler) ListEvents(c *gin.Context) {
 		h.securityDatabaseError(c)
 		return
 	}
+	targetAccounts, err := h.securityTargetAccounts(ctx, events)
+	if err != nil {
+		h.securityDatabaseError(c)
+		return
+	}
 	isSuper := c.GetString("role") == string(models.RoleSuperAdmin)
 	items := make([]securityEventResponse, 0, len(events))
 	for _, event := range events {
-		items = append(items, h.securityEventDTO(event, isSuper))
+		item := h.securityEventDTO(event, isSuper)
+		if account := targetAccounts[event.ID]; account != "" {
+			item.TargetAccount, item.TargetAccountStatus = account, "matched"
+		}
+		items = append(items, item)
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "total": total, "page": page, "limit": limit})
 }
@@ -367,7 +375,16 @@ func (h *SecurityAdminHandler) GetEvent(c *gin.Context) {
 		}
 		return
 	}
-	c.JSON(http.StatusOK, h.securityEventDTO(event, c.GetString("role") == string(models.RoleSuperAdmin)))
+	targetAccounts, err := h.securityTargetAccounts(c.Request.Context(), []models.SecurityEvent{event})
+	if err != nil {
+		h.securityDatabaseError(c)
+		return
+	}
+	item := h.securityEventDTO(event, c.GetString("role") == string(models.RoleSuperAdmin))
+	if account := targetAccounts[event.ID]; account != "" {
+		item.TargetAccount, item.TargetAccountStatus = account, "matched"
+	}
+	c.JSON(http.StatusOK, item)
 }
 
 type securityResolutionInput struct {
@@ -706,7 +723,7 @@ func (h *SecurityAdminHandler) securityEventDTO(event models.SecurityEvent, isSu
 		attributionValid = false
 	}
 	result := securityEventResponse{
-		ID: event.ID, EventType: event.EventType, Severity: event.Severity, Status: event.Status,
+		ID: event.ID, EventType: strings.ToLower(strings.TrimSpace(event.EventType)), Severity: models.SecurityEventEffectiveSeverity(event.EventType, event.Severity), Status: event.Status,
 		Route: event.Route, Method: event.Method, SourceFingerprint: services.MaskSecurityFingerprint(event.SourceIPHash),
 		InstallationSeen: event.InstallationHash != "", ActorUserID: event.ActorUserID,
 		TargetType: event.TargetType, TargetMasked: event.TargetMasked, RequestIDSample: event.RequestIDSample,
@@ -716,6 +733,7 @@ func (h *SecurityAdminHandler) securityEventDTO(event models.SecurityEvent, isSu
 		MetadataJSON: event.MetadataJSON, FirstSeenAt: event.FirstSeenAt, LastSeenAt: event.LastSeenAt,
 		ResolvedAt: event.ResolvedAt, ResolvedBy: event.ResolvedBy, ResolutionNote: event.ResolutionNote,
 	}
+	result.TargetAccount, result.TargetAccountStatus = h.security.TargetAccount(event)
 	// 不可逆摘要不能还原历史 IP；不可信的历史来源也不能显示成真实归因。
 	event.SourceAttributionValid = attributionValid
 	result.SourceIP, result.SourceIPStatus = h.security.SourceIP(event)

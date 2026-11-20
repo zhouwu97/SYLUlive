@@ -34,11 +34,12 @@ class _AcademicRequirementCardState extends State<AcademicRequirementCard> {
     final cardBackground = isDark
         ? AppColors.surfaceSecondaryDark
         : AppColors.surfaceSecondaryLight;
-    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     final headerTint =
         isDark ? AppColors.brandSurfaceDark : AppColors.brandSurfaceLight;
     final headerBackground =
-        glass ? headerTint.withValues(alpha: 0.12) : headerTint;
+        customBackground ? headerTint.withValues(alpha: 0.12) : headerTint;
     final borderColor =
         isDark ? AppColors.borderSubtleDark : AppColors.borderNormalLight;
 
@@ -184,13 +185,10 @@ class _AcademicRequirementCardState extends State<AcademicRequirementCard> {
       children: [
         for (var index = 0; index < courses.length; index++) ...[
           if (index > 0)
-            AppCardDivider(
+            const AppCardDivider(
               height: 1,
               indent: 14,
               endIndent: 14,
-              color: isDark
-                  ? AppColors.borderSubtleDark
-                  : AppColors.borderSubtleLight,
             ),
           _RequirementCourseRow(course: courses[index]),
         ],

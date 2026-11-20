@@ -1,6 +1,6 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
-import '../campus/campus_theme.dart';
 
 /// 导入预览同时承接本机教务和历史代理两种标准化结果，统一在这里读取坐标字段。
 ///
@@ -106,10 +106,10 @@ class CoursePreviewTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? CampusTheme.darkCard : Colors.white,
+        color: AppThemeTokens.of(context).card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isDark ? Colors.white12 : CampusTheme.softBorder,
+          color: AppThemeTokens.of(context).cardBorder,
         ),
       ),
       child: Row(
@@ -118,16 +118,16 @@ class CoursePreviewTile extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: CampusTheme.primary.withValues(alpha: 0.1),
+              color: AppThemeTokens.of(context).primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
               providerPeriodLabel ??
                   (hasValidSection ? '第$startSection-$endSection节' : '节次未知'),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: CampusTheme.primary,
+                color: AppThemeTokens.of(context).primary,
               ),
             ),
           ),
@@ -141,7 +141,7 @@ class CoursePreviewTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : CampusTheme.text,
+                    color: AppThemeTokens.of(context).textPrimary,
                     height: 1.3,
                   ),
                 ),
@@ -150,17 +150,18 @@ class CoursePreviewTile extends StatelessWidget {
                     teacher != null && teacher.isNotEmpty)
                   Row(
                     children: [
-                      const Icon(Icons.location_on_rounded,
-                          size: 14, color: CampusTheme.subText),
+                      Icon(Icons.location_on_rounded,
+                          size: 14,
+                          color: AppThemeTokens.of(context).textSecondary),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           [location, teacher]
                               .where((e) => e != null && e.isNotEmpty)
                               .join(' · '),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: CampusTheme.subText,
+                            color: AppThemeTokens.of(context).textSecondary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -172,15 +173,16 @@ class CoursePreviewTile extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.date_range_rounded,
-                        size: 14, color: CampusTheme.subText),
+                    Icon(Icons.date_range_rounded,
+                        size: 14,
+                        color: AppThemeTokens.of(context).textSecondary),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         weekStr,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: CampusTheme.subText,
+                          color: AppThemeTokens.of(context).textSecondary,
                         ),
                       ),
                     ),

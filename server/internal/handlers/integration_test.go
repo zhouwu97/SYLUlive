@@ -236,7 +236,7 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, standardToken.Valid())
 	require.True(t, strings.HasPrefix(standardToken.AccessToken, "sa_"))
-	// 登录时间不随 JWT/刷新延长；旧登录不能批准新的连接。
+	// 仍有效的登录可以直接批准新连接，无需额外验证密码。
 	require.NoError(t, db.Model(&models.RefreshToken{}).Where("user_id = ?", owner).Update("authenticated_at", time.Now().Add(-31*time.Minute)).Error)
 	newDevice, err := h.auth.RequestDevice(context.Background(), uuid.NewString(), "过期会话核对", "profile:read_minimal")
 	require.NoError(t, err)
@@ -244,6 +244,9 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	require.Equal(t, 200, w.Code, w.Body.String())
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &consent))
 	w = postJSON("/api/connected-apps/device-requests/"+consent.ID+"/decision", jwt, services.IntegrationConsentDecision{Allow: true, Scopes: consent.RequestedScopes, Nonce: consent.Nonce})
-	require.Equal(t, 403, w.Code)
-	require.Contains(t, w.Body.String(), "recent_authentication_required")
+	require.Equal(t, 409, w.Code)
+	require.Contains(t, w.Body.String(), "binding_conflict")
+	require.NotNil(t, consent.ExistingBinding)
+	w = postJSON("/api/connected-apps/device-requests/"+consent.ID+"/decision", jwt, services.IntegrationConsentDecision{Allow: true, Scopes: consent.RequestedScopes, Nonce: consent.Nonce, ReplaceBindingID: consent.ExistingBinding.ID, ExpectedEpoch: consent.ExistingBinding.Epoch})
+	require.Equal(t, 200, w.Code, w.Body.String())
 }

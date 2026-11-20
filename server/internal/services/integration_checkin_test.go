@@ -82,10 +82,15 @@ func TestIntegrationCheckInRequiresCurrentScopeAndIdentity(t *testing.T) {
 				require.NoError(t, auth.Revoke(context.Background(), 1, binding.ID))
 			}
 			_, err := auth.CheckInForBinding(context.Background(), binding, true)
-			require.Error(t, err)
 			var rows int64
 			require.NoError(t, db.Model(&models.CheckIn{}).Count(&rows).Error)
-			require.Zero(t, rows)
+			if change == "academic_removed" {
+				require.NoError(t, err, "本站签到与学校连接无关")
+				require.EqualValues(t, 1, rows)
+			} else {
+				require.Error(t, err)
+				require.Zero(t, rows)
+			}
 		})
 	}
 }

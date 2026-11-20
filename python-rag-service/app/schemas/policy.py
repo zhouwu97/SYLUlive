@@ -32,7 +32,7 @@ class PolicyRule(StrictSchema):
 
 class PolicyCitation(StrictSchema):
     reference_id: str = Field(pattern=r"^R[1-9][0-9]?$", max_length=3)
-    quote: str = Field(min_length=4, max_length=240)
+    quote: str = Field(min_length=4, max_length=240, description='该来源下的 quote_id（如 Q001），或同一来源的连续逐字原文；不能用作 reference_id')
 
 
 class PolicyAnswer(StrictSchema):

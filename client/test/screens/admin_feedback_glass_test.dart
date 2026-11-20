@@ -102,7 +102,7 @@ Future<({ThemeProvider theme, GlobalKey capture})> _pump(
   final theme = ThemeProvider(loadOnStart: false);
   await theme.setBackgroundImage('morenbeijing.jpeg', fillScreen: true);
   await theme.setFrostedGlass(true);
-  await theme.setComponentOpacity(.7);
+  await theme.setComponentOpacityLevel(.7);
   addTearDown(theme.dispose);
   final capture = GlobalKey();
   await tester.pumpWidget(MultiProvider(
@@ -176,7 +176,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(list.controller!.offset, greaterThan(0));
       expect(tester.takeException(), isNull);
-      await env.theme.setComponentOpacity(.35);
+      await env.theme.setComponentOpacityLevel(.35);
       await tester.pumpAndSettle();
       final filterColor = tester
           .widgetList<DecoratedBox>(
@@ -185,7 +185,12 @@ void main() {
           .whereType<BoxDecoration>()
           .map((d) => d.color)
           .whereType<Color>();
-      expect(filterColor.any((c) => (c.a - .35).abs() < .01), isTrue);
+      expect(filterColor.any((c) => (c.a - .8375).abs() < .01), isTrue);
+      await env.theme.setFrostedGlass(false);
+      await tester.pumpAndSettle();
+      final indicator = tester.widget<TabBar>(tabs).indicator! as BoxDecoration;
+      expect(indicator.color!.a, closeTo(.8375, .01),
+          reason: '关闭毛玻璃后选中块继续跟随组件不透明度');
       await env.theme.setCleanBackgroundMode();
       await tester.pumpAndSettle();
       await env.theme.setFrostedGlass(false);

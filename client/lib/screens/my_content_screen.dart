@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../models/course_evaluation.dart';
 import '../models/post.dart';
@@ -500,17 +499,7 @@ class _MyContentScreenState extends State<MyContentScreen>
             child: Column(
               children: [
                 // Tab栏
-                AppTabBarSurface(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg,
-                    vertical: AppSpacing.sm,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : Colors.white.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(AppRadius.lg),
-                  ),
+                AppTabBarSurface.rounded(
                   child: TabBar(
                     controller: _tabController,
                     isScrollable: false,

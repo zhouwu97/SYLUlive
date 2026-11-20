@@ -102,7 +102,7 @@ void main() {
       addTearDown(theme.dispose);
       await theme.setBackgroundImage('morenbeijing.jpeg');
       await theme.setFrostedGlass(true);
-      await theme.setComponentOpacity(.7);
+      await theme.setComponentOpacityLevel(.7);
       const child = SizedBox(key: Key('content'), width: 160, height: 100);
       final card = switch (kind) {
         'material' => const AppCardMaterial(color: Colors.white, child: child),
@@ -143,7 +143,7 @@ void main() {
         expect(rect, geometry);
         expect(currentShape, shape);
         expect(currentColor, color);
-        expect(currentColor.a, closeTo(.7, .01));
+        expect(currentColor.a, closeTo(.925, .01));
         if (strength == 0) {
           expect(activeBackdropFilters(), findsNothing);
         } else {

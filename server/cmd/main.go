@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -296,6 +295,7 @@ func main() {
 		&models.CommunityEmojiPack{},
 		&models.CommunityEmojiPackAsset{},
 		&models.EmojiCreator{},
+		&models.ThemePack{},
 
 		&models.ExamPaper{},
 
@@ -729,8 +729,7 @@ func main() {
 	r.Use(middleware.PrivateChatRetirementGate(cfg.PrivateChatDisabled))
 
 	// 法律页面无需登录和客户端版本头，供浏览器、下载页和分享页访问。
-	r.StaticFile("/terms", filepath.Join("static", "legal", "terms.html"))
-	r.StaticFile("/privacy", filepath.Join("static", "legal", "privacy.html"))
+	registerLegalDocumentRoutes(r)
 	// 公共表情使用内容寻址 ID，可长期缓存且不依赖登录态或版本请求头。
 	r.GET("/stickers/:id", handlers.ServeSticker)
 	r.HEAD("/stickers/:id", handlers.ServeSticker)
@@ -748,7 +747,10 @@ func main() {
 		1<<20,
 		middleware.BodyLimitRule{Prefix: "/api/upload", Limit: cfg.MaxFileSize + 2<<20},
 		middleware.BodyLimitRule{Prefix: "/api/upload_multiple", Limit: 9*cfg.MaxFileSize + 5<<20},
+		// 机器人图片走独立上传接口，与 handler 内的 MaxBytesReader 保持同一上限。
+		middleware.BodyLimitRule{Prefix: "/api/integrations/v1/bot/media", Limit: (4 << 20) + (64 << 10)},
 		middleware.BodyLimitRule{Prefix: "/api/emoji/submissions", Limit: services.EmojiPackMaxUploadBytes},
+		middleware.BodyLimitRule{Prefix: "/api/themes/submissions", Limit: services.ThemePackMaxRequestBodyBytes},
 		middleware.BodyLimitRule{Prefix: "/api/exam-papers", Limit: services.ExamPaperMaxRequestBodySize},
 		middleware.BodyLimitRule{Prefix: "/api/admin/ai/knowledge/import", Limit: 9 << 20},
 		middleware.BodyLimitRule{Prefix: "/api/super/app-releases", Limit: cfg.AppReleaseMaxSize + 2<<20},
@@ -1482,8 +1484,10 @@ func main() {
 			"build_time":  BuildTime,
 			"api_version": APIVersion,
 			"capabilities": gin.H{
-				"teacher_governance_v1": true,
-				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
+				"teacher_governance_v1":  true,
+				"device_bridge_v1":       !cfg.SchoolDeviceCapabilityCut,
+				"managed_bot_v1":         cfg.IntegrationsEnabled,
+				"managed_bot_runtime_v1": cfg.IntegrationsEnabled,
 			},
 			"security": gin.H(securityHealth),
 			"ai": gin.H{
@@ -1508,8 +1512,10 @@ func main() {
 			"build_time":  BuildTime,
 			"api_version": APIVersion,
 			"capabilities": gin.H{
-				"teacher_governance_v1": true,
-				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
+				"teacher_governance_v1":  true,
+				"device_bridge_v1":       !cfg.SchoolDeviceCapabilityCut,
+				"managed_bot_v1":         cfg.IntegrationsEnabled,
+				"managed_bot_runtime_v1": cfg.IntegrationsEnabled,
 			},
 		})
 	}
@@ -1611,6 +1617,9 @@ func main() {
 		user.GET("/profile", userHandler.GetProfile)
 		user.GET("/canteen-reviews", canteenHandler.GetMyCanteenReviews)
 		user.GET("/canteen-contributions", canteenHandler.GetMyCanteenContributions)
+		user.GET("/canteen-favorites", canteenHandler.ListFavorites)
+		user.PUT("/canteen-favorites/:id", canteenHandler.AddFavorite)
+		user.DELETE("/canteen-favorites/:id", canteenHandler.RemoveFavorite)
 
 		user.PUT("/profile", userHandler.UpdateProfile)
 
@@ -2057,6 +2066,9 @@ func main() {
 	emojiPackService := registerEmojiPackRoutes(r, db, cfg.UploadDir, cfg.JWTSecret)
 	go emojiPackService.Maintain(appCtx)
 
+	themePackService := registerThemePackRoutes(r, db, cfg.UploadDir, cfg.JWTSecret)
+	go themePackService.Maintain(appCtx)
+
 	emojiFavorites := r.Group("/api/emoji/favorites")
 	emojiFavorites.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
@@ -2278,6 +2290,17 @@ func main() {
 	configRoutes.PUT("/:provider", academicConfigs.Mutate)
 	configRoutes.DELETE("/:provider", academicConfigs.Mutate)
 
+	// 扫码同步：网页出码、手机 App 扫码后上传端到端加密的本机教务资料。
+	// 服务端只在内存中转密文，不落库；不依赖学校代理，因此不挂学校退役开关。
+	academicTransfer := handlers.NewAcademicTransferHandler()
+	transferRoutes := r.Group("/api/academic-transfer/sessions", middleware.AuthMiddleware(db, cfg.JWTSecret))
+	transferRoutes.POST("", academicTransfer.Create)
+	transferRoutes.GET("/:id", academicTransfer.Get)
+	academicTransfer.RegisterAppRoutes(transferRoutes)
+	// 已安装旧版 App 曾重复拼接 /api；只兼容这三个手机操作，鉴权及归属检查完全一致。
+	legacyTransferRoutes := r.Group("/api/api/academic-transfer/sessions", middleware.AuthMiddleware(db, cfg.JWTSecret))
+	academicTransfer.RegisterAppRoutes(legacyTransferRoutes)
+
 	// 解绑是纯本机撤销操作，不访问学校系统；学校退役或旧密钥冻结期间仍必须
 	// 可用，否则用户无法撤销服务端可信身份。JWT、归属校验、事务与幂等由
 	// Unbind 自身保证。
@@ -2361,6 +2384,8 @@ func main() {
 		superAdmin.POST("/app-releases/:id/withdraw", appUpdateHandler.AdminWithdraw)
 		superAdmin.DELETE("/app-releases/:id", appUpdateHandler.AdminDeleteDraft)
 		superAdmin.POST("/checkin/users/:id/rebuild", checkinHandler.RebuildUserStats)
+		superAdmin.GET("/checkin/inspect", checkinHandler.InspectStats)
+		superAdmin.POST("/checkin/rebuild-all", checkinHandler.RebuildAllStats)
 		superAdmin.GET("/checkin/compensations", checkinCompensationHandler.ListCampaigns)
 		superAdmin.POST("/checkin/compensations", checkinCompensationHandler.Publish)
 		superAdmin.POST("/checkin/compensations/:id/close", checkinCompensationHandler.Close)
@@ -2610,6 +2635,7 @@ func main() {
 		canteen.GET("/home", canteenHandler.GetHome)
 		canteen.GET("/rankings", canteenHandler.GetRankings)
 		canteen.GET("/search", canteenHandler.Search)
+		canteen.GET("/meta", canteenHandler.GetMeta)
 
 		// 食堂详情属于公开内容；存在有效登录态时附带“我的评价/投票”状态。
 		canteen.GET("/:id", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDetail)
@@ -2619,10 +2645,12 @@ func main() {
 		canteen.GET("/:id/dishes", canteenDishHandler.ListDishes)
 		canteen.GET("/:id/dishes/:dishId", canteenDishHandler.GetDish)
 		canteen.GET("/:id/reviews", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetReviews)
+		canteen.GET("/:id/display-reviews", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDisplayReviews)
 		canteen.GET("/:id/reviews/history/:userId", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetReviewHistory)
 		canteen.GET("/:id/reviewers/:userId/history", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetReviewHistory)
 		canteen.GET("/:id/dish-suggestions", canteenHandler.GetDishSuggestions)
 		canteen.GET("/dishes/:dishId/reviews", canteenHandler.GetDishReviews)
+		canteen.GET("/dishes/hot", canteenHandler.GetHotDishes)
 
 	}
 
@@ -2633,6 +2661,7 @@ func main() {
 	{
 
 		canteenAdmin.GET("/pending", canteenHandler.AdminListPending)
+		canteenAdmin.GET("/admin-list", canteenHandler.AdminListCanteens)
 
 		canteenAdmin.POST("/:id/approve", canteenHandler.ApproveCanteen)
 
@@ -2644,14 +2673,17 @@ func main() {
 		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
 
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
+		canteenAdmin.PATCH("/:id", canteenHandler.AdminUpdateCanteen)
 		canteenAdmin.GET("/:id/display-tags", canteenHandler.GetDisplayTags)
 		canteenAdmin.PUT("/:id/display-tags", canteenHandler.UpdateDisplayTags)
 
 		// 菜品实拍管理与事后治理
 		canteenAdmin.GET("/dish-photos/:photoId", canteenDishPhotoAdminHandler.AdminGetDishPhotoDetail)
 		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)
+		canteenAdmin.POST("/dish-photos/:photoId/cover", canteenDishPhotoAdminHandler.SetDishPhotoCover)
 		canteenAdmin.PATCH("/dishes/:dishId", canteenDishPhotoAdminHandler.AdminUpdateDish)
 		canteenAdmin.POST("/dishes/:dishId/merge", canteenDishPhotoAdminHandler.AdminMergeDish)
+		canteenAdmin.GET("/:id/admin-dishes", canteenDishPhotoAdminHandler.AdminListDishes)
 
 	}
 
@@ -2859,8 +2891,10 @@ func main() {
 			"build_time":  BuildTime,
 			"api_version": APIVersion,
 			"capabilities": gin.H{
-				"teacher_governance_v1": true,
-				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
+				"teacher_governance_v1":  true,
+				"device_bridge_v1":       !cfg.SchoolDeviceCapabilityCut,
+				"managed_bot_v1":         cfg.IntegrationsEnabled,
+				"managed_bot_runtime_v1": cfg.IntegrationsEnabled,
 			},
 			"version":             "",
 			"min_version":         "",
@@ -3008,11 +3042,16 @@ func ensureSecurityHardeningSchema(db *gorm.DB) error {
 			return err
 		}
 	}
+	if db.Migrator().HasTable(&models.Report{}) && !db.Migrator().HasColumn(&models.Report{}, "TargetKey") {
+		if err := db.Migrator().AddColumn(&models.Report{}, "TargetKey"); err != nil {
+			return err
+		}
+	}
 	statements := []string{
 		`CREATE INDEX IF NOT EXISTS idx_files_access_scope ON files (access_scope)`,
 		`DROP INDEX IF EXISTS uq_pending_report_target`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_report_target
- ON reports (reporter_id, target_type, target_id)
+ ON reports (reporter_id, target_type, target_id, target_key)
  WHERE status = 'pending'`,
 	}
 	for _, statement := range statements {
@@ -3090,7 +3129,7 @@ func ensureUserCalendarAgentActionUniqueIndex(db *gorm.DB) error {
 // ensureCanteenNormalizedNameIndex 回填历史数据后建立数据库级唯一约束。
 func ensureCanteenNormalizedNameIndex(db *gorm.DB) error {
 	var canteens []models.Canteen
-	if err := db.Select("id", "name", "normalized_name", "location_area", "location_floor").Find(&canteens).Error; err != nil {
+	if err := db.Select("id", "name", "normalized_name", "location_area", "location_floor", "verified", "rejected_at").Find(&canteens).Error; err != nil {
 		return err
 	}
 	type locationKey struct {
@@ -3101,6 +3140,10 @@ func ensureCanteenNormalizedNameIndex(db *gorm.DB) error {
 	seen := make(map[locationKey]uint, len(canteens))
 	for _, canteen := range canteens {
 		normalized := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(canteen.Name)), " "))
+		// 被驳回的提交保留记录但不占真实店名，规范名固定为占位值，否则同名重新提交会让启动失败。
+		if canteen.IsRejected() {
+			normalized = models.CanteenRejectedNormalizedName(canteen.ID)
+		}
 		key := locationKey{
 			normalized: normalized,
 			area:       canteen.LocationArea,

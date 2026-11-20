@@ -221,7 +221,7 @@ void main() {
         expiresAt: now.add(const Duration(minutes: 5)),
         data: AcademicRecords(
           courses: [
-            CourseGradeRecord(
+            const CourseGradeRecord(
               courseId: 'course-1',
               courseName: '大学物理',
               credit: 3,

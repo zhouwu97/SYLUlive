@@ -7,6 +7,8 @@ import '../widgets/post_card.dart';
 import '../widgets/global_background_wrapper.dart';
 import 'post_detail_screen.dart';
 
+// 遗留曝光列表视图，目前无产品导航入口；当前曝光内容沿帖子与发布流程维护。
+// 保留历史视图不代表当前曝光业务缺失，新增入口前应接入完整加载与恢复契约。
 class MarketExposureScreen extends StatelessWidget {
   const MarketExposureScreen({super.key});
 

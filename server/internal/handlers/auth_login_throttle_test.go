@@ -3,6 +3,8 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -43,9 +45,9 @@ func testLoginThrottleQueryFailurePreservesMemoryLock(t *testing.T, h *AuthHandl
 	for _, kind := range []string{"account", "ip"} {
 		t.Run(kind, func(t *testing.T) {
 			ip := "203.0.113.70"
-			value, failures := user.Email, 3
+			value, failures := user.Email, loginAccountFailureLimit
 			if kind == "ip" {
-				value, failures = ip, 10
+				value, failures = ip, loginSourceFailureLimit
 			}
 			scope := loginThrottleScope(kind, value)
 			clearLoginFailures(scope)
@@ -56,7 +58,7 @@ func testLoginThrottleQueryFailurePreservesMemoryLock(t *testing.T, h *AuthHandl
 			}
 			remaining, locked := currentLoginLock(scope, now)
 			require.True(t, locked, "failed database writes must establish the memory lock")
-			require.Equal(t, time.Minute, remaining)
+			require.Equal(t, 24*time.Hour, remaining)
 			for _, password := range []string{"old-password", "wrong-password"} {
 				userQueries = 0
 				response := remediationRequest(router, "/api/login", map[string]string{"account": user.Email, "password": password}, ip, "throttle-test")
@@ -64,7 +66,7 @@ func testLoginThrottleQueryFailurePreservesMemoryLock(t *testing.T, h *AuthHandl
 				require.NotEmpty(t, response.Header().Get("Retry-After"))
 				require.Zero(t, userQueries, "locked requests must stop before user lookup and bcrypt")
 			}
-			_, locked = h.loginLock(scope, now.Add(time.Minute))
+			_, locked = h.loginLock(scope, now.Add(24*time.Hour))
 			require.False(t, locked, "the fallback must respect the lock expiry")
 			clearLoginFailures(scope)
 		})
@@ -87,7 +89,7 @@ func TestLoginThrottleDatabaseReadRemainsAuthoritative(t *testing.T) {
 	clearLoginFailures(scope)
 	t.Cleanup(func() { clearLoginFailures(scope) })
 	now := time.Now()
-	for i := 0; i < 3; i++ {
+	for i := 0; i < loginAccountFailureLimit; i++ {
 		registerLoginFailure(scope, now)
 	}
 	_, locked := h.loginLock(scope, now)
@@ -97,7 +99,7 @@ func TestLoginThrottleDatabaseReadRemainsAuthoritative(t *testing.T) {
 	_, locked = h.loginLock(scope, now)
 	require.False(t, locked, "a readable unlocked database row remains authoritative")
 	until := now.Add(20 * time.Second)
-	require.NoError(t, db.Model(&record).Update("locked_until", until).Error)
+	require.NoError(t, db.Model(&record).Updates(map[string]interface{}{"failure_count": loginAccountFailureLimit, "locked_until": until}).Error)
 	remaining, locked := h.loginLock(scope, now)
 	require.True(t, locked)
 	require.Equal(t, 20*time.Second, remaining, "the shared database deadline takes precedence")
@@ -114,14 +116,14 @@ func TestDatabaseLoginThrottleReadCannotEraseConcurrentFailure(t *testing.T) {
 			if expiredWindow {
 				lastFailure = now.Add(-16 * time.Minute)
 			}
-			record := models.LoginThrottleRecord{Scope: loginThrottleScope("account", t.Name()), FailureCount: 3, LastFailureAt: &lastFailure, LockedUntil: &oldLock}
+			record := models.LoginThrottleRecord{Scope: loginThrottleScope("account", t.Name()), FailureCount: loginAccountFailureLimit, LastFailureAt: &lastFailure, LockedUntil: &oldLock}
 			require.NoError(t, db.Create(&record).Error)
 			newLock := now.Add(3 * time.Minute)
 			// 读操作已取得过期快照时，另一个请求完成新的失败计数。
 			require.NoError(t, db.Callback().Query().After("gorm:query").Register("test:concurrent-failure", func(tx *gorm.DB) {
 				if tx.Statement.Table == "login_throttle_records" {
 					require.NoError(t, db.Model(&models.LoginThrottleRecord{}).Where("id = ?", record.ID).Updates(map[string]interface{}{
-						"failure_count": 4, "last_failure_at": now, "locked_until": newLock,
+						"failure_count": loginAccountFailureLimit + 1, "last_failure_at": now, "locked_until": newLock,
 					}).Error)
 				}
 			}))
@@ -137,128 +139,166 @@ func TestDatabaseLoginThrottleReadCannotEraseConcurrentFailure(t *testing.T) {
 }
 
 func TestLoginLockDurationForFailures(t *testing.T) {
-	cases := []struct {
-		failures int
-		want     time.Duration
-	}{
-		{1, 0},
-		{2, 0},
-		{3, time.Minute},
-		{4, 3 * time.Minute},
-		{5, 5 * time.Minute},
-		{6, 10 * time.Minute},
-		{9, 10 * time.Minute},
+	for _, count := range []int{0, 1, 2, 3, 6, 10, 99} {
+		require.Zero(t, loginLockDurationForFailures(count), "failure %d must remain retryable", count)
 	}
+	for _, count := range []int{100, 101, 300, 1000} {
+		require.Equal(t, 24*time.Hour, loginLockDurationForFailures(count))
+	}
+	for _, count := range []int{3, 10, 40, 100, 299} {
+		require.Zero(t, loginSourceLockDurationForFailures(count), "shared source failure %d", count)
+	}
+	for _, count := range []int{300, 301, 1000} {
+		require.Equal(t, 24*time.Hour, loginSourceLockDurationForFailures(count))
+	}
+	require.Zero(t, loginLockDurationForScope("reauth:fixture", 2))
+	require.Equal(t, time.Minute, loginLockDurationForScope("reauth:fixture", 3))
+	require.Equal(t, 10*time.Minute, loginLockDurationForScope("reauth:fixture", 6))
+}
 
-	for _, tc := range cases {
-		if got := loginLockDurationForFailures(tc.failures); got != tc.want {
-			t.Fatalf("failures=%d got=%v want=%v", tc.failures, got, tc.want)
+func TestLoginThrottleDayCooldownSurvivesFailureWindow(t *testing.T) {
+	for _, storage := range []string{"memory", "database"} {
+		for _, policy := range []struct {
+			kind  string
+			limit int
+		}{{"account", 100}, {"ip", 300}} {
+			t.Run(storage+"_"+policy.kind, func(t *testing.T) {
+				h := &AuthHandler{}
+				if storage == "database" {
+					db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+					require.NoError(t, err)
+					require.NoError(t, db.AutoMigrate(&models.LoginThrottleRecord{}))
+					sqlDB, err := db.DB()
+					require.NoError(t, err)
+					t.Cleanup(func() { _ = sqlDB.Close() })
+					h.db = db
+				}
+				scope := loginThrottleScope(policy.kind, t.Name())
+				clearLoginFailures(scope)
+				t.Cleanup(func() { clearLoginFailures(scope) })
+				base := time.Date(2026, 11, 16, 2, 0, 0, 0, time.UTC)
+				for i := 1; i < policy.limit; i++ {
+					require.Zero(t, h.registerLoginFailure(scope, base), "failure %d", i)
+				}
+				require.Equal(t, 24*time.Hour, h.registerLoginFailure(scope, base))
+				_, locked := h.loginLock(scope, base.Add(16*time.Minute))
+				require.True(t, locked, "15-minute inactivity must not clear an active day-long cooldown")
+				require.Equal(t, 23*time.Hour, h.registerLoginFailure(scope, base.Add(time.Hour)), "repeated failures cannot extend the original deadline")
+				remaining, locked := h.loginLock(scope, base.Add(24*time.Hour-time.Second))
+				require.True(t, locked)
+				require.Equal(t, time.Second, remaining)
+				_, locked = h.loginLock(scope, base.Add(24*time.Hour))
+				require.False(t, locked)
+				require.Zero(t, h.registerLoginFailure(scope, base.Add(24*time.Hour)), "expired cooldown starts a fresh failure count")
+			})
 		}
 	}
 }
 
-func TestLoginThrottleEscalatesAndClears(t *testing.T) {
-	account := "test-account"
-	clearLoginFailures(account)
-	base := time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC)
+func TestLoginCooldownMessageAndRetryBoundary(t *testing.T) {
+	require.Equal(t, "1天", formatRetryAfterCN(24*time.Hour))
+	require.Equal(t, "23小时", formatRetryAfterCN(23*time.Hour))
+	response := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(response)
+	writeLoginCooldown(c, time.Millisecond)
+	require.Equal(t, "1", response.Header().Get("Retry-After"))
+	require.Contains(t, response.Body.String(), "LOGIN_COOLDOWN")
+	require.Contains(t, response.Body.String(), "向开发者申诉")
+}
 
-	if got := registerLoginFailure(account, base); got != 0 {
-		t.Fatalf("first failure should not lock, got %v", got)
-	}
-	if got := registerLoginFailure(account, base); got != 0 {
-		t.Fatalf("second failure should not lock, got %v", got)
-	}
-	if got := registerLoginFailure(account, base); got != time.Minute {
-		t.Fatalf("third failure got %v want %v", got, time.Minute)
-	}
-	if remaining, locked := currentLoginLock(account, base.Add(30*time.Second)); !locked || remaining <= 0 {
-		t.Fatalf("expected account to be locked after third failure")
-	}
-	if remaining, locked := currentLoginLock(account, base.Add(time.Minute)); locked || remaining != 0 {
-		t.Fatalf("expected lock to expire at boundary, got locked=%v remaining=%v", locked, remaining)
-	}
-	if got := registerLoginFailure(account, base.Add(time.Minute)); got != 3*time.Minute {
-		t.Fatalf("lock expiry should retain the failure window, got %v", got)
-	}
-	if got := registerLoginFailure(account, base.Add(16*time.Minute)); got != 0 {
-		t.Fatalf("failure window expiry should reset the counter, got %v", got)
-	}
-
-	clearLoginFailures(account)
-	if remaining, locked := currentLoginLock(account, base.Add(2*time.Minute)); locked || remaining != 0 {
-		t.Fatalf("expected account to be cleared after success/reset")
+func TestLoginThrottleOldLocksRespectRelaxedPolicyWithoutRewriting(t *testing.T) {
+	for _, storage := range []string{"memory", "database"} {
+		for _, policy := range []struct {
+			kind     string
+			failures int
+			locked   bool
+		}{{"account", 3, false}, {"account", 99, false}, {"ip", 10, false}, {"ip", 299, false}, {"account", 100, true}, {"ip", 300, true}} {
+			t.Run(storage+"_"+policy.kind+"_"+strconv.Itoa(policy.failures), func(t *testing.T) {
+				base := time.Date(2026, 11, 16, 2, 0, 0, 0, time.UTC)
+				oldUntil := base.Add(10 * time.Minute)
+				scope := loginThrottleScope(policy.kind, t.Name())
+				h := &AuthHandler{}
+				if storage == "database" {
+					db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+					require.NoError(t, err)
+					require.NoError(t, db.AutoMigrate(&models.LoginThrottleRecord{}))
+					sqlDB, err := db.DB()
+					require.NoError(t, err)
+					t.Cleanup(func() { _ = sqlDB.Close() })
+					require.NoError(t, db.Create(&models.LoginThrottleRecord{Scope: scope, FailureCount: policy.failures, LastFailureAt: &base, LockedUntil: &oldUntil}).Error)
+					h.db = db
+				} else {
+					loginThrottleStore.Lock()
+					loginThrottleStore.records[scope] = loginThrottleRecord{FailureCount: policy.failures, LastFailureAt: base, LockedUntil: oldUntil}
+					loginThrottleStore.Unlock()
+					t.Cleanup(func() { clearLoginFailures(scope) })
+				}
+				remaining, locked := h.loginLock(scope, base.Add(10*time.Second))
+				require.Equal(t, policy.locked, locked)
+				if locked {
+					require.Equal(t, 10*time.Minute-10*time.Second, remaining)
+				}
+				_, locked = h.loginLock(scope, base.Add(10*time.Minute))
+				require.False(t, locked, "upgrading must not extend existing shorter locks")
+				if h.db != nil {
+					var stored models.LoginThrottleRecord
+					require.NoError(t, h.db.Where("scope = ?", scope).First(&stored).Error)
+					require.Equal(t, policy.failures, stored.FailureCount)
+					require.WithinDuration(t, oldUntil, *stored.LockedUntil, time.Millisecond, "lock reads must not overwrite concurrent state")
+				}
+			})
+		}
 	}
 }
 
-func TestLoginThrottleRetainsSourceCountAcrossExpiredLocks(t *testing.T) {
-	source := loginThrottleScope("ip", "203.0.113.21")
-	clearLoginFailures(source)
-	base := time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC)
-
-	for i := 1; i <= 10; i++ {
-		if got := registerLoginFailure(source, base); (i < 10 && got != 0) || (i == 10 && got != time.Minute) {
-			t.Fatalf("source failure %d lock=%v", i, got)
-		}
+func TestLoginCorrectPasswordAfterThreeMistakesSucceeds(t *testing.T) {
+	h, db, user, _ := remediationAuthFixture(t)
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.POST("/api/login", h.Login)
+	for range 3 {
+		response := remediationRequest(router, "/api/login", map[string]string{"account": user.Email, "password": "wrong-password"}, "203.0.113.75", "synthetic-device")
+		require.Equal(t, http.StatusUnauthorized, response.Code)
 	}
-	if _, locked := currentLoginLock(source, base.Add(time.Minute+time.Second)); locked {
-		t.Fatal("source lock should expire before the failure window")
-	}
-	next := base.Add(time.Minute + time.Second)
-	for i := 11; i <= 19; i++ {
-		if got := registerLoginFailure(source, next); got != time.Minute {
-			t.Fatalf("source failure %d should retain the short lock while accumulating, got %v", i, got)
-		}
-		next = next.Add(time.Minute + time.Second)
-	}
-	if got := registerLoginFailure(source, next); got != 5*time.Minute {
-		t.Fatalf("source failure 20 should escalate to five minutes, got %v", got)
-	}
-	clearLoginFailures(source)
+	response := remediationRequest(router, "/api/login", map[string]string{"account": user.Email, "password": "old-password"}, "203.0.113.75", "synthetic-device")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	var sessions int64
+	require.NoError(t, db.Model(&models.RefreshToken{}).Where("user_id = ?", user.ID).Count(&sessions).Error)
+	require.EqualValues(t, 1, sessions)
 }
 
-func TestDatabaseLoginThrottleRetainsSourceCountAcrossExpiredLocks(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("打开数据库失败: %v", err)
+func TestLoginAllowsPasswordCorrectionAndRecoversAfterDayCooldown(t *testing.T) {
+	h, db, user, _ := remediationAuthFixture(t)
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.POST("/api/login", h.Login)
+	wrong := map[string]string{"account": user.Email, "password": "wrong-password"}
+	correct := map[string]string{"account": user.Email, "password": "old-password"}
+	for i := 1; i <= 99; i++ {
+		response := remediationRequest(router, "/api/login", wrong, "203.0.113.74", "synthetic-device")
+		require.Equal(t, http.StatusUnauthorized, response.Code, "failure %d: %s", i, response.Body.String())
+		require.Empty(t, response.Header().Get("Retry-After"))
 	}
-	if err := db.AutoMigrate(&models.LoginThrottleRecord{}); err != nil {
-		t.Fatalf("迁移登录限流表失败: %v", err)
-	}
-	h := &AuthHandler{db: db}
-	source := loginThrottleScope("ip", "203.0.113.22")
-	base := time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC)
-
-	for i := 1; i <= 10; i++ {
-		if got := h.registerLoginFailure(source, base); (i < 10 && got != 0) || (i == 10 && got != time.Minute) {
-			t.Fatalf("数据库来源失败 %d 锁定=%v", i, got)
-		}
-	}
-	if _, locked := h.loginLock(source, base.Add(time.Minute+time.Second)); locked {
-		t.Fatal("数据库来源锁定窗口应已结束")
-	}
-	next := base.Add(time.Minute + time.Second)
-	for i := 11; i <= 19; i++ {
-		if got := h.registerLoginFailure(source, next); got != time.Minute {
-			t.Fatalf("数据库来源失败 %d 应继续累计并短暂锁定，得到 %v", i, got)
-		}
-		next = next.Add(time.Minute + time.Second)
-	}
-	if got := h.registerLoginFailure(source, next); got != 5*time.Minute {
-		t.Fatalf("数据库来源失败 20 应升级到五分钟，得到 %v", got)
-	}
-}
-
-func TestLoginSourceThrottleDoesNotLockAfterThreeFailures(t *testing.T) {
-	source := loginThrottleScope("ip", "203.0.113.20")
-	clearLoginFailures(source)
-	base := time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC)
-	for i := 1; i <= 9; i++ {
-		if got := registerLoginFailure(source, base); got != 0 {
-			t.Fatalf("共享来源第 %d 次失败不应锁定，得到 %v", i, got)
-		}
-	}
-	if got := registerLoginFailure(source, base); got != time.Minute {
-		t.Fatalf("共享来源第 10 次失败应进入短暂保护，得到 %v", got)
-	}
-	clearLoginFailures(source)
+	var actionable int64
+	require.NoError(t, db.Model(&models.SecurityEvent{}).Where("event_type = ?", "login_bruteforce").Count(&actionable).Error)
+	require.Zero(t, actionable, "ordinary password correction must not create a brute-force warning")
+	response := remediationRequest(router, "/api/login", wrong, "203.0.113.74", "synthetic-device")
+	require.Equal(t, http.StatusTooManyRequests, response.Code)
+	require.Equal(t, "86400", response.Header().Get("Retry-After"))
+	require.Contains(t, response.Body.String(), "1天")
+	require.Contains(t, response.Body.String(), "向开发者申诉")
+	response = remediationRequest(router, "/api/login", correct, "203.0.113.74", "synthetic-device")
+	require.Equal(t, http.StatusTooManyRequests, response.Code)
+	// 使用隔离数据库推进冷却时间，避免真实等待。
+	scope := loginThrottleScope("account", user.Email)
+	require.NoError(t, db.Model(&models.LoginThrottleRecord{}).Where("scope = ?", scope).Updates(map[string]interface{}{
+		"last_failure_at": time.Now().Add(-24*time.Hour - time.Second), "locked_until": time.Now().Add(-time.Second),
+	}).Error)
+	response = remediationRequest(router, "/api/login", correct, "203.0.113.74", "synthetic-device")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	var count int64
+	require.NoError(t, db.Model(&models.LoginThrottleRecord{}).Where("scope = ?", scope).Count(&count).Error)
+	require.Zero(t, count, "successful login clears this account's failure count")
+	response = remediationRequest(router, "/api/login", wrong, "203.0.113.74", "synthetic-device")
+	require.Equal(t, http.StatusUnauthorized, response.Code)
 }

@@ -1,16 +1,21 @@
+import '../widgets/app_page_background.dart';
+import '../features/theme_pack/theme_presentation.dart';
+import '../features/theme_pack/theme_workshop_screen.dart';
+import '../theme/app_palette.dart';
+import '../theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
-import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../theme/app_theme_style.dart';
 import '../widgets/app_card.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../widgets/responsive_content.dart';
+import '../widgets/profile_detail_layout.dart';
 import '../models/startup_destination.dart';
 import '../services/app_resume_coordinator.dart';
 import '../services/root_page_state_service.dart';
@@ -21,12 +26,8 @@ import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
-import '../providers/course_schedule_provider.dart';
 import '../providers/message_provider.dart';
-import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
-import '../utils/update_checker.dart';
-import '../utils/responsive_util.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
 import 'image_viewer_screen.dart';
@@ -34,7 +35,6 @@ import '../config/api_constants.dart';
 import '../config/private_chat_policy.dart';
 import 'edu_screen.dart';
 
-import 'login_screen.dart';
 import 'my_content_screen.dart';
 import 'chat_list_screen.dart';
 import 'admin_panel_screen.dart';
@@ -45,7 +45,9 @@ import 'admin_members_screen.dart';
 import 'notifications_screen.dart';
 import 'likes_received_screen.dart';
 import 'settings_screen.dart';
+import 'settings/appearance_settings_screen.dart';
 import 'feedback/feedback_center_screen.dart';
+import 'feedback/feedback_create_screen.dart';
 import 'admin/admin_feedback_screen.dart';
 import 'user_home_screen.dart';
 import 'social_list_screen.dart';
@@ -82,10 +84,10 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  final _navigationKey = GlobalKey<ProfileDetailLayoutState>();
   int _unreadReplyCount = 0;
   int _unreadMessageCount = 0;
   int _feedbackUnreadCount = 0;
-  bool _startOnTimetable = false;
   StartupDestinationMode _startupDestination = StartupDestinationMode.home;
   int? _postCount;
   int _contentCountRequest = 0;
@@ -129,6 +131,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _handleHomeTabVisibilityChanged() {
+    if (mounted) setState(() {});
     if (mounted && currentHomeTabIndex.value == 4) {
       _refreshAdminOverview();
     }
@@ -175,15 +178,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final tp = context.read<ThemeProvider>();
     if (mounted) {
       setState(() {
-        _startOnTimetable = tp.startOnTimetable;
         _startupDestination = tp.startupDestination;
       });
     }
   }
 
   Future<void> _loadUnreadCount() async {
+    if (!mounted) return;
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return;
+    final epoch = auth.accountSessionEpoch;
+    bool isCurrent() => mounted && auth.accountSessionEpoch == epoch;
     try {
       final repliesFuture = auth.dio.get('/user/notifications/unread_count');
       final feedbackFuture = auth.dio.get('/feedback/tickets/unread-count');
@@ -191,7 +196,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // 而 Future.wait 的失败会连带打断同批次的回复未读与反馈未读数。
       if (!PrivateChatPolicy.enabled) {
         final responses = await Future.wait([repliesFuture, feedbackFuture]);
-        if (!mounted) return;
+        if (!isCurrent()) return;
         setState(() {
           _unreadReplyCount = responses[0].data['count'] ?? 0;
           _unreadMessageCount = 0;
@@ -204,7 +209,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         auth.dio.get('/messages/unread_count'),
         feedbackFuture,
       ]);
-      if (!mounted) return;
+      if (!isCurrent()) return;
       final replyResp = responses[0];
       final messageResp = responses[1];
       final feedbackResp = responses[2];
@@ -242,6 +247,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _postCount = null;
       _unreadReplyCount = 0;
       _unreadMessageCount = 0;
+      _feedbackUnreadCount = 0;
       _adminOverviewFuture =
           user?.isAdmin == true ? _loadAdminOverview(authProvider, user) : null;
       _invitationsFuture = authProvider.isLoggedIn
@@ -261,8 +267,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cleanLightMode = themeProvider.isCleanBackgroundMode && !isDark;
-    final overlayStyle = (cleanLightMode
+    // 沉浸 hero 顶部压着一层页面底色，状态栏图标按底色明暗取色。
+    final lightBackdrop = themeProvider.hasImmersiveHero('me')
+        ? ThemeData.estimateBrightnessForColor(
+                AppThemeTokens.of(context).background) ==
+            Brightness.light
+        : themeProvider.isCleanBackgroundMode && !isDark;
+    final overlayStyle = (lightBackdrop
             ? SystemUiOverlayStyle.dark
             : SystemUiOverlayStyle.light)
         .copyWith(
@@ -273,292 +284,478 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: ResponsiveContent(
-            child: Stack(
-          children: [
-            // 内容
-            CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(
-                  child: SafeArea(
-                    bottom: false,
-                    child: Column(
-                      children: [
-                        _buildHeader(user, authProvider, isDark),
-                        if (authProvider.isLoggedIn)
-                          _buildSocialStatsSection(context, user, isDark),
-                      ],
+        backgroundColor:
+            context.watch<ThemeProvider?>()?.hasImmersiveHero('me') == true
+                ? Colors.transparent
+                : AppPageBackground.color(
+                    context, AppThemeTokens.of(context).background),
+        body: ProfileDetailLayout(
+          key: _navigationKey,
+          isActive: widget.isActive && currentHomeTabIndex.value == 4,
+          navigationScope: (
+            authProvider.accountSessionEpoch,
+            authProvider.user?.id,
+            authProvider.isLoggedIn,
+            authProvider.user?.role,
+          ),
+          master: ResponsiveContent(
+              child: Stack(
+            children: [
+              // 内容
+              CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: SafeArea(
+                      bottom: false,
+                      child: Column(
+                        children: [
+                          _buildHeader(user, authProvider, isDark),
+                          if (authProvider.isLoggedIn)
+                            _buildSocialStatsSection(context, user, isDark),
+                        ],
+                      ),
                     ),
                   ),
-                ),
 
-                // 管理入口（仅管理员可见）
-                if (user?.isAdmin == true)
+                  // 管理入口（仅管理员可见）
+                  if (user?.isAdmin == true)
+                    SliverToBoxAdapter(
+                      child: _buildAdminSection(context, user, isDark),
+                    ),
+
+                  if (authProvider.isLoggedIn)
+                    SliverToBoxAdapter(
+                      child: _buildCommunityParticipationSection(context, isDark),
+                    ),
+
+                  // 收到邀请（所有用户）
+                  if (authProvider.isLoggedIn)
+                    SliverToBoxAdapter(
+                      child:
+                          _buildInvitationSection(context, authProvider, isDark),
+                    ),
+
+                  // 教务版块（绑定状态 + 题库入口）
                   SliverToBoxAdapter(
-                    child: _buildAdminSection(context, user, isDark),
+                    child: _buildEduSection(context, authProvider, isDark),
                   ),
 
-                if (authProvider.isLoggedIn)
+                  // 我的内容
                   SliverToBoxAdapter(
-                    child: _buildCommunityParticipationSection(context, isDark),
+                    child: _buildMyContentSection(context, isDark),
                   ),
 
-                // 收到邀请（所有用户）
-                if (authProvider.isLoggedIn)
+                  // 服务与支持
                   SliverToBoxAdapter(
-                    child:
-                        _buildInvitationSection(context, authProvider, isDark),
+                    child: _buildServiceAndSupportSection(context, isDark),
                   ),
 
-                // 教务版块（绑定状态 + 题库入口）
-                SliverToBoxAdapter(
-                  child: _buildEduSection(context, authProvider, isDark),
-                ),
-
-                // 我的内容
-                SliverToBoxAdapter(
-                  child: _buildMyContentSection(context, isDark),
-                ),
-
-                // 服务与支持
-                SliverToBoxAdapter(
-                  child: _buildServiceAndSupportSection(context, isDark),
-                ),
-
-                // 设置区域
-                SliverToBoxAdapter(
-                  child: _buildSettingsSection(
-                    context,
-                    themeProvider,
-                    authProvider,
-                    isDark,
+                  // 设置区域
+                  SliverToBoxAdapter(
+                    child: _buildSettingsSection(
+                      context,
+                      themeProvider,
+                      authProvider,
+                      isDark,
+                    ),
                   ),
-                ),
 
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: MediaQuery.of(context).padding.bottom + 90,
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: MediaQuery.of(context).padding.bottom + 90,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
-        )),
+                ],
+              ),
+            ],
+          )),
+        ),
       ),
     );
   }
 
-  Widget _buildDefaultBackground(bool isDark) {
-    return ColoredBox(
-      color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-    );
-  }
+  Future<T?> _openProfilePage<T extends Object?>(Route<T> route) =>
+      _navigationKey.currentState!.open(route);
 
   Widget _buildHeader(user, AuthProvider authProvider, bool isDark) {
     final hasSession =
         authProvider.isLoggedIn || authProvider.hasRecoverableSession;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // 左侧：头像
-          GestureDetector(
-            onTap: () {
-              if (hasSession) {
-                _showAvatarOptions(context, authProvider);
-              } else {
-                Navigator.pushNamed(context, '/login');
-              }
-            },
-            child: Container(
-              width: 76,
-              height: 76,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    spreadRadius: 2,
-                  ),
-                ],
+    final edu = context.watch<EduProvider>();
+    final collegeMajor = '${edu.college} ${edu.major}'.trim();
+    final tokens = AppThemeTokens.of(context);
+    final shape = AppShape.of(context);
+
+    Widget buildAvatar({double dimension = 76, double radius = 36}) {
+      return GestureDetector(
+        onTap: () {
+          if (hasSession) {
+            _showAvatarOptions(context, authProvider);
+          } else {
+            Navigator.pushNamed(context, '/login');
+          }
+        },
+        child: Container(
+          width: dimension,
+          height: dimension,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 10,
+                spreadRadius: 2,
               ),
-              child: user?.avatar.isNotEmpty == true
-                  ? ClipOval(
-                      child: GestureDetector(
-                        onLongPress: user?.avatar.isNotEmpty == true
-                            ? () => _showAvatarPreview(
-                                  context,
-                                  ApiConstants.fullUrl(user!.avatar),
-                                )
-                            : null,
-                        child: CachedAvatar(
-                          imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
-                          radius: 36,
-                          fallbackText: user?.nickname,
-                        ),
-                      ),
-                    )
-                  : _buildAvatarPlaceholder(user),
-            ),
+            ],
           ),
+          child: user?.avatar.isNotEmpty == true
+              ? ClipOval(
+                  child: GestureDetector(
+                    onLongPress: user?.avatar.isNotEmpty == true
+                        ? () => _showAvatarPreview(
+                              context,
+                              ApiConstants.fullUrl(user!.avatar),
+                            )
+                        : null,
+                    child: CachedAvatar(
+                      imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
+                      radius: radius,
+                      fallbackText: user?.nickname,
+                    ),
+                  ),
+                )
+              : _buildAvatarPlaceholder(user),
+        ),
+      );
+    }
 
-          const SizedBox(width: 16),
+    void openUserHomeOrLogin() {
+      if (hasSession) {
+        _openProfilePage(
+          MaterialPageRoute(builder: (_) => const UserHomeScreen()),
+        );
+      } else {
+        Navigator.pushNamed(context, '/login');
+      }
+    }
 
-          // 右侧：信息与箭头 (整个区域可点击进入主页)
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                if (hasSession) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const UserHomeScreen()),
-                  );
-                } else {
-                  Navigator.pushNamed(context, '/login');
-                }
-              },
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        // 第一行：昵称与编辑按钮
-                        GestureDetector(
-                          onTap: () {
-                            if (hasSession) {
-                              _showEditProfileDialog(context, authProvider);
-                            }
-                          },
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  user?.nickname ?? '未登录',
-                                  style: TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w700,
-                                    color:
-                                        isDark ? Colors.white : Colors.black87,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (hasSession) ...[
-                                const SizedBox(width: 6),
-                                Icon(
-                                  Icons.edit,
-                                  size: 16,
-                                  color:
-                                      isDark ? Colors.white54 : Colors.black54,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
+    Widget buildRecoverableBanner() {
+      return GestureDetector(
+        onTap: () => authProvider.refreshSession(),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: Colors.orange.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.wifi_off, size: 12, color: Colors.orange.shade700),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  '网络异常，正在恢复 (点击重试)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
-                        if (authProvider.hasRecoverableSession) ...[
-                          const SizedBox(height: 6),
-                          GestureDetector(
-                            onTap: () => authProvider.refreshSession(),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                    color:
-                                        Colors.orange.withValues(alpha: 0.4)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.wifi_off,
-                                      size: 12, color: Colors.orange.shade700),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '网络异常，正在恢复 (点击重试)',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.orange.shade800,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+    List<Widget> buildTags() => [
+          if (user != null)
+            _buildTag(
+              user.levelLabel.startsWith('Lv')
+                  ? user.levelLabel
+                  : 'Lv.${user.levelLabel}',
+              icon: Icons.military_tech,
+              color: Color(user.levelColorValue),
+              isDark: isDark,
+            ),
+          _buildTag(
+            '诚信 ${user?.creditScore ?? 100}%',
+            icon: Icons.verified_user,
+            color: Colors.teal,
+            isDark: isDark,
+          ),
+        ];
 
-                        const SizedBox(height: 8),
+    Widget buildNicknameRow({required double fontSize}) {
+      return GestureDetector(
+        onTap: () {
+          if (hasSession) {
+            _showEditProfileDialog(context, authProvider);
+          }
+        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                user?.nickname ?? '未登录',
+                style: TextStyle(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w700,
+                  color: tokens.textPrimary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (hasSession) ...[
+              const SizedBox(width: 6),
+              Icon(
+                Icons.edit,
+                size: 16,
+                color: tokens.textSecondary,
+              ),
+            ],
+          ],
+        ),
+      );
+    }
 
-                        // 第二行：学院专业标签 (如果有)
-                        if (context.watch<EduProvider>().college.isNotEmpty ||
-                            context.watch<EduProvider>().major.isNotEmpty) ...[
-                          Text(
-                            '${context.watch<EduProvider>().college} ${context.watch<EduProvider>().major}'
-                                .trim(),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDark ? Colors.white54 : Colors.black45,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 6),
-                        ],
-
-                        // 第三行：数据统计 (等级、诚信、经验等)
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            if (user != null)
-                              _buildTag(
-                                user.levelLabel.startsWith('Lv')
-                                    ? user.levelLabel
-                                    : 'Lv.${user.levelLabel}',
-                                icon: Icons.military_tech,
-                                color: Color(user.levelColorValue),
-                                isDark: isDark,
-                              ),
-                            _buildTag(
-                              '诚信 ${user?.creditScore ?? 100}%',
-                              icon: Icons.verified_user,
-                              color: Colors.teal,
-                              isDark: isDark,
-                            ),
+    final resolved = ThemeHeaderResolved.of(context, 'me');
+    if (!resolved.isCustomized) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            buildAvatar(),
+            const SizedBox(width: 16),
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: openUserHomeOrLogin,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          buildNicknameRow(fontSize: 22),
+                          if (authProvider.hasRecoverableSession) ...[
+                            const SizedBox(height: 6),
+                            buildRecoverableBanner(),
                           ],
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // 最右侧箭头
-                  if (hasSession)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8.0, right: 4.0),
-                      child: Icon(
-                        Icons.arrow_forward_ios,
-                        size: 14,
-                        color: isDark ? Colors.white54 : Colors.black45,
+                          const SizedBox(height: 8),
+                          if (collegeMajor.isNotEmpty) ...[
+                            Text(
+                              collegeMajor,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: tokens.textSecondary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 6),
+                          ],
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: buildTags(),
+                          ),
+                        ],
                       ),
                     ),
-                ],
+                    if (hasSession)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8.0, right: 4.0),
+                        child: Icon(
+                          Icons.arrow_forward_ios,
+                          size: 14,
+                          color: tokens.textSecondary,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: ThemeHeaderFrame(
+        slot: 'me',
+        defaultBuilder: (_) => const SizedBox.shrink(),
+        standardInfoBuilder: (_, layout) {
+          final wrapAlign = switch (layout.alignment) {
+            'center' => WrapAlignment.center,
+            'end' => WrapAlignment.end,
+            _ => WrapAlignment.start,
+          };
+          final details = Column(
+            crossAxisAlignment: layout.crossAxisAlignment,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              buildNicknameRow(fontSize: 20),
+              if (authProvider.hasRecoverableSession) ...[
+                const SizedBox(height: 6),
+                buildRecoverableBanner(),
+              ],
+              if (collegeMajor.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  collegeMajor,
+                  textAlign: layout.textAlign,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: tokens.textSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                alignment: wrapAlign,
+                children: buildTags(),
+              ),
+            ],
+          );
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: tokens.card,
+              borderRadius: BorderRadius.circular(shape.lg),
+              border: Border.all(color: tokens.cardBorder),
+            ),
+            child: layout.alignment == 'center'
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      buildAvatar(dimension: 68, radius: 32),
+                      const SizedBox(height: 10),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: openUserHomeOrLogin,
+                        child: details,
+                      ),
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: layout.alignment == 'end'
+                        ? [
+                            if (hasSession)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: Icon(
+                                  Icons.arrow_back_ios_new,
+                                  size: 13,
+                                  color: tokens.textSecondary,
+                                ),
+                              ),
+                            Expanded(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: openUserHomeOrLogin,
+                                child: details,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            buildAvatar(dimension: 68, radius: 32),
+                          ]
+                        : [
+                            buildAvatar(dimension: 68, radius: 32),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: openUserHomeOrLogin,
+                                child: details,
+                              ),
+                            ),
+                            if (hasSession)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: Icon(
+                                  Icons.arrow_forward_ios,
+                                  size: 14,
+                                  color: tokens.textSecondary,
+                                ),
+                              ),
+                          ],
+                  ),
+          );
+        },
+        compactInfoBuilder: (_, layout) {
+          final wrapAlign = switch (layout.alignment) {
+            'center' => WrapAlignment.center,
+            'end' => WrapAlignment.end,
+            _ => WrapAlignment.start,
+          };
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: tokens.card,
+              borderRadius: BorderRadius.circular(shape.lg),
+              border: Border.all(color: tokens.cardBorder),
+            ),
+            child: Row(
+              children: [
+                buildAvatar(dimension: 48, radius: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: openUserHomeOrLogin,
+                    child: Align(
+                      alignment: layout.boxAlignment,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        alignment: wrapAlign,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          buildNicknameRow(fontSize: 16),
+                          if (collegeMajor.isNotEmpty)
+                            Text(
+                              collegeMajor,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: tokens.textSecondary,
+                              ),
+                            ),
+                          ...buildTags(),
+                          if (authProvider.hasRecoverableSession)
+                            buildRecoverableBanner(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (hasSession)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Icon(
+                      Icons.arrow_forward_ios,
+                      size: 13,
+                      color: tokens.textSecondary,
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -572,7 +769,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(isDark ? 0.2 : 0.15),
+        color: color.withValues(alpha: isDark ? 0.2 : 0.15),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -610,8 +807,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             '我的内容',
             isDark,
             () async {
-              await Navigator.push(
-                context,
+              await _openProfilePage(
                 MaterialPageRoute(builder: (_) => const MyContentScreen()),
               );
               if (mounted) {
@@ -624,8 +820,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             '关注的人',
             isDark,
             () {
-              Navigator.push(
-                context,
+              _openProfilePage(
                 MaterialPageRoute(
                   builder: (_) =>
                       SocialListScreen(userId: user.id, initialIndex: 0),
@@ -638,8 +833,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             '关注我的',
             isDark,
             () {
-              Navigator.push(
-                context,
+              _openProfilePage(
                 MaterialPageRoute(
                   builder: (_) =>
                       SocialListScreen(userId: user.id, initialIndex: 1),
@@ -669,7 +863,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : Colors.black87,
+              color: AppThemeTokens.of(context).textPrimary,
             ),
           ),
           const SizedBox(height: 4),
@@ -677,7 +871,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             label,
             style: TextStyle(
               fontSize: 12,
-              color: isDark ? Colors.white70 : Colors.black87,
+              color: AppThemeTokens.of(context).textPrimary,
             ),
           ),
         ],
@@ -698,57 +892,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildStatBadge({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return GlassContainer(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      borderRadius: 25,
-      blur: 15,
-      opacity: 0.15,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(fontSize: 10, color: Colors.black87),
-              ),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildCommunityParticipationSection(
       BuildContext context, bool isDark) {
     final items = [
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.gavel_rounded,
-          iconColor: const Color(0xFF147C72),
+          iconColor: AppThemeTokens.of(context).primary,
           title: '我的陪审',
           subtitle: '查看待处理与已参与的陪审案件',
           isDark: isDark,
-          onTap: () => Navigator.push(
-            context,
+          onTap: () => _openProfilePage(
             MaterialPageRoute(
                 builder: (_) => const CourtHubScreen(initialTab: 0)),
           ),
@@ -757,12 +911,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.assignment_outlined,
-          iconColor: const Color(0xFF5D64C4),
+          iconColor: const Color(0xFF5D64C4), // theme: fixed 个人中心功能识别色
           title: '我的申诉',
           subtitle: '查看申诉与社区复核结果',
           isDark: isDark,
-          onTap: () => Navigator.push(
-            context,
+          onTap: () => _openProfilePage(
             MaterialPageRoute(
                 builder: (_) => const CourtHubScreen(initialTab: 1)),
           ),
@@ -795,8 +948,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ? (feedbackTodo > 99 ? '99+' : '$feedbackTodo')
                 : null,
             onTap: () {
-              Navigator.push(
-                context,
+              _openProfilePage(
                 MaterialPageRoute(builder: (_) => const AdminFeedbackScreen()),
               ).then((_) {
                 _refreshAdminOverview();
@@ -814,8 +966,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             badgeText:
                 adminTodo > 0 ? (adminTodo > 99 ? '99+' : '$adminTodo') : null,
             onTap: () {
-              Navigator.push(
-                context,
+              _openProfilePage(
                 MaterialPageRoute(builder: (_) => const AdminPanelScreen()),
               ).then((_) {
                 _refreshAdminOverview();
@@ -834,8 +985,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   : '管理用户、审批管理员邀请',
               badgeText: superTodo > 0 ? '$superTodo' : null,
               onTap: () {
-                Navigator.push(
-                  context,
+                _openProfilePage(
                   MaterialPageRoute(builder: (_) => const SuperAdminScreen()),
                 );
               },
@@ -848,8 +998,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: '管理人员',
             subtitle: '查看管理员与超级管理员列表',
             onTap: () {
-              Navigator.push(
-                context,
+              _openProfilePage(
                 MaterialPageRoute(builder: (_) => const AdminMembersScreen()),
               );
             },
@@ -990,14 +1139,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 10),
-            child: Text(
+            child: ThemeSectionTitle(
               title,
               key: ValueKey('profile-section-$title'),
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: appContentSecondaryColor(
-                    context, isDark ? Colors.white54 : Colors.grey[600]!),
+                    context, AppThemeTokens.of(context).textSecondary),
               ),
             ),
           ),
@@ -1006,12 +1155,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               for (int i = 0; i < items.length; i++) ...[
                 if (i > 0)
-                  AppCardDivider(
-                    height: 1,
-                    thickness: 0.5,
-                    indent: 68,
-                    color: isDark ? Colors.white12 : Colors.black12,
-                  ),
+                  const AppCardDivider.inset(),
                 items[i],
               ],
             ],
@@ -1037,7 +1181,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _buildSettingsRow(
           child: _buildSettingsTile(
             icon: Icons.chat_outlined,
-            iconColor: const Color(0xFF10B981),
+            iconColor: const Color(0xFF10B981), // theme: fixed 个人中心功能识别色
             title: '私信',
             subtitle: messageEntryState.privateSubtitle,
             trailing: messageEntryState.showPrivateBadge
@@ -1053,8 +1197,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 : null,
             isDark: isDark,
             onTap: () {
-              Navigator.push(
-                context,
+              _openProfilePage(
                 MaterialPageRoute(builder: (_) => const ChatListScreen()),
               ).then((_) {
                 _loadUnreadCount();
@@ -1081,8 +1224,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : null,
           isDark: isDark,
           onTap: () {
-            Navigator.push(
-              context,
+            _openProfilePage(
               MaterialPageRoute(builder: (_) => const NotificationsScreen()),
             ).then((_) {
               _loadUnreadCount();
@@ -1093,12 +1235,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.favorite_outline,
-          iconColor: AppColors.brandPrimary,
+          iconColor: AppThemeTokens.of(context).primary,
           title: '收到的赞',
           subtitle: '查看谁赞了我的帖子和评论',
           isDark: isDark,
-          onTap: () => Navigator.push(
-            context,
+          onTap: () => _openProfilePage(
             MaterialPageRoute(builder: (_) => const LikesReceivedScreen()),
           ),
         ),
@@ -1106,12 +1247,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.history_rounded,
-          iconColor: const Color(0xFF3B82F6),
+          iconColor: const Color(0xFF3B82F6), // theme: fixed 个人中心功能识别色
           title: '浏览记录',
           subtitle: '查看我看过的资讯与帖子',
           isDark: isDark,
-          onTap: () => Navigator.push(
-            context,
+          onTap: () => _openProfilePage(
             MaterialPageRoute(builder: (_) => const BrowsingHistoryScreen()),
           ),
         ),
@@ -1119,7 +1259,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.restaurant_outlined,
-          iconColor: const Color(0xFFD97706),
+          iconColor: const Color(0xFFD97706), // theme: fixed 个人中心功能识别色
           title: '食堂评价',
           subtitle: '查看与管理我的历史评价',
           isDark: isDark,
@@ -1128,8 +1268,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Navigator.pushNamed(context, '/login');
               return;
             }
-            await Navigator.push(
-              context,
+            await _openProfilePage(
               MaterialPageRoute(builder: (_) => const MyContentScreen(initialTabIndex: 3)),
             );
             if (mounted) await _fetchPostCount();
@@ -1139,13 +1278,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.rate_review_outlined,
-          iconColor: AppColors.brandPrimary,
+          iconColor: AppThemeTokens.of(context).primary,
           title: '学科评价',
           subtitle: '查看与管理我的学科评价',
           isDark: isDark,
           onTap: () async {
-            await Navigator.push(
-              context,
+            await _openProfilePage(
               MaterialPageRoute(
                 builder: (_) => const MyContentScreen(initialTabIndex: 2),
               ),
@@ -1158,14 +1296,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return _buildSectionLayout(context, '我的内容', items, isDark);
   }
 
+  Future<void> _openFeedback({bool create = false}) async {
+    var auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || auth.user == null) {
+      // 登录成功后继续进入原本要打开的工单页，未登录（取消登录）则停在原处。
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted) return;
+      auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn || auth.user == null) return;
+    }
+    await _openProfilePage(
+      MaterialPageRoute(
+        builder: (_) => create
+            ? const FeedbackCreateScreen(initialRouteName: '我的 / 创建工单')
+            : const FeedbackCenterScreen(),
+      ),
+    );
+    if (mounted) _loadUnreadCount();
+  }
+
   Widget _buildServiceAndSupportSection(BuildContext context, bool isDark) {
     final items = [
       _buildSettingsRow(
         child: _buildSettingsTile(
+          icon: Icons.bug_report_outlined,
+          iconColor: AppThemeTokens.of(context).primary,
+          title: '创建工单',
+          subtitle: '反馈 Bug 或提交功能建议',
+          isDark: isDark,
+          onTap: () => _openFeedback(create: true),
+        ),
+      ),
+      _buildSettingsRow(
+        child: _buildSettingsTile(
           icon: Icons.chat_bubble_outline_rounded,
-          iconColor: AppColors.brandPrimary,
-          title: '帮助与反馈',
-          subtitle: '问题反馈、功能建议与处理进度',
+          iconColor: AppThemeTokens.of(context).primary,
+          title: '我的工单',
+          subtitle: '查看处理进度与管理员回复',
           trailing: _feedbackUnreadCount > 0
               ? Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1194,14 +1361,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 )
               : null,
           isDark: isDark,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const FeedbackCenterScreen()),
-            ).then((_) {
-              _loadUnreadCount();
-            });
-          },
+          onTap: () => _openFeedback(),
         ),
       ),
     ];
@@ -1227,8 +1387,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : '绑定后可查询课表、成绩',
           isDark: isDark,
           onTap: () {
-            Navigator.push(
-              context,
+            _openProfilePage(
               MaterialPageRoute(builder: (_) => const EduScreen()),
             );
           },
@@ -1241,7 +1400,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : _startupDestination == StartupDestinationMode.lastPage
                   ? Icons.restore
                   : Icons.home_rounded,
-          iconColor: AppColors.brandPrimary,
+          iconColor: AppThemeTokens.of(context).primary,
           title: '启动页面',
           subtitle: switch (_startupDestination) {
             StartupDestinationMode.home => '首页',
@@ -1277,7 +1436,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               return ListTile(
                 leading: Icon(icon,
                     color: selected
-                        ? AppColors.brandPrimary
+                        ? AppThemeTokens.of(context).primary
                         : colors.onSurfaceVariant),
                 title: Text(title,
                     style: TextStyle(
@@ -1288,14 +1447,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         fontSize: 12, color: colors.onSurfaceVariant)),
                 trailing: selected
                     ? Icon(Icons.check_rounded,
-                        color: AppColors.brandPrimary, size: 20)
+                        color: AppThemeTokens.of(context).primary, size: 20)
                     : null,
                 onTap: () async {
                   try {
                     final provider = context.read<ThemeProvider>();
+                    final auth = context.read<AuthProvider>();
+                    final userId = auth.user?.id;
                     await provider.setStartupDestination(mode);
+                    if (!mounted || auth.user?.id != userId) return;
                     if (mode == StartupDestinationMode.lastPage) {
-                      final userId = context.read<AuthProvider>().user?.id;
                       if (userId != null && userId > 0) {
                         await RootPageStateStore.instance.saveLastPage(
                           RestorablePageState(
@@ -1309,6 +1470,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       }
                     }
                     if (!mounted) return;
+                    if (!sheetContext.mounted) return;
                     setSheetState(() {});
                     setState(() => _startupDestination = mode);
                     Navigator.pop(sheetContext);
@@ -1381,14 +1543,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final items = [
       _buildSettingsRow(
         child: _buildSettingsTile(
+          icon: Icons.palette_outlined,
+          iconColor: AppThemeTokens.of(context).primary,
+          title: '个性主题',
+          subtitle: themeProvider.currentAppearanceSummary,
+          isDark: isDark,
+          onTap: () {
+            _openProfilePage(
+              MaterialPageRoute(
+                builder: (_) => ThemeWorkshopScreen(
+                  deviceSettingsBuilder: (_) =>
+                      const AppearanceSettingsScreen(),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+      _buildSettingsRow(
+        child: _buildSettingsTile(
           icon: Icons.settings,
           iconColor: Colors.blueGrey,
           title: '设置',
           subtitle: '主题外观、关于应用、账号设置等',
           isDark: isDark,
           onTap: () {
-            Navigator.push(
-              context,
+            _openProfilePage(
               MaterialPageRoute(builder: (_) => const SettingsScreen()),
             );
           },
@@ -1424,9 +1604,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required bool isDark,
     VoidCallback? onTap,
   }) {
+    // 功能识别色随主题的识别色协调强度向主色相靠拢。
+    final tint = AppThemeStyle.of(context).identity(iconColor);
     return Material(
       color: Colors.transparent,
       child: InkWell(
+        key: ValueKey('profile-entry-$title'),
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
@@ -1436,10 +1619,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.1),
+                  color: tint.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, color: iconColor, size: 20),
+                child: Icon(icon, color: tint, size: 20),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -1452,7 +1635,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: isDark ? Colors.white : Colors.black87,
+                        color: AppThemeTokens.of(context).textPrimary,
                       ),
                     ),
                     if (subtitle != null) ...[
@@ -1461,7 +1644,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         subtitle,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: isDark ? Colors.white54 : Colors.grey[600],
+                          color: AppThemeTokens.of(context).textSecondary,
                           fontSize: 11,
                         ),
                       ),
@@ -1474,7 +1657,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: isDark ? Colors.white30 : Colors.grey[400],
+                  color: AppThemeTokens.of(context).textTertiary,
                 ),
             ],
           ),
@@ -1552,7 +1735,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             toolbarTitle: '裁剪头像',
             toolbarColor: Colors.black,
             toolbarWidgetColor: Colors.white,
-            statusBarColor: Colors.black,
+            statusBarLight: false,
             backgroundColor: Colors.black,
             initAspectRatio: CropAspectRatioPreset.square,
             lockAspectRatio: true,
@@ -1625,18 +1808,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _showAvatarViewer(BuildContext context, String avatarUrl) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ImageViewerScreen(
-          items: [avatarViewerItem(avatarUrl)],
-          initialIndex: 0,
-        ),
-      ),
-    );
-  }
-
   // ---- 邀请版块 ----
   Widget _buildInvitationSection(
     BuildContext context,
@@ -1660,7 +1831,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   '收到管理员邀请',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppThemeTokens.of(context).textPrimary,
                   ),
                 ),
               ),

@@ -33,13 +33,19 @@ class CanteenDiscoveryProvider with ChangeNotifier {
   String? _rankingError;
   int? _rankingTotal;
   String _rankingSort = CanteenRankingSort.composite;
+  String _rankingScope = CanteenRankingScope.current;
+
+  String get _rankingKey => '$_rankingSort|$_rankingScope';
 
   List<CanteenRankingItem> get rankingItems =>
-      _rankings[_rankingSort] ?? const [];
+      _rankings[_rankingKey] ?? const [];
   bool get rankingLoading => _rankingLoading;
   String? get rankingError => _rankingError;
   int? get rankingTotal => _rankingTotal;
   String get rankingSort => _rankingSort;
+
+  /// 保留旧范围参数以兼容调用方；所有排行均排除下架商家。
+  String get rankingScope => _rankingScope;
 
   CanteenDiscoveryProvider(this._dio);
 
@@ -49,7 +55,7 @@ class CanteenDiscoveryProvider with ChangeNotifier {
   int _rankingGeneration = 0;
 
   /// 拉取首页。已有数据时为刷新（不进入骨架）。
-  Future<void> loadHome({bool forceRefresh = true}) async {
+  Future<void> loadHome() async {
     final generation = _rankingGeneration;
     final pending = _homeLoadFutures.putIfAbsent(
       generation,
@@ -98,71 +104,110 @@ class CanteenDiscoveryProvider with ChangeNotifier {
     }
   }
 
-  /// 拉取指定排序的完整排行（按 sort 缓存一份）。
+  /// 拉取指定排序和范围的完整排行（按 排序+范围 各缓存一份）。
+  /// [scope] 不传时沿用当前范围。
   Future<void> loadRanking({
     String sort = CanteenRankingSort.composite,
+    String? scope,
     bool forceRefresh = false,
   }) async {
     _rankingSort = sort;
-    final loadedAt = _rankingLoadedAt[sort];
+    _rankingScope = scope ?? _rankingScope;
+    final key = _rankingKey;
+    final loadedAt = _rankingLoadedAt[key];
     if (!forceRefresh &&
-        _rankings.containsKey(sort) &&
+        _rankings.containsKey(key) &&
         loadedAt != null &&
         DateTime.now().difference(loadedAt) < const Duration(minutes: 1)) {
       _rankingLoading = false;
       _rankingError = null;
-      _rankingTotal = _rankings[sort]!.length;
+      _rankingTotal = _rankings[key]!.length;
       notifyListeners();
       return;
     }
     final generation = _rankingGeneration;
-    final key = (sort, generation);
+    final futureKey = (key, generation);
     final pending = _rankingLoadFutures.putIfAbsent(
-      key,
-      () => _loadRankingInternal(sort, generation),
+      futureKey,
+      () => _loadRankingInternal(sort, _rankingScope, generation),
     );
     try {
       await pending;
     } finally {
-      if (identical(_rankingLoadFutures[key], pending)) {
-        _rankingLoadFutures.remove(key);
+      if (identical(_rankingLoadFutures[futureKey], pending)) {
+        _rankingLoadFutures.remove(futureKey);
       }
     }
   }
 
-  Future<void> _loadRankingInternal(String sort, int generation) async {
+  Future<void> _loadRankingInternal(
+      String sort, String scope, int generation) async {
+    final key = '$sort|$scope';
     _rankingLoading = true;
     _rankingError = null;
     notifyListeners();
     try {
-      final response =
-          await _dio.get('/canteens/rankings', queryParameters: {'sort': sort});
+      final response = await _dio.get('/canteens/rankings', queryParameters: {
+        'sort': sort,
+        if (scope != CanteenRankingScope.current) 'scope': scope,
+      });
       if (generation != _rankingGeneration) return;
       if (response.statusCode == 200 && response.data is Map) {
         final data = (response.data as Map).cast<String, dynamic>();
         final rawItems = data['items'];
         if (rawItems is List) {
-          _rankings[sort] = rawItems
+          _rankings[key] = rawItems
               .whereType<Map<String, dynamic>>()
               .map(CanteenRankingItem.fromJson)
+              .where((item) => !item.isOffline)
               .toList();
-          _rankingLoadedAt[sort] = DateTime.now();
+          _rankingLoadedAt[key] = DateTime.now();
         }
         final meta = data['meta'];
-        if (meta is Map && sort == _rankingSort) {
-          _rankingTotal = (meta['total'] ?? _rankings[sort]?.length).toInt();
+        if (meta is Map && key == _rankingKey) {
+          _rankingTotal = (meta['total'] ?? _rankings[key]?.length).toInt();
         }
       }
     } on DioException catch (e) {
-      if (generation != _rankingGeneration || sort != _rankingSort) return;
+      if (generation != _rankingGeneration || key != _rankingKey) return;
       _rankingError = _parseError(e);
       debugPrint('Error loading canteen ranking: $e');
     } finally {
-      if (generation == _rankingGeneration && sort == _rankingSort) {
+      if (generation == _rankingGeneration && key == _rankingKey) {
         _rankingLoading = false;
         notifyListeners();
       }
     }
+  }
+
+  /// 热门菜品分页（首页“更多”）。返回 null 表示请求失败，原因见 [lastError]。
+  String? lastError;
+
+  Future<({List<CanteenHotDish> items, int total, bool hasMore})?>
+      loadHotDishPage({int offset = 0, int limit = 20}) async {
+    lastError = null;
+    try {
+      final response = await _dio.get('/canteens/dishes/hot',
+          queryParameters: {'offset': offset, 'limit': limit});
+      final data = response.data;
+      if (response.statusCode == 200 && data is Map && data['items'] is List) {
+        final items = (data['items'] as List)
+            .whereType<Map>()
+            .map((item) =>
+                CanteenHotDish.fromJson(Map<String, dynamic>.from(item)))
+            .where((dish) => dish.hasDisplayImage)
+            .toList();
+        return (
+          items: items,
+          total: (data['total'] as num?)?.toInt() ?? offset + items.length,
+          hasMore: data['has_more'] == true,
+        );
+      }
+      lastError = '热门菜品加载失败，请重试';
+    } on DioException catch (e) {
+      lastError = _parseError(e);
+    }
+    return null;
   }
 
   /// 变更后主动失效：让下次拉取拿到新数据。

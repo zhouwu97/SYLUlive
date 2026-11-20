@@ -17,6 +17,7 @@ import '../helpers/active_backdrop_filters.dart';
 import '../helpers/content_surface_fixtures.dart';
 import '../helpers/golden_test_app.dart';
 import '../helpers/golden_viewport.dart';
+import '../helpers/surface_test_theme.dart';
 import '../helpers/load_test_fonts.dart';
 
 Future<({ByteData pixels, int width})> _frame(
@@ -69,13 +70,14 @@ void main() {
     for (final scene in ['poll', 'post']) {
       testWidgets('$scene $profile 评论底色一致且真实绘制不越过圆角', (tester) async {
         await setGoldenViewport(tester, GoldenViewports.phone390x844);
-        final theme = ThemeProvider(loadOnStart: false);
+        final theme = SurfaceTestTheme();
         addTearDown(theme.dispose);
         await theme.setBackgroundImage('morenbeijing.jpeg');
         if (profile == 'clean') await theme.setCleanBackgroundMode();
-        await theme.setComponentOpacity(0);
+        await theme.setComponentOpacityLevel(0);
+        theme.setSurfacesHidden(true);
         final capture = GlobalKey();
-        await tester.pumpWidget(ChangeNotifierProvider.value(
+        await tester.pumpWidget(ChangeNotifierProvider<ThemeProvider>.value(
           value: theme,
           child: RepaintBoundary(
             key: capture,
@@ -115,6 +117,8 @@ void main() {
         ];
         final fill = Offset(rect.center.dx, rect.bottom - 4);
         final background = await _frame(tester, capture, null);
+        theme.setSurfacesHidden(false);
+        await tester.pumpAndSettle();
         final base = profile == 'dark-large'
             ? AppColors.surfaceSecondaryDark
             : AppColors.surfaceSecondaryLight;
@@ -138,7 +142,7 @@ void main() {
           expect(find.byType(AppCardDivider), findsNothing,
               reason: '正文与评论之间沿用帖子的纯留白，不绘制分割线');
         }
-        await theme.setComponentOpacity(1);
+        await theme.setComponentOpacityLevel(1);
         await tester.pumpAndSettle();
         final opaque = await _frame(tester, capture, '$scene-$profile-solid');
         _expectColor(_pixel(opaque, fill), base);
@@ -147,7 +151,7 @@ void main() {
         }
         expect(tester.getRect(surface), rect, reason: '底色变化不能移动评论、改变内容宽度或滚动位置');
 
-        await theme.setComponentOpacity(.6);
+        await theme.setComponentOpacityLevel(.6);
         await tester.pumpAndSettle();
         final translucent = await _frame(tester, capture, null);
         _expectColor(
@@ -155,7 +159,7 @@ void main() {
             profile == 'clean'
                 ? base
                 : Color.alphaBlend(
-                    base.withValues(alpha: .6), _pixel(background, fill)));
+                    base.withValues(alpha: .9), _pixel(background, fill)));
         await theme.setFrostedGlass(true);
         await tester.pumpAndSettle();
         expect(find.descendant(of: surface, matching: activeBackdropFilters()),

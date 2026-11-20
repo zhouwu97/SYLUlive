@@ -13,7 +13,7 @@ import (
 //     典型是「验证码申请成功」「密码重置成功」「单次密码输错」「验证码冷却」
 //     「来源封禁拦截」。它们写入后不需要任何人动手，只用于事后调查。
 //  2. 待处置事件：需要管理员判断或升级处置的异常行为。
-//     典型是各种喷洒、暴力尝试、可疑改密成功、令牌重放。
+//     典型是有累计证据的多账号异常、验证码连续校验失败、可疑改密成功、令牌重放。
 //
 // 早期实现把两者一起写成 status=active 并全部丢进「处理中」，结果是后台永远
 // 处理不完，真正的高危事件被淹没在正常流量里。这里把 actionable 收敛成**唯一**定义点：
@@ -21,26 +21,63 @@ import (
 //
 // 判定规则刻意采用「未登记即待处置」：新增事件类型如果忘了登记，宁可让管理员多看到一条，
 // 也不能被静默隐藏。只有明确确认属于审计流水的事件类型才登记在下面的白名单里。
-var securityAuditEventTypes = map[string]struct{}{
+var securityAuditEventTypes = map[string]string{
 	// 验证码 / 密码重置的正常阶段记录（申请、发信、改密成功）。
-	"verification_activity":   {},
-	"password_reset_activity": {},
+	"verification_activity":   SecuritySeverityInfo,
+	"password_reset_activity": SecuritySeverityInfo,
 	// 单次或少量密码输错，尚未触发任何锁定。
-	"login_failed": {},
+	"login_failed": SecuritySeverityLow,
 	// 普通成功登录与新设备只是观察信号；管理员新设备另用高危待处置事件。
-	"login_success":    {},
-	"login_new_device": {},
+	"login_success":    SecuritySeverityInfo,
+	"login_new_device": SecuritySeverityInfo,
 	// 验证码冷却拦截：用户点太快，属于自助恢复范围。
-	"verification_cooldown": {},
+	"verification_cooldown": SecuritySeverityInfo,
 	// 来源封禁已经在中间件层完成处置，这条只是「封禁生效了多少次」的计数流水。
 	// 把它计入待处置会让每个被封禁的请求都生成一条待办，封禁越有效后台越吵。
-	"security_blocked_request": {},
+	"security_blocked_request": SecuritySeverityLow,
 	// 内容、私信和反馈额度由业务接口当场限流；单次 429 只证明规则生效，
 	// 不足以证明是攻击。保留在全部记录里供追查，不进入管理员待处置列表。
-	"content_post_flood":    {},
-	"content_reply_flood":   {},
-	"private_message_flood": {},
-	"feedback_ticket_flood": {},
+	"content_post_flood":    SecuritySeverityLow,
+	"content_reply_flood":   SecuritySeverityLow,
+	"private_message_flood": SecuritySeverityLow,
+	"feedback_ticket_flood": SecuritySeverityLow,
+	// 自动冷却、发送额度和来源限流只是规则生效，不能单独证明攻击。
+	"login_bruteforce":         SecuritySeverityLow,
+	"verification_source_rate": SecuritySeverityLow,
+	"email_target_flood":       SecuritySeverityLow,
+	"verification_spray":       SecuritySeverityLow,
+	"password_reset_spray":     SecuritySeverityLow,
+	"search_abuse":             SecuritySeverityLow,
+}
+
+// 这些自动限流记录沿用原有取证字段，分类降级不删除历史 IP 和完整目标。
+var securityEvidenceAuditTypes = map[string]struct{}{
+	"login_bruteforce": {}, "verification_source_rate": {}, "email_target_flood": {},
+	"verification_spray": {}, "password_reset_spray": {}, "search_abuse": {},
+}
+
+func SecurityEventRetainsEvidence(eventType string) bool {
+	_, limited := securityEvidenceAuditTypes[strings.ToLower(strings.TrimSpace(eventType))]
+	return limited || SecurityEventActionable(eventType)
+}
+
+// SecurityEventEffectiveSeverity 同时用于新记录和历史 DTO，普通流水不会因旧版 high/critical 被误报。
+func SecurityEventEffectiveSeverity(eventType, severity string) string {
+	if level, audit := securityAuditEventTypes[strings.ToLower(strings.TrimSpace(eventType))]; audit {
+		return level
+	}
+	return strings.ToLower(strings.TrimSpace(severity))
+}
+
+// SecurityEventSeveritySQL 保证筛选、计数与 DTO 使用相同的历史事件解释，不批量重写原始数据。
+func SecurityEventSeveritySQL(typeColumn, severityColumn string) string {
+	var result strings.Builder
+	result.WriteString("CASE lower(trim(" + typeColumn + "))")
+	for _, kind := range SecurityAuditEventTypes() {
+		result.WriteString(" WHEN '" + kind + "' THEN '" + securityAuditEventTypes[kind] + "'")
+	}
+	result.WriteString(" ELSE lower(trim(" + severityColumn + ")) END")
+	return result.String()
 }
 
 // SecurityEventActionable 判断事件类型是否需要管理员处置。

@@ -6,6 +6,8 @@
 
 `GET /api/admin/security/events` 与 `GET /api/admin/security/events/:id` 延续管理员鉴权；普通用户不可访问。`source_key` 仍只提供给超级管理员，用于既有 HMAC 来源封禁。
 
+需处置预警的账号／邮箱目标新增可选 `target_account` 和 `target_account_status`，管理员列表和详情按相同口径返回实际提交的完整登录名，不要求目标已经注册。目标由 `security_events.target_account_ciphertext` 的 AES-GCM 密文解密，且必须与事件 HMAC 摘要一致；`available` 表示读取成功，`unavailable` 表示密钥或密文异常。升级前无密文的登录暴力尝试可从现有 active 账号邮箱精确核对，成功标为 `matched`；无法核对标为 `not_recorded`，客户端明确提示历史完整值无法还原。不属于账号／邮箱预警的事件省略状态。`target_masked` 保留原值，旧客户端仍可读取。普通用户接口、通用事件 JSON、外发邮件和日志不返回完整目标。
+
 预警新增 `source_ip`、`source_ip_status`、`source_region`、`source_region_status`。IP 仅在可信来源且该预警已保存有效密文时返回，状态为 `available`；`not_recorded` 表示历史记录或普通审计未记录 IP，`untrusted` 表示来源归因不可信，`unavailable` 表示密文无法读取。归属地是国家／省／市的离线查询结果，不含经纬度；状态为 `resolved`、`private`、`local`、`reserved`、`unknown`、`database_unavailable` 或 `database_error`。缺少 IP 时不猜测归属地。
 
 列表继续返回 `items`、`total`、`page`、`limit`，客户端支持加载后续页及失败重试。统计接口 `protection.security_ip_location` 和 `security_ip_location_note` 报告本地 IPv4／IPv6 库是否可用。数据库缺失只影响归属地，不能伪装为归属地正常，也不阻断事件采集。
@@ -69,6 +71,8 @@
 | `POST` | `/api/forgot_password` | 旧教务找回入口，已退役，固定返回 `410` |
 | `POST` | `/api/change_password` | 修改密码 (需 JWT) |
 
+普通登录未达到限制时，错误密码返回 `401` / `INVALID_CREDENTIALS`。账号连续失败 100 次或来源 IP 累计失败 300 次触发 24 小时冷却，返回 `429` / `LOGIN_COOLDOWN`、`error` 提示和 `Retry-After` 剩余秒数（向上取整，至少为 1）。重复请求不延长冷却；15 分钟失败计数重置不能提前解除有效冷却。用户可等待结束或通过未登录页面中的公开开发者联系方式申诉，申诉由人工核查，不自动解锁。计数重置、旧记录兼容与邮箱找回边界以 [登录安全运维](../docs/ops/auth-security.md#普通登录密码容错) 为准。
+
 ## 2. 用户与个人中心 (User)
 
 大部分需 JWT 鉴权。
@@ -76,7 +80,7 @@
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/user/profile` | 获取当前用户资料 |
-| `GET` | `/api/user/account-security` | 当前账号的私有安全资料；完整邮箱仅在此返回 |
+| `GET` | `/api/user/account-security` | 当前账号的私有安全资料；普通用户查看本人完整邮箱的入口 |
 | `POST` | `/api/user/email/code` | 向目标邮箱发送绑定或换绑验证码；省略 `purpose` 时按账号实际绑定状态推导 |
 | `PUT` | `/api/user/email` | 使用邮箱验证码和当前 App 密码绑定或换绑邮箱，成功签发新会话 |
 | `DELETE` | `/api/user/email` | 使用当前 App 密码解除邮箱；唯一登录方式不能解除 |
@@ -87,16 +91,24 @@
 | `POST`| `/api/user/checkin` | 用户每日签到 |
 | `POST`| `/api/user/checkin/makeup` | 使用补签卡补签本月过去的未签到日期 |
 | `GET` | `/api/user/checkin/status` | 获取签到状态 |
-| `GET` | `/api/user/checkin/calendar?month=YYYY-MM` | 获取指定月份的签到记录 |
+| `GET` | `/api/user/checkin/calendar?month=YYYY-MM` | 获取指定月份的签到记录。由停机补偿补齐的日期返回 `is_compensation: true`，该记录的 `exp_earned` 为 0，补偿经验通过领取接口单独入账。 |
 
-AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人状态）与 `POST /api/integrations/v1/me/checkin`（本人当日签到），二者需本人明确批准 `checkin:write`。不接受用户编号、日期、补签或经验参数；与 App 共用同日事实、奖励及幂等，撤权与签到串行复核。请求体仅允许空或 `{}`，拒绝额外字段／查询参数；返回日期、连续天数、本次奖励等最小数据，不返回学号或经验总额。
+AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人状态）与 `POST /api/integrations/v1/me/checkin`（本人当日签到），二者需本人明确批准 `checkin:write`，不要求教务核验或学校连接。不接受用户编号、日期、补签或经验参数；与 App 共用同日事实、奖励及幂等，撤权与签到串行复核。请求体仅允许空或 `{}`，拒绝额外字段／查询参数；返回日期、连续天数、本次奖励等最小数据，不返回学号或经验总额。
 
 公开工具接口 `GET /api/integrations/v1/public/community/{posts,posts/:id,posts/:id/replies,replies/:id/context,stickers,sections}` 无需账号令牌，仍按固定字段／可见状态过滤、限流且不增加浏览量。原有带授权路径保留兼容；本人资料／签到／草稿不属于该公开命名空间。食堂、校园资讯 `/api/campus/articles`、学校校历 `/api/campus-calendars/current` 沿用既有公开接口。
 | `POST`| `/api/user/:id/follow` | 关注指定用户 |
 | `DELETE`| `/api/user/:id/follow`| 取消关注指定用户 |
 | `GET` | `/api/user/:id/posts` | 获取指定用户发布的帖子 |
 
-每段连续签到第 7 天获得首张补签卡，此后每隔 14 天再获得 1 张，即该段第 7、21、35、49 天各发 1 张；第 14 天不额外发卡。每次断签后重新开始均按此规则计算，已获得的卡保留。补签接续连续天数时按同一规则重算奖励，若合并两段记录导致理论奖励减少，已发奖励转为保留额度，不额外追扣。使用时消耗 1 张，仅可补签本月今天之前的未签到日期；重复请求不重复发卡或扣卡，签到经验规则保持不变。
+每段连续签到第 7 天获得首张补签卡，此后每隔 14 天再获得 1 张。补签或补偿接续连续天数时按同一规则计发新增奖励。已发出的卡沿原期限使用。
+
+补签日期限上海时间本月今天之前的未签到日期。每张卡从实际发放之日起，到次月对应日期零点失效。次月没有对应日时，在次月最后一天零点失效。例如 1 月 31 日发放的卡在平年 2 月 28 日零点失效。接口的 `makeup_cards` 仅统计可用卡，每次补签优先消耗最早到期的一张，重复请求不重复发卡或扣卡。
+
+运维与超级管理员管理接口：
+- `POST /api/admin/checkin/users/:id/rebuild`：根据不可变事实表重算并更新指定用户的连续签到天数、最长天数与补签卡汇总。
+- `GET /api/admin/checkin/inspect`：只读检查全量用户的签到事实与汇总一致性，返回存在差异的账号、原因及期望值。
+- `POST /api/admin/checkin/rebuild-all`：批量对账并修复所有签到连续天数或汇总不一致的账号，并写入 `check_in_repair_logs` 审计流水。
+- 命令行工具：`go run ./cmd/reconcile_checkin_streaks [--inspect|--apply] [--user <id>]`。
 
 ## 3. 教务系统 (Edu)
 
@@ -152,6 +164,22 @@ AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人�
 ```
 
 错误码：`invalid_erke_snapshot` 表示字段不符合结构、超过大小限制或含敏感字段；`personal_snapshot_not_found` 表示尚未上传或已经删除；`personal_snapshot_unavailable` 表示服务暂时不可用。
+
+### 手机 App 扫码同步到网页
+
+以下接口均需 JWT，可携带 `X-Expected-App-User` 核对账号（不一致返回 409 `APP_USER_CHANGED`）。服务端只在进程内存中转端到端加密的密文，不落库、不写日志，重启后在途会话失效；加密协议与字段契约见 `web/src/academic-transfer.ts` 和 `client/lib/features/academic_transfer/`。
+
+| Method | Endpoint | 调用方 | Description |
+|---|---|---|---|
+| `POST` | `/api/academic-transfer/sessions` | 网页 | 创建 5 分钟有效的会话，返回 `session_id`、`status`、`expires_at`、`ttl_seconds`；单用户最多 3 个在途会话（淘汰最早的），10 分钟内最多创建 30 个，超出返回 429 `TRANSFER_RATE_LIMITED` |
+| `GET` | `/api/academic-transfer/sessions/:id` | 网页 | 轮询状态 `pending` / `claimed` / `ready`；`ready` 时附带 `payload` 密文信封，网页确认前可重复读取 |
+| `POST` | `/api/academic-transfer/sessions/:id/claim` | App | 扫码后标记已扫到；已上传过返回 409 `TRANSFER_ALREADY_UPLOADED` |
+| `PUT` | `/api/academic-transfer/sessions/:id/payload` | App | 上传一份资料；响应丢失可重试完全相同的 `{"app_public_key","nonce","ciphertext"}`，返回 `ready` 且不重复占用内存，替换内容仍返回 409 `TRANSFER_ALREADY_UPLOADED`。信封字段使用 base64url（P-256 未压缩公钥、12 字节随机数、AES-GCM 密文含标签），密文上限 600 KiB；未 claim 返回 409 `TRANSFER_NOT_CLAIMED` |
+| `DELETE` | `/api/academic-transfer/sessions/:id` | 两端 | 网页解密后清除或任一端取消，幂等返回 204 |
+
+旧版已安装 App 重复拼接 `/api` 的兼容路径仅提供 `POST /api/api/academic-transfer/sessions/:id/claim`、`PUT .../:id/payload`、`DELETE .../:id`，与规范路径共享会话、JWT及本人归属校验；不提供重复的网页创建或读取入口。新版App始终使用规范路径。
+
+错误码：`TRANSFER_SESSION_NOT_FOUND`（404，不存在或已过期）、`TRANSFER_ACCOUNT_MISMATCH`（403，扫码账号与网页账号不同）、`INVALID_TRANSFER_PAYLOAD`（400，含未知字段、编码或公钥无效）、`TRANSFER_PAYLOAD_TOO_LARGE`（413）、`TRANSFER_BUSY`（503，进程在途密文总量超过 96 MiB）。
 
 ## 4. 帖子与社区 (Posts & Replies)
 
@@ -256,15 +284,37 @@ FEED-H1 加固：
 | `GET` | `/api/canteens/:id?review_sort=best\|latest&review_filter=all\|with_image\|high\|low` | 公开获取食堂详情及评价；登录时附带个人评价/投票状态 |
 | `POST` | `/api/canteens/:id/rate` | 评价食堂（需登录并绑定教务） |
 | `PUT` | `/api/canteens/ratings/:ratingId/vote` | 给食堂评价点赞/点踩/取消投票，不能给自己的评价投票 |
-| `GET` / `PUT` | `/api/canteens/:id/display-tags` | 管理员读取或保存位置及排行展示标签。PUT 必须提供 `location_area`、`location_floor` 和 `tags`；`tags: null` 恢复评价自动汇总，数组按顺序指定最多三个既有评价标签，空数组表示不展示。修改不改变原始评价或评分。 |
+| `GET` | `/api/canteens/meta` | 下发区域、楼层、评价标签与 `supports_unified_management`；值为 `true` 表示支持资料及展示标签一次保存 |
+| `GET` / `PUT` | `/api/canteens/:id/display-tags` | 管理员读取或保存位置及排行展示标签。GET 另返回 `automatic_tags: [{key,name,count}]`，用于预览自动汇总结果。PUT 必须提供 `location_area`、`location_floor` 和 `tags`；`tags: null` 恢复评价自动汇总，数组按顺序指定最多三个既有评价标签，空数组表示不展示。修改不改变原始评价或评分。 |
 | `PUT` | `/api/canteens/:id/image` | (管理员) 修改食堂封面图片 |
-| `POST` | `/api/canteens` | (需登录) 提交新食堂，进入待审核；`verified=false` 不公开，管理员收到站内通知。请求体 `{"name", "image", "location_area", "location_floor"}`；`location_area` 可选值 `一食堂`/`二食堂`，`location_floor` 可选值 `一楼`/`二楼`（旧客户端可省略） |
+| `POST` | `/api/canteens` | (需登录) 提交新商家，进入管理员待审核列表；`verified=false` 不公开。请求体 `{"name", "image", "location_area", "location_floor"}`；`location_area` 可选值 `一食堂`/`二食堂`/`其他`，`location_floor` 可选值 `一楼`/`二楼`（旧客户端可省略） |
 | `GET` | `/api/canteens/pending` | (管理员) 待审核食堂列表（含 `creator_name` 提交人昵称与 `location_area`/`location_floor` 位置标签） |
 | `POST` | `/api/canteens/:id/approve` | (管理员) 通过审核，文件转 `public`，通知提交者；提交者获得 10 经验奖励（幂等，仅用户提交，响应含 `exp_awarded`） |
 | `DELETE` | `/api/canteens/:id/pending` | (管理员) 驳回并删除待审提交，可带 `{"reason": "..."}` 通知提交者 |
 | `POST` | `/api/canteens/:id/offline` | (管理员) 下架已公开食堂（历史数据保留）；如有未收回的提交奖励经验则收回，经验扣至下限 0 |
-| `POST` | `/api/canteens/:id/online` | (管理员) 恢复已下架食堂；返还此前因下架收回的提交奖励经验 |
-| `DELETE` | `/api/canteens/:id` | (管理员) 永久删除食堂；如有未收回的提交奖励经验则收回 |
+| `POST` | `/api/canteens/:id/online` | (超级管理员) 恢复已下架食堂；返还此前因下架收回的提交奖励经验 |
+| `PATCH` | `/api/canteens/:id` | (管理员；下架食堂仅超级管理员) 一次修改名称、位置和展示标签，保留历史评价、菜品和图片。可选字段 `name`、`location_area`、`location_floor`、`tags`，至少传一项；整组校验、更新与审计在同一事务中完成 |
+| `DELETE` | `/api/canteens/:id` | (管理员；下架食堂仅超级管理员) 永久删除食堂；如有未收回的提交奖励经验则收回 |
+
+### 商家管理与区域
+
+区域「其他」表示食堂以外的商家，使用现有 `location_area` 字段，不需要数据迁移；其楼层可为空。旧数据的空区域仍表示「未设置」，不会自动改为「其他」。公开列表、搜索、排行与管理端共用服务端区域白名单。
+
+统一编辑使用 `PATCH /api/canteens/:id`。`tags` 省略表示保持原设置，`null` 表示恢复评价自动汇总，`[]` 表示隐藏标签；非空数组按给定顺序展示最多三个不重复的既有标签。名称／位置冲突、非法标签、权限不足或审计写入失败时整组回滚。旧 `PUT /display-tags` 接口继续兼容旧端，二者共享标签校验。
+
+管理端读取设置时，`automatic_tags` 返回本店最近 30 天有效评价汇总的前三个标签，字段为 `key`、`name`、`count`，无标签时为 `[]`。它始终表示自动汇总结果，与当前 `tags` 的手动覆盖独立，切换回自动模式时可直接预览；读取不修改原始评价或店铺设置。旧服务未提供该字段时，客户端只提示保存后自动更新，不展示虚构标签。
+
+新版客户端先确认 `/meta` 的 `supports_unified_management`，旧服务或配置读取失败时阻止统一保存并提供重试，避免旧服务忽略新增 `tags` 字段却被误报保存成功。先升级服务端，再升级客户端；回退客户端仍可使用旧接口。回退服务端不会删除「其他」或已保存标签，但旧服务白名单无法继续编辑「其他」，应恢复配套服务后再维护此类商家。
+
+### 食堂下架与怀旧存档
+
+下架保留食堂、历史评价、评分、菜品和图片。下架商家退出首页推荐、热门菜品、发现搜索和所有排行榜；`GET /api/canteens/rankings` 只计算营业商家，兼容旧客户端传入 `scope=all`，返回 `meta.scope=current`，不再把下架商家纳入排名或评分先验。
+
+独立怀旧版块通过 `GET /api/canteens?status=offline` 读取，支持原有 `q`、`page`、`limit`，先筛选再分页；顶层数组结构保持兼容，默认不传状态时仍返回全部已审核商家。怀旧列表按下架时间倒序、同时间按 ID 倒序，缺失下架时间的旧记录排在最后；历史星级保留，`ranking_score=0`，客户端不显示名次。
+
+下架详情、评价与图片保持公开可读。普通用户（包括原作者）不能新增、编辑、删除评价或投票，返回 `409 canteen_offline`。普通管理员对怀旧资料只读；修改名称、位置、展示标签、封面、菜品、实拍、恢复营业、永久删除以及通过举报治理改变历史内容，均仅允许当前有效的超级管理员，拒绝时返回 `403 canteen_archive_super_admin_required`。举报本身仍可提交，普通管理员可查看与忽略，确认治理须由超级管理员处理。超级管理员维护食堂资料不代替作者改写历史评价；治理沿用原有隐藏和审计流程。
+
+维护事务锁定食堂状态，并从数据库复核超级管理员角色及有效账号，旧会话角色不作为授权依据。恢复营业后重新参与推荐、搜索和排名，用户写操作恢复；原有提交奖励的收回、返还与幂等规则保留。无需数据库迁移或批量改写既有下架记录。
 
 ### 食堂评价投票
 
@@ -403,7 +453,7 @@ FEED-H1 加固：
 | `POST` | `/api/super/security/blocks` | 超级管理员；`route/account/all` 作用域，`all` 必须 `confirm_global=true`；时长 15/60/1440 分钟；原因最多 200 个 Unicode 字符 |
 | `DELETE` | `/api/super/security/blocks/:id` | 超级管理员；一次解除同一操作组全部封禁 |
 
-事件列表默认每页 50 条，最多 100 条；事件和封禁页码最多 10000。事件按最后发生时间、ID 倒序稳定排序。正常验证码、正常改密等流水通过 `actionable=false` 区分，默认待办使用 `actionable=true&status=active`。普通管理员只取得脱敏来源指纹，完整来源键仅返回给超级管理员。
+事件列表默认每页 50 条，最多 100 条；事件和封禁页码最多 10000。事件按最后发生时间、ID 倒序稳定排序。普通登录失败、自动冷却、验证码额度及搜索／内容限流等通过 `actionable=false` 区分，默认待办使用 `actionable=true&status=active`。`severity` 是当前分类解释后的等级，历史严重程度筛选与 DTO 一致；普通记录即使原始等级为 high/critical，也只显示信息／提示且不外发高危邮件。`active_high_count` 与 `actionable_high_count` 均排除普通记录。多账号登录异常按同一可信来源在 10 分钟区间至少 20 个目标、100 次实际失败判定，证据见 `metadata_json.distinct_targets/failure_count/window`，冷却重复请求不参与；具体边界见 [安全运维](../docs/ops/auth-security.md#安全中心降噪与异常核查)。普通管理员只取得脱敏来源指纹，完整来源键仅返回给超级管理员。
 
 事件处置请求接受 `{"note":"处理说明"}`，兼容空请求体；非法 JSON 返回 `400`，不存在返回 `404`，已被其他请求处置返回 `409/security_event_already_handled`，保留第一次处理结论和审计。数据库故障返回 `500`。客户端收到冲突后刷新列表。防护数据加载失败时不沿用旧的健康状态；缺失的运行态保持“未验证”。
 
@@ -504,20 +554,20 @@ FEED-H1 加固：
 | --- | --- | --- |
 | `POST /api/oauth/device_authorization` | 公开客户端 `client_id=sylulive-astrbot` | URLencoded：`installation_id` UUID、自报名称、scope；返回 RFC8628 字段，有效10分钟 |
 | `POST /api/oauth/device_authorization/cancel` | 本次设备 secret | URLencoded `client_id`、`device_code`；取消待处理请求，已批准但未完成换令牌的授权也撤销；不接受网页 user_code |
-| `POST /api/oauth/token` | 设备 secret 或 refresh token | URLencoded；device grant 或 refresh grant。access 10分钟、refresh闲置7天、绝对30天；旧 refresh 重用撤销该授权 |
+| `POST /api/oauth/token` | 设备 secret 或 refresh token | URLencoded；device grant 或 refresh grant。access 10分钟、refresh闲置7天、绝对30天；同一 `refresh_request_id`（UUID）可恢复丢失的刷新结果，其他旧 refresh 重用撤销该授权 |
 | `POST /api/oauth/revoke` | 所撤凭证 | RFC7009，同属授权一并撤销；不会注销 App 登录 |
 | `GET /api/connected-apps` | App 登录 | 本人的连接列表及 `personal_data_enabled` 服务状态，不返回凭证 |
-| `POST /api/connected-apps/personal-sync/grades` | 本人 App 登录与可信教务资格 | `consent:true`、`fetched_at`、`year`、`semester`（3/12/16）及最多1000条 `grades`；白名单字段 `course_name`、`score`、`credits`、可选 `gpa`/`course_nature`，不收学校凭据；需个人查询开关与隐私设置允许 |
+| `POST /api/connected-apps/personal-sync/grades` | 本人 App 当前有效登录、明确上传确认 | `consent:true`、`fetched_at`、`year`、`semester`（3/12/16）及最多1000条 `grades`；白名单字段 `course_name`、`score`、`credits`、可选 `gpa`/`course_nature`，不收学校凭据；需个人查询开关与隐私设置允许，来源标记为用户上传，不授予学生资格 |
 | `DELETE /api/connected-apps/personal-sync/grades` | 本人 App 登录 | 删除本人上传成绩副本，关个人查询开关后仍可删除，不删除 App 原有教务快照 |
 | `GET /api/integrations/v1/me/grades` | `academic:grades:read` | 仅本人的已同步成绩，支持 `offset`、`limit`（1至50），返回覆盖学期、过期/部分标记与下一页；需个人查询开关 |
 | `GET /api/integrations/v1/me/erke` | `academic:erke:read` | 仅本人主动同步的二课摘要；上传/删除沿用 `/api/personal-snapshots/erke`，不是学校实时查询 |
 | `POST /api/connected-apps/device-requests/lookup` | 本人 App 登录 | JSON `user_code`，返回待核对范围与一次性确认 nonce |
-| `POST /api/connected-apps/device-requests/:id/decision` | 本人 App 登录；批准时需30分钟内认证 | `allow`、`scopes`、`confirmation_nonce`；替换还须旧 `replace_binding_id` 与 `expected_epoch` |
+| `POST /api/connected-apps/device-requests/:id/decision` | 本人当前有效 App 登录 | `allow`、`scopes`、`confirmation_nonce`；替换还须旧 `replace_binding_id` 与 `expected_epoch` |
 | `POST /api/connected-apps/:id/revoke` | 本人 App 登录 | 立即撤销，无近期登录额外门槛 |
 | `GET /api/connected-apps/bot` | 本人 App 登录 | 返回 `policy_supported`、安全公开板块选项、`bot`（独立ID、名字、头像、启停、公开创建者、policy）和实际自动评论开关／授权状态 |
 | `GET /api/connected-apps/bot/runtime` | 本人 App 登录 | 本人机器人的控制／连接／心跳综合状态及最近浏览、计划、成功发言元数据；不返回凭据或执行会话ID |
 | `POST /api/integrations/v1/bot/runtime` | 有效集成授权及 `community:read` | 仅报告绑定自己的非正文运行元数据并获得两分钟执行占用；不授予内容写入权限 |
-| `POST /api/connected-apps/bot` | 本人 App 登录；创建／编辑／启用需近期认证 | `{name,avatar,enabled,policy}`；可创建暂停账号，一人一个。纯暂停只发 `{enabled:false}`，无需近期认证。旧请求省略头像和policy时保留已有值 |
+| `POST /api/connected-apps/bot` | 本人当前有效 App 登录 | `{name,avatar,enabled,policy}`；可创建暂停账号，一人一个。纯暂停只发 `{enabled:false}`，无需近期认证。旧请求省略头像和policy时保留已有值 |
 | `GET /api/integrations/v1/bot/policy` | `community:read` | 仅返回本连接对应bot的ID、启停和policy，不含创建者私有资料；无bot返回null |
 | `GET /api/integrations/v1/binding` | scoped Bearer | `profile:read_minimal`，账号 ID 与昵称、授权范围 |
 | `GET /api/integrations/v1/community/posts` | `community:read` | `query`、`after_id`、`limit`（1至20），最近/搜索公开普通水帖 |
@@ -533,11 +583,11 @@ FEED-H1 加固：
 | `POST /api/integrations/v1/actions` | `community:propose` | 只创建草稿，不能发布；需开启提案开关 |
 | `GET /api/integrations/v1/actions/:id` | `actions:read_own` | 本授权动作，不能得到发布确认 nonce；来源变更时阻断旧草稿正文 |
 | `GET /api/connected-apps/actions/:id` | 本人 App 登录 | 草稿预览与5分钟确认 nonce；本人官网使用 |
-| `POST /api/connected-apps/actions/:id/decision` | 本人 App 登录；发布时需30分钟内认证 | `allow`、`draft_version`、`payload_hash`、`confirmation_nonce`；发布需独立开关，拒绝无需重复验证 |
+| `POST /api/connected-apps/actions/:id/decision` | 本人 App 当前有效登录 | `allow`、`draft_version`、`payload_hash`、`confirmation_nonce`；发布需独立开关，拒绝无需重复验证 |
 
-核对设备请求和预览草稿无需再次输入密码。批准新连接、机器人创建／编辑／启用和实际确认发布需要当前登录会话30分钟内的密码证明；拒绝、撤销和紧急暂停不要求近期证明。`POST /api/auth/reauthenticate` 返回 `valid_until`，不新建登录、不延长令牌、不影响其他会话。
+核对设备请求、批准新连接、机器人创建／编辑／启用和本人确认发布均使用当前有效的本站登录及对应 nonce／版本校验，不额外要求30分钟密码证明。`POST /api/auth/reauthenticate` 返回 `valid_until`，不新建登录、不延长令牌、不影响其他会话。
 
-助手凭证不能调用普通 App API，App JWT 也不能调用集成 API。允许的 scope 为 `profile:read_minimal community:read content:read_own_public actions:read_own community:propose checkin:write community:bot_reply community:bot_post academic:grades:read academic:erke:read` 的子集；提案必须同时批准读取和结果查询，自动评论和发帖分别需独立 scope，旧连接不自动扩权。个人查询需 `INTEGRATION_PERSONAL_DATA_ENABLED` 开启，Web/App 不因同步成功自动选择查询 scope。普通教务本地声明不满足可信核验要求；无权限失败返回稳定 `code`，OAuth 错误使用 `error`。所有含授权数据的响应设置 `Cache-Control: no-store`。
+助手凭证不能调用普通 App API，App JWT 也不能调用集成 API。允许的 scope 为 `profile:read_minimal community:read content:read_own_public actions:read_own community:propose checkin:write community:bot_reply community:bot_post academic:grades:read academic:erke:read` 的子集；提案必须同时批准读取和结果查询，自动评论和发帖分别需独立 scope，旧连接不自动扩权。个人查询需 `INTEGRATION_PERSONAL_DATA_ENABLED` 开启，Web/App 不因同步成功自动选择查询 scope。QQ 连接和本站签到不要求学校身份；本人同步资料不会因此获得可信学生资格。缺少学校资料返回 `academic_sync_required`，在官网「个人资料同步」修复，不撤销基础连接；无权限失败返回稳定 `code`，OAuth 错误使用 `error`。所有含授权数据的响应设置 `Cache-Control: no-store`。
 
 机器人 `policy` 字段包括 `public_read_enabled`、`reply_enabled`、`sticker_enabled`、`post_enabled`、`image_enabled`、`allowed_post_types`、`blocked_terms`、`block_links`、`daily_reply_limit`（1–100）和 `min_reply_interval_minutes`（1–1440）。默认只读，新增发帖与配图字段缺省为 false，旧评论权限不扩大为发帖权限。允许板块为校园生活／课程学习，禁链接，默认评论日限3条且至少30分钟，已有设置保持不变；本人可保存更高频率，平台最高100条／滚动24小时、至少间隔1分钟；投诉、迎新求助、敏感或停用板块不可授权。屏蔽词最多20个，每个1–24字，按全角ASCII、零宽及空白规范化后匹配；不是语义审核。认证社区读取受机器人启停与白名单约束，最终自动发布事务复核规则、scope、信誉、社区禁言和平台开关。发帖来源版本重新核验，图片只接受 bot 自有或获上传授权的有效文件，发布与图片绑定原子提交。普通人工确认路径拒绝 bot 来源/配图载荷。公开用户 `ai_bot` 只返回创建者公开ID与昵称，普通用户昵称不会产生系统标记。
 
@@ -564,3 +614,23 @@ FEED-H1 加固：
 公开帖子和正常评论新增 `author.nickname`、`like_count`、`images`；帖子含 `reply_count`。图片只包含当前可见内容关联且 public/active 的图片 URL、MIME、尺寸与序号，不返回上传者、存储元数据或私有文件。详情正文上限 10000 字；列表仍为 600 字摘要，评论分页不变。新增展示字段不参与草稿 source_version，统计／改名不使草稿失效。删除评论仍只留墓碑；所有路径保留 scope、当前资格和授权复核，不增加浏览量。
 
 AstrBot 食堂工具直接匿名复用现有 `/api/canteens/rankings`、`/search`、`/:id/dishes`、`/:id/dishes/:dishId`；不新增私有资料、学校登录或私信 scope。
+
+## 主题商城投稿与审核
+
+错误响应统一为 `{"error": "...", "code": "theme_*"}`（字段校验错误附带 `"field"`）。`POST /api/reports` 新增 `target_type="theme"`，`target_id` 传版本族 `familyId`（UUID）。
+
+| 方法与路径 | 权限 | 说明 |
+| --- | --- | --- |
+| `GET /api/themes` | 公开 | 查询参数：`sort`（`latest`/`popular`/`official`）、`tag`、`q`、`ids`（最多 50 个，批量检查更新）、`cursor`；每页 20 条，支持 `ETag` / `304` |
+| `GET /api/themes/:familyId` | 公开 | 已上架主题详情及规范化 `manifest`，支持 `ETag` / `304` |
+| `GET /api/themes/:familyId/versions/:version/package` | 公开 | 指定版本规范包，支持 `Range`、`ETag`（规范包 SHA-256）、`Cache-Control: public, no-cache`；仅版本为 `approved`/`superseded` 且根记录非 `removed`/`withdrawn` 时可下载，无 `Range` 或 `Range: bytes=0-*` 时根记录 `downloads` 加 1 |
+| `GET /api/themes/:familyId/versions/:version/preview/:mode` | 公开 | 指定版本 `light`/`dark` 预览图，支持 `Range`、`ETag` 与 `Cache-Control: public, no-cache`，访问条件同上 |
+| `GET /api/users/:id/themes` | 公开 | 指定作者已上架的主题列表 |
+| `POST /api/themes/submissions` | 登录 | `multipart/form-data`（上限 49MB）：`package`（`.sltheme`）、`idempotencyKey`，可选 `familyId`、`source`（仅管理员可指定 `official`）及元数据覆盖；配额为待审不超过 3 个、24 小时不超过 5 个（超限返回 `429 theme_quota`） |
+| `GET /api/themes/submissions` | 登录 | 本人投稿列表（`Cache-Control: private, no-store`） |
+| `GET /api/themes/submissions/:id/package` | 作者或管理员 | 私有待审/历史包（他人或已撤回返回 `404`） |
+| `GET /api/themes/submissions/:id/preview/:mode` | 作者或管理员 | 私有 `light`/`dark` 预览图 |
+| `POST /api/themes/submissions/:id/withdraw` | 作者 | 撤回待审单版本，或撤回已上架整个版本族 |
+| `GET /api/admin/themes?status=` | 管理员 | 审核队列（默认 `pending`），每项附带规范 `manifest` 与同版本族当前 `currentApproved` 摘要 |
+| `POST /api/admin/themes/:id/review` | 管理员 | JSON `{approve, reasonCode, note}`；禁止自审，根记录加锁保证单 `approved` 且版本号只进不退 |
+| `POST /api/admin/themes/:familyId/remove` | 管理员 | JSON `{reasonCode, note}`；下架整个版本族 |

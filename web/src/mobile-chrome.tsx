@@ -1,7 +1,7 @@
 import { Link, NavLink, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "./auth";
-import { PostForm } from "./community";
-import { Icon, Tabs, useUI } from "./ui";
+import {usePostEditor} from './post-editor-page';
+import { Icon, Tabs } from "./ui";
 
 const destinations = [
   ["/", "首页", "home"],
@@ -28,7 +28,8 @@ export function MobileHeader({ menu, onMenu }: { menu: boolean; onMenu: () => vo
   const [params, setParams] = useSearchParams();
   const home = location.pathname === "/";
   if (location.pathname.startsWith("/post/") || /^\/polls\/\d+/.test(location.pathname) || !home && destinations.some(([path]) => path === location.pathname)) return null;
-  const titles: Record<string, string> = { community: "校园社区", messages: "消息", grades: "教务中心", exams: "考试与试卷库", campus: "校园资讯", canteen: "食堂", competition: "竞赛中心", ratings: "校园榜单", polls: "校园投票", ai: "校园 Agent", toolbox: "工具箱", feedback: "意见反馈", notifications: "通知", "connected-apps": "已授权助手", admin: "管理中心" };
+  const titles: Record<string, string> = { community: "校园社区", messages: "消息", grades: "教务中心", exams: "考试与试卷库", campus: "校园资讯", canteen: "食堂", competition: "竞赛中心", ratings: "校园榜单", polls: "校园投票", ai: "校园 Agent", toolbox: "工具箱", feedback: "我的工单", notifications: "通知", "connected-apps": "已授权助手", admin: "管理中心", themes: "主题商城", theme: "主题详情" };
+  titles["connected-apps"] = location.pathname.includes("/actions/") ? "确认助手草稿" : "QQ 助手与社区机器人";
   return <header className={`mobile-header ${home ? "mobile-home-header" : ""}`}>
     <button className="mobile-icon-button" aria-label={home ? "打开导航" : "返回上一页"} aria-expanded={home ? menu : undefined} onClick={home ? onMenu : () => window.history.state?.idx ? navigate(-1) : navigate("/")}><Icon name={home ? "menu" : "arrow"} /></button>
     {home ? <Tabs tabs={[["time", "最新"], ["all", "综合"], ["featured", "精华"], ["following", "关注"]]} value={params.get("sort") || "all"} onChange={sort => {
@@ -40,11 +41,11 @@ export function MobileHeader({ menu, onMenu }: { menu: boolean; onMenu: () => vo
 }
 
 export function MobileNavigation() {
-  const location = useLocation(), auth = useAuth(), ui = useUI();
+  const location = useLocation(), openPostEditor = usePostEditor();
   if (!destinations.some(([path]) => path === location.pathname)) return null;
   const market = location.pathname === "/market";
   return <>
-    {["/", "/market"].includes(location.pathname) && <button className={`mobile-publish ${market ? "mobile-market-publish" : ""}`} aria-label={market ? "发布闲置" : "发布校园内容"} onClick={() => auth.requireUser() && ui.open(market ? "发布闲置" : "发布内容", <PostForm market={market} />)}>{market ? <Icon name="plus" size={23} /> : <svg width="23" height="23" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m16 3 5 5-12 12H4v-5L16 3Zm2-2a2 2 0 0 1 3 0l2 2a2 2 0 0 1 0 3l-1 1-5-5 1-1Z" /></svg>}{market && <span>发布</span>}</button>}
+    {["/", "/market"].includes(location.pathname) && <button className={`mobile-publish ${market ? "mobile-market-publish" : ""}`} aria-label={market ? "发布闲置" : "发布校园内容"} onClick={() => openPostEditor({market})}>{market ? <Icon name="plus" size={23} /> : <svg width="23" height="23" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m16 3 5 5-12 12H4v-5L16 3Zm2-2a2 2 0 0 1 3 0l2 2a2 2 0 0 1 0 3l-1 1-5-5 1-1Z" /></svg>}{market && <span>发布</span>}</button>}
     <nav className="mobile-bottom-nav" aria-label="底部导航">
       {destinations.map(([path, label, icon]) => <NavLink key={path} to={path} end><MobileNavIcon name={icon} /><span>{label}</span></NavLink>)}
     </nav>

@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 const (
 	CheckInFirstMakeupCardDays    = 7
@@ -15,13 +19,14 @@ func IsCheckInMakeupCardRewardDay(streakDays int) bool {
 
 // CheckIn 是每天签到的不可变事实记录。签到日期使用 DATE，避免时区导致同一天重复。
 type CheckIn struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
-	UserID      uint      `gorm:"not null;index" json:"user_id"`
-	CheckInDate time.Time `gorm:"type:date;not null;index" json:"check_in_date"`
-	StreakDays  int       `gorm:"not null;default:1" json:"streak_days"`
-	ExpEarned   int       `gorm:"not null;default:1" json:"exp_earned"`
-	IsMakeup    bool      `gorm:"not null;default:false;index" json:"is_makeup"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	UserID         uint      `gorm:"not null;index" json:"user_id"`
+	CheckInDate    time.Time `gorm:"type:date;not null;index" json:"check_in_date"`
+	StreakDays     int       `gorm:"not null;default:1" json:"streak_days"`
+	ExpEarned      int       `gorm:"not null;default:1" json:"exp_earned"`
+	IsMakeup       bool      `gorm:"not null;default:false;index" json:"is_makeup"`
+	IsCompensation bool      `gorm:"not null;default:false" json:"is_compensation"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // UserCheckInStat 保存签到事实的可重建汇总，绝不能作为签到是否成功的依据。
@@ -34,6 +39,33 @@ type UserCheckInStat struct {
 	MakeupCardsGranted int        `gorm:"not null;default:0" json:"makeup_cards_granted"`
 	MakeupCardsUsed    int        `gorm:"not null;default:0" json:"makeup_cards_used"`
 	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+// CheckInMakeupCardGrant 记录实际发出的补签卡。余额以未到期的批次为准。
+type CheckInMakeupCardGrant struct {
+	ID        uint      `gorm:"primaryKey"`
+	UserID    uint      `gorm:"not null;index:idx_checkin_card_user_expiry"`
+	AwardedOn time.Time `gorm:"type:date;not null"`
+	ExpiresOn time.Time `gorm:"type:date;not null;index:idx_checkin_card_user_expiry"`
+	Remaining int       `gorm:"not null"`
+}
+
+func newCheckInMakeupCardGrant(userID uint, awardDate time.Time, count int) CheckInMakeupCardGrant {
+	nextMonth := time.Date(awardDate.Year(), awardDate.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+	lastDay := nextMonth.AddDate(0, 1, -1).Day()
+	return CheckInMakeupCardGrant{
+		UserID: userID, AwardedOn: dateOnly(awardDate),
+		ExpiresOn: nextMonth.AddDate(0, 0, min(awardDate.Day(), lastDay)-1),
+		Remaining: count,
+	}
+}
+
+func GrantCheckInMakeupCards(tx *gorm.DB, userID uint, awardDate time.Time, count int) error {
+	if count <= 0 {
+		return nil
+	}
+	grant := newCheckInMakeupCardGrant(userID, awardDate, count)
+	return tx.Create(&grant).Error
 }
 
 // CheckInRepairLog 记录人工补录、回算等修改签到事实或汇总的操作，便于审计和回滚追踪。

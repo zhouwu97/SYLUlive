@@ -1,0 +1,144 @@
+/* 工单列表与详情：只在 .ticket-list / .ticket-detail 作用域内覆盖，不影响其它使用 .ticket-row 的页面。 */
+
+.tag.ticket-status.is-resolved {
+  background: color-mix(in srgb, var(--success) 14%, var(--surface));
+  color: color-mix(in srgb, var(--success) 82%, var(--text));
+}
+
+.ticket-list .ticket-row-copy {
+  min-width: 0;
+}
+.ticket-list .ticket-row-copy b,
+.ticket-list .ticket-row-copy p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ticket-list .ticket-row-time {
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 601px) {
+  /* 单号 12 位等宽字符，原 75px 列放不下会压到标题上；时间列加宽避免折成两行。 */
+  .ticket-list .ticket-row {
+    grid-template-columns: 116px minmax(0, 1fr) 76px 128px;
+    gap: 16px;
+    padding: 14px 20px;
+  }
+  .ticket-list .ticket-row > .mono {
+    color: var(--text-3);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ticket-list .ticket-row .tag {
+    justify-self: center;
+  }
+  .ticket-list .ticket-row-time {
+    justify-self: end;
+  }
+}
+
+/* 详情页 */
+.ticket-detail .ticket-extra {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+}
+.ticket-detail .ticket-extra dt {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+.ticket-detail .ticket-extra dd {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  font-size: 14px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ticket-detail .ticket-aside-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ticket-detail .ticket-aside-head h3 {
+  margin: 0;
+}
+.ticket-detail .ticket-aside .dialog-form textarea {
+  min-height: 72px;
+}
+.ticket-detail .ticket-aside .form-actions .btn {
+  width: 100%;
+}
+
+.ticket-detail .ticket-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+}
+.ticket-detail .ticket-facts > div {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 8px;
+}
+.ticket-detail .ticket-facts dt {
+  color: var(--text-3);
+}
+.ticket-detail .ticket-facts dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.ticket-detail .ticket-timeline {
+  margin: 0;
+}
+.ticket-detail .ticket-timeline li {
+  overflow-wrap: anywhere;
+}
+.ticket-detail .ticket-timeline li:last-child {
+  border-bottom: 0;
+}
+.ticket-detail .ticket-timeline time {
+  display: block;
+  font-size: 12px;
+}
+
+/* 回复区输入框保持紧凑，减少详情页滚动距离。 */
+.ticket-detail .reply-form .dialog-form textarea {
+  min-height: 96px;
+}
+
+/* 通知入口明确呈现类型、未读和下一步；回执不占据点击链路。 */
+.notification-list{overflow:hidden}
+.notification-list .notification-row{align-items:center;gap:16px;padding:20px 22px;cursor:pointer;transition:background 140ms ease;text-decoration:none}
+.notification-list .notification-row.unread{background:color-mix(in srgb,var(--brand) 4%,var(--surface))}
+.notification-icon{display:grid;place-items:center;flex:none;width:44px;height:44px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);color:var(--brand-strong)}
+.notification-icon.kind-feedback{color:var(--icon-amber,#b66c13);background:color-mix(in srgb,var(--icon-amber,#b66c13) 8%,var(--surface));border-color:transparent}
+.notification-copy{display:grid;gap:6px;min-width:0}.notification-kind{display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:11px;font-weight:500}.notification-unread{display:inline-flex;align-items:center;gap:4px;color:var(--brand-strong);font-size:10px}.notification-unread:before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor}.notification-list .notification-copy b{font-size:14px;line-height:1.6;overflow-wrap:anywhere}.notification-list .notification-copy time{color:var(--text-3);font-size:11px;font-variant-numeric:tabular-nums}
+.notification-open{display:flex;align-items:center;gap:8px;flex:none;font-size:12px;color:var(--text-3)}.notification-open .svg-icon{transform:rotate(-90deg)}.notification-list .notification-row:hover{background:var(--surface-2)}.notification-list .notification-row:hover .notification-open{color:var(--brand-strong)}.notification-list .notification-row:focus-visible{outline:2px solid var(--brand);outline-offset:-3px}.notification-list .notification-row:active{background:var(--brand-soft)}
+/* 工单沟通与处理动作各成一区，防止通用表单间距把回复操作推到屏外。 */
+.ticket-detail{grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}.ticket-detail .ticket-main>.panel{overflow:hidden}.ticket-detail .ticket-aside{display:grid;gap:16px;min-width:0}.ticket-detail .ticket-aside>.panel{margin:0;padding:20px}.ticket-detail .ticket-aside h3{font-size:14px;margin:0 0 14px}.ticket-thread-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:20px 22px;border-bottom:1px solid var(--line-2)}.ticket-thread-head>div{display:flex;align-items:center;gap:10px;min-width:0}.ticket-section-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:var(--brand-soft);color:var(--brand-strong);flex:none}.ticket-thread-head h2{margin:0;font-size:16px}.ticket-thread-head p{margin:5px 0 0;font-size:11px;color:var(--text-3)}.ticket-thread-head>a{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}
+.ticket-detail .thread{gap:22px;padding:22px;min-height:200px}.ticket-detail .thread-message{max-width:100%;margin:0;padding:0;border:0;background:none}.ticket-detail .message-meta{gap:8px;margin-bottom:10px;font-size:11px}.ticket-message-avatar{display:grid;place-items:center;width:26px;height:26px;border:1px solid var(--line);border-radius:50%;background:var(--surface-2);color:var(--text-2);flex:none}.ticket-detail .message-meta time{margin-left:auto;font-size:10px}.ticket-detail .thread-message .bubble{max-width:100%;width:fit-content;margin-left:34px;padding:12px 16px;border-radius:2px 12px 12px;background:var(--surface-2);font-size:14px;line-height:1.85}.ticket-detail .official .bubble{background:var(--brand-soft)}.ticket-detail .official .ticket-message-avatar{color:var(--brand-strong);background:var(--brand-soft);border-color:transparent}.ticket-detail .internal .bubble{background:color-mix(in srgb,var(--icon-amber,#b66c13) 8%,var(--surface));border:1px dashed color-mix(in srgb,var(--icon-amber,#b66c13) 35%,var(--line))}.ticket-detail .internal .message-meta{color:var(--icon-amber,#b66c13)}.ticket-detail .ticket-attachments{margin:12px 0 0 34px}.ticket-detail .ticket-attachments .attachment-thumb{width:140px;height:110px}.ticket-detail .ticket-attachments img{object-fit:contain;background:var(--surface-2)}.ticket-detail .ticket-extra{margin-left:34px}
+.ticket-detail .reply-form{padding:20px 22px;scroll-margin-top:100px;background:color-mix(in srgb,var(--surface-2) 35%,var(--surface))}.ticket-reply-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px}.ticket-reply-head h3{margin:0;font-size:15px}.ticket-reply-head>span{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-3)}.ticket-detail .reply-form.is-internal{background:color-mix(in srgb,var(--icon-amber,#b66c13) 5%,var(--surface))}.ticket-detail .reply-form.is-internal .ticket-reply-head>span{color:var(--icon-amber,#b66c13)}
+.ticket-detail .dialog-form{gap:14px}.ticket-detail .dialog-form .field{gap:7px;margin:0;font-size:12px}.ticket-detail .dialog-form :is(input,select){min-height:40px;padding:9px 12px;font-size:13px}.ticket-detail .dialog-form textarea{min-height:88px;padding:10px 12px;font-size:13px;line-height:1.7}.ticket-detail .dialog-form .field small{font-size:10px;line-height:1.6;font-weight:400}.ticket-detail .dialog-form .form-actions{margin-top:0;padding-top:4px;gap:8px}.ticket-detail .dialog-form .form-actions .btn{min-height:40px;padding:8px 18px;font-size:13px}.ticket-detail .reply-form .file-field{min-height:44px;padding:10px 12px}.ticket-detail .ticket-progress-panel .ticket-aside-head{margin-bottom:8px}.ticket-detail .ticket-progress-panel .ticket-aside-head h3{margin:0}.ticket-progress-copy{font-size:12px;line-height:1.7;margin:0 0 18px;color:var(--text-3)}
+.ticket-detail .ticket-timeline{padding:0 0 0 8px;list-style:none}.ticket-detail .ticket-timeline li{position:relative;padding:0 0 20px 18px;border:0;border-left:1px solid var(--line);font-size:12px;line-height:1.6}.ticket-detail .ticket-timeline li:before{content:'';position:absolute;left:-4px;top:4px;width:7px;height:7px;border:2px solid var(--surface);border-radius:50%;background:var(--brand);box-shadow:0 0 0 1px var(--line)}.ticket-detail .ticket-timeline li:last-child{padding-bottom:0;border-left-color:transparent}.ticket-detail .ticket-timeline time{margin-top:5px;font-size:10px}.ticket-detail .ticket-facts{font-size:12px;gap:10px}.ticket-detail .ticket-facts>div{grid-template-columns:50px minmax(0,1fr);line-height:1.65}
+@media(max-width:1100px){.ticket-detail{grid-template-columns:minmax(0,1fr) 260px}.ticket-detail .ticket-aside>.panel{padding:16px}.ticket-reply-head{align-items:flex-start;flex-direction:column;gap:6px}}
+@media(max-width:860px){.ticket-detail{grid-template-columns:minmax(0,1fr)}.ticket-detail .ticket-aside{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.ticket-progress-panel{grid-column:1/-1}.ticket-detail .ticket-aside .dialog-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);align-items:start}.ticket-detail .ticket-aside .dialog-form .form-actions{grid-column:1/-1}.ticket-thread-head,.ticket-detail .thread,.ticket-detail .reply-form{padding:18px}.ticket-detail .reply-form .dialog-form textarea{min-height:100px}}
+@media(max-width:600px){.notification-list .notification-row{padding:16px 12px;gap:10px}.notification-icon{width:36px;height:36px;border-radius:11px}.notification-open{font-size:0;gap:0}.notification-open .svg-icon{width:18px;height:18px}.notification-list .notification-copy b{font-size:13px}.ticket-detail .ticket-aside{grid-template-columns:minmax(0,1fr)}.ticket-detail .ticket-aside .dialog-form{display:flex;flex-direction:column}.ticket-detail .ticket-aside .dialog-form>.field,.ticket-detail .ticket-aside .form-actions{width:100%}.ticket-detail .message-meta time{font-size:9px}.ticket-detail .thread-message .bubble{margin-left:0}.ticket-detail .ticket-attachments,.ticket-detail .ticket-extra{margin-left:0}.ticket-thread-head{align-items:flex-start}.ticket-thread-head p{line-height:1.6}.ticket-thread-head>a{font-size:11px}.ticket-detail .dialog-form .form-actions .btn{min-height:44px}.ticket-reply-head{gap:8px}.ticket-detail .ticket-attachments .attachment-thumb{width:120px;height:100px}}
+@media(prefers-reduced-motion:reduce){.notification-list .notification-row{transition:none}}
+
+.ticket-reply-upload>span{font-size:12px;font-weight:600}.ticket-reply-upload>small{display:block;font-size:10px;line-height:1.7;color:var(--text-3)}.ticket-detail .media-upload-picker{margin:8px 0}.ticket-detail .media-upload-drop{display:flex;justify-content:flex-start;gap:10px;padding:12px 14px;border-radius:10px;background:var(--surface)}.ticket-detail .media-upload-drop b{font-size:12px}.ticket-detail .media-upload-drop>span{font-size:10px}.ticket-detail .media-upload-icon{display:grid;place-items:center;color:var(--brand-strong)}.ticket-detail .media-upload-grid{grid-template-columns:repeat(auto-fill,minmax(90px,1fr))}.ticket-detail .media-upload-item img{height:75px}@media(max-width:600px){.ticket-detail .media-upload-drop{flex-wrap:wrap}}
+
+.ticket-page-head{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:26px}.ticket-breadcrumb{display:flex;align-items:center;gap:5px;margin-bottom:10px;color:var(--text-3);font-size:11px}.ticket-page-head h1{margin:0;font-size:28px;line-height:1.4;overflow-wrap:anywhere}.ticket-page-head p{margin:8px 0 0;color:var(--text-3);font-size:12px;line-height:1.7}.ticket-page-actions{display:flex;align-items:center;gap:10px;flex:none}.ticket-page-actions .btn{display:flex;align-items:center;gap:6px}@media(max-width:600px){.ticket-page-head{align-items:flex-start;flex-direction:column;gap:14px;margin:12px 0 20px}.ticket-page-head h1{font-size:23px}.ticket-page-head p{font-size:11px}.ticket-page-actions{width:100%;justify-content:space-between}.ticket-page-actions .btn{min-height:40px;font-size:12px}}

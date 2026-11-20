@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../providers/course_schedule_provider.dart';
 import '../../models/schedule/schedule_override.dart';
 import '../../theme/app_theme_tokens.dart';
+import '../../theme/app_colors.dart';
+import '../course_schedule_screen.dart' show getCourseColor;
 import '../../widgets/course/course_evaluation_section.dart';
 import 'reschedule/course_adjustment_sheet.dart';
 import '../../utils/week_formatter.dart';
@@ -77,6 +79,8 @@ class CourseDetailSheet extends StatelessWidget {
         child: SafeArea(
           top: false,
           child: AppCardSurface(
+            // 详情承载文字和操作：模糊生效时保留玻璃观感，关闭模糊时遮住底层课表。
+            surfaceOpacity: appTextSheetSurfaceOpacity(context),
             padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
               color: tokens.surface,
@@ -109,7 +113,11 @@ class CourseDetailSheet extends StatelessWidget {
                       height: 26,
                       margin: const EdgeInsets.only(top: 2),
                       decoration: BoxDecoration(
-                        color: _parseColor(course.color),
+                        color: getCourseColor(course.name,
+                                palette: tokens.coursePalette,
+                                courseCode: course.courseCode,
+                                location: course.location)
+                            .withValues(alpha: 1),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -144,8 +152,8 @@ class CourseDetailSheet extends StatelessWidget {
                     margin: const EdgeInsets.only(bottom: 16),
                     decoration: BoxDecoration(
                       color: tokens.isDark
-                          ? const Color(0xFF2E2413)
-                          : const Color(0xFFFFF3DD),
+                          ? AppColors.warningSurfaceDark
+                          : AppColors.warningSurfaceLight,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
                           color: tokens.warning.withValues(alpha: 0.5)),
@@ -257,8 +265,8 @@ class CourseDetailSheet extends StatelessWidget {
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: tokens.isDark
-                          ? const Color(0xFF382312)
-                          : const Color(0xFFFFEDD5),
+                          ? const Color(0xFF382312) // theme: fixed 课程冲突警告色
+                          : const Color(0xFFFFEDD5), // theme: fixed 课程冲突警告色
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
@@ -288,7 +296,7 @@ class CourseDetailSheet extends StatelessWidget {
                 ],
 
                 const SizedBox(height: 16),
-                AppCardDivider(color: tokens.divider),
+                const AppCardDivider(),
                 const SizedBox(height: 12),
 
                 // 操作按钮区 (Section 16 & 17 & 23)
@@ -415,8 +423,7 @@ class CourseDetailSheet extends StatelessWidget {
   Widget _buildSourceBadge(
       AppThemeTokens tokens, bool isCustom, bool isOverridden) {
     String label = '教务课表';
-    Color bgColor =
-        tokens.isDark ? const Color(0xFF162B28) : const Color(0xFFEAF6F3);
+    Color bgColor = tokens.primaryContainer;
     Color textColor = tokens.primary;
 
     if (isCustom) {
@@ -425,10 +432,12 @@ class CourseDetailSheet extends StatelessWidget {
       textColor = tokens.textSecondary;
     } else if (isOverridden) {
       label = '教务课表 + 本地调整';
-      bgColor =
-          tokens.isDark ? const Color(0xFF2C253B) : const Color(0xFFF3EBF9);
-      textColor =
-          tokens.isDark ? const Color(0xFFC084FC) : const Color(0xFF7C3AED);
+      bgColor = tokens.isDark
+          ? const Color(0xFF2C253B) // theme: fixed 本地调整来源识别色
+          : const Color(0xFFF3EBF9); // theme: fixed 本地调整来源识别色
+      textColor = tokens.isDark
+          ? const Color(0xFFC084FC) // theme: fixed 本地调整来源识别色
+          : const Color(0xFF7C3AED); // theme: fixed 本地调整来源识别色
     }
 
     return Container(
@@ -480,14 +489,6 @@ class CourseDetailSheet extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  Color _parseColor(String hex) {
-    final clean = hex.replaceAll('#', '');
-    if (clean.length == 6) {
-      return Color(int.parse('FF$clean', radix: 16));
-    }
-    return const Color(0xFF6366F1);
   }
 
   Future<void> _startCourseAdjustmentFlow(

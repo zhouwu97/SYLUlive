@@ -1,5 +1,6 @@
 import { isProvider } from "@sylulive/academic-contracts";
 import { mountSchoolAssistant } from "./school-assistant";
+import {storeBuild} from './build-flavor';
 import {
   origins,
   entrances,
@@ -9,7 +10,9 @@ import {
 } from "./school";
 const provider = new URLSearchParams(location.search).get("provider");
 const root = document.querySelector<HTMLDivElement>("#app")!;
-if (!isProvider(provider)) {
+if (storeBuild && provider === 'physical') {
+  root.innerHTML = '<main class="panel"><h1>体测连接暂不可用</h1><p>商店版只提供 HTTPS 教务连接，当前体测服务的传输方式不受支持。</p></main>';
+} else if (!isProvider(provider)) {
   root.innerHTML =
     '<main class="panel"><h1>沈理校园教务助手</h1><p>请从沈理校园的课表或成绩页面发起连接。</p></main>';
 } else if (provider !== "physical") {

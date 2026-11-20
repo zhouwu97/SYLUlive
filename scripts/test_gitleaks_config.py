@@ -67,11 +67,18 @@ class GitleaksConfigTest(unittest.TestCase):
             "client/lib/services/emoji_favorite_service.dart",
             "knowledge-base/sylu-academic-policy/v0.6/release-manifest.v0.6.json",
             "docs/archive/2026-08-28/VERIFICATION_CHECKLIST.md",
+            "web/src/academic-transfer.test.ts",
         )
         value = "f48a71d9b60e325c" + "94ad801f9c73e62b"
         for path in paths:
             with self.subTest(path=path):
                 self.assertTrue(self.scan(path, f'const apiKey = "{value}";'))
+
+    def test_synthetic_session_exception_is_limited_to_fixture_and_value(self):
+        value = "BBECAwQF" + "BgcICQoLDA0ODw"
+        fixture = f'const key = "{value}";'
+        self.assertEqual(self.scan("web/src/academic-transfer.test.ts", fixture), [])
+        self.assertTrue(self.scan("other.ts", fixture))
 
 
 if __name__ == "__main__":

@@ -21,6 +21,16 @@ type HomeFeedCandidate struct {
 	ActivityScore      float64
 	// FEED-5 个性化增量（-0.20 ~ +0.20），由个性化层在排序前写入；0 = 不个性化。
 	PersonalDelta float64
+	// 「不感兴趣」降权比例（0 ~ MaxFeedbackPenalty）。与个性化灰度无关，登录用户始终生效。
+	FeedbackPenalty float64
+}
+
+// freshSlotPenaltyLimit 被明显降权（通常是同作者被标记过）的帖子不再占用「新帖」保底槽位，
+// 只能凭降权后的热度参与排序。
+const freshSlotPenaltyLimit = 0.2
+
+func feedbackMultiplier(c HomeFeedCandidate) float64 {
+	return 1 - math.Max(0, math.Min(MaxFeedbackPenalty, c.FeedbackPenalty))
 }
 
 // clampPersonalDelta 限制个性化增量范围，避免画像把公共质量压没。
@@ -34,14 +44,14 @@ func clampPersonalDelta(delta float64) float64 {
 	return delta
 }
 
-// AdjustedHotScore 个性化后的热度分：HotScore * (1 + delta)。
+// AdjustedHotScore 个性化后的热度分：HotScore * (1 + delta) * (1 - 不感兴趣降权)。
 func AdjustedHotScore(c HomeFeedCandidate) float64 {
-	return c.HotScore * (1 + clampPersonalDelta(c.PersonalDelta))
+	return c.HotScore * (1 + clampPersonalDelta(c.PersonalDelta)) * feedbackMultiplier(c)
 }
 
-// AdjustedActivityScore 个性化后的活跃分：ActivityScore * (1 + delta)。
+// AdjustedActivityScore 个性化后的活跃分：ActivityScore * (1 + delta) * (1 - 不感兴趣降权)。
 func AdjustedActivityScore(c HomeFeedCandidate) float64 {
-	return c.ActivityScore * (1 + clampPersonalDelta(c.PersonalDelta))
+	return c.ActivityScore * (1 + clampPersonalDelta(c.PersonalDelta)) * feedbackMultiplier(c)
 }
 
 func ScoreHomeFeedCandidate(candidate *HomeFeedCandidate, now time.Time) {
@@ -212,7 +222,9 @@ func rankHomeFeedImpl(candidates []HomeFeedCandidate, now time.Time) []uint {
 		}
 	}
 	add(byHot, 10, func(c HomeFeedCandidate) bool { return !c.Post.CreatedAt.Before(now.Add(-7 * 24 * time.Hour)) })
-	add(byFresh, 5, func(c HomeFeedCandidate) bool { return !c.Post.CreatedAt.Before(now.Add(-48 * time.Hour)) })
+	add(byFresh, 5, func(c HomeFeedCandidate) bool {
+		return !c.Post.CreatedAt.Before(now.Add(-48*time.Hour)) && c.FeedbackPenalty < freshSlotPenaltyLimit
+	})
 	add(byActivity, 3, func(c HomeFeedCandidate) bool {
 		return c.Post.ReplyCount > 0 && !c.Post.LastActivityAt.Before(now.Add(-72*time.Hour))
 	})

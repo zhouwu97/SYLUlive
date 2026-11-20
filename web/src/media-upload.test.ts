@@ -62,3 +62,32 @@ it("相同文件的上传缓存只在原会话内复用，A → B → A 重新�
   await expect(uploadIDs(form)).resolves.toEqual([73]);
   expect(fetchMock).toHaveBeenCalledTimes(3);
 });
+
+it('批量部分失败后重试仅上传失败项目，保留成功编号和图片顺序', async () => {
+  setAuthSession(1);
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({results: [{file_id: 71}, {error: '第二张读取失败'}]}), {headers: {'content-type': 'application/json'}}))
+    .mockResolvedValueOnce(new Response(JSON.stringify({results: [{file_id: 72}]}), {headers: {'content-type': 'application/json'}}));
+  vi.stubGlobal('fetch', fetchMock);
+  const form = new FormData();
+  form.append('images', new File(['one'], 'one.png', {type: 'image/png'}));
+  form.append('images', new File(['two'], 'two.png', {type: 'image/png'}));
+  await expect(uploadIDs(form)).rejects.toThrow('第二张读取失败');
+  await expect(uploadIDs(form)).resolves.toEqual([71, 72]);
+  const retried = fetchMock.mock.calls[1][1].body as FormData;
+  expect(retried.getAll('files').map(file => (file as File).name)).toEqual(['two.png']);
+});
+
+it('主动取消批量上传不回退旧接口，也不能写入上传缓存', async () => {
+  setAuthSession(1);
+  const controller = new AbortController();
+  let resolve!: (response: Response) => void;
+  const fetchMock = vi.fn(() => new Promise<Response>(done => {resolve = done;}));
+  vi.stubGlobal('fetch', fetchMock);
+  const form = new FormData(); form.append('images', new File(['one'], 'one.png', {type: 'image/png'}));
+  const pending = uploadIDs(form, undefined, {signal: controller.signal});
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  controller.abort(); resolve(new Response('{}', {status: 404, headers: {'content-type': 'application/json'}}));
+  await expect(pending).rejects.toMatchObject({name: 'AbortError'});
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});

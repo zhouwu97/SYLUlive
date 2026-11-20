@@ -42,6 +42,7 @@ Post _post({
   int viewCount = 9999,
   bool pinned = false,
   bool featured = false,
+  String nickname = '作者昵称',
 }) {
   return Post(
     id: 1,
@@ -52,7 +53,7 @@ Post _post({
     author: User(
       id: 1,
       studentId: '1',
-      nickname: '作者昵称',
+      nickname: nickname,
       creditScore: creditScore,
       createdAt: DateTime(2026),
     ),
@@ -102,7 +103,8 @@ Post _pollPost() {
   );
 }
 
-Future<void> _pumpPostCard(WidgetTester tester, Post post) async {
+Future<void> _pumpPostCard(WidgetTester tester, Post post,
+    {PostCardVariant variant = PostCardVariant.standard}) async {
   final dio = Dio();
   dio.interceptors.add(
     InterceptorsWrapper(
@@ -134,7 +136,7 @@ Future<void> _pumpPostCard(WidgetTester tester, Post post) async {
         ),
       ],
       child: MaterialApp(
-        home: Scaffold(body: PostCard(post: post)),
+        home: Scaffold(body: PostCard(post: post, variant: variant)),
       ),
     ),
   );
@@ -151,6 +153,15 @@ class _PollService extends PollService {
 }
 
 void main() {
+  for (final nickname in ['', ' \u200B\uFE02 ']) {
+    testWidgets('首页为不可见昵称显示署名 ${nickname.runes.toList()}', (tester) async {
+      await _pumpPostCard(tester, _post(nickname: nickname),
+          variant: PostCardVariant.homeFeed);
+      expect(find.text('未设置昵称'), findsOneWidget);
+      expect(find.text('测试帖子标题'), findsOneWidget);
+    });
+  }
+
   testWidgets('帖子卡片不再显示信用分与等级徽标，查看数恢复显示', (tester) async {
     await _pumpPostCard(tester, _post(boardId: 2, creditScore: 95));
 

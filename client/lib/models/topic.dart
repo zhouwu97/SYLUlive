@@ -21,12 +21,10 @@ class TopicSelection {
   const TopicSelection({this.id, required this.name});
 
   const TopicSelection.existing({required int id, required String name})
-      : id = id,
-        name = name;
+      : this(id: id, name: name);
 
   const TopicSelection.custom(String name)
-      : id = null,
-        name = name;
+      : this(name: name);
 
   bool get isCustom => id == null;
 

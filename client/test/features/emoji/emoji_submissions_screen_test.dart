@@ -498,8 +498,18 @@ void main() {
             (requests.single.data as FormData).fields)['names'],
         '["收到","粘","认真","抱"]');
     hold.complete(_item());
-    await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 100)));
+    // 成功后还需写入／清理本机草稿；fake 时间不能驱动真实文件 IO。
+    // 等路由返回再收敛动画，不能仅等 100ms 就进入 pumpAndSettle。
+    for (var i = 0;
+        i < 100 &&
+            find.byType(EmojiSubmissionUploadScreen).evaluate().isNotEmpty;
+        i++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 100)));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.byType(EmojiSubmissionUploadScreen), findsNothing,
+        reason: '上传与本机草稿处理必须完成并返回');
     await tester.pumpAndSettle();
     expect(find.text('打开上传'), findsOneWidget);
     expect(tester.takeException(), isNull);

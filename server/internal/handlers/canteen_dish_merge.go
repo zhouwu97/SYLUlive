@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"shenliyuan/internal/models"
-	"shenliyuan/internal/services"
 	"shenliyuan/internal/utils"
 
 	"github.com/gin-gonic/gin"
@@ -32,6 +31,9 @@ func (h *CanteenDishPhotoAdminHandler) AdminMergeDish(c *gin.Context) {
 	}
 	adminID := c.GetUint("user_id")
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := requireDishArchiveWrite(tx, uint(sourceID), adminID); err != nil {
+			return err
+		}
 		var source, target models.CanteenDish
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&source, sourceID).Error; err != nil {
 			return err
@@ -70,31 +72,10 @@ func (h *CanteenDishPhotoAdminHandler) AdminMergeDish(c *gin.Context) {
 				return err
 			}
 		}
-		var approved int64
-		if err := tx.Model(&models.CanteenDishPhoto{}).Where("dish_id = ? AND status = ?", target.ID, models.DishPhotoStatusApproved).Count(&approved).Error; err != nil {
-			return err
-		}
-		var photos []models.CanteenDishPhoto
-		if err := tx.Where("dish_id = ?", source.ID).Order("created_at ASC, id ASC").Find(&photos).Error; err != nil {
-			return err
-		}
-		var archivedFileIDs []uint
-		for i := range photos {
-			if photos[i].Status == models.DishPhotoStatusApproved {
-				if approved >= 3 {
-					if err := tx.Model(&photos[i]).Updates(map[string]interface{}{"status": models.DishPhotoStatusArchived, "reviewed_by": adminID, "reviewed_at": time.Now()}).Error; err != nil {
-						return err
-					}
-					archivedFileIDs = append(archivedFileIDs, photos[i].FileID)
-				} else {
-					approved++
-				}
-			}
-			if err := tx.Model(&photos[i]).Update("dish_id", target.ID).Error; err != nil {
-				return err
-			}
-		}
-		if err := services.ReconcileFilePublicAccess(tx, archivedFileIDs...); err != nil {
+		// 实拍不再有名额上限，源菜的实拍全部随之迁到目标菜；详情页只展示最新几张。
+		// 源菜的封面标记不带过去，避免抢走目标菜的封面。
+		if err := tx.Model(&models.CanteenDishPhoto{}).Where("dish_id = ?", source.ID).
+			Updates(map[string]interface{}{"dish_id": target.ID, "sort_order": 0}).Error; err != nil {
 			return err
 		}
 
@@ -176,6 +157,9 @@ func (h *CanteenDishPhotoAdminHandler) AdminMergeDish(c *gin.Context) {
 		}).Error
 	})
 	if err != nil {
+		if respondCanteenArchivePermission(c, err) {
+			return
+		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "菜品不存在或目标菜品无效"})
 			return

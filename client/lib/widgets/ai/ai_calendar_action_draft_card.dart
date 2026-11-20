@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_theme_tokens.dart';
 import '../../models/user_calendar.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import '../app_card.dart';
 
 class AiCalendarActionDraftCard extends StatefulWidget {
@@ -45,14 +46,12 @@ class _AiCalendarActionDraftCardState extends State<AiCalendarActionDraftCard> {
       margin: const EdgeInsets.only(top: 12, bottom: 4),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? AppColors.surfaceSecondaryDark
-            : Colors.white,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
+        color: AppThemeTokens.of(context).card,
+        borderRadius: BorderRadius.circular(AppShape.of(context).lg),
         border: Border.all(
           color: danger
               ? AppColors.danger.withValues(alpha: 0.28)
-              : AppColors.borderNormalLight,
+              : AppThemeTokens.of(context).cardBorder,
         ),
       ),
       child: Column(
@@ -62,7 +61,9 @@ class _AiCalendarActionDraftCardState extends State<AiCalendarActionDraftCard> {
             children: [
               Icon(_iconFor(draft.actionType),
                   size: 20,
-                  color: danger ? AppColors.danger : AppColors.brandPrimary),
+                  color: danger
+                      ? AppColors.danger
+                      : AppThemeTokens.of(context).primary),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(

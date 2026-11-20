@@ -93,7 +93,7 @@ func TestCanteenBayesianDeterministicSmallSample(t *testing.T) {
 
 	// A: 5 人 4.6；B: 4 人 3.8；C/D: 各 3 人 4.3；E: 3 人 4.0
 	specs := []struct {
-		name   string
+		name    string
 		ratings []int
 	}{
 		{"A(4.6/5)", []int{5, 5, 4, 5, 4}},

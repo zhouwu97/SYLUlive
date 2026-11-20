@@ -13,12 +13,17 @@ class OpacitySafeBackdropFilter extends StatelessWidget {
     required this.child,
     this.enabled = true,
     this.blendMode = BlendMode.srcOver,
+    this.grouped = false,
   });
 
   final ui.ImageFilter filter;
   final Widget? child;
   final bool enabled;
   final BlendMode blendMode;
+
+  /// 加入最近的 [BackdropGroup]，同组滤镜共用一次背景采样。只用于互不重叠、
+  /// 直接压在页面背景上的卡片；底栏、弹层要模糊自己下面的内容，不能分组。
+  final bool grouped;
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +43,8 @@ class OpacitySafeBackdropFilter extends StatelessWidget {
             enabled && filtersEnabled && !fades.any((fade) => fade.value < 1),
         filter: filter,
         blendMode: blendMode,
+        backdropGroupKey:
+            grouped ? BackdropGroup.of(context)?.backdropKey : null,
         child: child,
       ),
     );

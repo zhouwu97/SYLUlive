@@ -125,7 +125,7 @@ local_metrics = LocalRAGMetrics(
 
 
 def _planned_reranker_query(question: str) -> str:
-    return policy_query_planner.invoke(question).retrieval_query
+    return policy_query_planner.invoke(question).reranking_query
 
 
 @asynccontextmanager
@@ -216,7 +216,7 @@ async def lifespan(_: FastAPI):
             max_document_chars=RERANKER_MAX_DOCUMENT_CHARS,
             max_concurrency=MAX_CONCURRENCY,
             query_transform=_planned_reranker_query,
-            query_strategy="policy-planned-query-v1",
+            query_strategy="policy-planned-query-v4",
         )
     policy_chain = build_policy_rag_chain(
         retriever,
@@ -316,7 +316,7 @@ async def health():
             "model_version": RERANKER_MODEL_VERSION if RERANKER_ENABLED else "disabled",
             "relevance_threshold": RERANKER_RELEVANCE_THRESHOLD,
             "model_download_allowed": RERANKER_ALLOW_MODEL_DOWNLOAD,
-            "query_strategy": "policy-planned-query-v1",
+            "query_strategy": "policy-planned-query-v4",
             "document_type_label_version": POLICY_DOCUMENT_TYPE_LABEL_VERSION,
             "error_class": reranker_error,
         },

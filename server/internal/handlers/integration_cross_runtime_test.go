@@ -45,9 +45,8 @@ func TestIntegrationWebAstrBotCrossRuntime(t *testing.T) {
 	const owner = 91234
 	const otherOwner = owner + 1
 	const secret = "synthetic-cross-runtime-only-secret"
-	require.NoError(t, db.AutoMigrate(&models.Notification{}, &models.FileUploadGrant{}, &models.ImageVariant{}))
+	require.NoError(t, db.AutoMigrate(&models.Notification{}, &models.FileUploadGrant{}, &models.ImageVariant{}, &models.UserCheckInStat{}, &models.UserExperienceLedger{}))
 	require.NoError(t, db.Create(&models.User{ID: owner, Nickname: "跨端合成用户", Role: models.RoleUser, AccountStatus: "active"}).Error)
-	require.NoError(t, db.Create(&models.AcademicIdentityBinding{UserID: owner, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2099000001", VerifiedAt: time.Now(), VerificationMethod: "school_profile", VerificationVersion: "v1", BindingVersion: 1}).Error)
 	for _, doc := range []string{models.LegalDocumentUserAgreement, models.LegalDocumentPrivacyPolicy, models.LegalDocumentCommunityRules} {
 		ack := ""
 		if doc == models.LegalDocumentCommunityRules {
@@ -56,7 +55,6 @@ func TestIntegrationWebAstrBotCrossRuntime(t *testing.T) {
 		require.NoError(t, db.Create(&models.UserLegalConsent{UserID: owner, Document: doc, Version: models.LegalDocumentVersion, AcceptedAt: time.Now(), AcknowledgementType: ack}).Error)
 	}
 	require.NoError(t, db.Create(&models.User{ID: otherOwner, Nickname: "第二个跨端合成用户", Role: models.RoleUser, AccountStatus: "active"}).Error)
-	require.NoError(t, db.Create(&models.AcademicIdentityBinding{UserID: otherOwner, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2099000002", VerifiedAt: time.Now(), VerificationMethod: "school_profile", VerificationVersion: "v1", BindingVersion: 1}).Error)
 	for _, doc := range []string{models.LegalDocumentUserAgreement, models.LegalDocumentPrivacyPolicy, models.LegalDocumentCommunityRules} {
 		ack := ""
 		if doc == models.LegalDocumentCommunityRules {

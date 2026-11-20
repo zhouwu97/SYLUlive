@@ -4,6 +4,7 @@ import { ApiError, query, request, rows, useApi, type Entity } from "./api";
 import { useAuth } from "./auth";
 import { isPublicPost } from "./campus-chrome";
 import { PostCard } from "./community";
+import { feedSourceOf } from "./feed-feedback";
 import { Empty, Icon, QueryState } from "./ui";
 
 type FeedPage = { page: number; session?: string; offset?: number; cursor?: string };
@@ -51,8 +52,8 @@ export function MobileHome() {
     {pinned.length > 0 && <section className="mobile-pinned-posts" aria-label="公共帖子">{pinned.map(post => <Link key={post.id} to={`/post/${post.id}`} state={{ from: `/${params.size ? `?${params}` : ""}` }}><span>置顶</span><b>{post.title || post.content}</b><span aria-hidden="true">›</span></Link>)}</section>}
     <div className="dashboard-feed mobile-app-feed">
       {sort === "following" && !auth.loading && !auth.user ? <Empty icon="lock" title="登录后查看关注动态" description="关注同学，看看他们的校园日常。"><button className="btn primary" onClick={auth.login}>登录</button></Empty> :
-      <QueryState query={{ isPending: feed.isPending, error: feed.data ? null : feed.error, refetch: feed.refetch }}>
-        {content.map(post => <PostCard key={`${post.id}:${auth.user?.id}`} post={post} />)}
+      <QueryState skeleton="feed" query={{ isPending: feed.isPending, error: feed.data ? null : feed.error, refetch: feed.refetch }}>
+        {content.map(post => <PostCard key={`${post.id}:${auth.user?.id}`} post={post} feedSource={feedSourceOf(sort)} />)}
         {!content.length && <Empty title="暂时没有帖子" description="分享一段校园日常，或换个分类看看。" />}
       </QueryState>}
     </div>

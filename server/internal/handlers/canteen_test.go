@@ -404,7 +404,10 @@ func TestCanteenApprovalControlsVisibilityAndRating(t *testing.T) {
 
 func TestCanteenSubmissionExpAwardAndRevocation(t *testing.T) {
 	db := newCanteenTestDB(t)
-	createCanteenTestUser(t, db, 1, "管理员")
+	admin := createCanteenTestUser(t, db, 1, "超级管理员")
+	if err := db.Model(&admin).Update("role", models.RoleSuperAdmin).Error; err != nil {
+		t.Fatal(err)
+	}
 	createCanteenTestUser(t, db, 2, "提交者")
 	canteen := models.Canteen{Name: "经验食堂", Image: "/uploads/exp.png", CreatedBy: 2, Verified: false}
 	if err := db.Create(&canteen).Error; err != nil {

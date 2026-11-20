@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../campus/campus_theme.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../app_card.dart';
 
 /// 设置页分组卡片组件
@@ -20,21 +20,12 @@ class SettingsSection extends StatelessWidget {
     if (children.isEmpty) return const SizedBox.shrink();
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final dividerColor =
-        isDark ? Colors.white.withValues(alpha: 0.06) : CampusTheme.softBorder;
-
     final List<Widget> cardItems = [];
     for (int i = 0; i < children.length; i++) {
       cardItems.add(children[i]);
       if (i < children.length - 1) {
         cardItems.add(
-          AppCardDivider(
-            height: 1,
-            thickness: 1,
-            indent: 62,
-            endIndent: 16,
-            color: dividerColor,
-          ),
+          const AppCardDivider.inset(),
         );
       }
     }
@@ -52,7 +43,8 @@ class SettingsSection extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white70 : CampusTheme.subText,
+                  color: appContentSecondaryColor(
+                      context, AppThemeTokens.of(context).textSecondary),
                 ),
               ),
             ),
@@ -62,12 +54,12 @@ class SettingsSection extends StatelessWidget {
           else
             AppCardSurface(
               decoration: BoxDecoration(
-                color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+                color: AppThemeTokens.of(context).card,
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.08)
-                      : CampusTheme.softBorder,
+                      : AppThemeTokens.of(context).divider,
                 ),
                 boxShadow: isDark
                     ? null

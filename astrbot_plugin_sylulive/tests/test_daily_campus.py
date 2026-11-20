@@ -43,9 +43,11 @@ async def test_checkin_new_scope_opt_in_and_old_tokens_stay_readonly():
         plugin, event, _ = fixture(group="", sender="owner")
         plugin.config["allow_checkin"] = True
         plugin.client = SimpleNamespace(
-            tokens={"scope": "community:read"}, call=AsyncMock()
+            tokens={"scope": "community:read"},
+            refresh_scope=AsyncMock(return_value="community:read"),
+            call=AsyncMock(),
         )
-        assert "不会自动扩权" in await plugin.checkin_result(event, submit=True)
+        assert "没有签到权限" in await plugin.checkin_result(event, submit=True)
         plugin.client.call.assert_not_called()
     finally:
         await client.close()
@@ -322,6 +324,7 @@ async def test_daily_commands_use_native_dispatch_without_second_model(
     plugin.config["allow_checkin"] = True
     plugin.client = SimpleNamespace(
         tokens={"scope": "community:read"},
+        refresh_scope=AsyncMock(return_value="community:read"),
         public_call=AsyncMock(
             return_value={"items": [{"id": 1, "name": "测试店", "rank": 1}]}
         ),

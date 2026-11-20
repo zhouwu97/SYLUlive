@@ -199,7 +199,11 @@ test("单图动态始终在正文下方，收紧阅读宽度后缩放、预览�
   await page.reload();
   const failed = page.locator(".feed-card .media-tile").first();
   await expect(failed).toContainText("点击重试");
-  expect(await failed.evaluate(el => el.getBoundingClientRect().width)).toBe(320);
+  // 登录初始化会重取信息流：在同一次采样中核对失败态与尺寸，避免读取已卸载的旧节点。
+  await expect.poll(() => failed.evaluate(el => ({
+    width: el.getBoundingClientRect().width,
+    retry: el.textContent?.includes("点击重试"),
+  }))).toEqual({width: 320, retry: true});
   state.failMedium(false);
   await failed.click();
   await expect(failed.locator("img")).toBeVisible();
@@ -209,10 +213,13 @@ test("清晰预览及原图加载失败可以重试，更新图片后不继承�
   const state = await mediaFixture(page);
   state.failMedium(true);
   await page.goto("community");
+  // 登录初始化会重取信息流；先固定失败状态，避免点击时已被重取恢复。
+  await page.waitForLoadState("networkidle");
   const first = page.locator(".community-feed .media-tile").first();
   await expect(first).toContainText("图片加载失败 · 点击重试");
   state.failMedium(false);
   await first.click();
+  await expect(page.getByRole("dialog", { name: "图片预览" })).toHaveCount(0);
   await expect(first.locator("img")).toBeVisible();
   state.failViewer(true);
   await first.click();

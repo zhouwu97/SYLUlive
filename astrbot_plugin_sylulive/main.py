@@ -13,7 +13,7 @@ from pathlib import Path
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import LLMResponse, ProviderRequest
-from astrbot.api.star import Context, Star, StarTools, register
+from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.agent.message import TextPart
 
 from .client import MAP_PATH, BusinessClient, IntegrationProblem, checked_origin
@@ -25,7 +25,7 @@ from .astrbot_persona import selected_prompt
 from .creator_memory import CreatorMemory
 from .community_publisher import CommunityPublisher
 from .personal import personal_intent
-from .chat_media import MEME_GUIDANCE, chat_tools, trusted_meme
+from .chat_media import MEME_GUIDANCE, chat_tools, trusted_meme, sticker_request
 from .chat_context import (CURRENT_INPUT_GUIDANCE, QUOTE_GUIDANCE, current_quote,
                            capture_merged_input, isolate_current_input,
                            restore_private_context, use_merged_input)
@@ -76,6 +76,7 @@ PUBLIC_GROUP_TOOLS = frozenset(
         "sylulive_replies",
         "sylulive_reply_context",
         "sylulive_stickers",
+        "sylulive_send_sticker",
         "sylulive_sections",
         "sylulive_canteens",
         "sylulive_canteen",
@@ -249,7 +250,6 @@ def read_kinds(path):
     return set()
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.5.7")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -705,7 +705,7 @@ class SYLUlivePlugin(Star):
             if not access_current():
                 return "权限或账号连接已变化，本次未发起签到操作或查询，请重新确认。"
             if "checkin:write" not in granted.split():
-                return "当前连接没有签到权限，未执行签到。请本人在官网「已授权助手 → 连接 AstrBot」的当前连接里点「修改权限」，勾选“每日签到”并保存；无需重新连接。"
+                return "当前连接没有签到权限，未执行签到。请本人在官网「QQ 助手与社区机器人 → 绑定我的 QQ」的当前连接里点「修改权限」，勾选「每日签到」并保存。无需重新连接。"
         try:
             body = await client.call("POST" if submit else "GET", "/me/checkin")
             if not access_current():
@@ -734,6 +734,9 @@ class SYLUlivePlugin(Star):
                     if flag
                     else f"签到成功！经验 +{earned}。"
                 )
+                cards = data.get("makeup_cards_awarded")
+                if not flag and type(cards) is int and cards > 0:
+                    message += f"获得补签卡 {cards} 张。"
             else:
                 message = (
                     "今天已签到。" if flag else "今天还没签到，可发送 /sylu-checkin。"
@@ -885,6 +888,22 @@ class SYLUlivePlugin(Star):
         if not event.is_at_or_wake_command or not any(self.permission(event, action).allowed for action in ("public_read", "checkin", "grades", "erke")):
             return
         text = (event.message_str or "").strip().rstrip("？?！!。")
+        if query := sticker_request(text):
+            try:
+                if not self.config.get("community_chat_memes_enabled", False):
+                    yield event.plain_result("当前聊天未开启表情发送，请在插件权限管理中开启。")
+                    return
+                catalog = json.loads(await self.stickers(event, query=query))
+                items = catalog.get("data", {}).get("items", [])
+                if not items:
+                    yield event.plain_result("没有找到这个表情，可以换个关键词。")
+                    return
+                result = json.loads(await self.send_sticker(event, items[0]["sticker_id"]))
+                if result.get("state") != "sent":
+                    yield event.plain_result("表情发送未确认，请稍后再试。")
+            finally:
+                event.stop_event()
+            return
         if text in {
             "吃什么",
             "今天吃什么",
@@ -1397,7 +1416,7 @@ class SYLUlivePlugin(Star):
                     result = await client.call("GET", "/binding")
                 except IntegrationProblem as error:
                     if error.code == "insufficient_scope" and getattr(client, "tokens", None) and "profile:read_minimal" not in client.tokens.get("scope", "").split():
-                        yield event.plain_result("连接凭证有效；你没有授权昵称读取，可直接使用已批准的功能。查看或撤销范围请到官网“已授权助手”。")
+                        yield event.plain_result("连接凭证有效，已批准的功能可以直接使用。昵称读取需单独授权。查看或撤销权限请到官网「QQ 助手与社区机器人」。")
                         return
                     raise
                 storage = (
@@ -1433,7 +1452,7 @@ class SYLUlivePlugin(Star):
                 )
             except IntegrationProblem as error:
                 yield event.plain_result(
-                    self.problem(error) + " 可到 SYLUlive 官网‘已授权助手’撤销。"
+                    self.problem(error) + " 可到 SYLUlive 官网「QQ 助手与社区机器人」撤销。"
                 )
         finally:
             event.stop_event()
@@ -1449,7 +1468,7 @@ class SYLUlivePlugin(Star):
             "authorization_expired": "绑定链接已过期，请发 /sylu-connect 取消旧请求并获取新链接；已有连接不会因此被主动撤销。",
             "expired_token": "绑定链接已过期，请发 /sylu-connect 重新申请。",
             "access_denied": "这次授权已拒绝或取消，未增加权限。需要时发送 /sylu-connect 重新申请，无需先解绑。",
-            "device_request_unavailable": "旧请求已不存在，未能确认服务端撤销结果，请到官网‘已授权助手’检查，或联系维护者处理误绑。",
+            "device_request_unavailable": "旧请求已不存在，未能确认服务端撤销结果，请到官网「QQ 助手与社区机器人」检查，或联系维护者处理误绑。",
             "authorization_changed": "连接状态刚发生变化，请重试本次操作；未借用其他人的授权。",
             "poll_later": "请稍等几秒再查询连接状态。",
             "slow_down": "查询过快，请稍后再试。",
@@ -1711,18 +1730,57 @@ class SYLUlivePlugin(Star):
     async def stickers(
         self, event: AstrMessageEvent, query: str = "", after_sticker_id: str = ""
     ):
-        """查询服务器允许的内置表情 ID，不能把 QQ 表情 ID 直接传入。
+        """查询服务器允许的内置表情 ID。发到当前聊天请继续调用 sylulive_send_sticker；搜索无结果时可留空查询。
 
         Args:
             query(string): 表情名称关键词。
             after_sticker_id(string): 上一页 next_after_sticker_id，首屏留空。
         """
+        query = {"开心": "好耶", "高兴": "好耶", "快乐": "好耶"}.get(query.strip(), query)
         return await self.tool(
             event,
             "GET",
             "/community/stickers",
             {"query": query, "after_sticker_id": after_sticker_id},
         )
+
+    @filter.llm_tool(name="sylulive_send_sticker")
+    async def send_sticker(self, event: AstrMessageEvent, sticker_id: str):
+        """把平台内置表情图片发送到当前聊天，不发布社区评论。
+
+        Args:
+            sticker_id(string): sylulive_stickers 返回的真实表情编号。
+        """
+        if not self.config.get("community_chat_memes_enabled", False) or not self.allowed_reading(event):
+            return '{"error":"permission_denied"}'
+        if not isinstance(sticker_id, str) or not re.fullmatch(r"[a-f0-9]{32}", sticker_id):
+            return '{"error":"invalid_sticker"}'
+        try:
+            result = json.loads(await self.stickers(event, query=sticker_id))
+            entries = result.get("data", {}).get("items", [])
+            if not any(row.get("sticker_id") == sticker_id for row in entries):
+                return '{"error":"sticker_not_found"}'
+            sent = event.get_extra("sylulive_sent_stickers", {})
+            if sticker_id in sent:
+                return json.dumps({"state": sent[sticker_id]})
+            raw = await self.client.public_image("/stickers/" + sticker_id)
+            from PIL import Image as PILImage
+            with PILImage.open(io.BytesIO(raw)) as picture:
+                if picture.width * picture.height > 16_000_000:
+                    raise IntegrationProblem("image_too_large")
+                picture.verify()
+            if not self.allowed_reading(event):
+                return '{"error":"permission_denied"}'
+            from astrbot.api.message_components import Image
+            sent[sticker_id] = "attempted"
+            event.set_extra("sylulive_sent_stickers", sent)
+            await event.send(event.chain_result([Image.fromBase64(base64.b64encode(raw).decode())]))
+            sent[sticker_id] = "sent"
+            return '{"state":"sent","destination":"current_chat"}'
+        except IntegrationProblem as error:
+            return json.dumps({"error": error.code})
+        except Exception:
+            return '{"error":"sticker_delivery_failed"}'
 
     @filter.llm_tool(name="sylulive_sections")
     async def sections(self, event: AstrMessageEvent):

@@ -159,7 +159,7 @@ def test_policy_chain_invoke_uses_lcel_runnable():
     assert isinstance(result, PolicyRAGResult)
     assert result.status == "completed"
     assert result.chain_name == "shenliyuan_policy_rag"
-    assert result.chain_version == "campus-assistant-release-v8"
+    assert result.chain_version == "campus-assistant-release-v10"
     assert result.sources[0].chunk_id == 18
     assert result.sources[0].citation_number == 1
     assert result.usage.input_tokens == 20
@@ -441,7 +441,7 @@ def test_policy_query_endpoints_use_injected_lcel_chain(monkeypatch):
             json={"request_id": "http-1", "question": "怎么请假"},
         )
         assert response.status_code == 200, response.text
-        assert response.json()["chain_version"] == "campus-assistant-release-v8"
+        assert response.json()["chain_version"] == "campus-assistant-release-v10"
 
         with client.stream(
             "POST",

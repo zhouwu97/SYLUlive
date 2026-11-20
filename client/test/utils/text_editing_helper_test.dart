@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
 
-import '../../lib/utils/text_editing_helper.dart';
+import 'package:shenliyuan/utils/text_editing_helper.dart';
 
 void main() {
   group('text editing helper', () {

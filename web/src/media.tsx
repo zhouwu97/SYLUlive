@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -7,10 +6,11 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react";
-import { ApiError, asset, captureAuthSession, errorText, write, type Entity } from "./api";
-import { useUI } from "./ui";
+import { ApiError, asset, captureAuthSession, errorText, request, type Entity } from "./api";
+import { Icon, useUI } from "./ui";
 import { rejectAttachmentFiles, ticketAttachmentLimits } from "./attachments";
 import "./media.css";
+import {ImageViewer} from "./image-viewer";
 
 export type MediaItem = {
   id?: number;
@@ -54,7 +54,8 @@ export function normalizeMedia(value: unknown): MediaItem {
   return { ...item, width: dimension(item.width) ?? dimension(item.file?.width), height: dimension(item.height) ?? dimension(item.file?.height) };
 }
 
-export async function uploadImageFiles(files: File[]): Promise<number[]> {
+type ImageUploadOptions = {signal?: AbortSignal; onUploaded?: (file: File, id: number) => void};
+export async function uploadImageFiles(files: File[], options: ImageUploadOptions = {}): Promise<number[]> {
   const isCurrent = captureAuthSession();
   const valid = files.filter((file) => file.size > 0);
   const rejected = rejectAttachmentFiles(valid, mediaLimits);
@@ -66,9 +67,13 @@ export async function uploadImageFiles(files: File[]): Promise<number[]> {
   const body = new FormData();
   valid.forEach((file) => body.append("files", file));
   try {
-    const response = await write<{ results?: Entity[] }>("/api/upload_multiple", body);
+    const response = await request<{ results?: Entity[] }>("/api/upload_multiple", {method: 'POST', body, signal: options.signal});
     if (!isCurrent()) throw new Error("账号已切换，请重新确认上传");
     const results = Array.isArray(response.results) ? response.results : [];
+    results.forEach((item, index) => {
+      const id = Number(item.file_id);
+      if (valid[index] && !item.error && Number.isInteger(id) && id > 0) options.onUploaded?.(valid[index], id);
+    });
     const failed = results.filter((item) => item.error);
     const ids = results.map((item) => Number(item.file_id)).filter((id) => Number.isInteger(id) && id > 0);
     if (failed.length || ids.length !== valid.length) {
@@ -76,72 +81,46 @@ export async function uploadImageFiles(files: File[]): Promise<number[]> {
     }
     return ids;
   } catch (error) {
-    if (!isCurrent() || (error instanceof DOMException && error.name === "AbortError")) throw error;
+    if (!isCurrent() || options.signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) throw error;
     // 旧服务实例没有批量端点时退回单文件上传，保持帖子发布可用。
     if (!(error instanceof ApiError) || ![404, 405, 501].includes(error.status)) throw error;
     const ids: number[] = [];
     for (const file of valid) {
       if (!isCurrent()) throw new Error("账号已切换，请重新确认上传");
-      const result = await write<{ file_id?: number }>("/api/upload", (() => {
+      options.signal?.throwIfAborted();
+      const result = await request<{ file_id?: number }>("/api/upload", {method: 'POST', signal: options.signal, body: (() => {
         const one = new FormData();
         one.append("file", file);
         return one;
-      })());
+      })()});
       if (!isCurrent()) throw new Error("账号已切换，请重新确认上传");
       const id = Number(result.file_id);
       if (!Number.isInteger(id) || id <= 0) throw new Error("上传没有返回有效的图片编号");
       ids.push(id);
+      options.onUploaded?.(file, id);
     }
     return ids;
   }
 }
 
-function MediaLightbox({ items, initial, close, title }: { items: MediaItem[]; initial: number; close: () => void; title: string }) {
-  const [index, setIndex] = useState(initial);
-  const item = items[index] || items[0];
-  const src = mediaURL(item, "viewer") || mediaURL(item, "origin");
-  const original = mediaURL(item, "origin");
-  const previous = useCallback(() => setIndex((value) => (value - 1 + items.length) % items.length), [items.length]);
-  const next = useCallback(() => setIndex((value) => (value + 1) % items.length), [items.length]);
-
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === "ArrowLeft") previous();
-      if (event.key === "ArrowRight") next();
-      if (event.key === "Escape") close();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [close, next, previous]);
-
-  return (
-    <div className="media-lightbox" aria-label={`${title}，第 ${index + 1} 张，共 ${items.length} 张`}>
-      <div className="media-lightbox-toolbar">
-        <span>{index + 1} / {items.length}</span>
-        {original && <a className="link-btn" href={original} target="_blank" rel="noreferrer">打开原图</a>}
-      </div>
-      <div className="media-lightbox-stage">
-        <button type="button" className="media-lightbox-nav prev" onClick={previous} aria-label="上一张">‹</button>
-        {src ? <LightboxImage key={src} src={src} alt={`${title}第 ${index + 1} 张`} /> : <span className="media-state">图片暂不可用</span>}
-        <button type="button" className="media-lightbox-nav next" onClick={next} aria-label="下一张">›</button>
-      </div>
-      {items.length > 1 && (
-        <div className="media-lightbox-thumbs" role="tablist" aria-label="图片缩略图">
-          {items.map((candidate, candidateIndex) => {
-            const thumb = mediaURL(candidate, "thumb") || mediaURL(candidate, "origin");
-            return <button type="button" key={candidate.id || candidateIndex} className={candidateIndex === index ? "active" : ""} onClick={() => setIndex(candidateIndex)} role="tab" aria-selected={candidateIndex === index}>
-              {thumb && <img src={thumb} alt={`${title}第 ${candidateIndex + 1} 张缩略图`} />}
-            </button>;
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function LightboxImage({ src, alt }: { src: string; alt: string }) {
-  const [failed, setFailed] = useState(false);
-  return failed ? <div className="media-state" role="alert"><span>图片加载失败</span><button className="btn" onClick={() => setFailed(false)}>重试</button></div> : <img src={src} alt={alt} onError={() => setFailed(true)} />;
+// File 对象仅在当前会话内复用编号；批量部分失败时也保留已经成功的项目。
+const uploadedFileIDs = new WeakMap<File, {id: number; isCurrent: () => boolean}>();
+export async function uploadIDs(form: FormData, limits = mediaLimits, options: {signal?: AbortSignal; onProgress?: (done: number, total: number) => void} = {}) {
+  const isCurrent = captureAuthSession();
+  const files = form.getAll('images').filter((item): item is File => item instanceof File && item.size > 0);
+  const rejected = rejectAttachmentFiles(files, limits);
+  if (rejected.length) throw new Error(`附件未通过检查：${rejected.map(x => `${x.file}（${x.reason}）`).join('；')}`);
+  const cachedID = (file: File) => {const cached = uploadedFileIDs.get(file); return cached?.isCurrent() ? cached.id : undefined;};
+  const progress = () => options.onProgress?.(files.filter(file => cachedID(file) !== undefined).length, files.length);
+  progress();
+  const uncached = files.filter(file => cachedID(file) === undefined);
+  if (uncached.length) await uploadImageFiles(uncached, {signal: options.signal, onUploaded: (file, id) => {
+    if (!isCurrent() || options.signal?.aborted) return;
+    uploadedFileIDs.set(file, {id, isCurrent}); progress();
+  }});
+  options.signal?.throwIfAborted();
+  if (!isCurrent()) throw new Error('账号已切换，请重新确认上传');
+  return [...new Set(files.map(file => cachedID(file)).filter((id): id is number => typeof id === 'number'))];
 }
 
 function MediaTile({ item, src, title, index, extra, onOpen }: { item: MediaItem; src: string; title: string; index: number; extra: number; onOpen: () => void }) {
@@ -160,7 +139,7 @@ export function MediaGallery({ items, title = "图片", className = "", maxVisib
   const media = useMemo(() => (items || []).map(normalizeMedia).filter((item) => mediaURL(item, "origin")), [items]);
   if (!media.length) return null;
   const visible = media.slice(0, maxVisible);
-  const open = (index: number) => ui.open("图片预览", <MediaLightbox items={media} initial={index} close={ui.close} title={title} />);
+  const open = (index: number) => ui.open("图片预览", <ImageViewer images={media.map(item => ({src:mediaURL(item, "viewer") || mediaURL(item, "origin")!, original:mediaURL(item, "origin"), thumb:mediaURL(item, "thumb")}))} initial={index} title={title}/>, "media");
   return <div className={`media-gallery media-gallery-${Math.min(visible.length, 3)} media-gallery-${variant} ${className}`}>
     {visible.map((item, index) => {
       // 缩略图可能已经裁切；阅读区优先使用服务端等比 medium，详情使用 viewer。
@@ -171,67 +150,80 @@ export function MediaGallery({ items, title = "图片", className = "", maxVisib
   </div>;
 }
 
-export function MediaUploadPicker({ name = "images", onFilesChange, maxCount = mediaLimits.maxCount }: { name?: string; onFilesChange?: (files: File[]) => void; maxCount?: number }) {
+export function MediaUploadPicker({ name = "images", initialFiles = [], onFilesChange, maxCount = mediaLimits.maxCount, disabled = false, compact = false }: { name?: string; initialFiles?: File[]; onFilesChange?: (files: File[]) => void; maxCount?: number; disabled?: boolean; compact?: boolean }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const itemsRef = useRef<MediaUploadItem[]>([]);
+  const [files, setFiles] = useState(initialFiles);
   const [items, setItems] = useState<MediaUploadItem[]>([]);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [pickerError, setPickerError] = useState("");
 
-  const syncFiles = useCallback((next: MediaUploadItem[]) => {
+  const syncFiles = (next: File[]) => {
+    setFiles(next);
+    onFilesChange?.(next);
+  };
+  useEffect(() => {
+    const next = files.map(file => ({file, preview: URL.createObjectURL(file), status: 'ready' as const}));
     setItems(next);
-    itemsRef.current = next;
-    onFilesChange?.(next.map((item) => item.file));
     if (inputRef.current) {
       const transfer = new DataTransfer();
-      next.forEach((item) => transfer.items.add(item.file));
+      files.forEach(file => transfer.items.add(file));
       inputRef.current.files = transfer.files;
     }
-  }, [onFilesChange]);
+    return () => next.forEach(item => URL.revokeObjectURL(item.preview));
+  }, [files]);
 
-  const addFiles = (files: File[]) => {
-    setPickerError("");
-    const nextFiles = files.slice(0, Math.max(0, maxCount - items.length));
-    const rejected = rejectAttachmentFiles(nextFiles, { ...mediaLimits, maxCount });
-    if (rejected.length) {
-      setPickerError(rejected.map((x) => `${x.file}（${x.reason}）`).join("；"));
-      return;
+  const addFiles = (incoming: File[]) => {
+    if (disabled) return;
+    const next = [...files], errors: string[] = [];
+    for (const file of incoming) {
+      const rejected = rejectAttachmentFiles([file], mediaLimits);
+      if (rejected.length) {errors.push(...rejected.map(x => `${x.file}（${x.reason}）`)); continue;}
+      if (next.some(item => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)) {errors.push(`已跳过重复图片：${file.name}`); continue;}
+      if (next.length >= maxCount) {errors.push('图片数量已达上限，请先移除部分图片'); break;}
+      next.push(file);
     }
-    if (files.length > nextFiles.length) setPickerError(`最多选择 ${maxCount} 张图片`);
-    const next = [...items, ...nextFiles.map((file) => ({ file, preview: URL.createObjectURL(file), status: "ready" as const }))];
+    setPickerError(errors.join('；'));
     syncFiles(next);
   };
+  const addRef = useRef(addFiles); addRef.current = addFiles;
+  useEffect(() => {
+    const form = inputRef.current?.closest('form');
+    const paste = (event: ClipboardEvent) => {
+      const incoming = Array.from(event.clipboardData?.files || []);
+      if (incoming.length) {event.preventDefault(); addRef.current(incoming);}
+    };
+    form?.addEventListener('paste', paste);
+    return () => form?.removeEventListener('paste', paste);
+  }, []);
   const onChange = (event: ChangeEvent<HTMLInputElement>) => addFiles(Array.from(event.target.files || []));
-  const onDrop = (event: DragEvent<HTMLDivElement>) => {
+  const onDrop = (event: DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
     addFiles(Array.from(event.dataTransfer.files || []));
   };
   const remove = (index: number) => {
-    const item = items[index];
-    if (item) URL.revokeObjectURL(item.preview);
-    syncFiles(items.filter((_, candidateIndex) => candidateIndex !== index));
+    if (!disabled) syncFiles(files.filter((_, candidateIndex) => candidateIndex !== index));
   };
   const move = (from: number, to: number) => {
-    if (to < 0 || to >= items.length || from === to) return;
-    const next = [...items];
+    if (disabled || to < 0 || to >= files.length || from === to) return;
+    const next = [...files];
     const [item] = next.splice(from, 1);
     next.splice(to, 0, item);
     syncFiles(next);
   };
-  useEffect(() => () => itemsRef.current.forEach((item) => URL.revokeObjectURL(item.preview)), []);
 
-  return <div className="media-upload-picker">
-    <div className="media-upload-drop" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
-      <input className="media-upload-input" ref={inputRef} name={name} type="file" accept="image/jpeg,image/png,image/gif" multiple onChange={onChange} aria-label="选择图片" />
-      <span className="media-upload-icon" aria-hidden="true">＋</span>
-      <b>拖入图片，或点击选择</b><span>支持 JPG、PNG、GIF · 最多 {maxCount} 张 · 单张不超过 10MB</span>
-    </div>
+  return <div className={`media-upload-picker${compact ? ' media-upload-picker-compact' : ''}`} aria-disabled={disabled}>
+    <label className="media-upload-drop" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
+      <input className="media-upload-input sr-only" ref={inputRef} name={name} type="file" accept="image/jpeg,image/png,image/gif" multiple disabled={disabled || files.length >= maxCount} onChange={onChange} aria-label="选择图片" aria-description={compact ? 'JPG、PNG、GIF，单张 10 MB 以内，可拖入或粘贴图片' : undefined} />
+      <span className="media-upload-icon" aria-hidden="true">{compact ? <Icon name="image" size={19}/> : '＋'}</span>
+      <b>{files.length >= maxCount ? '图片数量已达上限' : compact ? '添加图片' : '选择、拖入或粘贴图片'}</b><span>{compact ? `可拖入或粘贴 · 最多 ${maxCount} 张` : `JPG、PNG、GIF · 最多 ${maxCount} 张 · 单张 10 MB 以内`}</span>
+    </label>
     {pickerError && <p className="media-upload-error" role="alert">{pickerError}</p>}
     {items.length > 0 && <div className="media-upload-grid" aria-live="polite">
-      {items.map((item, index) => <div className="media-upload-item" key={`${item.file.name}-${item.file.lastModified}-${index}`} draggable onDragStart={() => setDragIndex(index)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragIndex !== null) move(dragIndex, index); setDragIndex(null); }}>
+      {items.map((item, index) => <div className="media-upload-item" key={`${item.file.name}-${item.file.lastModified}-${item.file.size}`} draggable={!disabled} onDragStart={() => setDragIndex(index)} onDragEnd={() => setDragIndex(null)} onDragOver={(event) => event.preventDefault()} onDrop={event => {event.preventDefault(); event.stopPropagation(); if (dragIndex !== null) move(dragIndex, index); setDragIndex(null); }}>
         <img src={item.preview} alt={`${item.file.name}预览`} />
-        <div className="media-upload-meta"><span>{index + 1}</span><button type="button" aria-label={`移除${item.file.name}`} onClick={() => remove(index)}>×</button></div>
+        <div className="media-upload-meta"><span>{index + 1}</span><button type="button" disabled={disabled} aria-label={`移除${item.file.name}`} onClick={() => remove(index)}>×</button></div>
         <small>{item.file.name}</small>
+        <div className="media-upload-order"><button type="button" disabled={disabled || index === 0} aria-label={`将${item.file.name}前移`} onClick={() => move(index, index - 1)}>←</button><button type="button" disabled={disabled || index === items.length - 1} aria-label={`将${item.file.name}后移`} onClick={() => move(index, index + 1)}>→</button></div>
       </div>)}
     </div>}
   </div>;

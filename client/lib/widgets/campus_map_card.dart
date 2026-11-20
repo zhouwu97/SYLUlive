@@ -187,7 +187,7 @@ class _MapControlFullscreenOverlayState
 
   void _zoom(double factor) {
     final Matrix4 matrix = _transformationController.value.clone();
-    matrix.scale(factor);
+    matrix.scaleByDouble(factor, factor, factor, 1.0);
     _transformationController.value = matrix;
   }
 
@@ -238,12 +238,12 @@ class _MapControlFullscreenOverlayState
               left: 16,
               child: GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
-                child: GlassContainer(
-                  padding: const EdgeInsets.all(10),
+                child: const GlassContainer(
+                  padding: EdgeInsets.all(10),
                   borderRadius: 50,
                   blur: 10,
                   opacity: 0.2,
-                  child: const Icon(
+                  child: Icon(
                     Icons.arrow_back_ios_new,
                     color: Colors.white,
                     size: 20,

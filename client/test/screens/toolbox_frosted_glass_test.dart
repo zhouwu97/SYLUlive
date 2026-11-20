@@ -71,7 +71,7 @@ void main() {
       final theme = await _createProvider();
       await theme.setBackgroundImage('morenbeijing.jpeg', fillScreen: true);
       await theme.setFrostedGlass(true);
-      await theme.setComponentOpacity(0.7);
+      await theme.setComponentOpacityLevel(0.7);
       final capture = GlobalKey();
       await tester.pumpWidget(RepaintBoundary(
         key: capture,
@@ -172,22 +172,22 @@ void main() {
           .first;
       BoxDecoration decoration() =>
           tester.widget<DecoratedBox>(fill).decoration as BoxDecoration;
-      expect(decoration().color!.a, closeTo(0.7, 0.01));
+      expect(decoration().color!.a, closeTo(.925, 0.01));
       expect(decoration().border, isNull);
-      await theme.setComponentOpacity(0.4);
+      await theme.setComponentOpacityLevel(0.4);
       await tester.pumpAndSettle();
-      expect(decoration().color!.a, closeTo(0.4, 0.01));
+      expect(decoration().color!.a, closeTo(.85, 0.01));
       for (final strength in [.35, 0.0, 1.0]) {
         await theme.setFrostedGlassStrength(strength);
         await tester.pumpAndSettle();
-        expect(decoration().color!.a, closeTo(0.4, 0.01));
+        expect(decoration().color!.a, closeTo(.85, 0.01));
         expect(find.byWidgetPredicate((widget) => widget is BackdropFilter && widget.enabled),
             strength == 0 ? findsNothing : findsWidgets);
       }
       await theme.setFrostedGlass(false);
       await tester.pumpAndSettle();
       expect(activeBackdropFilters(), findsNothing);
-      expect(decoration().color!.a, closeTo(.4, .01));
+      expect(decoration().color!.a, closeTo(.85, .01));
       await theme.setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode.off);
       await tester.pumpAndSettle();
       expect(decoration().color!.a, 1);

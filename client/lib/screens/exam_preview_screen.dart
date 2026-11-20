@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -34,7 +33,6 @@ class ExamPreviewScreen extends StatefulWidget {
 }
 
 class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
-  final _converter = ExamMarkdownConverter();
   String _markdown = '';
   bool _loaded = false;
 
@@ -56,11 +54,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       markCorrectAnswers: _markCorrect,
       groupByChapter: _groupByChapter,
     );
-    if (mounted)
+    if (mounted) {
       setState(() {
         _markdown = converter.convert(widget.questions);
         _loaded = true;
       });
+    }
   }
 
   Future<void> _saveToFile() async {

@@ -32,8 +32,9 @@ export function mountSlidingIndicator(container: HTMLElement, activeSelector: st
   let frame = 0;
   // 同一路由可能有多个匹配项（/community?sort=bookmarks 时「校园社区」与「我的收藏」都带 active），
   // 取最后一个，即更具体的入口；并标记出来，让其余匹配项退回普通样式，只高亮一处。
+  // 折叠分组（details 未展开）内的导航项隐藏在流外，不参与滑块定位，避免幽灵块遮挡下方内容。
   const find = () => {
-    const all = container.querySelectorAll<HTMLElement>(activeSelector);
+    const all = [...container.querySelectorAll<HTMLElement>(activeSelector)].filter((el) => !el.closest("details:not([open])"));
     return all.length ? all[all.length - 1] : null;
   };
 
@@ -126,7 +127,7 @@ export function mountSlidingIndicator(container: HTMLElement, activeSelector: st
   const media = window.matchMedia(desktopQuery);
   const onMedia = () => place(true);
   media.addEventListener("change", onMedia);
-  // 「学习与校园服务」展开动画期间下方条目会整体下移，逐帧跟随；其他元素的悬停过渡不处理
+  // 「学习与成长」展开动画期间下方条目会整体下移，逐帧跟随；其他元素的悬停过渡不处理
   let followUntil = 0, followFrame = 0;
   const follow = () => {
     place(true);

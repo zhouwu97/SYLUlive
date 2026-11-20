@@ -2,11 +2,11 @@ import {
   BRIDGE_CHANNEL,
   BridgeFailure,
   PROTOCOL_VERSION,
-  capabilities,
+  capabilities as contractCapabilities,
   isBridgeRequest,
   isProvider,
   parseBackup,
-  providers,
+  providers as contractProviders,
   type AcademicConnection,
   type AcademicDataset,
   type AcademicProvider,
@@ -25,6 +25,9 @@ import { installSelfHealingInjection } from './inject';
 import { pickHelloConnections } from "./hello";
 import { assertFlowOwner, cancelLoginFlows, readLoginFlow, writeLoginFlow, isAssistantTab, loginFlowTtl, type LoginFlow } from "./login-flow";
 import { credentialScope, clearCredentials, saveCredentials, type SchoolCredentials } from "./credentials";
+import {storeBuild} from './build-flavor';
+const capabilities = contractCapabilities.filter(value => !storeBuild || value.provider !== 'physical');
+const providers = contractProviders.filter(value => !storeBuild || value !== 'physical');
 installReminders();
 installSelfHealingInjection();
 type Connection = AcademicConnection & { origin: string; confirmed: boolean };
@@ -113,6 +116,7 @@ function snapshotKey(connection: Connection, dataset: string, term: AcademicTerm
 }
 async function handle(request: BridgeRequest, origin: string, tabId: number) {
   const p = request.payload;
+  if (storeBuild && p.provider === 'physical') fail('unsupported_query', '商店版不提供明文体测连接');
   if (request.operation === "hello") {
     // 连接快照读本机 session 存储、授权状态读 chrome.permissions，都是本地调用，
     // 页面因此可以反复复检而不产生网络代价。epoch 只交给同 origin 的页面，
@@ -130,7 +134,7 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
       extensionVersion: chrome.runtime.getManifest().version,
       capabilities,
       automaticLogin: true,
-      connections: pickHelloConnections(stored, origin),
+      connections: pickHelloConnections(stored, origin).filter(value => !storeBuild || value.provider !== 'physical'),
       authorized: Object.fromEntries(
         providers.map((x, i) => [x, granted[i] === true]),
       ) as Partial<Record<AcademicProvider, boolean>>,

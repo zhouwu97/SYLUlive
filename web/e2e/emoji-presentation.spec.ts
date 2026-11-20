@@ -70,7 +70,7 @@ async function openPicker(page: Page) {
 async function openComment(page: Page) {
   await page.goto("post/675"); await page.getByRole("button", { name: "说说你的想法，一起聊聊…", exact: true }).click();
   await page.getByLabel("写下你的回复").fill("保留这条草稿");
-  await page.getByRole("button", { name: "☺ 添加表情", exact: true }).click();
+  await page.getByRole("button", { name: "添加表情", exact: true }).click();
 }
 
 test("收藏图片预览与私信 file_id 正确，失败保留草稿及重试身份", async ({ page }) => {
@@ -143,7 +143,8 @@ test("评论内管理与预览保留草稿，私有收藏仅在提交时转换�
   const state = await setup(page); await openComment(page);
   await page.locator(".emoji-picker").getByRole("button", { name: "管理", exact: true }).click();
   await page.locator(".emoji-option").first().click();
-  await expect(page.getByRole("dialog", { name: "发表评论" })).toHaveCount(1);
+  await expect(page.getByRole("dialog", { name: "发表评论" })).toHaveCount(0);
+  await expect(page.locator(".reply-inline-composer")).toBeVisible();
   await page.locator('.emoji-picker').getByRole('button', { name: '返回', exact: true }).click();
   await expect(page.locator('.emoji-option').first()).toBeFocused();
   await page.locator('.emoji-option').first().click();

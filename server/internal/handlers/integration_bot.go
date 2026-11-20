@@ -86,9 +86,6 @@ func (h *IntegrationHandler) ManageBot(c *gin.Context) {
 			}
 		}
 	}
-	if (input.Enabled || input.Name != nil || input.Avatar != nil || input.Policy != nil) && !h.recent(c) {
-		return
-	}
 	_, err := h.actions().UpdateManagedBot(c.Request.Context(), c.GetUint("user_id"), input)
 	if err != nil {
 		writeIntegrationError(c, err, false)

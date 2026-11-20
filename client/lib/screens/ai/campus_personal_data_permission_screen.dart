@@ -1,7 +1,7 @@
-import '../../theme/app_colors.dart';
 import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_card.dart';
 import 'package:provider/provider.dart';
 
@@ -119,9 +119,7 @@ class _CampusPersonalDataPermissionScreenState
     return Scaffold(
       appBar: AppBar(title: const Text('校园 Agent 数据权限')),
       body: AppCardMaterial(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? AppColors.surfaceSecondaryDark
-            : AppColors.surfaceSecondaryLight,
+        color: AppThemeTokens.of(context).card,
         borderRadius: BorderRadius.zero,
         clipBehavior: Clip.antiAlias,
         child: FutureBuilder<

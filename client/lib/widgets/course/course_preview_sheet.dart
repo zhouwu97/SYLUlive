@@ -1,7 +1,7 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
-import '../campus/campus_theme.dart';
 import '../../providers/edu_provider.dart';
 import 'course_preview_tile.dart';
 
@@ -74,7 +74,7 @@ class CoursePreviewSheet extends StatelessWidget {
     return AppCardSurface(
       height: MediaQuery.of(context).size.height * 0.85,
       decoration: BoxDecoration(
-        color: isDark ? CampusTheme.darkBg : CampusTheme.bg,
+        color: AppThemeTokens.of(context).background,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
@@ -84,7 +84,7 @@ class CoursePreviewSheet extends StatelessWidget {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: isDark ? Colors.white24 : Colors.black12,
+              color: AppThemeTokens.of(context).textTertiary,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -102,24 +102,24 @@ class CoursePreviewSheet extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : CampusTheme.text,
+                          color: AppThemeTokens.of(context).textPrimary,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         '共 ${courses.length} 门课 · $courseDayCount 个上课日'
                         '${invalidCoordinateCount == 0 ? '' : ' · $invalidCoordinateCount 门课程缺少有效排课坐标'}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: CampusTheme.subText,
+                          color: AppThemeTokens.of(context).textSecondary,
                         ),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded,
-                      color: CampusTheme.subText),
+                  icon: Icon(Icons.close_rounded,
+                      color: AppThemeTokens.of(context).textSecondary),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -127,9 +127,10 @@ class CoursePreviewSheet extends StatelessWidget {
           ),
           Expanded(
             child: courses.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text('暂无课程，尝试重新获取',
-                        style: TextStyle(color: CampusTheme.subText)))
+                        style: TextStyle(
+                            color: AppThemeTokens.of(context).textSecondary)))
                 : ListView.builder(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -150,7 +151,7 @@ class CoursePreviewSheet extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : CampusTheme.text,
+                                color: AppThemeTokens.of(context).textPrimary,
                               ),
                             ),
                           ),
@@ -172,8 +173,8 @@ class CoursePreviewSheet extends StatelessWidget {
                         Navigator.pop(context, true);
                       },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: CampusTheme.primary,
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppThemeTokens.of(context).primary,
+                  foregroundColor: AppThemeTokens.of(context).onPrimary,
                   elevation: 0,
                   minimumSize: const Size(double.infinity, 50),
                   shape: RoundedRectangleBorder(

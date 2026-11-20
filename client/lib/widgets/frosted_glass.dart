@@ -24,7 +24,7 @@ class FrostedGlass extends StatelessWidget {
     final appearance = context.select<ThemeProvider?, (bool, double)>(
       (theme) {
         final active = (enabled ?? theme?.frostedGlass ?? false) &&
-            (theme == null || theme.shouldShowCustomBackground) &&
+            (theme == null || theme.canCustomizeCardMaterial) &&
             sigmaX > 0 &&
             sigmaY > 0;
         return (active, active ? theme?.frostedGlassStrength ?? 1 : 0);
@@ -42,6 +42,7 @@ class FrostedGlass extends StatelessWidget {
       // 弹层淡入和滚动合成可能创建 saveLayer；srcOver 会再叠一次
       // 已过滤的底面，留下重影。只替换滤镜底面，不改变前景文字透明度。
       blendMode: BlendMode.src,
+      grouped: true,
       child: child,
     );
   }

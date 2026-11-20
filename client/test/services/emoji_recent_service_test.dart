@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../lib/services/emoji_recent_service.dart';
+import 'package:shenliyuan/services/emoji_recent_service.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 

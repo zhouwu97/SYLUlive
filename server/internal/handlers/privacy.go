@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
@@ -136,7 +138,7 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 	}
 	payload := gin.H{
 		"exported_at":             time.Now().UTC(),
-		"scope":                   "账户资料、法律文件授权记录、表情包投稿和个人信息请求记录；不含密码、教务 Cookie、会话令牌、推送标识及内部文件地址",
+		"scope":                   "账户资料、法律文件授权记录、食堂收藏、表情包投稿和个人信息请求记录；不含密码、教务 Cookie、会话令牌、推送标识及内部文件地址",
 		"legal_consents_active":   consentState == models.LegalConsentStateActive,
 		"legal_consents_required": consentState == models.LegalConsentStateRequired,
 		"consent_revoked_at":      user.LegalConsentRevokedAt,
@@ -173,6 +175,13 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 			return nil, err
 		}
 	}
+	if h.db.Migrator().HasTable(&models.CanteenFavorite{}) {
+		favorites := make([]models.CanteenFavorite, 0)
+		if err := h.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&favorites).Error; err != nil {
+			return nil, err
+		}
+		payload["canteen_favorites"] = favorites
+	}
 	if includeRequests {
 		if h.db.Migrator().HasTable(&models.EmojiCreator{}) {
 			var creator models.EmojiCreator
@@ -188,6 +197,13 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 				return nil, err
 			}
 			payload["emoji_submissions"] = packs
+		}
+		if h.db.Migrator().HasTable(&models.ThemePack{}) {
+			themes := []models.ThemePack{}
+			if err := h.db.Omit("idempotency_key").Where("author_user_id = ?", userID).Order("created_at DESC").Find(&themes).Error; err != nil {
+				return nil, err
+			}
+			payload["theme_submissions"] = themes
 		}
 		requests := make([]models.PersonalDataRequest, 0)
 		if err := h.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&requests).Error; err != nil {
@@ -441,90 +457,167 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误", "code": "INVALID_PASSWORD"})
 		return
 	}
-	randomPassword, err := bcrypt.GenerateFromPassword([]byte(fmt.Sprintf("cancelled-%d-%d", user.ID, time.Now().UnixNano())), bcrypt.DefaultCost)
+	now := time.Now()
+	randomPassword, err := cancelledPasswordHash(userID, now)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "处理账号注销失败"})
 		return
 	}
-	now := time.Now()
-	needsEduCredentialCleanup := user.IsEduAuthorized() || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
+	needsEduCredentialCleanup := accountCancellationNeedsEduCleanup(user)
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-			"student_id":                   "",
-			"student_verified_at":          nil,
-			"email":                        "",
-			"email_verified_at":            nil,
-			"account_status":               "cancelled",
-			"cancelled_at":                 now,
-			"password_hash":                string(randomPassword),
-			"nickname":                     "已注销用户",
-			"gender":                       "",
-			"avatar":                       "",
-			"background":                   "",
-			"qq":                           "",
-			"device_token":                 "",
-			"push_data_processing_enabled": false,
-			"push_installation_id":         "",
-			"push_notice_version":          "",
-			"push_enabled_at":              nil,
-			"edu_student_id":               "",
-			"edu_password":                 "",
-			"edu_cookie":                   "",
-			"edu_bound":                    false,
-			"edu_authorized":               false,
-			"edu_session_state":            "revoked",
-			"edu_auto_relogin":             false,
-			"edu_cleanup_pending":          needsEduCredentialCleanup,
-			"edu_grade":                    "",
-			"edu_college":                  "",
-			"edu_major":                    "",
-			"token_version":                gorm.Expr("token_version + 1"),
-		}).Error; err != nil {
-			return err
-		}
-		if err := services.InvalidateUserIntegrations(tx, userID, now); err != nil {
-			return err
-		}
-		if tx.Migrator().HasTable(&models.AccountLoginAlias{}) {
-			if err := tx.Where("user_id = ?", userID).Delete(&models.AccountLoginAlias{}).Error; err != nil {
-				return err
-			}
-		}
-		if tx.Migrator().HasTable(&models.UserCompetitionProfile{}) {
-			if err := tx.Where("user_id = ?", userID).Delete(&models.UserCompetitionProfile{}).Error; err != nil {
-				return err
-			}
-		}
-		if err := tx.Where("user_id = ?", userID).Delete(&models.PushDevice{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("follower_id = ? OR following_id = ?", userID, userID).Delete(&models.UserFollow{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&models.EmailVerificationChallenge{}).
-			Where("user_id = ? AND consumed_at IS NULL", userID).
-			Update("consumed_at", now).Error; err != nil {
-			return err
-		}
-		if needsEduCredentialCleanup {
-			if err := h.eduCredentialCleanupJobs.Enqueue(tx, userID, user.EduAuthorizationGeneration, now, true); err != nil {
-				return err
-			}
-		}
-		if err := services.WithdrawEmojiPacksForUser(tx, userID); err != nil {
-			return err
-		}
-		return tx.Create(&models.PersonalDataRequest{
-			UserID: userID, RequestType: models.PersonalDataRequestAccountCancelled,
-			Detail: "用户通过密码确认发起账号注销", Status: models.PersonalDataRequestCompleted,
-			Result:    "账号身份信息、教务凭证和设备推送标识已匿名化或清除；为履行内容治理和审计义务，内容关联与必要操作记录将按适用法律保留。",
-			HandledAt: &now,
-		}).Error
+		return h.cancelAccountTx(tx, user, randomPassword, "用户通过密码确认发起账号注销", now)
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "账号注销失败"})
 		return
 	}
 	middleware.InvalidateTokenVersionCache(userID)
-	revokeRefreshTokensForUser(h.db, userID)
 	c.JSON(http.StatusOK, gin.H{"message": "账号已注销并完成本地身份信息匿名化，相关远端清理任务已排队", "cleanup_pending": needsEduCredentialCleanup})
+}
+
+func cancelledPasswordHash(userID uint, now time.Time) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(fmt.Sprintf("cancelled-%d-%d", userID, now.UnixNano())), bcrypt.DefaultCost)
+	return string(hash), err
+}
+
+func accountCancellationNeedsEduCleanup(user models.User) bool {
+	return user.IsEduAuthorized() || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
+}
+
+// RetireSuperAdmin 仅用于运维交接命令。先完成服务种子切换，才能注销原管理员。
+func (h *PrivacyHandler) RetireSuperAdmin(ctx context.Context, keeperID, retireID uint, configuredSeed string) (bool, error) {
+	if keeperID == 0 || retireID == 0 || keeperID == retireID || configuredSeed == "" {
+		return false, errors.New("须明确指定不同的保留与注销超管，并完成种子配置交接")
+	}
+	now := time.Now()
+	hash, err := cancelledPasswordHash(retireID, now)
+	if err != nil {
+		return false, err
+	}
+	var needsCleanup bool
+	err = h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var users []models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id IN ?", []uint{keeperID, retireID}).Order("id").Find(&users).Error; err != nil {
+			return err
+		}
+		if len(users) != 2 {
+			return errors.New("保留或注销账号不存在")
+		}
+		keeper, target := users[0], users[1]
+		if keeper.ID != keeperID {
+			keeper, target = target, keeper
+		}
+		if keeper.Role != models.RoleSuperAdmin || keeper.AccountStatus != "active" ||
+			keeper.StudentID != configuredSeed || keeper.StudentVerifiedAt == nil {
+			return errors.New("保留账号必须是已启用并已核验的当前生产种子超管")
+		}
+		if target.Role != models.RoleSuperAdmin || target.AccountStatus != "active" || target.StudentID == configuredSeed {
+			return errors.New("目标必须是仍启用且已经退出生产种子配置的超级管理员")
+		}
+		if err := tx.Model(&models.User{}).Where("id = ?", target.ID).UpdateColumn("role", models.RoleUser).Error; err != nil {
+			return err
+		}
+		needsCleanup = accountCancellationNeedsEduCleanup(target)
+		if err := h.cancelAccountTx(tx, target, hash, "生产运维完成超管交接后注销", now); err != nil {
+			return err
+		}
+		return tx.Create(&models.AdminLog{
+			AdminID:   keeper.ID,
+			AdminName: keeper.Nickname,
+			Action:    "超级管理员交接并注销原账号",
+			Target:    strconv.FormatUint(uint64(target.ID), 10),
+			Detail:    "保留当前种子超级管理员，撤销原账号权限及全部会话，并执行账号匿名化注销",
+		}).Error
+	})
+	if err != nil {
+		return false, err
+	}
+	return needsCleanup, nil
+}
+
+func (h *PrivacyHandler) cancelAccountTx(tx *gorm.DB, user models.User, randomPassword, detail string, now time.Time) error {
+	userID := user.ID
+	needsEduCredentialCleanup := accountCancellationNeedsEduCleanup(user)
+	if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"student_id":                   "",
+		"student_verified_at":          nil,
+		"email":                        "",
+		"email_verified_at":            nil,
+		"account_status":               "cancelled",
+		"cancelled_at":                 now,
+		"password_hash":                string(randomPassword),
+		"nickname":                     "已注销用户",
+		"gender":                       "",
+		"avatar":                       "",
+		"background":                   "",
+		"qq":                           "",
+		"device_token":                 "",
+		"push_data_processing_enabled": false,
+		"push_installation_id":         "",
+		"push_notice_version":          "",
+		"push_enabled_at":              nil,
+		"edu_student_id":               "",
+		"edu_password":                 "",
+		"edu_cookie":                   "",
+		"edu_bound":                    false,
+		"edu_authorized":               false,
+		"edu_session_state":            "revoked",
+		"edu_auto_relogin":             false,
+		"edu_cleanup_pending":          needsEduCredentialCleanup,
+		"edu_grade":                    "",
+		"edu_college":                  "",
+		"edu_major":                    "",
+		"token_version":                gorm.Expr("token_version + 1"),
+	}).Error; err != nil {
+		return err
+	}
+	if err := services.InvalidateUserIntegrations(tx, userID, now); err != nil {
+		return err
+	}
+	if tx.Migrator().HasTable(&models.AccountLoginAlias{}) {
+		if err := tx.Where("user_id = ?", userID).Delete(&models.AccountLoginAlias{}).Error; err != nil {
+			return err
+		}
+	}
+	if tx.Migrator().HasTable(&models.UserCompetitionProfile{}) {
+		if err := tx.Where("user_id = ?", userID).Delete(&models.UserCompetitionProfile{}).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Where("user_id = ?", userID).Delete(&models.PushDevice{}).Error; err != nil {
+		return err
+	}
+	if tx.Migrator().HasTable(&models.CanteenFavorite{}) {
+		if err := tx.Where("user_id = ?", userID).Delete(&models.CanteenFavorite{}).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Where("follower_id = ? OR following_id = ?", userID, userID).Delete(&models.UserFollow{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&models.EmailVerificationChallenge{}).
+		Where("user_id = ? AND consumed_at IS NULL", userID).
+		Update("consumed_at", now).Error; err != nil {
+		return err
+	}
+	if needsEduCredentialCleanup {
+		if err := h.eduCredentialCleanupJobs.Enqueue(tx, userID, user.EduAuthorizationGeneration, now, true); err != nil {
+			return err
+		}
+	}
+	if err := services.WithdrawEmojiPacksForUser(tx, userID); err != nil {
+		return err
+	}
+	if err := services.WithdrawThemePacksForUser(tx, userID); err != nil {
+		return err
+	}
+	if err := revokeRefreshTokensForUser(tx, userID); err != nil {
+		return err
+	}
+	return tx.Create(&models.PersonalDataRequest{
+		UserID: userID, RequestType: models.PersonalDataRequestAccountCancelled,
+		Detail: detail, Status: models.PersonalDataRequestCompleted,
+		Result:    "账号身份信息、教务凭证和设备推送标识已匿名化或清除；为履行内容治理和审计义务，内容关联与必要操作记录将按适用法律保留。",
+		HandledAt: &now,
+	}).Error
 }

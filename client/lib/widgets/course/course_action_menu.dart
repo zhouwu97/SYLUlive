@@ -1,6 +1,6 @@
+import '../../theme/app_theme_tokens.dart';
 import '../app_popup_menu.dart';
 import 'package:flutter/material.dart';
-import '../campus/campus_theme.dart';
 
 enum CourseMenuAction {
   syncFromEdu,
@@ -26,10 +26,10 @@ class CourseActionMenu extends StatelessWidget {
     return AppPopupMenuButton<CourseMenuAction>(
       icon: Icon(
         Icons.more_horiz_rounded,
-        color: isDark ? Colors.white : CampusTheme.text,
+        color: AppThemeTokens.of(context).textPrimary,
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: isDark ? CampusTheme.darkCard : Colors.white,
+      color: AppThemeTokens.of(context).card,
       elevation: 8,
       onSelected: onSelected,
       itemBuilder: (context) => [
@@ -60,9 +60,7 @@ class CourseActionMenu extends StatelessWidget {
           Icon(
             icon,
             size: 20,
-            color: isDark
-                ? Colors.white70
-                : CampusTheme.text.withValues(alpha: 0.8),
+            color: AppThemeTokens.of(context).textSecondary,
           ),
           const SizedBox(width: 12),
           Text(
@@ -70,7 +68,7 @@ class CourseActionMenu extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : CampusTheme.text,
+              color: AppThemeTokens.of(context).textPrimary,
             ),
           ),
         ],

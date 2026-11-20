@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../campus/campus_theme.dart';
+import '../../theme/app_theme_tokens.dart';
+import '../app_card.dart';
 
 /// 专用的全宽 Slider 设置项组件 (支持 valueText / valueLabel 兼容)
 class SettingsSliderTile extends StatelessWidget {
@@ -41,13 +42,13 @@ class SettingsSliderTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryColor = isDark ? const Color(0xFF7ED6C5) : CampusTheme.primary;
+    final primaryColor = AppThemeTokens.of(context).primary;
 
     final effectiveIconColor = iconColor ?? primaryColor;
     final effectiveIconBgColor = iconBgColor ??
         (isDark
-            ? const Color(0xFF7ED6C5).withValues(alpha: 0.15)
-            : CampusTheme.primaryLight);
+            ? AppThemeTokens.of(context).primary.withValues(alpha: 0.15)
+            : AppThemeTokens.of(context).primaryContainer);
 
     return Opacity(
       opacity: enabled ? 1.0 : 0.5,
@@ -83,7 +84,7 @@ class SettingsSliderTile extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : CampusTheme.text,
+                          color: AppThemeTokens.of(context).textPrimary,
                         ),
                       ),
                       if (subtitle != null) ...[
@@ -92,8 +93,8 @@ class SettingsSliderTile extends StatelessWidget {
                           subtitle!,
                           style: TextStyle(
                             fontSize: 12.5,
-                            color:
-                                isDark ? Colors.white60 : CampusTheme.subText,
+                            color: appContentSecondaryColor(context,
+                                AppThemeTokens.of(context).textSecondary),
                           ),
                         ),
                       ],
@@ -120,7 +121,7 @@ class SettingsSliderTile extends StatelessWidget {
                 activeTrackColor: primaryColor,
                 inactiveTrackColor: isDark
                     ? Colors.white.withValues(alpha: 0.15)
-                    : const Color(0xFFE5E0D8),
+                    : const Color(0xFFE5E0D8), // theme: fixed — 未选中轨道的中性对照色
                 thumbColor: primaryColor,
                 overlayColor: primaryColor.withValues(alpha: 0.12),
                 thumbShape: const RoundSliderThumbShape(

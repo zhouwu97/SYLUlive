@@ -991,12 +991,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 ),
               ),
               if (index < scores.length - 1)
-                AppCardDivider(
+                const AppCardDivider(
                   height: 1,
-                  thickness: 1,
-                  color: isDark
-                      ? AppColors.borderSubtleDark
-                      : AppColors.borderSubtleLight,
                   indent: 16,
                   endIndent: 16,
                 ),
@@ -1097,7 +1093,7 @@ class _GymScoreItem {
     rawResult = rawResult.replaceAll('times', '次');
     rawResult = rawResult.replaceAll(' min', ' 分钟');
 
-    rawResult = rawResult.replaceAll(RegExp(r"m's['" + '"' + r"]*"), "");
+    rawResult = rawResult.replaceAll(RegExp(r"m's['" '"' r"]*"), "");
     if (rawResult.contains("'") || rawResult.contains('"')) {
       rawResult = rawResult
           .replaceAll("''", "″")

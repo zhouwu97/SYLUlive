@@ -1077,11 +1077,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildCardDivider(ColorScheme colorScheme) {
-    return AppCardDivider(
+    return const AppCardDivider(
       height: 1,
       indent: 16,
       endIndent: 16,
-      color: colorScheme.outlineVariant.withValues(alpha: 0.30),
     );
   }
 

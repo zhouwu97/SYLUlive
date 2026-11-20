@@ -1,3 +1,6 @@
+import '../widgets/app_page_background.dart';
+import '../theme/app_theme_style.dart';
+import '../theme/app_theme_tokens.dart';
 import '../widgets/app_card.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -13,8 +16,9 @@ import '../theme/app_motion.dart';
 import '../utils/responsive_util.dart';
 import '../utils/app_navigator.dart';
 import '../widgets/market_post_card.dart';
+import '../widgets/adaptive_detail_layout.dart';
+import '../utils/app_navigation.dart';
 import 'create_post_screen.dart';
-import 'post_detail_screen.dart';
 
 abstract final class AppLayout {
   static const double floatingNavHeight = 64;
@@ -23,24 +27,33 @@ abstract final class AppLayout {
 }
 
 final class _MarketTokens {
-  static Color cardBg(bool isDark) =>
-      isDark ? const Color(0xFF1E2226) : Colors.white;
+  static Color cardBg(BuildContext context) => AppThemeTokens.of(context).card;
 
-  static Color accent(bool isDark) =>
-      isDark ? const Color(0xFFFFA06D) : const Color(0xFFFF7A45);
+  // 集市橙是板块识别色（theme: fixed-identity），主题开启识别色协调时向主题色相靠拢。
+  static Color accent(BuildContext context, bool isDark) =>
+      AppThemeStyle.of(context).identity(isDark
+          ? const Color(0xFFFFA06D) // theme: fixed 集市模块识别色
+          : const Color(0xFFFF7A45)); // theme: fixed 集市模块识别色
 
-  static Color accentSoft(bool isDark) => isDark
-      ? const Color(0xFFFFA06D).withValues(alpha: 0.14)
-      : const Color(0xFFFFF0E8);
+  static const onAccent = Color(0xFF35170D);
 
-  static Color borderColor(bool isDark) =>
-      isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFF1E5DC);
+  static Color accentLabel(BuildContext context, bool isDark) => isDark
+      ? accent(context, isDark)
+      : AppThemeStyle.of(context).identity(const Color(0xFF9D360A));
 
-  static Color titleColor(bool isDark) =>
-      isDark ? Colors.white : const Color(0xFF1F2328);
+  static Color accentSoft(BuildContext context, bool isDark) =>
+      AppThemeStyle.of(context).identity(isDark
+          ? const Color(0xFFFFA06D).withValues(alpha: 0.14) // theme: fixed 集市模块识别色
+          : const Color(0xFFFFF0E8)); // theme: fixed 集市模块识别色
 
-  static Color subColor(bool isDark) =>
-      isDark ? Colors.grey.shade400 : const Color(0xFF747B82);
+  static Color borderColor(BuildContext context) =>
+      AppThemeTokens.of(context).cardBorder;
+
+  static Color titleColor(BuildContext context) =>
+      AppThemeTokens.of(context).textPrimary;
+
+  static Color subColor(BuildContext context) =>
+      AppThemeTokens.of(context).textSecondary;
 
   static const double cardRadius = 18;
   static const double chipRadius = 999;
@@ -57,6 +70,7 @@ class MarketScreen extends StatefulWidget {
 }
 
 class _MarketScreenState extends State<MarketScreen> {
+  final _detailNavigationKey = GlobalKey<AdaptiveDetailLayoutState>();
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   Timer? _searchDebounce;
@@ -66,6 +80,7 @@ class _MarketScreenState extends State<MarketScreen> {
   List<Post> _searchResults = [];
   String _typeFilter = 'all';
   int _searchGeneration = 0;
+  int? _accountSessionEpoch;
   VoidCallback? _unregisterResumeRefresh;
 
   static const _marketPostTypes = ['sell', 'buy', 'lost', 'found', 'proxy'];
@@ -143,6 +158,21 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final epoch = context.watch<AuthProvider>().accountSessionEpoch;
+    if (_accountSessionEpoch != null && _accountSessionEpoch != epoch) {
+      _searchGeneration++;
+      _searchDebounce?.cancel();
+      _searchController.clear();
+      _searchQuery = '';
+      _searchResults = [];
+      _isSearching = false;
+    }
+    _accountSessionEpoch = epoch;
+  }
+
+  @override
   void dispose() {
     _unregisterResumeRefresh?.call();
     _searchDebounce?.cancel();
@@ -182,6 +212,8 @@ class _MarketScreenState extends State<MarketScreen> {
     final query = raw.trim();
     final generation = ++_searchGeneration;
     if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    final epoch = auth.accountSessionEpoch;
 
     if (query.isEmpty) {
       if (mounted) {
@@ -212,7 +244,10 @@ class _MarketScreenState extends State<MarketScreen> {
           limit: 100,
         );
 
-    if (!mounted || generation != _searchGeneration || _searchQuery != query) {
+    if (!mounted ||
+        generation != _searchGeneration ||
+        _searchQuery != query ||
+        auth.accountSessionEpoch != epoch) {
       return;
     }
 
@@ -327,7 +362,7 @@ class _MarketScreenState extends State<MarketScreen> {
           child: AppCardSurface(
             padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
             decoration: BoxDecoration(
-              color: _MarketTokens.cardBg(isDark),
+              color: _MarketTokens.cardBg(context),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(24)),
             ),
@@ -343,7 +378,7 @@ class _MarketScreenState extends State<MarketScreen> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
-                        color: _MarketTokens.titleColor(isDark),
+                        color: _MarketTokens.titleColor(context),
                       ),
                     ),
                     const Spacer(),
@@ -369,7 +404,7 @@ class _MarketScreenState extends State<MarketScreen> {
   Widget _buildSortOption(String value, String label) {
     final isSelected = _sortType == value;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = _MarketTokens.accent(isDark);
+    final accent = _MarketTokens.accent(context, isDark);
 
     return InkWell(
       borderRadius: BorderRadius.circular(14),
@@ -388,7 +423,8 @@ class _MarketScreenState extends State<MarketScreen> {
               child: Text(
                 label,
                 style: TextStyle(
-                  color: isSelected ? accent : _MarketTokens.titleColor(isDark),
+                  color:
+                      isSelected ? accent : _MarketTokens.titleColor(context),
                   fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
@@ -403,7 +439,7 @@ class _MarketScreenState extends State<MarketScreen> {
   void _showFilterBottomSheet() {
     var draftType = _typeFilter;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = _MarketTokens.accent(isDark);
+    final accent = _MarketTokens.accent(context, isDark);
     final options = <MapEntry<String, String>>[
       const MapEntry('all', '全部'),
       ..._allowedTypes.map((type) => MapEntry(type, _typeLabel(type))),
@@ -423,7 +459,7 @@ class _MarketScreenState extends State<MarketScreen> {
                 margin: const EdgeInsets.only(top: 80),
                 padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
                 decoration: BoxDecoration(
-                  color: _MarketTokens.cardBg(isDark),
+                  color: _MarketTokens.cardBg(context),
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(28)),
                 ),
@@ -440,7 +476,7 @@ class _MarketScreenState extends State<MarketScreen> {
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
-                            color: _MarketTokens.titleColor(isDark),
+                            color: _MarketTokens.titleColor(context),
                           ),
                         ),
                         const Spacer(),
@@ -449,7 +485,7 @@ class _MarketScreenState extends State<MarketScreen> {
                           onPressed: () => Navigator.pop(ctx),
                           icon: Icon(
                             Icons.close_rounded,
-                            color: _MarketTokens.subColor(isDark),
+                            color: _MarketTokens.subColor(context),
                           ),
                         ),
                       ],
@@ -460,7 +496,7 @@ class _MarketScreenState extends State<MarketScreen> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: _MarketTokens.subColor(isDark),
+                        color: _MarketTokens.subColor(context),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -485,11 +521,9 @@ class _MarketScreenState extends State<MarketScreen> {
                                   alignment: Alignment.center,
                                   decoration: BoxDecoration(
                                     color: selected
-                                        ? _MarketTokens.accentSoft(isDark)
-                                        : (isDark
-                                            ? Colors.white
-                                                .withValues(alpha: 0.06)
-                                            : const Color(0xFFF2F4F7)),
+                                        ? _MarketTokens.accentSoft(context, isDark)
+                                        : (AppThemeTokens.of(context)
+                                            .surfaceMuted),
                                     borderRadius: BorderRadius.circular(14),
                                     border: Border.all(
                                       color: selected
@@ -504,7 +538,7 @@ class _MarketScreenState extends State<MarketScreen> {
                                       fontWeight: FontWeight.w700,
                                       color: selected
                                           ? accent
-                                          : _MarketTokens.subColor(isDark),
+                                          : _MarketTokens.subColor(context),
                                     ),
                                   ),
                                 ),
@@ -528,7 +562,7 @@ class _MarketScreenState extends State<MarketScreen> {
                                     },
                               style: TextButton.styleFrom(
                                 backgroundColor:
-                                    _MarketTokens.accentSoft(isDark),
+                                    _MarketTokens.accentSoft(context, isDark),
                                 foregroundColor: accent,
                                 disabledForegroundColor:
                                     accent.withValues(alpha: 0.35),
@@ -554,7 +588,7 @@ class _MarketScreenState extends State<MarketScreen> {
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: accent,
-                                foregroundColor: Colors.white,
+                                foregroundColor: _MarketTokens.onAccent,
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
@@ -584,7 +618,7 @@ class _MarketScreenState extends State<MarketScreen> {
       width: 40,
       height: 4,
       decoration: BoxDecoration(
-        color: isDark ? Colors.white24 : const Color(0xFFD0D5DD),
+        color: AppThemeTokens.of(context).textTertiary,
         borderRadius: BorderRadius.circular(999),
       ),
     );
@@ -592,12 +626,48 @@ class _MarketScreenState extends State<MarketScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    return ValueListenableBuilder<int>(
+      valueListenable: currentHomeTabIndex,
+      builder: (context, currentTab, _) => AdaptiveDetailLayout(
+        key: _detailNavigationKey,
+        navigationScope: (
+          auth.user?.id,
+          auth.accountSessionEpoch,
+          auth.user?.role,
+        ),
+        isActive: currentTab == 1 && TickerMode.valuesOf(context).enabled,
+        paneKeyPrefix: 'market',
+        emptyDetail: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.storefront_outlined,
+                  size: 80,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: .2)),
+              const SizedBox(height: 16),
+              Text('选择左侧商品查看详情',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
+        master: Builder(builder: _buildMarketPage),
+      ),
+    );
+  }
+
+  Widget _buildMarketPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
-      // 根 Tab 的壁纸与简洁底色统一由 GlobalBackgroundWrapper 绘制。
-      backgroundColor: Colors.transparent,
+      // 壁纸沿用外层绘制，简洁模式使用当前主题底色。
+      backgroundColor: AppPageBackground.color(
+            context, AppThemeTokens.of(context).background),
       appBar: null,
       body: Consumer<PostProvider>(
         builder: (context, postProvider, child) {
@@ -776,8 +846,8 @@ class _MarketScreenState extends State<MarketScreen> {
                         elevation: 2,
                         label: const Text('发布'),
                         icon: const Icon(Icons.add),
-                        backgroundColor: _MarketTokens.accent(isDark),
-                        foregroundColor: Colors.white,
+                        backgroundColor: _MarketTokens.accent(context, isDark),
+                        foregroundColor: _MarketTokens.onAccent,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(18),
                         ),
@@ -847,9 +917,9 @@ class _MarketScreenState extends State<MarketScreen> {
     return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
       decoration: BoxDecoration(
-        color: _MarketTokens.cardBg(isDark),
+        color: _MarketTokens.cardBg(context),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _MarketTokens.borderColor(isDark)),
+        border: Border.all(color: _MarketTokens.borderColor(context)),
       ),
       child: Row(
         children: [
@@ -863,7 +933,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: _MarketTokens.titleColor(isDark),
+                    color: _MarketTokens.titleColor(context),
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -873,7 +943,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 11,
-                    color: _MarketTokens.subColor(isDark),
+                    color: _MarketTokens.subColor(context),
                   ),
                 ),
               ],
@@ -897,7 +967,7 @@ class _MarketScreenState extends State<MarketScreen> {
     VoidCallback onTap,
   ) {
     return Material(
-      color: _MarketTokens.accentSoft(isDark),
+      color: _MarketTokens.accentSoft(context, isDark),
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         onTap: onTap,
@@ -909,7 +979,7 @@ class _MarketScreenState extends State<MarketScreen> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: _MarketTokens.accent(isDark),
+              color: _MarketTokens.accentLabel(context, isDark),
             ),
           ),
         ),
@@ -930,7 +1000,7 @@ class _MarketScreenState extends State<MarketScreen> {
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.w900,
-                  color: _MarketTokens.titleColor(isDark),
+                  color: _MarketTokens.titleColor(context),
                   height: 1.1,
                 ),
               ),
@@ -939,7 +1009,7 @@ class _MarketScreenState extends State<MarketScreen> {
                 '校园二手、求购和办事信息',
                 style: TextStyle(
                   fontSize: 12,
-                  color: _MarketTokens.subColor(isDark),
+                  color: _MarketTokens.subColor(context),
                   height: 1.2,
                 ),
               ),
@@ -958,8 +1028,8 @@ class _MarketScreenState extends State<MarketScreen> {
       height: 42,
       child: Material(
         color: isGrid
-            ? _MarketTokens.accentSoft(isDark)
-            : _MarketTokens.cardBg(isDark),
+            ? _MarketTokens.accentSoft(context, isDark)
+            : _MarketTokens.cardBg(context),
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
@@ -974,8 +1044,8 @@ class _MarketScreenState extends State<MarketScreen> {
                 : Icons.view_agenda_outlined,
             size: 20,
             color: isGrid
-                ? _MarketTokens.accent(isDark)
-                : _MarketTokens.subColor(isDark),
+                ? _MarketTokens.accentLabel(context, isDark)
+                : _MarketTokens.subColor(context),
           ),
         ),
       ),
@@ -989,9 +1059,9 @@ class _MarketScreenState extends State<MarketScreen> {
       height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        color: _MarketTokens.cardBg(isDark),
+        color: _MarketTokens.cardBg(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _MarketTokens.borderColor(isDark)),
+        border: Border.all(color: _MarketTokens.borderColor(context)),
         boxShadow: isDark
             ? null
             : [
@@ -1010,7 +1080,7 @@ class _MarketScreenState extends State<MarketScreen> {
         textInputAction: TextInputAction.search,
         style: TextStyle(
           fontSize: 14,
-          color: _MarketTokens.titleColor(isDark),
+          color: _MarketTokens.titleColor(context),
         ),
         decoration: InputDecoration(
           border: InputBorder.none,
@@ -1022,12 +1092,12 @@ class _MarketScreenState extends State<MarketScreen> {
           hintText: '搜索商品、用户或关键词',
           hintStyle: TextStyle(
             fontSize: 14,
-            color: isDark ? Colors.white38 : const Color(0xFF98A2B3),
+            color: AppThemeTokens.of(context).textTertiary,
           ),
           prefixIcon: Icon(
             Icons.search_rounded,
             size: 20,
-            color: isDark ? Colors.white54 : const Color(0xFF667085),
+            color: AppThemeTokens.of(context).textSecondary,
           ),
           prefixIconConstraints:
               const BoxConstraints(minWidth: 34, minHeight: 44),
@@ -1035,7 +1105,7 @@ class _MarketScreenState extends State<MarketScreen> {
               ? null
               : IconButton(
                   icon: const Icon(Icons.close_rounded, size: 18),
-                  color: isDark ? Colors.white54 : const Color(0xFF667085),
+                  color: AppThemeTokens.of(context).textSecondary,
                   onPressed: () {
                     _searchController.clear();
                     _runSearch('');
@@ -1048,7 +1118,7 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Widget _buildCategoryRow(bool isDark) {
-    final accent = _MarketTokens.accent(isDark);
+    final accent = _MarketTokens.accent(context, isDark);
     return SizedBox(
       height: 36,
       child: ListView.separated(
@@ -1083,8 +1153,8 @@ class _MarketScreenState extends State<MarketScreen> {
         duration: AppMotion.duration(context, AppMotion.fast),
         tween: ColorTween(
             end: selected
-                ? _MarketTokens.accentSoft(isDark)
-                : _MarketTokens.cardBg(isDark)),
+                ? _MarketTokens.accentSoft(context, isDark)
+                : _MarketTokens.cardBg(context)),
         builder: (context, color, child) => AppCardSurface(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           alignment: Alignment.center,
@@ -1094,7 +1164,7 @@ class _MarketScreenState extends State<MarketScreen> {
             border: Border.all(
               color: selected
                   ? accent.withValues(alpha: 0.32)
-                  : _MarketTokens.borderColor(isDark),
+                  : _MarketTokens.borderColor(context),
             ),
           ),
           // 选中边框表达筛选状态，玻璃模式仍保留；普通装饰边框由材质隐藏。
@@ -1111,7 +1181,9 @@ class _MarketScreenState extends State<MarketScreen> {
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            color: selected ? accent : _MarketTokens.subColor(isDark),
+            color: selected
+                ? _MarketTokens.accentLabel(context, isDark)
+                : _MarketTokens.subColor(context),
           ),
         ),
       ),
@@ -1119,7 +1191,7 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Widget _buildSortFilterRow(bool isDark, int count) {
-    final accent = _MarketTokens.accent(isDark);
+    final accent = _MarketTokens.accent(context, isDark);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1127,7 +1199,7 @@ class _MarketScreenState extends State<MarketScreen> {
           count > 0 ? '共 $count 条' : '',
           style: TextStyle(
             fontSize: 12,
-            color: _MarketTokens.subColor(isDark),
+            color: _MarketTokens.subColor(context),
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -1164,7 +1236,7 @@ class _MarketScreenState extends State<MarketScreen> {
     return SizedBox(
       height: 32,
       child: AppCardMaterial(
-        color: _MarketTokens.cardBg(isDark),
+        color: _MarketTokens.cardBg(context),
         borderRadius: BorderRadius.circular(_MarketTokens.chipRadius),
         child: InkWell(
           borderRadius: BorderRadius.circular(_MarketTokens.chipRadius),
@@ -1179,11 +1251,11 @@ class _MarketScreenState extends State<MarketScreen> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: _MarketTokens.titleColor(isDark),
+                    color: _MarketTokens.titleColor(context),
                   ),
                 ),
                 const SizedBox(width: 2),
-                Icon(icon, size: 16, color: _MarketTokens.subColor(isDark)),
+                Icon(icon, size: 16, color: _MarketTokens.subColor(context)),
               ],
             ),
           ),
@@ -1198,18 +1270,17 @@ class _MarketScreenState extends State<MarketScreen> {
       child: MarketPostCard(
         post: post,
         compact: inGrid,
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PostDetailScreen(
-                postId: post.id,
-                isMarket: true,
-                initialPost: post,
-              ),
-            ),
-          );
-        },
+        onAuthorTap: (userId) => AppNavigation.openUserHome<void>(
+          context,
+          userId: userId,
+          openRoute: _detailNavigationKey.currentState!.open,
+        ),
+        onTap: () => AppNavigation.openPostDetail<void>(
+          context,
+          post: post,
+          isMarket: true,
+          openRoute: _detailNavigationKey.currentState!.open,
+        ),
       ),
     );
   }
@@ -1220,9 +1291,9 @@ class _MarketScreenState extends State<MarketScreen> {
       child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         decoration: BoxDecoration(
-          color: _MarketTokens.cardBg(isDark),
+          color: _MarketTokens.cardBg(context),
           borderRadius: BorderRadius.circular(_MarketTokens.cardRadius),
-          border: Border.all(color: _MarketTokens.borderColor(isDark)),
+          border: Border.all(color: _MarketTokens.borderColor(context)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1230,7 +1301,7 @@ class _MarketScreenState extends State<MarketScreen> {
             Icon(
               Icons.cloud_off_rounded,
               size: 40,
-              color: isDark ? Colors.white54 : Colors.grey[500],
+              color: AppThemeTokens.of(context).textSecondary,
             ),
             const SizedBox(height: 12),
             Text(
@@ -1238,7 +1309,7 @@ class _MarketScreenState extends State<MarketScreen> {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                color: _MarketTokens.titleColor(isDark),
+                color: _MarketTokens.titleColor(context),
               ),
             ),
             const SizedBox(height: 8),
@@ -1247,7 +1318,7 @@ class _MarketScreenState extends State<MarketScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
-                color: _MarketTokens.subColor(isDark),
+                color: _MarketTokens.subColor(context),
               ),
             ),
             const SizedBox(height: 20),
@@ -1273,12 +1344,12 @@ class _MarketScreenState extends State<MarketScreen> {
       decoration: BoxDecoration(
         color: isDark
             ? Colors.orange.withValues(alpha: 0.12)
-            : const Color(0xFFFFF4E5),
+            : const Color(0xFFFFF4E5), // theme: fixed 刷新失败警告色
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isDark
               ? Colors.orange.withValues(alpha: 0.25)
-              : const Color(0xFFF5C27A),
+              : const Color(0xFFF5C27A), // theme: fixed 刷新失败警告色
         ),
       ),
       child: Row(
@@ -1339,7 +1410,7 @@ class _MarketScreenState extends State<MarketScreen> {
           icon: const Icon(Icons.refresh, size: 18),
           label: Text(
             '加载更多失败，点击重试',
-            style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+            style: TextStyle(color: AppThemeTokens.of(context).textSecondary),
           ),
         ),
       ),
@@ -1350,31 +1421,34 @@ class _MarketScreenState extends State<MarketScreen> {
     final title = _emptyTitle();
     final subtitle = _emptySubtitle();
     final defaultType = _defaultPublishTypeForCurrentView;
-    final accent = _MarketTokens.accent(isDark);
+    final accent = _MarketTokens.accent(context, isDark);
     final isNoResults = title.contains('没有找到');
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 48, 16, 0),
       child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
         decoration: BoxDecoration(
-          color: _MarketTokens.cardBg(isDark),
+          color: _MarketTokens.cardBg(context),
           borderRadius: BorderRadius.circular(_MarketTokens.cardRadius),
-          border: Border.all(color: _MarketTokens.borderColor(isDark)),
+          border: Border.all(color: _MarketTokens.borderColor(context)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: _MarketTokens.accentSoft(isDark),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.inventory_2_outlined,
-                size: 34,
-                color: accent.withValues(alpha: 0.8),
+            ThemeStateArt(
+              size: 120,
+              fallback: Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: _MarketTokens.accentSoft(context, isDark),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.inventory_2_outlined,
+                  size: 34,
+                  color: accent.withValues(alpha: 0.8),
+                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -1383,7 +1457,7 @@ class _MarketScreenState extends State<MarketScreen> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
-                color: _MarketTokens.titleColor(isDark),
+                color: _MarketTokens.titleColor(context),
               ),
             ),
             const SizedBox(height: 8),
@@ -1392,7 +1466,7 @@ class _MarketScreenState extends State<MarketScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
-                color: _MarketTokens.subColor(isDark),
+                color: _MarketTokens.subColor(context),
                 height: 1.4,
               ),
             ),
@@ -1432,7 +1506,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: accent,
-                    foregroundColor: Colors.white,
+                    foregroundColor: _MarketTokens.onAccent,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),

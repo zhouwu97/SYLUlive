@@ -4,7 +4,9 @@ import '../widgets/app_page_background.dart';
 import '../utils/responsive_util.dart';
 import '../config/api_constants.dart';
 import '../models/canteen_dish.dart';
+import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
+import 'admin_canteen_dishes_screen.dart';
 import '../widgets/canteen/canteen_empty_state.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/canteen_status_image.dart';
@@ -127,6 +129,27 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
             AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         foregroundColor: CanteenTheme.textPrimaryColor(isDark),
+        actions: [
+          // 页面也会在没有登录态 Provider 的场景下单独使用（如组件测试），此时不显示管理入口。
+          if (context.watch<AuthProvider?>()?.user?.isAdmin == true ||
+              context.watch<AuthProvider?>()?.user?.isSuperAdmin == true)
+            IconButton(
+              tooltip: '菜品管理',
+              icon: const Icon(Icons.edit_note_rounded),
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AdminCanteenDishesScreen(
+                      canteenId: widget.canteenId,
+                      canteenName: widget.canteenName,
+                    ),
+                  ),
+                );
+                if (mounted) await _load();
+              },
+            ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

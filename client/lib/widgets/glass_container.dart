@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
-import '../theme/app_colors.dart';
+import '../theme/app_theme_tokens.dart';
 import 'app_card.dart';
 
 export 'frosted_glass.dart';
@@ -16,7 +16,7 @@ class GlassContainer extends StatelessWidget {
   final Color? backgroundColor;
   final double blur;
 
-  /// 保留旧调用兼容；卡片透明度统一由 ThemeProvider.componentOpacity 控制。
+  /// 保留旧调用兼容；卡片透明度统一使用 ThemeProvider.effectiveComponentOpacity。
   final double opacity;
   final double borderWidth;
   final Color? borderColor;
@@ -51,9 +51,7 @@ class GlassContainer extends StatelessWidget {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final useFrostedGlass = themeProvider.frostedGlass && blur > 0;
-    final solidSurface = isDark
-        ? AppColors.surfaceSecondaryDark
-        : AppColors.surfaceSecondaryLight;
+    final solidSurface = AppThemeTokens.of(context).card;
     final background = backgroundColor ?? solidSurface;
     final interactive = onTap != null || onLongPress != null;
     // 只绘制一次材质；旧实现把渐变放在模糊层前并叠加白色高光，
@@ -86,10 +84,7 @@ class GlassContainer extends StatelessWidget {
         border: Border.all(
           color: useFrostedGlass
               ? Colors.transparent
-              : borderColor ??
-                  (isDark
-                      ? AppColors.borderNormalDark
-                      : AppColors.borderNormalLight),
+              : borderColor ?? AppThemeTokens.of(context).cardBorder,
           width: borderWidth,
         ),
         boxShadow: useFrostedGlass

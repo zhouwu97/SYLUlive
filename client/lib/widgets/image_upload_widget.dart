@@ -1,8 +1,8 @@
 import 'app_glass_button_style.dart';
 import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
@@ -30,6 +30,7 @@ class ImageUploadWidget extends StatefulWidget {
   final bool largeCard;
   final String emptyTitle;
   final String emptySubtitle;
+  final ValueChanged<bool>? onBusyChanged;
 
   const ImageUploadWidget({
     super.key,
@@ -37,6 +38,7 @@ class ImageUploadWidget extends StatefulWidget {
     this.largeCard = false,
     this.emptyTitle = '添加图片',
     this.emptySubtitle = '建议上传清晰图片',
+    this.onBusyChanged,
     required this.onImagesUploaded,
   });
 
@@ -90,6 +92,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
       (widget.largeCard && widget.maxImages == 1 && _uploadedImages.isNotEmpty);
 
   Future<void> _pickAndUploadImage(ImageSource source) async {
+    if (_isUploading) return;
     if (!_canPickImage) {
       ScaffoldMessenger.of(
         context,
@@ -112,6 +115,8 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
         );
     final dio = auth.dio;
 
+    setState(() => _isUploading = true);
+    widget.onBusyChanged?.call(true);
     try {
       final XFile? image = await _imagePicker.pickImage(
         source: source,
@@ -135,12 +140,6 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
             );
           }
           return;
-        }
-
-        if (mounted) {
-          setState(() {
-            _isUploading = true;
-          });
         }
 
         final bytes = await image.readAsBytes();
@@ -209,7 +208,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
       }
     } on DioException catch (e) {
       debugPrint('Dio上传图片出错: ${e.type} status=${e.response?.statusCode}');
-      if (ownsScope()) {
+      if (mounted && ownsScope()) {
         String errMsg = '网络异常或超时';
         final data = e.response?.data;
         if (data is Map) {
@@ -223,18 +222,28 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
           SnackBar(content: Text('上传失败: $errMsg'), backgroundColor: Colors.red),
         );
       }
+    } on PlatformException catch (e) {
+      if (mounted && ownsScope()) {
+        final denied = e.code.contains('access_denied') ||
+            e.code.contains('access_restricted');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content:
+              Text(denied ? '无法访问相册或相机，请在系统设置中允许权限后重试' : '无法打开图片，请重试或更换图片'),
+        ));
+      }
     } catch (e) {
       debugPrint('上传图片异常: ${e.runtimeType}');
-      if (ownsScope()) {
+      if (mounted && ownsScope()) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('处理图片出错: $e'), backgroundColor: Colors.red),
+          const SnackBar(content: Text('处理图片失败，请重试或更换图片')),
         );
       }
     } finally {
-      if (ownsScope()) {
+      if (mounted && ownsScope()) {
         setState(() {
           _isUploading = false;
         });
+        widget.onBusyChanged?.call(false);
       }
     }
   }
@@ -287,12 +296,21 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
   Widget _imageOrPlaceholder(UploadedImage image) {
     final bytes = image.previewBytes;
     if (bytes != null) {
-      return Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true);
+      return Image.memory(bytes,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => _previewFailure());
     }
+    return _previewFailure();
+  }
+
+  Widget _previewFailure() {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
-      color: Colors.grey[300],
+      color: scheme.surfaceContainer,
       alignment: Alignment.center,
-      child: const Icon(Icons.broken_image_outlined, color: Colors.white54),
+      child: Text('图片预览失败，请更换图片',
+          style: TextStyle(color: scheme.onSurfaceVariant)),
     );
   }
 
@@ -384,8 +402,9 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
   }
 
   Widget _buildLargeCard(BuildContext context) {
-    const borderColor = Color(0xFFE8E4F0);
-    const primary = Color(0xFF7367C6);
+    final scheme = Theme.of(context).colorScheme;
+    final borderColor = scheme.outlineVariant;
+    final primary = scheme.primary;
 
     if (_uploadedImages.isNotEmpty) {
       final image = _uploadedImages.first;
@@ -403,7 +422,8 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
             ),
           ),
           Positioned.fill(
-            child: DecoratedBox(
+            child: IgnorePointer(
+                child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(color: borderColor),
@@ -416,25 +436,24 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
                   ],
                 ),
               ),
-            ),
+            )),
           ),
           Positioned(
             right: 10,
             top: 10,
-            child: GestureDetector(
-              onTap: () {
-                setState(_uploadedImages.clear);
-                widget.onImagesUploaded(_uploadedImages);
-              },
-              child: Container(
-                width: 28,
-                height: 28,
-                decoration: const BoxDecoration(
-                  color: Colors.black54,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.close, color: Colors.white, size: 17),
-              ),
+            child: IconButton(
+              tooltip: '移除商家图片',
+              onPressed: _isUploading
+                  ? null
+                  : () {
+                      setState(_uploadedImages.clear);
+                      widget.onImagesUploaded(_uploadedImages);
+                    },
+              style: IconButton.styleFrom(
+                  backgroundColor: Colors.black54,
+                  minimumSize: const Size(44, 44),
+                  foregroundColor: Colors.white),
+              icon: const Icon(Icons.close, size: 18),
             ),
           ),
           Positioned(
@@ -465,7 +484,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
     }
 
     return Material(
-      color: Colors.white,
+      color: scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: _isUploading ? null : _showImageSourceDialog,
@@ -487,24 +506,24 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
                   child: CircularProgressIndicator(strokeWidth: 2.4),
                 )
               else
-                const Icon(
+                Icon(
                   Icons.add_photo_alternate_rounded,
-                  color: Color(0xFF7367C6),
+                  color: primary,
                   size: 30,
                 ),
               const SizedBox(height: 8),
               Text(
                 _isUploading ? '图片上传中...' : widget.emptyTitle,
-                style: const TextStyle(
-                  color: Color(0xFF7367C6),
+                style: TextStyle(
+                  color: primary,
                   fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 widget.emptySubtitle,
-                style: const TextStyle(
-                  color: Color(0xFF9A96A8),
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
                   fontSize: 12,
                 ),
               ),

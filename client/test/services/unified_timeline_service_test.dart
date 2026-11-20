@@ -16,7 +16,7 @@ void main() {
       range: range,
       semesterStart: DateTime(2026, 9, 7),
       courses: <CourseBlock>[
-        CourseBlock(
+        const CourseBlock(
           id: 1,
           courseCode: 'MATH',
           name: '高等数学',

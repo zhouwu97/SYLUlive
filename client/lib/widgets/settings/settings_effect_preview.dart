@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import '../../theme/app_colors.dart';
 
 /// 玻璃特效设置共用的预览画布；实际特效仍由各自的场景组件绘制。
 class SettingsEffectPreview extends StatelessWidget {
-  const SettingsEffectPreview({super.key, this.clipKey, required this.child});
+  const SettingsEffectPreview(
+      {super.key, this.clipKey, this.height = 220, required this.child});
 
   final Key? clipKey;
   final Widget child;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -17,16 +19,21 @@ class SettingsEffectPreview extends StatelessWidget {
         .clamp(0.0, double.infinity);
     return ClipRRect(
       key: clipKey,
-      borderRadius: BorderRadius.circular(AppRadius.sheet),
-      child: SizedBox(height: 220 + extraHeight, child: child),
+      borderRadius: BorderRadius.circular(AppShape.of(context).sheet),
+      child: SizedBox(height: height + extraHeight, child: child),
     );
   }
 }
 
 class SettingsEffectPreviewBackground extends StatelessWidget {
-  const SettingsEffectPreviewBackground({super.key, required this.title});
+  const SettingsEffectPreviewBackground({
+    super.key,
+    required this.title,
+    this.padding = const EdgeInsets.all(20),
+  });
 
   final String title;
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
@@ -34,16 +41,21 @@ class SettingsEffectPreviewBackground extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xffb1d5e2), Color(0xffecd0d7), Color(0xffdce9fa)],
+            colors: [
+              Color(0xffb1d5e2), // theme: fixed — 材质预览底图
+              Color(0xffecd0d7), // theme: fixed — 材质预览底图
+              Color(0xffdce9fa), // theme: fixed — 材质预览底图
+            ], // theme: fixed — 材质预览底图
           ),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: padding,
           child: Align(
             alignment: Alignment.topLeft,
             child: Text(title,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: AppColors.textPrimaryLight,
+                      color: AppColors
+                          .textPrimaryLight, // theme: fixed — 亮色预览底图上的固定前景
                     )),
           ),
         ),

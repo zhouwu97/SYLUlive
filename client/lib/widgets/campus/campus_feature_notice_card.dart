@@ -1,7 +1,8 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
 import '../../models/campus_article.dart';
 import '../../theme/app_motion.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import 'campus_theme.dart';
 import 'campus_notice_tag.dart';
 import '../app_card.dart';
@@ -51,7 +52,7 @@ class _CampusFeatureNoticeCardState extends State<CampusFeatureNoticeCard> {
     ].join(' · ');
 
     final surface = AppCardSurface(
-      decoration: CampusTheme.cardDecoration(isDark, softGreen: true),
+      decoration: CampusTheme.themedCardDecoration(context, softGreen: true),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -59,7 +60,7 @@ class _CampusFeatureNoticeCardState extends State<CampusFeatureNoticeCard> {
           onHighlightChanged: (highlighted) {
             if (mounted) setState(() => _pressed = highlighted);
           },
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderRadius: BorderRadius.circular(AppShape.of(context).lg),
           child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 120),
               child: Stack(children: [
@@ -82,9 +83,8 @@ class _CampusFeatureNoticeCardState extends State<CampusFeatureNoticeCard> {
                                 style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
-                                    color: isDark
-                                        ? Colors.white54
-                                        : CampusTheme.subText))
+                                    color: AppThemeTokens.of(context)
+                                        .textSecondary))
                           ]),
                           const SizedBox(height: 10),
                           Text(displayTitle,
@@ -94,9 +94,8 @@ class _CampusFeatureNoticeCardState extends State<CampusFeatureNoticeCard> {
                                   fontSize: 16,
                                   height: 1.28,
                                   fontWeight: FontWeight.w800,
-                                  color: isDark
-                                      ? Colors.white
-                                      : CampusTheme.text)),
+                                  color:
+                                      AppThemeTokens.of(context).textPrimary)),
                           if (departmentInfo.isNotEmpty) ...[
                             const SizedBox(height: 7),
                             Text(departmentInfo,
@@ -105,9 +104,8 @@ class _CampusFeatureNoticeCardState extends State<CampusFeatureNoticeCard> {
                                 style: TextStyle(
                                     fontSize: 12,
                                     height: 1.2,
-                                    color: isDark
-                                        ? Colors.white54
-                                        : CampusTheme.subText))
+                                    color: AppThemeTokens.of(context)
+                                        .textSecondary))
                           ]
                         ])),
                 Positioned(
@@ -123,13 +121,17 @@ class _CampusFeatureNoticeCardState extends State<CampusFeatureNoticeCard> {
                             height: motionPressed ? 36 : 32,
                             decoration: BoxDecoration(
                                 color: isDark
-                                    ? CampusTheme.primary
+                                    ? AppThemeTokens.of(context)
+                                        .primary
                                         .withValues(alpha: 0.18)
-                                    : CampusTheme.primaryLight,
+                                    : AppThemeTokens.of(context)
+                                        .primaryContainer,
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                    color: CampusTheme.primary.withValues(
-                                        alpha: isDark ? 0.3 : 0.12))),
+                                    color: AppThemeTokens.of(context)
+                                        .primary
+                                        .withValues(
+                                            alpha: isDark ? 0.3 : 0.12))),
                             child: AnimatedSlide(
                                 duration: reduceMotion
                                     ? Duration.zero
@@ -140,9 +142,8 @@ class _CampusFeatureNoticeCardState extends State<CampusFeatureNoticeCard> {
                                     : Offset.zero,
                                 child: Icon(Icons.arrow_outward_rounded,
                                     size: 16,
-                                    color: isDark
-                                        ? CampusTheme.primaryLight
-                                        : CampusTheme.primary)))))
+                                    color:
+                                        AppThemeTokens.of(context).tagText)))))
               ])),
         ),
       ),

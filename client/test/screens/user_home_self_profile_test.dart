@@ -16,6 +16,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/user_home_screen.dart';
 import 'package:shenliyuan/widgets/global_background_wrapper.dart';
+import 'package:shenliyuan/widgets/community_post_card.dart';
 
 class _ProfileRouteAdapter implements HttpClientAdapter {
   final requestedPaths = <String>[];
@@ -219,6 +220,15 @@ void main() {
     final wallpaperRect = tester.getRect(wallpaper);
     final profilePosition = tester.getTopLeft(find.text('编辑资料'));
     final post = find.text('滚动测试帖 0');
+    final postCard = find.ancestor(
+        of: post, matching: find.byType(CommunityPostCard));
+    final tabs = find.byType(TabBar);
+    final tabSurface = find.byKey(const ValueKey('user-home-compact-tabs'));
+    expect(tester.widget<TabBar>(tabs).dividerColor, Colors.transparent);
+    expect(tester.widget<Material>(tabSurface).borderRadius,
+        const BorderRadius.vertical(top: Radius.circular(22)));
+    expect(tester.getRect(postCard).left, tester.getRect(tabs).left + 12);
+    expect(tester.getRect(postCard).right, tester.getRect(tabs).right - 12);
     final postPosition = tester.getTopLeft(post);
     final nested =
         tester.widget<NestedScrollView>(find.byType(NestedScrollView));
@@ -235,6 +245,13 @@ void main() {
       }
       expect(tester.takeException(), isNull);
     }
+    nested.controller!.jumpTo(nested.controller!.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Material>(tabSurface).borderRadius, BorderRadius.zero);
+    await tester.tap(find.text('商品 0'));
+    await tester.pumpAndSettle();
+    expect(find.text('暂无集市记录'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     auth.dispose();
     theme.dispose();

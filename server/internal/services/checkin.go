@@ -34,10 +34,11 @@ type CheckInStatus struct {
 
 // CheckInCalendarRecord 是月历中的一条签到事实。
 type CheckInCalendarRecord struct {
-	CheckInDate time.Time
-	StreakDays  int
-	ExpEarned   int
-	IsMakeup    bool
+	CheckInDate    time.Time
+	StreakDays     int
+	ExpEarned      int
+	IsMakeup       bool
+	IsCompensation bool
 }
 
 // MakeupCheckInResult 是补签及其历史连续天数、经验修正后的确定性结果。
@@ -90,13 +91,8 @@ func (s *CheckInService) CheckIn(userID uint, now time.Time) (CheckInResult, err
 			result.Already = true
 			result.StreakDays = existing.StreakDays
 			result.TotalExp = user.Exp
-			var stat models.UserCheckInStat
-			if statErr := tx.Where("user_id = ?", userID).First(&stat).Error; statErr == nil {
-				result.MakeupCards = availableMakeupCards(stat)
-			} else if !errors.Is(statErr, gorm.ErrRecordNotFound) {
-				return statErr
-			}
-			return nil
+			result.MakeupCards, err = makeupCardBalance(tx, userID, today)
+			return err
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -136,13 +132,16 @@ func (s *CheckInService) CheckIn(userID uint, now time.Time) (CheckInResult, err
 				Update("makeup_cards_earned", stat.MakeupCardsEarned).Error; err != nil {
 				return err
 			}
+			if err := models.GrantCheckInMakeupCards(tx, userID, today, 1); err != nil {
+				return err
+			}
 			result.MakeupCardsAwarded = 1
 		}
 		result.StreakDays = streak
 		result.ExpEarned = expEarned
 		result.TotalExp = user.Exp + expEarned
-		result.MakeupCards = availableMakeupCards(stat)
-		return nil
+		result.MakeupCards, err = makeupCardBalance(tx, userID, today)
+		return err
 	})
 	return result, err
 }
@@ -156,11 +155,14 @@ func (s *CheckInService) Status(userID uint, now time.Time) (CheckInStatus, erro
 		return status, err
 	}
 	status.TotalExp = user.Exp
+	balance, err := makeupCardBalance(s.db, userID, today)
+	if err != nil {
+		return status, err
+	}
+	status.MakeupCards = balance
 	var stat models.UserCheckInStat
 	statErr := s.db.Where("user_id = ?", userID).First(&stat).Error
-	if statErr == nil {
-		status.MakeupCards = availableMakeupCards(stat)
-	} else if !errors.Is(statErr, gorm.ErrRecordNotFound) {
+	if statErr != nil && !errors.Is(statErr, gorm.ErrRecordNotFound) {
 		return status, statErr
 	}
 	var todayRecord models.CheckIn
@@ -173,7 +175,13 @@ func (s *CheckInService) Status(userID uint, now time.Time) (CheckInStatus, erro
 		return status, err
 	}
 
-	if statErr == nil && stat.LastCheckInDate != nil && sameCheckInDay(*stat.LastCheckInDate, today.AddDate(0, 0, -1)) {
+	yesterday := today.AddDate(0, 0, -1)
+	var yesterdayRecord models.CheckIn
+	if err := s.db.Where("user_id = ? AND check_in_date = ?", userID, yesterday).First(&yesterdayRecord).Error; err == nil {
+		status.StreakDays = yesterdayRecord.StreakDays
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return status, err
+	} else if statErr == nil && stat.LastCheckInDate != nil && sameCheckInDay(*stat.LastCheckInDate, yesterday) {
 		status.StreakDays = stat.CurrentStreak
 	}
 	status.NextExp = CheckInExpReward(status.StreakDays + 1)
@@ -202,10 +210,11 @@ func (s *CheckInService) Calendar(userID uint, month time.Time) (CheckInCalendar
 	}
 	for _, record := range records {
 		result.Records = append(result.Records, CheckInCalendarRecord{
-			CheckInDate: record.CheckInDate,
-			StreakDays:  record.StreakDays,
-			ExpEarned:   record.ExpEarned,
-			IsMakeup:    record.IsMakeup,
+			CheckInDate:    record.CheckInDate,
+			StreakDays:     record.StreakDays,
+			ExpEarned:      record.ExpEarned,
+			IsMakeup:       record.IsMakeup,
+			IsCompensation: record.IsCompensation,
 		})
 	}
 
@@ -239,26 +248,25 @@ func (s *CheckInService) Makeup(userID uint, targetDate, now time.Time) (MakeupC
 			result.StreakDays = existing.StreakDays
 			result.CheckInExp = existing.ExpEarned
 			result.TotalExp = user.Exp
-			var stat models.UserCheckInStat
-			if statErr := tx.Where("user_id = ?", userID).First(&stat).Error; statErr == nil {
-				result.MakeupCards = availableMakeupCards(stat)
-			} else if !errors.Is(statErr, gorm.ErrRecordNotFound) {
-				return statErr
-			}
-			return nil
+			result.MakeupCards, err = makeupCardBalance(tx, userID, today)
+			return err
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 
 		var previousStat models.UserCheckInStat
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).First(&previousStat).Error; err != nil {
+		if err := tx.Where("user_id = ?", userID).Find(&previousStat).Error; err != nil {
+			return err
+		}
+		var grant models.CheckInMakeupCardGrant
+		if err := activeMakeupCardGrants(tx, userID, today).Order("expires_on ASC, id ASC").Take(&grant).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrNoMakeupCards
 			}
 			return err
 		}
-		if availableMakeupCards(previousStat) == 0 {
-			return ErrNoMakeupCards
+		if err := tx.Model(&grant).UpdateColumn("remaining", grant.Remaining-1).Error; err != nil {
+			return err
 		}
 
 		makeupRecord := models.CheckIn{
@@ -268,8 +276,8 @@ func (s *CheckInService) Makeup(userID uint, targetDate, now time.Time) (MakeupC
 			return err
 		}
 
-		var records []models.CheckIn
-		if err := tx.Where("user_id = ?", userID).Order("check_in_date ASC, id ASC").Find(&records).Error; err != nil {
+		stat, records, err := models.RecomputeCheckInStreaks(tx, userID)
+		if err != nil {
 			return err
 		}
 		var ledgers []models.UserExperienceLedger
@@ -281,83 +289,61 @@ func (s *CheckInService) Makeup(userID uint, targetDate, now time.Time) (MakeupC
 			ledgerByCheckIn[ledger.SourceID] = ledger
 		}
 
-		current, longest := 0, 0
-		makeupCardsEarned, makeupCardsUsed := 0, 0
 		expDelta := 0
-		var previousDate time.Time
-		for index := range records {
-			record := &records[index]
-			if index == 0 || !sameCheckInDay(record.CheckInDate, previousDate.AddDate(0, 0, 1)) {
-				current = 1
-			} else {
-				current++
+		for _, record := range records {
+			date := checkInDateOnly(record.CheckInDate)
+			if record.IsCompensation || date.Before(targetDate) {
+				continue
 			}
-			if current > longest {
-				longest = current
-			}
-			if models.IsCheckInMakeupCardRewardDay(current) {
-				makeupCardsEarned++
-			}
-			if record.IsMakeup {
-				makeupCardsUsed++
-			}
-
-			updates := map[string]interface{}{"streak_days": current}
-			expectedExp := CheckInExpReward(current)
+			expectedExp := CheckInExpReward(record.StreakDays)
 			ledger, hasLedger := ledgerByCheckIn[record.ID]
 			if record.ID == makeupRecord.ID {
 				expDelta += expectedExp
-				updates["exp_earned"] = expectedExp
 				if err := tx.Create(&models.UserExperienceLedger{
 					UserID: userID, SourceType: "checkin", SourceID: record.ID, Delta: expectedExp,
 					Reason: fmt.Sprintf("补签：%s", FormatCheckInDate(targetDate)),
 				}).Error; err != nil {
 					return err
 				}
-				result.StreakDays = current
+				result.StreakDays = record.StreakDays
 				result.CheckInExp = expectedExp
 			} else if hasLedger {
-				expDelta += expectedExp - ledger.Delta
-				updates["exp_earned"] = expectedExp
+				// 补签前，这段连续记录从补签日的次日开始。只结算本次补签改变的奖励。
+				previousStreak := int(date.Sub(targetDate) / (24 * time.Hour))
+				if previousStreak >= record.StreakDays {
+					continue
+				}
+				correction := expectedExp - CheckInExpReward(previousStreak)
+				expectedExp = ledger.Delta + correction
+				expDelta += correction
 				if ledger.Delta != expectedExp {
 					if err := tx.Model(&models.UserExperienceLedger{}).Where("id = ?", ledger.ID).
 						Update("delta", expectedExp).Error; err != nil {
 						return err
 					}
 				}
+			} else {
+				continue
 			}
-			if err := tx.Model(&models.CheckIn{}).Where("id = ?", record.ID).Updates(updates).Error; err != nil {
-				return err
+			if record.ExpEarned != expectedExp {
+				if err := tx.Model(&models.CheckIn{}).Where("id = ?", record.ID).Update("exp_earned", expectedExp).Error; err != nil {
+					return err
+				}
 			}
-			previousDate = record.CheckInDate
 		}
 
-		// 两段都已领过首张卡时，补签连成一段可能减少理论奖励；已发卡转入保留额度，不能追扣。
-		retainedCards := max(0, previousStat.MakeupCardsEarned-makeupCardsEarned)
-		makeupCardsGranted := previousStat.MakeupCardsGranted + retainedCards
-		result.MakeupCardsAwarded = max(0, makeupCardsEarned-previousStat.MakeupCardsEarned)
-		result.MakeupCards = availableMakeupCards(models.UserCheckInStat{
-			MakeupCardsEarned:  makeupCardsEarned,
-			MakeupCardsGranted: makeupCardsGranted,
-			MakeupCardsUsed:    makeupCardsUsed,
-		})
-		result.ExpEarned = expDelta
-		result.TotalExp = user.Exp + expDelta
-		lastDate := checkInDateOnly(previousDate)
-		if err := tx.Model(&models.UserCheckInStat{}).Where("user_id = ?", userID).Updates(map[string]interface{}{
-			"last_check_in_date":   lastDate,
-			"current_streak":       current,
-			"longest_streak":       longest,
-			"makeup_cards_earned":  makeupCardsEarned,
-			"makeup_cards_granted": makeupCardsGranted,
-			"makeup_cards_used":    makeupCardsUsed,
-		}).Error; err != nil {
+		retainedCards := stat.MakeupCardsGranted - previousStat.MakeupCardsGranted
+		result.MakeupCardsAwarded = max(0, stat.MakeupCardsEarned-previousStat.MakeupCardsEarned)
+		if err := models.GrantCheckInMakeupCards(tx, userID, today, result.MakeupCardsAwarded); err != nil {
 			return err
 		}
-		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-			"exp":                gorm.Expr("exp + ?", expDelta),
-			"last_check_in_date": lastDate.Format("2006-01-02"),
-		}).Error; err != nil {
+		result.MakeupCards, err = makeupCardBalance(tx, userID, today)
+		if err != nil {
+			return err
+		}
+		result.ExpEarned = expDelta
+		result.TotalExp = user.Exp + expDelta
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("exp", gorm.Expr("exp + ?", expDelta)).Error; err != nil {
 			return err
 		}
 		reason := fmt.Sprintf("用户使用补签卡补签 %s", FormatCheckInDate(targetDate))
@@ -367,7 +353,7 @@ func (s *CheckInService) Makeup(userID uint, targetDate, now time.Time) (MakeupC
 		return tx.Create(&models.CheckInRepairLog{
 			UserID: userID, OperatorID: userID, Action: "user_makeup",
 			Reason:         reason,
-			PreviousStreak: previousStat.CurrentStreak, NewStreak: current, ExpDelta: expDelta,
+			PreviousStreak: previousStat.CurrentStreak, NewStreak: stat.CurrentStreak, ExpDelta: expDelta,
 		}).Error
 	})
 	return result, err
@@ -376,6 +362,16 @@ func (s *CheckInService) Makeup(userID uint, targetDate, now time.Time) (MakeupC
 // RebuildUserStats 从事实表重建单个用户的汇总，供修复任务和运维接口调用。
 func (s *CheckInService) RebuildUserStats(userID uint) (models.UserCheckInStat, error) {
 	return models.RebuildUserCheckInStats(s.db, userID)
+}
+
+// InspectStats 检查系统中所有用户的签到天数与汇总一致性。
+func (s *CheckInService) InspectStats() ([]models.CheckInInconsistency, error) {
+	return models.InspectAllUserCheckInStats(s.db)
+}
+
+// ReconcileAll 执行全局签到连续天数对账和修复，并记录审计日志。
+func (s *CheckInService) ReconcileAll(operatorID uint) (models.ReconcileReport, error) {
+	return models.ReconcileInconsistentCheckInStats(s.db, operatorID)
 }
 
 // CheckInExpReward 根据连续签到天数计算经验奖励。
@@ -420,12 +416,15 @@ func upsertCheckInStat(tx *gorm.DB, userID uint, date time.Time, currentStreak i
 	return stat, err
 }
 
-func availableMakeupCards(stat models.UserCheckInStat) int {
-	available := stat.MakeupCardsEarned + stat.MakeupCardsGranted - stat.MakeupCardsUsed
-	if available < 0 {
-		return 0
-	}
-	return available
+func activeMakeupCardGrants(db *gorm.DB, userID uint, today time.Time) *gorm.DB {
+	return db.Model(&models.CheckInMakeupCardGrant{}).
+		Where("user_id = ? AND awarded_on <= ? AND expires_on > ? AND remaining > 0", userID, today, today)
+}
+
+func makeupCardBalance(db *gorm.DB, userID uint, today time.Time) (int, error) {
+	var balance int
+	err := activeMakeupCardGrants(db, userID, today).Select("COALESCE(SUM(remaining), 0)").Scan(&balance).Error
+	return balance, err
 }
 
 func checkInDateOnly(value time.Time) time.Time {

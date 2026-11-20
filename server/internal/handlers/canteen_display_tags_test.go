@@ -30,11 +30,29 @@ func TestCanteenDisplayTagsDiscoveryLifecycle(t *testing.T) {
 	canteenDiscoveryCache.Invalidate()
 	t.Cleanup(canteenDiscoveryCache.Invalidate)
 	params := gin.Params{{Key: "id", Value: fmt.Sprint(shop.ID)}}
+	checkAutomaticPreview := func() {
+		t.Helper()
+		resp := performCanteenRequest(t, h.GetDisplayTags, http.MethodGet, "/", params, 1, "")
+		var data struct {
+			AutomaticTags []struct {
+				Key   string `json:"key"`
+				Name  string `json:"name"`
+				Count int    `json:"count"`
+			} `json:"automatic_tags"`
+		}
+		if resp.Code != 200 || json.Unmarshal(resp.Body.Bytes(), &data) != nil ||
+			len(data.AutomaticTags) != 1 || data.AutomaticTags[0].Key != "taste_good" ||
+			data.AutomaticTags[0].Name != "味道不错" || data.AutomaticTags[0].Count != 1 {
+			t.Fatalf("automatic preview: %d %s", resp.Code, resp.Body.String())
+		}
+	}
+	checkAutomaticPreview()
 	read := func() map[string]interface{} {
 		resp := performCanteenRequest(t, h.GetRankings, http.MethodGet, "/", nil, 0, "")
 		if resp.Code != 200 {
 			t.Fatal(resp.Body.String())
 		}
+		checkAutomaticPreview()
 		var data struct {
 			Items []map[string]interface{} `json:"items"`
 		}
@@ -106,6 +124,10 @@ func TestCanteenDisplayTags(t *testing.T) {
 	}
 	h := NewCanteenHandler(db)
 	params := gin.Params{{Key: "id", Value: fmt.Sprint(shop.ID)}}
+	empty := performCanteenRequest(t, h.GetDisplayTags, http.MethodGet, "/", params, 1, "")
+	if empty.Code != 200 || !strings.Contains(empty.Body.String(), `"automatic_tags":[]`) {
+		t.Fatalf("empty preview: %d %s", empty.Code, empty.Body.String())
+	}
 	call := func(body string) int {
 		return performCanteenRequest(t, h.UpdateDisplayTags, http.MethodPut, "/", params, 1, body).Code
 	}
@@ -147,11 +169,14 @@ func TestDisplayTagsRequiresAdmin(t *testing.T) {
 	h := NewCanteenHandler(db)
 	r := gin.New()
 	r.Use(func(c *gin.Context) { c.Set("role", "user"); c.Set("user_id", uint(1)); c.Next() })
+	r.GET("/:id/display-tags", middleware.AdminMiddleware(), h.GetDisplayTags)
 	r.PUT("/:id/display-tags", middleware.AdminMiddleware(), h.UpdateDisplayTags)
-	req := httptest.NewRequest(http.MethodPut, "/1/display-tags", strings.NewReader(`{"location_area":"","location_floor":"","tags":null}`))
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("got %d", w.Code)
+	for _, method := range []string{http.MethodGet, http.MethodPut} {
+		req := httptest.NewRequest(method, "/1/display-tags", strings.NewReader(`{"location_area":"","location_floor":"","tags":null}`))
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("%s got %d", method, w.Code)
+		}
 	}
 }

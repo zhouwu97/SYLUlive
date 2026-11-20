@@ -1,8 +1,9 @@
+import '../../theme/app_theme_tokens.dart';
 import '../app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import '../../theme/app_spacing.dart';
 import '../../providers/ai_assistant_provider.dart';
 import '../../features/ai_device_bridge/device_tool_worker.dart';
@@ -100,11 +101,8 @@ class _AiInputComposerState extends State<AiInputComposer> {
     final colors = Theme.of(context).colorScheme;
     final showCounter = _count > 0 || overLimit;
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final composerSurface =
-        isDark ? AppColors.composerSurfaceDark : AppColors.composerSurfaceLight;
-    final composerBorder =
-        isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight;
+    final composerSurface = AppThemeTokens.of(context).surface;
+    final composerBorder = AppThemeTokens.of(context).cardBorder;
 
     return SafeArea(
       top: false,
@@ -128,10 +126,11 @@ class _AiInputComposerState extends State<AiInputComposer> {
               ),
             AppCardSurface(
               height: 48,
+              applyCardStyle: false,
               padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
               decoration: BoxDecoration(
                 color: composerSurface,
-                borderRadius: BorderRadius.circular(AppRadius.pill),
+                borderRadius: BorderRadius.circular(AppShape.of(context).pill),
                 border: Border.all(color: composerBorder),
               ),
               key: const ValueKey('ai-input-composer'),
@@ -258,11 +257,13 @@ class AiAgentPermissionModeBar extends StatelessWidget {
       DeviceBridgeStatus.unknown => '设备桥接状态未知',
     };
     final bridgeColor = switch (bridgeStatus) {
-      DeviceBridgeStatus.connected => AppColors.success,
+      DeviceBridgeStatus.connected =>
+        AppColors.success, // theme: fixed 设备桥接连接、连接中、离线状态色
       DeviceBridgeStatus.syncing ||
       DeviceBridgeStatus.degraded =>
-        AppColors.warning,
-      DeviceBridgeStatus.offline => AppColors.danger,
+        AppColors.warning, // theme: fixed 设备桥接连接、连接中、离线状态色
+      DeviceBridgeStatus.offline =>
+        AppColors.danger, // theme: fixed 设备桥接连接、连接中、离线状态色
       DeviceBridgeStatus.unknown => colors.outline,
     };
     final canRetryBridge = bridgeStatus == DeviceBridgeStatus.degraded ||
@@ -281,7 +282,7 @@ class AiAgentPermissionModeBar extends StatelessWidget {
                 hint: '点击打开 Agent 权限设置',
                 child: InkWell(
                   onTap: onTap,
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  borderRadius: BorderRadius.circular(AppShape.of(context).sm),
                   child: SizedBox(
                     height: 44,
                     child: Row(
@@ -289,8 +290,9 @@ class AiAgentPermissionModeBar extends StatelessWidget {
                         Icon(
                           Icons.shield_outlined,
                           size: 14,
-                          color:
-                              isDark ? colors.primary : AppColors.brandPrimary,
+                          color: isDark
+                              ? colors.primary
+                              : AppThemeTokens.of(context).primary,
                         ),
                         const SizedBox(width: 5),
                         Text(
@@ -298,7 +300,7 @@ class AiAgentPermissionModeBar extends StatelessWidget {
                           style: TextStyle(
                             color: isDark
                                 ? colors.onSurfaceVariant
-                                : AppColors.textSecondaryLight,
+                                : AppThemeTokens.of(context).textSecondary,
                             fontSize: 11.5,
                             fontWeight: FontWeight.w600,
                           ),
@@ -315,7 +317,7 @@ class AiAgentPermissionModeBar extends StatelessWidget {
               hint: canRetryBridge ? '点击重试设备桥接' : null,
               child: InkWell(
                 onTap: canRetryBridge ? onBridgeRetry : null,
-                borderRadius: BorderRadius.circular(AppRadius.sm),
+                borderRadius: BorderRadius.circular(AppShape.of(context).sm),
                 child: SizedBox(
                   height: 44,
                   child: Row(
@@ -332,7 +334,7 @@ class AiAgentPermissionModeBar extends StatelessWidget {
                         style: TextStyle(
                           color: isDark
                               ? colors.onSurfaceVariant
-                              : AppColors.textSecondaryLight,
+                              : AppThemeTokens.of(context).textSecondary,
                           fontSize: 11,
                         ),
                       ),

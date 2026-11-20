@@ -133,14 +133,22 @@ void main() {
             expect(composer.top - rect.bottom, 0,
                 reason: '评论卡片必须填到输入栏，不能留下露出壁纸或图片的空带');
             if (scene == 'post') {
-              final label = find.text('评论 0').first;
-              final action = tester.widget<Container>(find
-                  .ancestor(of: label, matching: find.byType(Container))
-                  .first);
-              final border =
-                  (action.decoration! as BoxDecoration).border! as Border;
-              expect(border.top.color.a, glass ? 0 : greaterThan(0));
-              expect(border.bottom.color.a, glass ? 0 : greaterThan(0));
+              final action =
+                  find.byKey(const ValueKey('post-detail-action-bar'));
+              final dividers = find.descendant(
+                  of: action, matching: find.byType(AppCardDivider));
+              expect(dividers, findsOneWidget,
+                  reason: '操作栏只分隔正文，卡片底边不能再叠一条线');
+              final lines = find.descendant(
+                  of: action, matching: find.byType(DecoratedBox));
+              expect(lines, glass ? findsNothing : findsOneWidget);
+              if (!glass) {
+                final line = tester.getRect(lines);
+                final bar = tester.getRect(action);
+                expect(line.left, bar.left + 16);
+                expect(line.right, bar.right - 16);
+                expect(line.bottom, lessThan(bar.center.dy));
+              }
             }
             if (before != null) expect(rect, before);
             before = rect;

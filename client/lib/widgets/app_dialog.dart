@@ -24,7 +24,7 @@ Future<T?> showAppDialog<T>({
   AnimationStyle? animationStyle,
 }) {
   final settings = context.read<ThemeProvider?>();
-  if (settings?.frostedGlass != true || !settings!.shouldShowCustomBackground) {
+  if (settings?.frostedGlass != true || !settings!.canCustomizeCardMaterial) {
     return showDialog<T>(
       context: context,
       builder: builder,
@@ -108,7 +108,7 @@ class _AppDialogRoute<T> extends DialogRoute<T> {
                 .clamp(0.0, 1.0);
         final settings = context.watch<ThemeProvider?>();
         final glass = settings?.frostedGlass == true &&
-            settings!.shouldShowCustomBackground;
+            settings!.canCustomizeCardMaterial;
         final content = AppSurfaceTransition(
           progress: glass ? progress : 1,
           child: Opacity(opacity: glass ? 1 : progress, child: child),
@@ -167,11 +167,7 @@ class AppDialog extends Dialog {
       constraints: constraints,
       semanticsRole: semanticsRole,
       child: AppCardMaterial(
-        surfaceOpacity: glass
-            ? (settings!.shouldShowCustomBackground
-                ? settings.componentOpacity
-                : 1)
-            : 1,
+        surfaceOpacity: glass ? settings!.effectiveComponentOpacity : 1,
         elevation: glass ? 0 : elevation ?? theme.elevation ?? 6,
         shadowColor: shadowColor ?? theme.shadowColor,
         surfaceTintColor: glass

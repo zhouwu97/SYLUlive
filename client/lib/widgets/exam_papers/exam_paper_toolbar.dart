@@ -183,13 +183,17 @@ class _CompactDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     return Container(
       height: 28,
       decoration: BoxDecoration(
-        color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : Theme.of(context)
-            .colorScheme
-            .surfaceContainerHighest
-            .withValues(alpha: 0.65),
+        color: customBackground
+            ? Colors.transparent
+            : Theme.of(context)
+                .colorScheme
+                .surfaceContainerHighest
+                .withValues(alpha: 0.65),
         borderRadius: BorderRadius.circular(8),
       ),
       child: DropdownButtonHideUnderline(

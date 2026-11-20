@@ -23,6 +23,7 @@ type IntegrationDeviceRequest struct {
 	CreatedAt        time.Time
 }
 
+// IntegrationBinding 的学校快照字段保留兼容，不再作为 QQ 基础授权的准入条件。
 type IntegrationBinding struct {
 	ID                string     `gorm:"size:36;primaryKey" json:"binding_id"`
 	OwnerID           uint       `gorm:"not null;uniqueIndex:ux_integration_owner_active,where:state = 'active'" json:"-"`
@@ -39,15 +40,16 @@ type IntegrationBinding struct {
 }
 
 type IntegrationCredential struct {
-	ID                string     `gorm:"size:36;primaryKey" json:"-"`
-	BindingID         string     `gorm:"size:36;not null;index" json:"-"`
-	TokenHash         string     `gorm:"size:64;not null;uniqueIndex" json:"-"`
-	Kind              string     `gorm:"size:10;not null" json:"-"`
-	Epoch             uint       `gorm:"not null" json:"-"`
-	UsedAt            *time.Time `json:"-"`
-	ExpiresAt         time.Time  `gorm:"index;not null" json:"-"`
-	AbsoluteExpiresAt time.Time  `json:"-"`
-	CreatedAt         time.Time  `json:"-"`
+	ID                 string     `gorm:"size:36;primaryKey" json:"-"`
+	BindingID          string     `gorm:"size:36;not null;index" json:"-"`
+	TokenHash          string     `gorm:"size:64;not null;uniqueIndex" json:"-"`
+	Kind               string     `gorm:"size:10;not null" json:"-"`
+	Epoch              uint       `gorm:"not null" json:"-"`
+	UsedAt             *time.Time `json:"-"`
+	RefreshRequestHash string     `gorm:"size:64;not null;default:''" json:"-"`
+	ExpiresAt          time.Time  `gorm:"index;not null" json:"-"`
+	AbsoluteExpiresAt  time.Time  `json:"-"`
+	CreatedAt          time.Time  `json:"-"`
 }
 
 // ManagedBot 无登录凭据/教务身份；一个创建者至多一个，公开时仅展示独立机器人身份。
@@ -103,5 +105,6 @@ type IntegrationAudit struct {
 	ActionID  string    `gorm:"size:36"`
 	Event     string    `gorm:"size:40;not null"`
 	ActorID   uint      `gorm:"index"`
+	Reason    string    `gorm:"size:240"`
 	CreatedAt time.Time `gorm:"index"`
 }

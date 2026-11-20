@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 )
 
@@ -247,6 +249,43 @@ func TestCreateReviewAllowsImmediateRepeat(t *testing.T) {
 	}
 	if eventCount != 2 {
 		t.Fatalf("event count=%d want 2", eventCount)
+	}
+}
+
+// 客户端在发布前把 Idempotency-Key 落进草稿，超时后重新发布会复用同一个键。
+// 这条用例走真实的全局幂等中间件，锁住“同键重试只产生一条到店评价”。
+func TestCreateReviewRetryWithSameIdempotencyKeyCreatesOneEvent(t *testing.T) {
+	h, _, user := prepareReviewV2DB(t)
+	if err := h.db.AutoMigrate(&models.IdempotencyRecord{}); err != nil {
+		t.Fatalf("migrate idempotency: %v", err)
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("user_id", user.ID) })
+	router.Use(middleware.IdempotencyMiddleware(h.db))
+	router.POST("/api/canteens/:id/reviews", h.CreateReview)
+
+	send := func() *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/api/canteens/88/reviews", strings.NewReader(reviewBody()))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Idempotency-Key", "canteen-review-88-88-0-retry")
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+		return recorder
+	}
+	first := send()
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
+	}
+	retry := send()
+	if retry.Code != http.StatusCreated || retry.Header().Get("Idempotency-Replay") != "true" {
+		t.Fatalf("retry status=%d replay=%q body=%s", retry.Code, retry.Header().Get("Idempotency-Replay"), retry.Body.String())
+	}
+	var eventCount int64
+	if err := h.db.Model(&models.CanteenReviewEvent{}).Where("canteen_id = ? AND user_id = ?", 88, user.ID).Count(&eventCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("event count=%d want 1", eventCount)
 	}
 }
 
@@ -1260,5 +1299,44 @@ func TestMyCanteenContributionsClearAfterDeletingReview(t *testing.T) {
 	}
 	if strings.Contains(after.Body.String(), dish.Name) || strings.Contains(after.Body.String(), "dish_photo") {
 		t.Fatalf("deleted review leftovers still listed: %s", after.Body.String())
+	}
+}
+
+func TestCreateDishReviewKeepsThreeDishLimitPerVisit(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	parent := models.CanteenReviewEvent{CanteenID: canteen.ID, UserID: user.ID, OverallScore: 4, Status: models.ReviewEventStatusActive, ScoreVersion: 2}
+	if err := h.db.Create(&parent).Error; err != nil {
+		t.Fatal(err)
+	}
+	dishes := make([]models.CanteenDish, 0, 4)
+	for _, name := range []string{"鱼香肉丝", "宫保鸡丁", "麻婆豆腐", "回锅肉"} {
+		dish := models.CanteenDish{CanteenID: canteen.ID, Name: name, NormalizedName: name, Status: models.DishStatusActive, CreatedBy: user.ID}
+		if err := h.db.Create(&dish).Error; err != nil {
+			t.Fatal(err)
+		}
+		dishes = append(dishes, dish)
+	}
+	post := func(dish models.CanteenDish) int {
+		w := performCanteenRequest(t, h.CreateDishReview, http.MethodPost,
+			"/api/canteens/dishes/"+itoaForTest(dish.ID)+"/reviews", mapParams("dishId", itoaForTest(dish.ID)), user.ID,
+			`{"taste_score":4,"value_score":4,"portion_score":4,"canteen_review_event_id":`+itoaForTest(parent.ID)+`}`)
+		return w.Code
+	}
+	for _, dish := range dishes[:3] {
+		if code := post(dish); code != http.StatusCreated {
+			t.Fatalf("前三道菜应可关联，status=%d", code)
+		}
+	}
+	if code := post(dishes[3]); code != http.StatusBadRequest {
+		t.Fatalf("第四道菜应被拒绝，status=%d", code)
+	}
+	// 已关联的菜重新打分不受上限影响。
+	if code := post(dishes[0]); code != http.StatusCreated {
+		t.Fatalf("已关联菜品重新打分应成功，status=%d", code)
+	}
+	var linked int64
+	h.db.Model(&models.CanteenReviewEventDish{}).Where("review_event_id = ?", parent.ID).Distinct("dish_id").Count(&linked)
+	if linked != 3 {
+		t.Fatalf("关联菜品数应为 3，实际 %d", linked)
 	}
 }

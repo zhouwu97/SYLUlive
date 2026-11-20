@@ -63,8 +63,96 @@ Future<void> _choose(WidgetTester tester, String label) async {
 }
 
 void main() {
-  setUp(() => AppPreferencesStore.setMockInitialValues({}));
+  setUp(() {
+    final view = TestWidgetsFlutterBinding.ensureInitialized()
+        .platformDispatcher
+        .views
+        .first;
+    view.physicalSize = const Size(400, 800);
+    view.devicePixelRatio = 1;
+    addTearDown(view.reset);
+    AppPreferencesStore.setMockInitialValues({});
+  });
   tearDown(() => AppPreferencesStore.setCustomInstance(null));
+
+  testWidgets('侧栏预览拖动中收窄，取消旧手势并保留选择与控件状态', (tester) async {
+    await setGoldenViewport(tester, GoldenViewports.tabletPortrait834x1194);
+    final theme = ThemeProvider(loadOnStart: false);
+    addTearDown(theme.dispose);
+    await tester.pumpWidget(_app(theme));
+    await tester.pumpAndSettle();
+    final previewState = tester.state(find.byType(LiquidBottomNav));
+    final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-2'))));
+    await gesture.moveBy(const Offset(0, 100));
+    await tester.pump(const Duration(milliseconds: 60));
+    await setGoldenViewport(tester, GoldenViewports.phone390x844);
+    await tester.pumpAndSettle();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(tester.state(find.byType(LiquidBottomNav)), same(previewState));
+    final preview =
+        tester.widget<LiquidBottomNav>(find.byType(LiquidBottomNav));
+    expect(preview.axis, Axis.horizontal);
+    expect(preview.currentIndex, 2);
+    expect(preview.visualIndexListenable.value, closeTo(2, .001));
+    expect(find.text('底部导航栏'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final size in [
+    GoldenViewports.tabletLandscape1280x800,
+    GoldenViewports.tabletPortrait834x1194
+  ]) {
+    testWidgets('平板 $size 使用可纵向拖动的侧栏预览，关档和持久化仍生效', (tester) async {
+      await setGoldenViewport(tester, size);
+      final theme = ThemeProvider(loadOnStart: false);
+      addTearDown(theme.dispose);
+      await tester.pumpWidget(_app(theme, dark: true, scale: 1.3));
+      await tester.pumpAndSettle();
+      expect(find.text('侧边导航栏'), findsOneWidget);
+      expect(tester.widget<LiquidBottomNav>(find.byType(LiquidBottomNav)).axis,
+          Axis.vertical);
+      final start =
+          tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-2')));
+      final end =
+          tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-3')));
+      expect(start.dx, end.dx);
+      final gesture = await tester.startGesture(start);
+      for (var i = 1; i <= 12; i++) {
+        await gesture.moveTo(Offset.lerp(start, end, i / 12)!);
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(
+          tester
+              .widget<LiquidBottomNav>(find.byType(LiquidBottomNav))
+              .currentIndex,
+          2);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(
+          tester
+              .widget<LiquidBottomNav>(find.byType(LiquidBottomNav))
+              .currentIndex,
+          3);
+      await _choose(tester, '关');
+      await tester.scrollUntilVisible(
+          find.byKey(const ValueKey('bottom-nav-preview-card')), -200,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+      expect(
+          tester.widget<FloatingBottomNav>(find.byType(FloatingBottomNav)).axis,
+          Axis.vertical);
+      expect(
+          tester
+              .widget<FloatingBottomNav>(find.byType(FloatingBottomNav))
+              .currentIndex,
+          3);
+      await theme.loadThemeForTesting();
+      expect(theme.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('关闭保留调节卡片，连续从 0 拖到 100 启用液态效果且不跳位', (tester) async {
     final theme = ThemeProvider(loadOnStart: false);

@@ -1,6 +1,6 @@
+import '../theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:shenliyuan/widgets/app_glass_button_style.dart';
-import '../widgets/app_tab_bar_surface.dart';
 import '../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import '../widgets/ai_bot_identity.dart';
@@ -12,6 +12,8 @@ import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../widgets/app_page_background.dart';
+import '../widgets/global_background_wrapper.dart';
+import '../widgets/adaptive_detail_layout.dart';
 import '../providers/auth_provider.dart';
 import '../services/publish_session_scope.dart';
 import '../providers/theme_provider.dart';
@@ -32,6 +34,8 @@ import 'competition/competition_award_screen.dart';
 
 import '../widgets/level_progress_pill.dart';
 import '../utils/app_navigation.dart';
+import '../features/theme_pack/theme_store_repository.dart';
+import '../features/theme_pack/theme_store_screen.dart';
 
 class UserHomeScreen extends StatefulWidget {
   final int? userId;
@@ -47,11 +51,13 @@ class UserHomeScreen extends StatefulWidget {
 
 class _UserHomeScreenState extends State<UserHomeScreen>
     with SingleTickerProviderStateMixin {
+  final _detailNavigationKey = GlobalKey<AdaptiveDetailLayoutState>();
   late TabController _tabController;
   final ScrollController _scrollController = ScrollController();
   User? _user;
   List<Post> _posts = [];
   List<Post> _marketPosts = [];
+  List<ThemeCatalogItem> _publishedThemes = [];
   int _marketTotal = 0;
   int _marketSoldCount = 0;
   int _currentTabIndex = 0;
@@ -101,6 +107,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       _loadProfilePartition(generation, targetId),
       _loadPostsPartition(generation, targetId),
       _loadMarketPartition(generation, targetId),
+      _loadThemesPartition(generation, targetId),
     ]);
 
     if (mounted && generation == _loadGeneration) {
@@ -212,6 +219,25 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
   }
 
+  Future<void> _loadThemesPartition(int generation, int targetId) async {
+    final auth = context.read<AuthProvider>();
+    final requestEpoch = auth.accountSessionEpoch;
+    final requestViewerId = auth.user?.id;
+    try {
+      final items =
+          await ThemeStoreRepository(auth.dio).listUserThemes(targetId);
+      if (!mounted ||
+          generation != _loadGeneration ||
+          auth.accountSessionEpoch != requestEpoch ||
+          auth.user?.id != requestViewerId) {
+        return;
+      }
+      setState(() => _publishedThemes = items);
+    } catch (_) {
+      // 主题商城离线或关闭时不阻断个人主页展示。
+    }
+  }
+
   Future<void> _refreshPostsSilently(int generation) async {
     final auth = context.read<AuthProvider>();
     final requestEpoch = auth.accountSessionEpoch;
@@ -293,6 +319,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       post: post,
       isMarket: isMarket,
       sourceUserId: _profileUserId,
+      openRoute: _openPage,
     );
 
     if (mounted) {
@@ -319,8 +346,35 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   }
 
   @override
-  Widget build(BuildContext context) =>
-      AppPageBackground(builder: _buildPageWithBackground);
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    // 已有局部路由时沿用它，避免在同一详情栏叠出两套返回拦截。
+    if (SharedPageBackground.of(context) &&
+        Navigator.of(context) != Navigator.of(context, rootNavigator: true)) {
+      return AppPageBackground(builder: _buildPageWithBackground);
+    }
+    return AppPageBackground(
+      builder: (context) => AdaptiveDetailLayout(
+        key: _detailNavigationKey,
+        navigationScope: (
+          auth.user?.id,
+          auth.accountSessionEpoch,
+          auth.user?.role,
+          widget.userId,
+        ),
+        isActive: TickerMode.valuesOf(context).enabled &&
+            (ModalRoute.isCurrentOf(context) ?? true),
+        embedded: SharedPageBackground.of(context),
+        expandMasterWhenEmpty: true,
+        paneKeyPrefix: 'user-home',
+        master: Builder(builder: _buildPageWithBackground),
+      ),
+    );
+  }
+
+  Future<T?> _openPage<T extends Object?>(Route<T> route) =>
+      _detailNavigationKey.currentState?.open(route) ??
+      Navigator.of(context).push(route);
 
   Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -330,6 +384,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       _accountSessionEpoch = auth.accountSessionEpoch;
       _posts = [];
       _marketPosts = [];
+      _publishedThemes = [];
       _marketTotal = 0;
       _marketSoldCount = 0;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -364,12 +419,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     final user = displayedUser;
     final isMe = isSelfProfile;
 
-    final pageBackground = isDark
-        ? const Color(0xFF111214)
-        : Theme.of(context).scaffoldBackgroundColor;
+    final pageBackground = AppThemeTokens.of(context).background;
 
     // 标签栏和内容区共用的面板色
-    final panelColor = isDark ? const Color(0xFF1A1B1E) : Colors.white;
+    final panelColor = AppThemeTokens.of(context).surface;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -407,6 +460,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     Color panelColor,
     double width,
   ) {
+    final contentPadding = EdgeInsets.symmetric(
+      horizontal: SharedPageBackground.of(context) ? 0 : 16,
+      vertical: 16,
+    );
     return Scaffold(
       backgroundColor: AppPageBackground.color(context, pageBackground),
       body: Row(
@@ -443,8 +500,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                         stops: [0.0, 0.42, 1.0],
                                         colors: [
                                           Colors.transparent,
-                                          Color(0x22000000),
-                                          Color(0xDD000000),
+                                          Color(
+                                              0x22000000), // theme: fixed 用户封面固定遮罩
+                                          Color(
+                                              0xDD000000), // theme: fixed 用户封面固定遮罩
                                         ],
                                       ),
                                     ),
@@ -472,6 +531,11 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                 ],
                               ),
                             ),
+                            if (_publishedThemes.isNotEmpty)
+                              _buildPublishedThemesStrip(
+                                context,
+                                horizontalPadding: 16,
+                              ),
                           ],
                         ),
                       ),
@@ -499,7 +563,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     indicatorColor: Theme.of(context).colorScheme.primary,
                     labelColor: Theme.of(context).colorScheme.primary,
                     unselectedLabelColor:
-                        isDark ? Colors.white60 : Colors.black54,
+                        AppThemeTokens.of(context).textSecondary,
                     tabs: [
                       Tab(text: '帖子 ${_posts.length}'),
                       Tab(text: _marketTabText),
@@ -510,10 +574,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                       controller: _tabController,
                       children: [
                         _buildPostsList(
-                          padding: const EdgeInsets.all(16),
+                          padding: contentPadding,
                         ),
                         _buildMarketPostsList(
-                          padding: const EdgeInsets.all(16),
+                          padding: contentPadding,
                         ),
                       ],
                     ),
@@ -537,6 +601,13 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     double screenWidth,
   ) {
     final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
+    final tabHeight =
+        (MediaQuery.textScalerOf(context).scale(16) * 1.5 + 20)
+            .clamp(46.0, double.infinity);
+    // 分栏内的卡片与标签栏共用左右边界，个人封面仍按原来的方式展示。
+    final horizontalInset = SharedPageBackground.of(context) ? 0.0 : 12.0;
+    final contentPadding =
+        EdgeInsets.fromLTRB(horizontalInset, 8, horizontalInset, 24);
     return Scaffold(
       backgroundColor: AppPageBackground.color(context, panelColor),
       body: RefreshIndicator(
@@ -592,8 +663,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                   stops: [0.0, 0.42, 1.0],
                                   colors: [
                                     Colors.transparent,
-                                    Color(0x22000000),
-                                    Color(0xDD000000),
+                                    Color(0x22000000), // theme: fixed 用户封面固定遮罩
+                                    Color(0xDD000000), // theme: fixed 用户封面固定遮罩
                                   ],
                                 ),
                               ),
@@ -617,8 +688,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                   _buildCircleButton(
                                     icon: Icons.mail_outline,
                                     onTap: () {
-                                      Navigator.push(
-                                        context,
+                                      _openPage(
                                         MaterialPageRoute(
                                           builder: (_) => ChatDetailScreen(
                                             targetUser: user,
@@ -635,7 +705,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                           Positioned(
                             left: 20,
                             right: 20,
-                            bottom: 64,
+                            bottom: tabHeight + 18,
                             child: _buildProfileOverlay(context, user, isMe),
                           ),
                         ],
@@ -644,59 +714,95 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                   ),
                 ),
 
-                // 底部圆角标签栏
                 bottom: PreferredSize(
-                  preferredSize: const Size.fromHeight(46),
-                  child: AppTabBarSurface(
-                    height: 46,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: panelColor,
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(22),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 8,
-                          offset: const Offset(0, -2),
+                  preferredSize: Size.fromHeight(tabHeight),
+                  child: Builder(
+                    builder: (context) {
+                      final settings = context.dependOnInheritedWidgetOfExactType<
+                          FlexibleSpaceBarSettings>()!;
+                      final collapsed =
+                          settings.currentExtent <= settings.minExtent + 1;
+                      final tokens = AppThemeTokens.of(context);
+                      return Material(
+                        key: const ValueKey('user-home-compact-tabs'),
+                        color: panelColor,
+                        borderRadius: collapsed
+                            ? BorderRadius.zero
+                            : const BorderRadius.vertical(
+                                top: Radius.circular(22),
+                              ),
+                        clipBehavior: Clip.antiAlias,
+                        child: TabBar(
+                          controller: _tabController,
+                          dividerColor: Colors.transparent,
+                          indicatorSize: TabBarIndicatorSize.tab,
+                          indicatorWeight: 0,
+                          indicatorPadding:
+                              const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                          indicator: BoxDecoration(
+                            color: tokens.primaryContainer,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          labelColor: tokens.onPrimaryContainer,
+                          unselectedLabelColor: tokens.textSecondary,
+                          labelStyle: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          unselectedLabelStyle: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          tabs: [
+                            Tab(height: tabHeight, text: '帖子 ${_posts.length}'),
+                            Tab(height: tabHeight, text: _marketTabText),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: TabBar(
-                      controller: _tabController,
-                      indicatorSize: TabBarIndicatorSize.label,
-                      indicatorWeight: 3,
-                      indicatorColor: Theme.of(context).colorScheme.primary,
-                      labelColor: Theme.of(context).colorScheme.primary,
-                      unselectedLabelColor:
-                          isDark ? Colors.white60 : Colors.black54,
-                      labelStyle: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      unselectedLabelStyle: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      tabs: [
-                        Tab(text: '帖子 ${_posts.length}'),
-                        Tab(text: _marketTabText),
-                      ],
-                    ),
+                      );
+                    },
                   ),
                 ),
               ),
+              if (_publishedThemes.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _buildPublishedThemesStrip(
+                    context,
+                    horizontalPadding:
+                        horizontalInset == 0 ? 12 : horizontalInset,
+                  ),
+                ),
             ];
           },
-          body: TabBarView(
-            controller: _tabController,
+          body: Stack(
+            fit: StackFit.expand,
             children: [
-              _buildPostsList(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
-              ),
-              _buildMarketPostsList(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
+              if (_publishedThemes.isEmpty)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 20,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            panelColor,
+                            panelColor.withValues(alpha: 0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildPostsList(padding: contentPadding),
+                  _buildMarketPostsList(padding: contentPadding),
+                ],
               ),
             ],
           ),
@@ -716,7 +822,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
             child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(_postsError!, style: const TextStyle(color: Colors.grey)),
+            Text(_postsError!,
+                style:
+                    TextStyle(color: AppThemeTokens.of(context).textSecondary)),
             const SizedBox(height: 8),
             TextButton(
               onPressed: () {
@@ -769,7 +877,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(_marketError!, style: const TextStyle(color: Colors.grey)),
+            Text(_marketError!,
+                style:
+                    TextStyle(color: AppThemeTokens.of(context).textSecondary)),
             const SizedBox(height: 8),
             TextButton(
               onPressed: () {
@@ -807,6 +917,113 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           onTap: () => _openProfilePostDetail(post, isMarket: true),
         );
       },
+    );
+  }
+
+  Widget _buildPublishedThemesStrip(
+    BuildContext context, {
+    required double horizontalPadding,
+  }) {
+    final tokens = AppThemeTokens.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(horizontalPadding, 12, horizontalPadding, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.palette_outlined,
+                size: 16,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '主题作品 ${_publishedThemes.length}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 124,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _publishedThemes.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final item = _publishedThemes[index];
+                final previewPath = isDark
+                    ? (item.previewDark.isNotEmpty
+                        ? item.previewDark
+                        : item.previewLight)
+                    : (item.previewLight.isNotEmpty
+                        ? item.previewLight
+                        : item.previewDark);
+                return SizedBox(
+                  width: 96,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      _openPage(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ThemeDetailScreen(
+                            familyId: item.familyId,
+                            initialItem: item,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: previewPath.isNotEmpty
+                                ? Image.network(
+                                    ApiConstants.fullUrl(previewPath),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => ColoredBox(
+                                      color: tokens.surfaceMuted,
+                                      child: const Icon(
+                                        Icons.palette_outlined,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  )
+                                : ColoredBox(
+                                    color: tokens.surfaceMuted,
+                                    child: const Icon(
+                                      Icons.palette_outlined,
+                                      size: 20,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -861,7 +1078,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         memCacheWidth: imageWidth,
         alignment: Alignment.center,
         placeholder: (_, __) => Container(
-          color: const Color(0xFFEDEEF1),
+          color: AppThemeTokens.of(context).surfaceMuted,
         ),
         errorWidget: (_, __, ___) {
           if (allowOriginalFallback) {
@@ -1025,8 +1242,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
               '关注',
               isMe
                   ? () {
-                      Navigator.push(
-                        context,
+                      _openPage(
                         MaterialPageRoute(
                           builder: (_) => SocialListScreen(
                             userId: user.id,
@@ -1043,8 +1259,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
               '粉丝',
               isMe
                   ? () {
-                      Navigator.push(
-                        context,
+                      _openPage(
                         MaterialPageRoute(
                           builder: (_) => SocialListScreen(
                             userId: user.id,
@@ -1106,7 +1321,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           final success = await context.read<SocialProvider>().unfollow(
                 user.id,
               );
-          if (success && mounted) {
+          if (success && mounted && context.mounted) {
             setState(() {
               _user!.isFollowing = false;
               _user!.followersCount = (_user!.followersCount - 1).clamp(
@@ -1120,15 +1335,16 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         },
       );
     } else {
+      final colors = Theme.of(context).colorScheme;
       return Material(
-        color: Theme.of(context).colorScheme.primary,
+        color: colors.primary,
         borderRadius: BorderRadius.circular(22),
         child: InkWell(
           onTap: () async {
             final success = await context.read<SocialProvider>().follow(
                   user.id,
                 );
-            if (success && mounted) {
+            if (success && mounted && context.mounted) {
               setState(() {
                 _user!.isFollowing = true;
                 _user!.followersCount++;
@@ -1138,12 +1354,12 @@ class _UserHomeScreenState extends State<UserHomeScreen>
             }
           },
           borderRadius: BorderRadius.circular(22),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 22, vertical: 9),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 9),
             child: Text(
               '关注',
               style: TextStyle(
-                color: Colors.white,
+                color: colors.onPrimary,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
@@ -1290,7 +1506,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           toolbarTitle: '调整背景图',
           toolbarColor: Colors.black,
           toolbarWidgetColor: Colors.white,
-          statusBarColor: Colors.black,
+          statusBarLight: false,
           backgroundColor: Colors.black,
           lockAspectRatio: false,
         ),
@@ -1453,8 +1669,6 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxWidth: 420,
@@ -1463,11 +1677,11 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       child: AppCardSurface(
         key: const ValueKey('edit-profile-surface'),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          color: AppThemeTokens.of(context).surfaceElevated,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 20,
               spreadRadius: 5,
             ),
@@ -1488,7 +1702,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.3),
+                  color: AppThemeTokens.of(context).textTertiary,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1498,7 +1712,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black87,
+                  color: AppThemeTokens.of(context).textPrimary,
                 ),
               ),
               const SizedBox(height: 24),
@@ -1511,11 +1725,12 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   padding:
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                    color: context
+                                .watch<ThemeProvider?>()
+                                ?.shouldShowCustomBackground ==
+                            true
                         ? Colors.transparent
-                        : isDark
-                            ? Colors.grey[800]
-                            : Colors.grey[100],
+                        : AppThemeTokens.of(context).surfaceMuted,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -1523,7 +1738,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                       const Icon(Icons.image, color: Colors.blue),
                       const SizedBox(width: 12),
                       const Expanded(child: Text('更改主页背景图')),
-                      Icon(Icons.chevron_right, color: Colors.grey[500]),
+                      Icon(Icons.chevron_right,
+                          color: AppThemeTokens.of(context).textTertiary),
                     ],
                   ),
                 ),
@@ -1544,11 +1760,12 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   padding:
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                    color: context
+                                .watch<ThemeProvider?>()
+                                ?.shouldShowCustomBackground ==
+                            true
                         ? Colors.transparent
-                        : isDark
-                            ? Colors.grey[800]
-                            : Colors.grey[100],
+                        : AppThemeTokens.of(context).surfaceMuted,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -1559,7 +1776,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                       ),
                       const SizedBox(width: 12),
                       const Expanded(child: Text('竞赛经历')),
-                      Icon(Icons.chevron_right, color: Colors.grey[500]),
+                      Icon(Icons.chevron_right,
+                          color: AppThemeTokens.of(context).textTertiary),
                     ],
                   ),
                 ),

@@ -101,6 +101,7 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.2.2")
 
     // WorkManager — 后台定时刷新
+    implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     // 更新下载明确锁定 HTTP 客户端版本，避免依赖 Flutter 插件的传递版本。
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

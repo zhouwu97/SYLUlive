@@ -1,7 +1,9 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
+
+import '../../theme/app_theme_style.dart';
 import '../../theme/app_motion.dart';
-import '../../theme/app_radius.dart';
-import 'campus_theme.dart';
+import '../../theme/app_palette.dart';
 
 class CampusServiceItem {
   final String title;
@@ -9,9 +11,13 @@ class CampusServiceItem {
   final Color color;
   final VoidCallback onTap;
 
+  /// 主题包 serviceIcons 中对应的键；主题提供图片时替换 [icon]。
+  final String? themeKey;
+
   const CampusServiceItem({
     required this.title,
     required this.icon,
+    this.themeKey,
     required this.color,
     required this.onTap,
   });
@@ -38,7 +44,9 @@ class _CampusServiceCardState extends State<CampusServiceCard> {
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final service = widget.service;
-    final isDark = widget.isDark;
+    final style = AppThemeStyle.of(context);
+    final serviceColor = style.identity(service.color);
+    final themedIcon = style.serviceIcon(context, service.themeKey);
 
     final content = Container(
       height: 86,
@@ -53,28 +61,36 @@ class _CampusServiceCardState extends State<CampusServiceCard> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: service.color.withValues(alpha: _pressed ? 0.2 : 0.12),
-              borderRadius: BorderRadius.circular(AppRadius.md),
+              color: themedIcon != null
+                  ? Colors.transparent
+                  : serviceColor.withValues(alpha: _pressed ? 0.2 : 0.12),
+              borderRadius: BorderRadius.circular(AppShape.of(context).md),
               border: Border.all(
-                color: service.color.withValues(
+                color: serviceColor.withValues(
                   alpha: _pressed ? 0.24 : 0.0,
                 ),
               ),
               boxShadow: _pressed
                   ? [
                       BoxShadow(
-                        color: service.color.withValues(alpha: 0.14),
+                        color: serviceColor.withValues(alpha: 0.14),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
                     ]
                   : null,
             ),
-            child: Icon(
-              service.icon,
-              color: service.color,
-              size: 20,
-            ),
+            child: themedIcon == null
+                ? Icon(
+                    service.icon,
+                    color: serviceColor,
+                    size: 20,
+                  )
+                : AnimatedScale(
+                    scale: _pressed ? 0.92 : 1,
+                    duration: reduceMotion ? Duration.zero : AppMotion.micro,
+                    child: themedIcon,
+                  ),
           ),
           const SizedBox(height: 6),
           FittedBox(
@@ -86,7 +102,7 @@ class _CampusServiceCardState extends State<CampusServiceCard> {
                 fontSize: 11.5,
                 height: 1.0,
                 fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white : CampusTheme.text,
+                color: AppThemeTokens.of(context).textPrimary,
               ),
             ),
           ),
@@ -97,7 +113,7 @@ class _CampusServiceCardState extends State<CampusServiceCard> {
     final interactive = Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.md),
+        borderRadius: BorderRadius.circular(AppShape.of(context).md),
         onTap: service.onTap,
         onHighlightChanged: (highlighted) {
           if (mounted) setState(() => _pressed = highlighted);

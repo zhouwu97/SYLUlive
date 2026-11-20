@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_theme_tokens.dart';
 import 'package:provider/provider.dart';
 import '../../providers/theme_provider.dart';
 import '../campus/campus_theme.dart';
@@ -26,9 +27,8 @@ class SettingsPageScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final baseTheme = Theme.of(context);
-    final isDark = baseTheme.brightness == Brightness.dark;
     final appearance = context.watch<ThemeProvider?>();
-    final pageBg = appearance?.shouldShowCustomBackground == true
+    final pageBg = appearance?.hasSeeThroughBackground == true
         ? Colors.transparent
         : CampusTheme.pageBackground(context);
 
@@ -54,7 +54,7 @@ class SettingsPageScaffold extends StatelessWidget {
     if (onRefresh != null) {
       content = RefreshIndicator(
         onRefresh: onRefresh!,
-        color: CampusTheme.primary,
+        color: AppThemeTokens.of(context).primary,
         child: content,
       );
     }
@@ -68,7 +68,7 @@ class SettingsPageScaffold extends StatelessWidget {
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : CampusTheme.text,
+            color: AppThemeTokens.of(context).textPrimary,
           ),
         ),
         centerTitle: false,
@@ -77,7 +77,7 @@ class SettingsPageScaffold extends StatelessWidget {
         scrolledUnderElevation: 0,
         elevation: 0,
         iconTheme: IconThemeData(
-          color: isDark ? Colors.white : CampusTheme.text,
+          color: AppThemeTokens.of(context).textPrimary,
         ),
         actions: actions,
       ),

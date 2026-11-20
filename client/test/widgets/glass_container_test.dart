@@ -81,7 +81,7 @@ void main() {
       final theme = await _createProvider();
       await theme.setBackgroundImage('test_bg.jpg');
       await theme.setFrostedGlass(true);
-      await theme.setComponentOpacity(0.7);
+      await theme.setComponentOpacityLevel(0.7);
       await tester.pumpWidget(ChangeNotifierProvider.value(
         value: theme,
         child: MaterialApp(
@@ -98,17 +98,17 @@ void main() {
                   .first)
               .decoration as BoxDecoration)
           .color!;
-      expect(surface().a, closeTo(0.7, 0.01));
-      await theme.setComponentOpacity(0.4);
+      expect(surface().a, closeTo(.925, 0.01));
+      await theme.setComponentOpacityLevel(0.4);
       await tester.pump();
-      expect(surface().a, closeTo(0.4, 0.01));
+      expect(surface().a, closeTo(.85, 0.01));
       await theme.setCleanBackgroundMode();
       await tester.pump();
       expect(surface().a, 1);
       await theme.trySetCustomBackgroundMode();
       await theme.setFrostedGlass(false);
       await tester.pump();
-      expect(surface().a, closeTo(.4, .01));
+      expect(surface().a, closeTo(.85, .01));
       expect(activeBackdropFilters(), findsNothing);
     });
   }

@@ -1,15 +1,17 @@
 import { useAcademic } from "./academic";
 import { PublicPosts, isPublicPost } from "./campus-chrome";
 import { ServerAvatar } from "./server-avatar";
+import { displayName } from "./user-level";
 import { useMobile } from "./mobile";
 import { MobileHome } from "./mobile-home";
 import { useDesktopHomeFeed } from "./desktop-home-feed";
+import { feedSourceOf } from "./feed-feedback";
 import { PaperLibrary } from './papers';
 import { teachingWeek, mergeCourses } from "@sylulive/academic-contracts";
 import {
   PostCard as CommunityPostCard,
-  PostForm as CommunityPostForm,
 } from "./community";
+import {usePostEditor} from './post-editor-page';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -89,7 +91,7 @@ export function Dashboard() {
   return useMobile() ? <MobileHome /> : <DesktopDashboard />;
 }
 function DesktopDashboard() {
-  const nav = useNavigate(), ui = useUI(), auth = useAuth();
+  const nav = useNavigate(), auth = useAuth(), openPostEditor = usePostEditor();
   const [params, setParams] = useSearchParams();
   const sort = params.get("sort") || "all";
   const posts = useDesktopHomeFeed(sort);
@@ -112,15 +114,15 @@ function DesktopDashboard() {
   const pinned = [...new Map([...publicPosts, ...items.filter(isPublicPost)].map(post => [post.id, post])).values()];
   const feed = items.filter(post => !pinned.some(item => item.id === post.id));
   const expired = posts.error instanceof ApiError && posts.error.code === "feed_session_expired";
-  const publish = () => auth.requireUser() && ui.open("发布内容", <CommunityPostForm />);
+  const publish = () => openPostEditor();
   return <div className="campus-home">
     <section className="home-hero" aria-label="今日">
       <div className="home-hero-top">
-        <div><h1>{greeting}，{auth.user?.nickname || "同学"}。</h1><p>看看同学们的新鲜事，也分享你的校园日常。</p></div>
-        <Link className="home-week" to="/campus" aria-label={`${dayLabel(academic.data.termStart)}，打开校园日历`}><Icon name="schedule" size={14} />{dayLabel(academic.data.termStart)}</Link>
+        <h1>{greeting}，{auth.user ? displayName(auth.user.nickname, "同学") : "同学"}</h1>
+        <Link className="home-week" to="/campus" aria-label={`${dayLabel(academic.data.termStart)}，查看校园通知与服务`}><Icon name="schedule" size={14} />{dayLabel(academic.data.termStart)}</Link>
       </div>
       <nav className="home-quick" aria-label="常用入口">
-        {HOME_QUICK.map(([id, label]) => <Link key={id} to={`/${id}`}><span className={`home-quick-icon tone-${id}`}><Icon name={id} size={20} /></span>{label}</Link>)}
+        {HOME_QUICK.map(([id, label]) => <Link key={id} to={`/${id}`}><span className={`home-quick-icon tone-${id}`}><Icon name={id} size={17} /></span>{label}</Link>)}
       </nav>
     </section>
     <section className="campus-composer" aria-label="分享校园日常">
@@ -129,9 +131,9 @@ function DesktopDashboard() {
     </section>
     <div className="home-feed-heading"><h2>校园动态</h2><Tabs tabs={[["all", "推荐"], ["time", "最新"], ["following", "关注"], ["hot", "热门"]]} value={sort} onChange={value => setParams({ sort: value })} /><Link className="home-feed-more" to="/community">全部动态 <span aria-hidden="true">→</span></Link></div>
     <div className="dashboard-feed">
-      {sort === "following" && !auth.loading && !auth.user ? <Empty icon="lock" title="登录后查看关注动态" description="关注同学，看看他们的校园日常。"><button className="btn primary" onClick={auth.login}>登录</button></Empty> : <QueryState query={{ isPending: posts.isPending, error: posts.data ? null : posts.error, refetch: posts.refetch }}>
+      {sort === "following" && !auth.loading && !auth.user ? <Empty icon="lock" title="登录后查看关注动态" description="关注同学，看看他们的校园日常。"><button className="btn primary" onClick={auth.login}>登录</button></Empty> : <QueryState skeleton="feed" query={{ isPending: posts.isPending, error: posts.data ? null : posts.error, refetch: posts.refetch }}>
         {pinned.length > 0 && <PublicPosts posts={pinned} />}
-        {feed.map(post => <CommunityPostCard post={post} key={post.id} />)}
+        {feed.map(post => <CommunityPostCard post={post} key={post.id} feedSource={feedSourceOf(sort)} />)}
         {!feed.length && <Empty title="暂时没有新的校园动态" description="分享一段校园日常，开启讨论。" />}
       </QueryState>}
     </div>
@@ -141,7 +143,6 @@ function DesktopDashboard() {
           : posts.hasNextPage ? <button className="btn" disabled={posts.isFetching} onClick={() => posts.fetchNextPage()}>{posts.isFetching ? "正在加载…" : "加载更多"}</button>
             : feed.length > 0 && <span>已经看完啦</span>)}
     </div>
-    <Link className="browse-community" to="/community">继续逛逛校园圈 <span aria-hidden="true">→</span></Link>
   </div>;
 }
 

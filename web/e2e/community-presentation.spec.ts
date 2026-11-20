@@ -147,7 +147,33 @@ async function setup(page: Page, options: { guest?: boolean; owner?: boolean; bo
   return state;
 }
 
-test("关闭发布弹窗后，迟到的上传不能继续发布帖子", async ({ page }) => {
+test("桌面帖子卡片空白区可进入详情，互动按钮不误触导航", async ({ page }) => {
+  const state = await setup(page);
+  await page.setViewportSize({ width: 1480, height: 1000 });
+  await page.goto("community");
+  const card = page.locator(".community-feed .feed-card").first();
+  await expect(card).toBeVisible();
+  await expect(card.locator(".media-gallery")).toBeVisible();
+  await card.locator(".media-gallery img").evaluate(async (img: HTMLImageElement) => { await img.decode(); });
+  const geometry = await card.evaluate(element => {
+    const cardBox = element.getBoundingClientRect();
+    const mediaBox = element.querySelector(".media-gallery")?.getBoundingClientRect();
+    return { card: cardBox.toJSON(), media: mediaBox?.toJSON() };
+  });
+  expect(geometry.media && geometry.media.width < geometry.card.width).toBe(true);
+  const blankX = Math.min(geometry.card.x + geometry.card.width - 16, geometry.media!.x + geometry.media!.width + 36);
+  await page.mouse.click(blankX, geometry.media!.y + geometry.media!.height / 2);
+  await expect(page).toHaveURL(/post\/675$/);
+
+  await page.goto("community");
+  const actions = page.locator(".community-feed .feed-card").first().getByRole("group", { name: "帖子互动" });
+  await actions.getByRole("button", { name: "点赞 4", exact: true }).click();
+  await expect(page).toHaveURL(/community$/);
+  await expect(actions.getByRole("button", { name: "已赞 5", exact: true })).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
+
+test("离开发帖页后，迟到的上传不能继续发布帖子", async ({ page }) => {
   const state = await setup(page);
   let releaseUpload!: () => void;
   await page.route("**/api/water/sections", (route) => route.fulfill({ json: { sections: [{ id: 1, slug: "chat", name: "日常" }] } }));
@@ -157,18 +183,19 @@ test("关闭发布弹窗后，迟到的上传不能继续发布帖子", async ({
   });
   await page.goto("community");
   await page.getByRole("button", { name: "发布", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.locator('.post-editor-page');
   await dialog.getByLabel("内容", { exact: true }).fill("取消后不应发布");
   await dialog.getByRole("combobox", { name: "分区", exact: true }).selectOption("chat");
   await dialog.getByLabel("选择图片", { exact: true }).setInputFiles({ name: "one.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64") });
   await dialog.getByRole("button", { name: "发布", exact: true }).click();
   await expect.poll(() => !!releaseUpload).toBe(true);
-  await dialog.getByRole("button", { name: "关闭", exact: true }).click();
+  const cancelled = page.waitForEvent('requestfailed', {predicate: request => new URL(request.url()).pathname === '/api/upload_multiple'});
+  await dialog.getByRole("button", { name: "停止上传并返回", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  const uploaded = page.waitForResponse("**/api/upload_multiple");
+  await expect(page).toHaveURL(/\/community$/);
+  await cancelled;
   releaseUpload();
-  await uploaded;
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await page.waitForLoadState('networkidle');
   expect(state.writes.filter((write) => write.path === "/api/posts")).toEqual([]);
   await expect(page.locator(".toast")).not.toContainText("内容已保存");
   expect(state.errors).toEqual([]);
@@ -183,12 +210,14 @@ test("列表互动有可读标签，点赞等待时阻止重复提交，失败�
   state.holdLike = true;
   const like = actions.getByRole("button", { name: "点赞 4", exact: true });
   await like.click();
-  await expect(like).toBeDisabled();
-  await expect(like).toHaveAttribute("aria-busy", "true");
+  // 点击后立即切到已赞并计数 +1，服务端确认前保持忙碌、阻止重复提交。
+  const liked = actions.getByRole("button", { name: "已赞 5", exact: true });
+  await expect(liked).toHaveAttribute("aria-pressed", "true");
+  await expect(liked).toBeDisabled();
+  await expect(liked).toHaveAttribute("aria-busy", "true");
   await expect.poll(() => state.releaseLike !== undefined).toBe(true);
   expect(state.writes.filter((item) => item.path.endsWith("/like"))).toHaveLength(1);
   state.holdLike = false; state.releaseLike!();
-  const liked = actions.getByRole("button", { name: "已赞 5", exact: true });
   await expect(liked).toHaveAttribute("aria-pressed", "true");
   await expect(liked).toBeEnabled();
   state.likeFail = true;
@@ -199,6 +228,54 @@ test("列表互动有可读标签，点赞等待时阻止重复提交，失败�
   state.likeFail = false;
   await liked.click();
   await expect(like).toHaveAttribute("aria-pressed", "false");
+  expect(state.errors).toEqual([]);
+});
+
+test("信息流卡片菜单：不感兴趣立即收起、失败恢复、可撤销，搜索结果不提供负反馈", async ({ page }) => {
+  const state = await setup(page);
+  const feedback: string[] = [];
+  let failNext = false;
+  await page.route("**/api/feed/**", async (route) => {
+    const url = new URL(route.request().url());
+    feedback.push(`${route.request().method()} ${url.pathname}${url.search}`);
+    if (failNext) { failNext = false; return route.fulfill({ status: 503, json: { message: "反馈暂时失败" } }); }
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto("community");
+  const cards = page.locator(".community-feed .feed-card");
+  const trigger = () => cards.first().getByRole("button", { name: "帖子更多操作", exact: true });
+  await trigger().click();
+  const menu = page.getByRole("menu", { name: "帖子操作" });
+  await expect(menu.getByRole("menuitem")).toHaveText([/不感兴趣/, /不看 TA/, /复制链接/, /举报/]);
+  await expect(menu.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem").nth(1)).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(trigger()).toBeFocused();
+
+  failNext = true;
+  await trigger().click();
+  await page.getByRole("menuitem", { name: /不感兴趣/ }).click();
+  await expect(page.locator(".toast")).toContainText("反馈暂时失败");
+  await expect(cards).toHaveCount(1);
+
+  await trigger().click();
+  await page.getByRole("menuitem", { name: /不感兴趣/ }).click();
+  const dismissed = page.locator(".feed-dismissed");
+  await expect(dismissed).toContainText("已减少此类推荐");
+  await expect(dismissed).toContainText("搜索仍然可以找到");
+  await expect(cards).toHaveCount(0);
+  expect(feedback.at(-1)).toBe("PUT /api/feed/posts/675/not-interested?source=all");
+  await dismissed.getByRole("button", { name: "撤销", exact: true }).click();
+  await expect(cards).toHaveCount(1);
+  expect(feedback.at(-1)).toBe("DELETE /api/feed/posts/675/not-interested");
+
+  await page.goto("community?q=校园");
+  await trigger().click();
+  await expect(page.getByRole("menuitem", { name: /不感兴趣/ })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: /不看 TA/ })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: /举报/ })).toBeVisible();
   expect(state.errors).toEqual([]);
 });
 
@@ -543,4 +620,80 @@ test("详情失败仍可返回，闲置详情使用集市上下文，窄屏侧�
     await expect(page.getByRole("button", { name: width <= 600 ? "返回上一页" : "返回列表", exact: true })).toBeVisible();
   }
   expect(state.writes).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+test("三点菜单对齐 App：填充符昵称清洗、匿名帖不提供不看 TA、屏蔽管理恢复及详情版主/精华/删评契约完整", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const state = await setup(page);
+  state.post.author.nickname = "\u1160\u3164\uFFA0";
+  state.post.post_type = "campus_life";
+  state.root.author_id = 3;
+  let pendingFeatured = false;
+  let hiddenAuthors = [{ author_id: 7, nickname: "\u1160\u3164", hidden_at: "2026-11-18T00:00:00Z" }];
+
+  await page.route("**/api/water/sections/campus_life/my-permission", (route) =>
+    route.fulfill({ json: { permission: { is_moderator: true, can_pin_post: true, can_delete_post: true, can_mute_user: true } } }),
+  );
+  await page.route("**/api/posts/675/featured-application-status", (route) =>
+    route.fulfill({ json: { has_pending: pendingFeatured } }),
+  );
+  await page.route("**/api/posts/675/featured-applications", (route) => {
+    pendingFeatured = true;
+    state.writes.push({ path: "/api/posts/675/featured-applications", method: route.request().method(), body: route.request().postData() || "" });
+    return route.fulfill({ status: 201, json: { id: 1 } });
+  });
+  await page.route("**/api/water/sections/campus_life/posts/675/pin", (route) => {
+    state.writes.push({ path: "/api/water/sections/campus_life/posts/675/pin", method: route.request().method(), body: route.request().postData() || "" });
+    state.post.water_section_pinned = true;
+    return route.fulfill({ json: { message: "ok" } });
+  });
+  await page.route("**/api/replies/101", (route) => {
+    state.writes.push({ path: "/api/replies/101", method: route.request().method(), body: "" });
+    state.root.status = "deleted";
+    return route.fulfill({ json: { message: "删除成功" } });
+  });
+  await page.route("**/api/feed/hidden-authors", (route) => route.fulfill({ json: { authors: hiddenAuthors } }));
+  await page.route("**/api/feed/authors/7/hidden", (route) => {
+    state.writes.push({ path: "/api/feed/authors/7/hidden", method: route.request().method(), body: "" });
+    if (route.request().method() === "DELETE") hiddenAuthors = [];
+    return route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto("community");
+  await page.locator(".community-feed .feed-card").first().getByRole("button", { name: "帖子更多操作", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: /不看 TA/ })).toContainText("首页不再展示 校园同学 的帖子");
+
+  state.post.is_anonymous = true;
+  await page.reload();
+  await page.locator(".community-feed .feed-card").first().getByRole("button", { name: "帖子更多操作", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: /不看 TA/ })).toHaveCount(0);
+  state.post.is_anonymous = false;
+
+  await page.goto("post/675");
+  await page.locator(".post-toolbar .post-more summary").click();
+  await expect(page.getByRole("button", { name: "设为版块置顶", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "设为版块精华", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "版主删除", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "禁言作者", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "申请精华", exact: true }).click();
+  await page.getByLabel("推荐/自荐加精理由").fill("干货详实，值得全站推荐");
+  await page.getByRole("button", { name: "提交精华申请", exact: true }).click();
+  await page.locator(".post-toolbar .post-more summary").click();
+  await expect(page.getByRole("button", { name: "精华申请待审核", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
+
+  const commentRow = page.getByRole("article", { name: "林同学的评论" });
+  await commentRow.locator(".post-comment-more summary").click();
+  await commentRow.getByRole("button", { name: "删除评论", exact: true }).click();
+  await page.getByRole("dialog", { name: "删除评论" }).getByRole("button", { name: "确认删除", exact: true }).click();
+  expect(state.writes.some((item) => item.path === "/api/replies/101" && item.method === "DELETE")).toBe(true);
+
+  await page.goto("profile");
+  await page.getByRole("button", { name: "屏蔽管理", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "屏蔽管理（不看 TA）" });
+  await expect(dialog).toContainText("校园同学");
+  await dialog.getByRole("button", { name: "恢复显示", exact: true }).click();
+  await expect(dialog).toContainText("没有屏蔽的同学");
+  expect(state.writes.some((item) => item.path === "/api/feed/authors/7/hidden" && item.method === "DELETE")).toBe(true);
+  expect(state.errors).toEqual([]);
 });

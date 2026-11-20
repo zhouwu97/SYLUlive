@@ -89,6 +89,8 @@ class SecurityEvent {
   final int? actorUserId;
   final String targetType;
   final String targetMasked;
+  final String targetAccount;
+  final String targetAccountStatus;
   final String requestIdSample;
   final int attemptCount;
   final int blockedCount;
@@ -123,6 +125,8 @@ class SecurityEvent {
     required this.actorUserId,
     required this.targetType,
     required this.targetMasked,
+    this.targetAccount = '',
+    this.targetAccountStatus = '',
     required this.requestIdSample,
     required this.attemptCount,
     required this.blockedCount,
@@ -166,6 +170,8 @@ class SecurityEvent {
       actorUserId: (json['actor_user_id'] as num?)?.toInt(),
       targetType: json['target_type']?.toString() ?? '',
       targetMasked: json['target_masked']?.toString() ?? '',
+      targetAccount: json['target_account']?.toString() ?? '',
+      targetAccountStatus: json['target_account_status']?.toString() ?? '',
       requestIdSample: json['request_id_sample']?.toString() ?? '',
       attemptCount: (json['attempt_count'] as num?)?.toInt() ?? 0,
       blockedCount: (json['blocked_count'] as num?)?.toInt() ?? 0,

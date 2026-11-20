@@ -17,6 +17,9 @@ import 'package:shenliyuan/models/schedule/course.dart';
 import 'package:shenliyuan/models/schedule/meeting.dart';
 import 'package:shenliyuan/models/schedule/course_source.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
+
+import 'helpers/active_backdrop_filters.dart';
 
 class _TestAuthProvider extends AuthProvider {
   _TestAuthProvider() : super(Dio(), loadStoredAuth: false);
@@ -60,14 +63,14 @@ void main() {
 
       final provider = CourseScheduleProvider()
         ..setBaseScheduleForTesting([
-          Course(
+          const Course(
             courseKey: 'edu:2026_1:080123:TC20260127',
             semesterId: '2026_1',
             source: CourseSource.edu,
             name: '数字图像处理',
             courseCode: '080123',
             teachingClassId: 'TC20260127',
-            meetings: const [
+            meetings: [
               Meeting(
                 meetingKey: 'm_1_3_4',
                 weekday: 1,
@@ -81,9 +84,17 @@ void main() {
           ),
         ]);
 
+      final appearance = ThemeProvider(loadOnStart: false);
+      addTearDown(appearance.dispose);
+      await appearance.setBackgroundImage('morenbeijing.jpeg');
+      await appearance.trySetCustomBackgroundMode();
+      await appearance.setFrostedGlass(true);
+      await appearance.setComponentOpacityLevel(0);
+
       await tester.pumpWidget(
         MultiProvider(
           providers: [
+            ChangeNotifierProvider<ThemeProvider>.value(value: appearance),
             ChangeNotifierProvider<CourseScheduleProvider>.value(
                 value: provider),
             ChangeNotifierProvider<AuthProvider>(
@@ -104,6 +115,27 @@ void main() {
       );
 
       // 验证课程名称与教务来源
+      await tester.pumpAndSettle();
+      final surface = find
+          .ancestor(
+              of: find.text('数字图像处理'), matching: find.byType(AppCardSurface))
+          .first;
+      final painted = find
+          .descendant(
+              of: surface,
+              matching: find.byWidgetPredicate((w) =>
+                  w is DecoratedBox &&
+                  w.decoration is BoxDecoration &&
+                  (w.decoration as BoxDecoration).color != null))
+          .first;
+      expect(
+          (tester.widget<DecoratedBox>(painted).decoration as BoxDecoration)
+              .color!
+              .a,
+          .75,
+          reason: '新刻度最低档的详情底面使用 75% 不透明度');
+      expect(activeBackdropFilters(), findsOneWidget,
+          reason: '最低档的详情仍必须真实模糊背后内容');
       expect(find.text('数字图像处理'), findsOneWidget);
       expect(find.text('教务课表'), findsOneWidget);
 
@@ -143,13 +175,13 @@ void main() {
 
       final provider = CourseScheduleProvider()
         ..setBaseScheduleForTesting([
-          Course(
+          const Course(
             courseKey: 'edu:2026_1:080123',
             semesterId: '2026_1',
             source: CourseSource.edu,
             name: '数字图像处理',
             courseCode: '080123',
-            meetings: const [
+            meetings: [
               Meeting(
                 meetingKey: 'm_1_3_4',
                 weekday: 1,

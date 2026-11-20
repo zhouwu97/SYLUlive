@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../app_card.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import 'ai_quick_action_card.dart';
 import 'ai_action_grid.dart';
 
@@ -37,15 +37,18 @@ class AiPersonalEmptyState extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: dark
-                  ? AppColors.warningSurfaceDark
-                  : AppColors.warningSurfaceLight,
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: const Color(0xFFF2DDBD), width: 1),
+                  ? AppColors.warningSurfaceDark // theme: fixed 模型尚未配置警告状态色
+                  : AppColors.warningSurfaceLight, // theme: fixed 模型尚未配置警告状态色
+              borderRadius: BorderRadius.circular(AppShape.of(context).md),
+              border: Border.all(
+                  color: const Color(0xFFF2DDBD), // theme: fixed 模型尚未配置警告状态色
+                  width: 1), // theme: fixed 模型尚未配置警告状态色
             ),
             child: Row(
               children: [
                 const Icon(Icons.info_outline_rounded,
-                    size: 20, color: Color(0xFFF97316)),
+                    size: 20,
+                    color: Color(0xFFF97316)), // theme: fixed 模型尚未配置警告状态色
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -58,7 +61,8 @@ class AiPersonalEmptyState extends StatelessWidget {
                             fontWeight: FontWeight.w600,
                             color: dark
                                 ? colors.onSurface
-                                : const Color(0xFF9A3412)),
+                                : const Color(
+                                    0xFF9A3412)), // theme: fixed 模型尚未配置警告状态色
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -67,7 +71,8 @@ class AiPersonalEmptyState extends StatelessWidget {
                             fontSize: 11,
                             color: dark
                                 ? colors.onSurfaceVariant
-                                : const Color(0xFFC2410C)),
+                                : const Color(
+                                    0xFFC2410C)), // theme: fixed 模型尚未配置警告状态色
                       ),
                     ],
                   ),
@@ -75,7 +80,8 @@ class AiPersonalEmptyState extends StatelessWidget {
                 TextButton(
                   onPressed: onConfigureModel,
                   style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFFF97316),
+                    foregroundColor:
+                        const Color(0xFFF97316), // theme: fixed 模型尚未配置警告状态色
                     textStyle: const TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w600),
                     padding: const EdgeInsets.symmetric(horizontal: 12),

@@ -17,7 +17,7 @@ export const ACCENTS: [string, string][] = [
   ["#6d4fd8", "丁香紫"],
   ["#2b2f38", "墨色"],
 ];
-const WASHES: [Wash, string][] = [["section", "分区渐变"], ["accent", "主题色渐变"], ["plain", "纯色"]];
+const WASHES: [Wash, string][] = [["plain", "纯色"], ["section", "分区淡色"], ["accent", "主题淡色"]];
 const HEX = /^#[0-9a-f]{6}$/i;
 
 export function readAppearance(): Appearance {
@@ -116,7 +116,7 @@ export function AppearanceButton() {
               <button key={wash} aria-pressed={value.wash === wash} onClick={() => setValue({ ...value, wash })}>{name}</button>
             ))}
           </div>
-          <p className="appearance-hint">分区渐变：首页跟随主题色，校园圈、集市、学习、校园服务各有一种淡色，一眼认出当前在哪。</p>
+          <p className="appearance-hint">仅保存在当前浏览器，默认跟随顶部分区淡色过渡。</p>
         </div>
       )}
     </div>

@@ -49,6 +49,7 @@ class BotRuntimeManager:
         self.network_slots, self.model_slots = asyncio.Semaphore(4), asyncio.Semaphore(2)
         self.task, self.closed, self.restore_error = None, False, False
         self.last_discovery = self.monotonic()
+        self.scope_checks = {}
 
     def health(self):
         alive = bool(self.task and not self.task.done() and not self.closed)
@@ -58,7 +59,7 @@ class BotRuntimeManager:
         controls = owner.agent.publisher.controls if owner and owner.agent and owner.agent.publisher else {}
         return {"manager_alive": alive, "discovery_age_seconds": max(0, int(self.monotonic() - self.last_discovery)),
                 "workers": len(workers), "failed_workers": failed, "registry_error": self.restore_error,
-                "owner_state": owner.phase or owner.state if owner else "not_connected",
+                "owner_state": owner.phase or owner.state if owner else ("scope_required" if self.owner_client.tokens else "not_connected"),
                 "owner_error": owner.error if owner else "",
                 "control_error": owner.control_error if owner else "",
                 "heartbeat_accepted": bool(owner and owner.leased),
@@ -83,6 +84,18 @@ class BotRuntimeManager:
         if self.closed:
             return
         slots = [(self.owner_identity, self.owner_client, ""), *self.accounts.clients()]
+        # 官网可以原地补充权限；缺少读取 scope 的已连接账号也要周期同步。
+        for _, client, _ in slots:
+            if (self.config.get("community_agent_enabled", False) is True
+                    and (client is self.owner_client or self.multi_enabled())
+                    and client.tokens and not self._eligible(client)
+                    and self.monotonic() >= self.scope_checks.get(client, 0)):
+                self.scope_checks[client] = self.monotonic() + 60
+                try:
+                    async with self.network_slots:
+                        await client.refresh_scope()
+                except IntegrationProblem:
+                    pass
         active = {client for _, client, _ in slots if self._eligible(client)}
         for client in list(self.workers):
             if client not in active:

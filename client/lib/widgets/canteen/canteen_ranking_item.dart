@@ -60,14 +60,25 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
                             // 排名：纯排版数字
                             Padding(
                               padding: const EdgeInsets.only(left: 2, top: 2),
-                              child: Text(
-                                item.rank.toString().padLeft(2, '0'),
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.6,
-                                  height: 1.1,
-                                  color: CanteenTheme.rankColor(item.rank),
+                              // 没人评价的店不占名次，用“—”占位并配读屏说明。
+                              child: Semantics(
+                                label: item.ranked
+                                    ? '第${item.rank}名'
+                                    : '暂无评价，不参与排名',
+                                excludeSemantics: true,
+                                child: Text(
+                                  item.ranked
+                                      ? item.rank.toString().padLeft(2, '0')
+                                      : '—',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.6,
+                                    height: 1.1,
+                                    color: item.ranked
+                                        ? CanteenTheme.rankColor(item.rank)
+                                        : CanteenTheme.rankColor(99),
+                                  ),
                                 ),
                               ),
                             ),
@@ -150,11 +161,37 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
                                           '${item.ratingCount} 人评价',
                                           style: TextStyle(
                                             fontSize: 12,
-                                            color:
-                                                appContentSecondaryColor(context, CanteenTheme.textSecondaryColor(
+                                            color: appContentSecondaryColor(
+                                                context,
+                                                CanteenTheme.textSecondaryColor(
                                                     isDark)),
                                           ),
                                         ),
+                                        if (item.isOffline)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 6, vertical: 1.5),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  CanteenTheme.surfaceMutedBg(
+                                                      isDark),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                  color:
+                                                      CanteenTheme.borderColor(
+                                                          isDark)),
+                                            ),
+                                            child: Text(
+                                              '已下架',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w700,
+                                                color: CanteenTheme
+                                                    .textSecondaryColor(isDark),
+                                              ),
+                                            ),
+                                          ),
                                         if (item.locationLabel.isNotEmpty) ...[
                                           CanteenLocationChip(
                                               label: item.locationLabel),
@@ -193,8 +230,10 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           fontSize: 12,
-                                          color: appContentSecondaryColor(context, CanteenTheme.textTertiaryColor(
-                                              isDark)),
+                                          color: appContentSecondaryColor(
+                                              context,
+                                              CanteenTheme.textTertiaryColor(
+                                                  isDark)),
                                         ),
                                       ),
                                     ],
@@ -227,7 +266,9 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
       color: CanteenTheme.surfaceMutedBg(isDark),
       alignment: Alignment.center,
       child: Icon(Icons.restaurant_rounded,
-          size: 26, color: appContentSecondaryColor(context, CanteenTheme.textTertiaryColor(isDark))),
+          size: 26,
+          color: appContentSecondaryColor(
+              context, CanteenTheme.textTertiaryColor(isDark))),
     );
   }
 }

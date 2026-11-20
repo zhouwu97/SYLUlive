@@ -25,9 +25,8 @@ func TestIntegrationAnonymousPublicAndPrivateCheckInHTTP(t *testing.T) {
 	pool, _ := db.DB()
 	pool.SetMaxOpenConns(1)
 	t.Cleanup(func() { pool.Close() })
-	require.NoError(t, db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.AcademicIdentityBinding{}, &models.IntegrationBinding{}, &models.IntegrationDeviceRequest{}, &models.IntegrationCredential{}, &models.IntegrationAction{}, &models.IntegrationAudit{}, &models.IntegrationRateBucket{}, &models.Post{}, &models.Reply{}, &models.PostImage{}, &models.ReplyImage{}, &models.File{}, &models.WaterSection{}, &models.CheckIn{}, &models.UserCheckInStat{}, &models.UserExperienceLedger{}))
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.AcademicIdentityBinding{}, &models.IntegrationBinding{}, &models.IntegrationDeviceRequest{}, &models.IntegrationCredential{}, &models.IntegrationAction{}, &models.IntegrationAudit{}, &models.IntegrationRateBucket{}, &models.Post{}, &models.Reply{}, &models.PostImage{}, &models.ReplyImage{}, &models.File{}, &models.WaterSection{}, &models.CheckIn{}, &models.UserCheckInStat{}, &models.CheckInMakeupCardGrant{}, &models.UserExperienceLedger{}))
 	require.NoError(t, db.Create(&models.User{ID: 1, Nickname: "合成本人", AccountStatus: "active"}).Error)
-	require.NoError(t, db.Create(&models.AcademicIdentityBinding{UserID: 1, ProviderID: models.AcademicProviderUndergraduate, StudentID: "synthetic-daily", VerifiedAt: time.Now(), VerificationMethod: "school_profile", VerificationVersion: "v1"}).Error)
 	for _, document := range []string{models.LegalDocumentUserAgreement, models.LegalDocumentPrivacyPolicy} {
 		require.NoError(t, db.Create(&models.UserLegalConsent{UserID: 1, Document: document, Version: models.LegalDocumentVersion, AcceptedAt: time.Now()}).Error)
 	}

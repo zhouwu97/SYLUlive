@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_theme_tokens.dart';
+import '../../theme/app_palette.dart';
 
 class AiAppBarTitle extends StatelessWidget {
   const AiAppBarTitle({super.key});
@@ -19,13 +19,13 @@ class AiAppBarTitle extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
-            color: AppColors.brandSurfaceLight,
-            borderRadius: BorderRadius.circular(AppRadius.pill),
+            color: AppThemeTokens.of(context).primaryContainer,
+            borderRadius: BorderRadius.circular(AppShape.of(context).pill),
           ),
-          child: const Text(
+          child: Text(
             '内测',
             style: TextStyle(
-              color: AppColors.brandPrimary,
+              color: AppThemeTokens.of(context).primary,
               fontSize: 11,
               fontWeight: FontWeight.w700,
             ),

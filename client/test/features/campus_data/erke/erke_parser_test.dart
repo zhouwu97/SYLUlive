@@ -5,7 +5,6 @@ import 'package:html/parser.dart' show parse;
 
 import 'package:shenliyuan/features/campus_data/erke/erke_parser.dart';
 import 'package:shenliyuan/features/campus_data/erke/erke_models.dart';
-import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 
 /// 加载测试 fixture HTML
@@ -234,7 +233,7 @@ void main() {
         graduation: null,
         yearly: null,
         activities: [
-          ErkeActivity(
+          const ErkeActivity(
               item: '测试', score: '1.0', date: '2025-01-01', category: '思想成长'),
         ],
         fetchedAt: DateTime(2025, 6, 23),
@@ -256,11 +255,11 @@ void main() {
   group('activitiesByYear', () {
     test('快照支持按学年存储活动', () {
       final acts2025 = [
-        ErkeActivity(
+        const ErkeActivity(
             item: '活动A', score: '1.0', date: '2025-09-01', category: '思想成长'),
       ];
       final acts2024 = [
-        ErkeActivity(
+        const ErkeActivity(
             item: '活动B', score: '2.0', date: '2024-09-01', category: '志愿公益'),
       ];
 
@@ -283,7 +282,7 @@ void main() {
     });
 
     test('activitiesByYear 空时往返不崩溃', () {
-      final snapshot = ErkeSnapshot(activitiesByYear: {});
+      const snapshot = ErkeSnapshot(activitiesByYear: {});
       final json = snapshot.toJson();
       final restored = ErkeSnapshot.fromJson(json);
       expect(restored.activitiesByYear, isEmpty);
@@ -292,7 +291,7 @@ void main() {
 
   group('学年与活动不串年', () {
     test('不同学年的活动隔离存储', () {
-      final snapshot = ErkeSnapshot(
+      const snapshot = ErkeSnapshot(
         activitiesByYear: {
           '2025-2026': [
             ErkeActivity(
@@ -440,12 +439,12 @@ void main() {
         yearly: yr,
         yearlyByYear: {yr.year: yr},
         activities: [
-          ErkeActivity(
+          const ErkeActivity(
               item: '活动', score: '1', date: '2025-01-01', category: 'A'),
         ],
         activitiesByYear: {
           yr.year: [
-            ErkeActivity(
+            const ErkeActivity(
                 item: '活动', score: '1', date: '2025-01-01', category: 'A'),
           ],
         },
@@ -489,7 +488,7 @@ void main() {
       expect(oldOnly.hasActivities, true);
 
       // 完整新快照：全部 true
-      final full = ErkeSnapshot(
+      const full = ErkeSnapshot(
         graduation: ErkeGraduationSummary(
           requiredTotal: 40,
           earnedTotal: 38.7,
@@ -644,7 +643,7 @@ void main() {
         graduation: grad,
         yearly: null, // 学年失败
         activities: [
-          ErkeActivity(
+          const ErkeActivity(
               item: '测试', score: '1', date: '2025-01-01', category: 'A'),
         ],
       );

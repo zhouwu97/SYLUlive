@@ -4,9 +4,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../theme/app_theme_tokens.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/app_text_scaler.dart';
-import '../../widgets/campus/campus_theme.dart';
+import '../../utils/responsive_util.dart';
 import '../../widgets/settings/campus_segmented_control.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
 import '../../widgets/settings/settings_section.dart';
@@ -18,10 +19,48 @@ import 'widgets/background_picker_sheet.dart';
 import 'bottom_navigation_settings_screen.dart';
 import 'frosted_glass_settings_screen.dart';
 import '../../widgets/app_card.dart';
+import '../../features/theme_pack/theme_layout_decoration_screen.dart';
+import '../../features/theme_pack/theme_section.dart';
+import '../../features/theme_pack/theme_workshop_screen.dart';
+import '../../features/theme_pack/themed_wallpaper_layer.dart';
 
 /// 界面设置二级页
-class AppearanceSettingsScreen extends StatelessWidget {
-  const AppearanceSettingsScreen({super.key});
+class AppearanceSettingsScreen extends StatefulWidget {
+  const AppearanceSettingsScreen({super.key, this.showThemeFirst = false});
+
+  final bool showThemeFirst;
+
+  @override
+  State<AppearanceSettingsScreen> createState() =>
+      _AppearanceSettingsScreenState();
+}
+
+class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
+  int _themeSaveGeneration = 0;
+
+  Future<void> _handleThemeModeChange(
+    BuildContext context,
+    ThemeProvider themeProvider,
+    ThemeMode mode,
+  ) async {
+    final generation = ++_themeSaveGeneration;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    final saved = await themeProvider.setThemeMode(mode);
+    if (!context.mounted || generation != _themeSaveGeneration || saved) return;
+
+    messenger.showSnackBar(SnackBar(
+      content: const Text('配色已切换，但未能保存，请重试'),
+      action: SnackBarAction(
+        label: '重试',
+        onPressed: () => _handleThemeModeChange(
+          context,
+          themeProvider,
+          themeProvider.themeMode,
+        ),
+      ),
+    ));
+  }
 
   Future<void> _handleBackgroundModeChange(
     BuildContext context,
@@ -53,13 +92,13 @@ class AppearanceSettingsScreen extends StatelessWidget {
   Widget _buildLivePreviewCard(
       BuildContext context, ThemeProvider themeProvider) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryColor = isDark ? const Color(0xFF7ED6C5) : CampusTheme.primary;
+    final primaryColor = AppThemeTokens.of(context).primary;
 
     // 统一引用全局主题规范 Token
-    final pageBgColor = isDark ? CampusTheme.darkBg : CampusTheme.bg;
+    final pageBgColor = AppThemeTokens.of(context).background;
     final outerContainerBg = isDark
-        ? CampusTheme.darkCard.withValues(alpha: 0.5)
-        : kCleanWarmCardBorderLight.withValues(alpha: 0.4);
+        ? AppThemeTokens.of(context).card.withValues(alpha: 0.5)
+        : AppThemeTokens.of(context).cardBorder.withValues(alpha: 0.4);
 
     final isLandscapeScreen =
         MediaQuery.of(context).orientation == Orientation.landscape;
@@ -73,7 +112,12 @@ class AppearanceSettingsScreen extends StatelessWidget {
             bgPath == themeProvider.landscapeBackgroundImage);
 
     Widget backgroundWidget;
-    if (bgPath != null &&
+    if (themeProvider.usesThemeWallpapers &&
+        themeProvider.themeWallpaper != null) {
+      backgroundWidget = ThemedWallpaperLayer(
+        settings: themeProvider.themeWallpaper,
+      );
+    } else if (bgPath != null &&
         bgPath.isNotEmpty &&
         !themeProvider.isCleanBackgroundMode) {
       final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
@@ -126,17 +170,17 @@ class AppearanceSettingsScreen extends StatelessWidget {
         ColoredBox(color: pageBgColor, child: backgroundWidget),
         ColoredBox(
           color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
+              ? Colors.black
+                  .withValues(alpha: 0.35) // theme: fixed 设备模型装饰色、图片明暗遮罩和光照阴影
+              : Colors.white
+                  .withValues(alpha: 0.25), // theme: fixed 设备模型装饰色、图片明暗遮罩和光照阴影
         ),
       ]);
     } else {
       backgroundWidget = Container(color: pageBgColor);
     }
 
-    final cardOpacity = themeProvider.isCleanBackgroundMode
-        ? 1.0
-        : themeProvider.componentOpacity;
+    final cardOpacity = themeProvider.effectiveComponentOpacity;
 
     final frameWidth = isLandscapeBg ? 230.0 : 122.0;
     final frameHeight = isLandscapeBg ? 130.0 : 216.0;
@@ -148,9 +192,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
         color: outerContainerBg,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : CampusTheme.softBorder,
+          color: AppThemeTokens.of(context).cardBorder,
         ),
       ),
       child: Center(
@@ -162,12 +204,15 @@ class AppearanceSettingsScreen extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: isDark ? Colors.white30 : Colors.white,
+              color: isDark
+                  ? Colors.white30
+                  : Colors.white, // theme: fixed 设备模型装饰色、图片明暗遮罩和光照阴影
               width: 3,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
+                color: Colors.black.withValues(
+                    alpha: 0.12), // theme: fixed 设备模型装饰色、图片明暗遮罩和光照阴影
                 blurRadius: 14,
                 offset: const Offset(0, 5),
               ),
@@ -191,13 +236,11 @@ class AppearanceSettingsScreen extends StatelessWidget {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: (isDark ? CampusTheme.darkCard : Colors.white)
+                          color: (AppThemeTokens.of(context).card)
                               .withValues(alpha: cardOpacity),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                            color: isDark
-                                ? Colors.white10
-                                : kCleanWarmCardBorderLight,
+                            color: AppThemeTokens.of(context).cardBorder,
                             width: 0.8,
                           ),
                         ),
@@ -217,18 +260,18 @@ class AppearanceSettingsScreen extends StatelessWidget {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: (isDark ? CampusTheme.darkCard : Colors.white)
+                          color: (AppThemeTokens.of(context).card)
                               .withValues(alpha: cardOpacity),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: isDark
-                                ? Colors.white10
-                                : kCleanWarmCardBorderLight,
+                            color: AppThemeTokens.of(context).cardBorder,
                             width: 0.8,
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.03),
+                              color: Colors.black.withValues(
+                                  alpha:
+                                      0.03), // theme: fixed 设备模型装饰色、图片明暗遮罩和光照阴影
                               blurRadius: 6,
                               offset: const Offset(0, 2),
                             ),
@@ -259,9 +302,8 @@ class AppearanceSettingsScreen extends StatelessWidget {
                                     height: 5,
                                     width: 45,
                                     decoration: BoxDecoration(
-                                      color: isDark
-                                          ? Colors.white70
-                                          : CampusTheme.text,
+                                      color: AppThemeTokens.of(context)
+                                          .textPrimary,
                                       borderRadius: BorderRadius.circular(2.5),
                                     ),
                                   ),
@@ -270,9 +312,8 @@ class AppearanceSettingsScreen extends StatelessWidget {
                                     height: 3.5,
                                     width: 65,
                                     decoration: BoxDecoration(
-                                      color: isDark
-                                          ? Colors.white30
-                                          : CampusTheme.subText,
+                                      color: AppThemeTokens.of(context)
+                                          .textSecondary,
                                       borderRadius: BorderRadius.circular(2),
                                     ),
                                   ),
@@ -296,17 +337,28 @@ class AppearanceSettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
+    final sideNavigation = ResponsiveUtil.useSideNavigation(context);
+    final navigationTitle = sideNavigation ? '侧边导航栏' : '底部导航栏';
     final isLandscapeScreen =
         MediaQuery.of(context).orientation == Orientation.landscape;
 
     final customBackgroundActive =
         themeProvider.isCustomBackgroundMode && themeProvider.hasAnyBackground;
 
+    final themeSection = ThemeSection(
+      onEditTheme: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const ThemeWorkshopScreen(),
+        ),
+      ),
+    );
     return SettingsPageScaffold(
       title: '界面设置',
       children: [
+        if (widget.showThemeFirst) themeSection,
         // 智能实时自适应微缩预览卡片
         _buildLivePreviewCard(context, themeProvider),
+        if (!widget.showThemeFirst) themeSection,
 
         // 主题模式段落
         SettingsSection(
@@ -331,31 +383,20 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
-        // 暗色模式与全屏渲染
         SettingsSection(
-          title: '配色与暗色模式',
+          title: '配色模式',
+          showCard: false,
           children: [
-            SettingsTile(
-              icon: Icons.brightness_auto_outlined,
-              title: '跟随系统',
-              subtitle: '实时跟随系统浅色或深色外观切换',
-              trailing: SettingsSwitch(
-                value: themeProvider.followSystem,
-                onChanged: (val) => themeProvider.setFollowSystem(val),
-              ),
-            ),
-            SettingsTile(
-              icon: Icons.dark_mode_outlined,
-              title: '深色模式',
-              subtitle: themeProvider.followSystem
-                  ? '已启用跟随系统，关闭后可手动指定'
-                  : '针对夜间环境优化，降低屏幕明亮度',
-              trailing: SettingsSwitch(
-                value: themeProvider.isDarkMode,
-                onChanged: themeProvider.followSystem
-                    ? null
-                    : (val) => themeProvider.setDarkMode(val),
-              ),
+            CampusSegmentedControl<ThemeMode>(
+              key: const ValueKey('appearance-theme-mode'),
+              items: const [
+                CampusSegmentItem(value: ThemeMode.system, label: '跟随系统'),
+                CampusSegmentItem(value: ThemeMode.light, label: '浅色模式'),
+                CampusSegmentItem(value: ThemeMode.dark, label: '深色模式'),
+              ],
+              selectedValue: themeProvider.themeMode,
+              onSelectionChanged: (mode) =>
+                  _handleThemeModeChange(context, themeProvider, mode),
             ),
           ],
         ),
@@ -441,7 +482,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
             SettingsTile(
               icon: Icons.tune_rounded,
               title: '卡片外观',
-              subtitle: '不透明度 ${(themeProvider.componentOpacity * 100).round()}% · '
+              subtitle: '不透明度 ${(themeProvider.componentOpacityLevel * 100).round()}% · '
                   '${themeProvider.frostedGlass ? themeProvider.frostedGlassPresetLabel : '毛玻璃关闭'}',
               onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => const FrostedGlassSettingsScreen(),
@@ -452,15 +493,32 @@ class AppearanceSettingsScreen extends StatelessWidget {
 
         // 底栏采用独立二级页：样式、动效和设备性能策略在同一处完成配置。
         SettingsSection(
-          title: '底部导航栏',
+          title: navigationTitle,
           children: [
             SettingsTile(
               icon: Icons.navigation_outlined,
-              title: '底部导航栏',
-              subtitle: _bottomNavSummary(themeProvider),
+              title: navigationTitle,
+              subtitle: _bottomNavSummary(themeProvider,
+                  sideNavigation: sideNavigation),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const BottomNavigationSettingsScreen(),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        SettingsSection(
+          title: '布局与页头装饰',
+          children: [
+            SettingsTile(
+              icon: Icons.dashboard_customize_outlined,
+              title: '页头模板、贴纸与卡片样式',
+              subtitle: '调整首页、校园、我的页头模板、背景贴纸及内容卡片描边与阴影',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ThemeLayoutDecorationScreen(),
                 ),
               ),
             ),
@@ -470,11 +528,16 @@ class AppearanceSettingsScreen extends StatelessWidget {
     );
   }
 
-  String _bottomNavSummary(ThemeProvider theme) {
-    if (theme.bottomNavAnimationIntensity <= 0) return BottomNavStyle.floating.label;
-    final style = BottomNavStyle.liquidGlass.label;
+  String _bottomNavSummary(ThemeProvider theme,
+      {required bool sideNavigation}) {
+    if (theme.bottomNavAnimationIntensity <= 0) {
+      return sideNavigation ? '悬浮侧栏' : BottomNavStyle.floating.label;
+    }
+    final style = sideNavigation ? '液态玻璃侧栏' : BottomNavStyle.liquidGlass.label;
     final preset = theme.bottomNavPerformanceMode;
-    return preset == BottomNavPerformanceMode.off ? style : '$style · ${preset.label}';
+    return preset == BottomNavPerformanceMode.off
+        ? style
+        : '$style · ${preset.label}';
   }
 
   String _fontSizeLabel(AppFontSizePreset preset) {

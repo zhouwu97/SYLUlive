@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
+import '../../theme/app_theme_tokens.dart';
 
 class CampusTheme {
   static const Color bg = AppColors.surfacePrimaryLight;
   static const Color darkBg = AppColors.surfacePrimaryDark;
 
   static Color pageBackground(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark ? darkBg : bg;
+    return AppThemeTokens.of(context).background;
   }
 
   static const Color card = AppColors.surfaceSecondaryLight;
@@ -34,11 +36,12 @@ class CampusTheme {
   /// 不改全局 AppTheme 的 seed，避免影响尚未完成迁移的业务页面；需要统一
   /// 校园/设置类页面时，在页面边界使用这个方法即可。
   static ThemeData withBrandAccent(ThemeData base) {
-    final isDark = base.brightness == Brightness.dark;
-    final accent = isDark ? const Color(0xFF7ED6C5) : primary;
-    final onAccent = isDark ? darkBg : Colors.white;
-    final accentContainer = isDark ? const Color(0xFF1B3B36) : primaryLight;
-    final onAccentContainer = isDark ? const Color(0xFFBFEDE3) : primary;
+    final palette =
+        base.extension<AppPalette>() ?? AppPalette.defaults(base.brightness);
+    final accent = palette.primary;
+    final onAccent = palette.onPrimary;
+    final accentContainer = palette.primaryContainer;
+    final onAccentContainer = palette.onPrimaryContainer;
 
     return base.copyWith(
       colorScheme: base.colorScheme.copyWith(
@@ -51,6 +54,33 @@ class CampusTheme {
         secondaryContainer: accentContainer,
         onSecondaryContainer: onAccentContainer,
       ),
+    );
+  }
+
+  /// 旧装饰入口保留给未迁移页面，首批组件使用当前 Token 和圆角。
+  static BoxDecoration themedCardDecoration(BuildContext context,
+      {bool softGreen = false}) {
+    final tokens = AppThemeTokens.of(context);
+    return BoxDecoration(
+      color: tokens.card,
+      gradient: !tokens.isDark && softGreen
+          ? LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [tokens.card, tokens.primaryContainer],
+            )
+          : null,
+      borderRadius: BorderRadius.circular(AppShape.of(context).lg),
+      border: Border.all(color: tokens.cardBorder),
+      boxShadow: tokens.isDark
+          ? null
+          : [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.025),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
     );
   }
 

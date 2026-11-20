@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -112,10 +115,21 @@ func addMapTool(server *mcp.Server, name, description string, backend serverBack
 }
 
 func NewHTTPHandler(backend HTTPBackend) http.Handler {
-	return mcp.NewStreamableHTTPHandler(func(request *http.Request) *mcp.Server {
+	handler := mcp.NewStreamableHTTPHandler(func(request *http.Request) *mcp.Server {
 		grant := strings.TrimSpace(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "))
 		return NewServer(backend, grant)
 	}, nil)
+	return auth.RequireBearerToken(func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
+		if strings.TrimSpace(token) == "" || len(token) > 4096 {
+			return nil, auth.ErrInvalidToken
+		}
+		// 主服务仍逐次校验 opaque Grant 的有效期和权限；这里仅将 HTTP
+		// 会话绑定到同一个 Run 凭据，防止会话 ID 被当作独立授权复用。
+		digest := sha256.Sum256([]byte(token))
+		// SDK 要求 TokenInfo 带有效期；这是本次传输身份的短暂有效期，
+		// 不是 Grant 的有效期，也不会缓存或延长主服务的逐次授权结果。
+		return &auth.TokenInfo{UserID: hex.EncodeToString(digest[:]), Expiration: time.Now().Add(time.Minute)}, nil
+	}, nil)(handler)
 }
 
 func Run(ctx context.Context, backend HTTPBackend, httpAddr string, stdio bool) error {

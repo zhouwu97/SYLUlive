@@ -1,3 +1,4 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -103,7 +104,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final subColor = isDark ? Colors.white60 : Colors.grey[600];
+    final subColor = AppThemeTokens.of(context).textSecondary;
     final isLoggedIn = context.watch<AuthProvider>().user != null;
 
     return Column(
@@ -122,7 +123,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : Colors.black87,
+                color: AppThemeTokens.of(context).textPrimary,
               ),
             ),
           ],
@@ -316,8 +317,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
     required String actionText,
     required VoidCallback onTap,
   }) {
-    final isDark0 = isDark;
-    final subColor = isDark0 ? Colors.white60 : Colors.grey[600];
+    final subColor = AppThemeTokens.of(context).textSecondary;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -327,7 +327,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
           color: Theme.of(context).primaryColor.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isDark0 ? Colors.white10 : Colors.grey[200]!,
+            color: AppThemeTokens.of(context).divider,
           ),
         ),
         child: Row(
@@ -343,7 +343,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: isDark0 ? Colors.white : Colors.black87,
+                      color: AppThemeTokens.of(context).textPrimary,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -384,7 +384,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
     required String actionText,
     required VoidCallback onTap,
   }) {
-    final subColor = isDark ? Colors.white60 : Colors.grey[600];
+    final subColor = AppThemeTokens.of(context).textSecondary;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -423,7 +423,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : Colors.black87,
+                      color: AppThemeTokens.of(context).textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

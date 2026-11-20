@@ -45,6 +45,48 @@ func flowConsent(t *testing.T, f reauthenticationFixture, h *IntegrationHandler)
 	return consent
 }
 
+func TestIntegrationUnverifiedUserConnectsAndChecksInHTTP(t *testing.T) {
+	f, h := integrationAuthFlowFixture(t)
+	require.NoError(t, f.db.Where("user_id = ?", f.user.ID).Delete(&models.AcademicIdentityBinding{}).Error)
+	require.NoError(t, f.db.AutoMigrate(&models.CheckIn{}, &models.UserCheckInStat{}, &models.CheckInMakeupCardGrant{}, &models.UserExperienceLedger{}))
+	now := time.Now()
+	h.auth.Now = func() time.Time { return now }
+	device, err := h.auth.RequestDevice(context.Background(), uuid.NewString(), "普通 QQ 绑定", "profile:read_minimal checkin:write")
+	require.NoError(t, err)
+	w := integrationFlowRequest(t, f, "POST", "/api/connected-apps/device-requests/lookup", `{"user_code":"`+device.UserCode+`"}`)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var consent services.IntegrationConsent
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &consent))
+	decision := services.IntegrationConsentDecision{Allow: true, Nonce: "wrong-confirmation", Scopes: consent.RequestedScopes}
+	body, _ := json.Marshal(decision)
+	w = integrationFlowRequest(t, f, "POST", "/api/connected-apps/device-requests/"+consent.ID+"/decision", string(body))
+	require.Equal(t, 403, w.Code)
+	require.Contains(t, w.Body.String(), "confirmation_required")
+	decision.Nonce = consent.Nonce
+	body, _ = json.Marshal(decision)
+	w = integrationFlowRequest(t, f, "POST", "/api/connected-apps/device-requests/"+consent.ID+"/decision", string(body))
+	require.Equal(t, 200, w.Code, w.Body.String())
+	now = now.Add(6 * time.Second)
+	tokens, err := h.auth.ExchangeDevice(context.Background(), device.DeviceCode)
+	require.NoError(t, err)
+	call := func(method, path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(`{}`))
+		req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		f.r.ServeHTTP(response, req)
+		return response
+	}
+	require.Equal(t, 200, call("GET", "/api/integrations/v1/binding").Code)
+	w = call("POST", "/api/integrations/v1/me/checkin")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"already":false`)
+	w = call("GET", "/api/integrations/v1/me/grades")
+	require.Equal(t, 403, w.Code)
+	require.Contains(t, w.Body.String(), "personal_queries_disabled")
+	require.Equal(t, 200, call("GET", "/api/integrations/v1/binding").Code)
+}
+
 func TestIntegrationOldSessionCanReviewAndRejectWithoutPassword(t *testing.T) {
 	f, h := integrationAuthFlowFixture(t)
 	consent := flowConsent(t, f, h)
@@ -56,7 +98,7 @@ func TestIntegrationOldSessionCanReviewAndRejectWithoutPassword(t *testing.T) {
 	require.Zero(t, active, "拒绝不能创建有效授权")
 }
 
-func TestIntegrationApprovalReusesThirtyMinuteProofAndStillExpires(t *testing.T) {
+func TestIntegrationApprovalUsesCurrentLoginWithoutRepeatedPassword(t *testing.T) {
 	for _, age := range []time.Duration{15 * time.Minute, 29*time.Minute + 59*time.Second, 30*time.Minute + time.Second, time.Hour, -2 * time.Minute} {
 		t.Run(age.String(), func(t *testing.T) {
 			f, h := integrationAuthFlowFixture(t)
@@ -66,39 +108,33 @@ func TestIntegrationApprovalReusesThirtyMinuteProofAndStillExpires(t *testing.T)
 			consent := flowConsent(t, f, h)
 			decision, _ := json.Marshal(services.IntegrationConsentDecision{Allow: true, Nonce: consent.Nonce, Scopes: consent.RequestedScopes})
 			w := integrationFlowRequest(t, f, "POST", "/api/connected-apps/device-requests/"+consent.ID+"/decision", string(decision))
-			if age >= 0 && age <= 30*time.Minute {
-				require.Equal(t, 200, w.Code, w.Body.String())
-			} else {
-				require.Equal(t, 403, w.Code, w.Body.String())
-				require.Contains(t, w.Body.String(), "recent_authentication_required")
-			}
+			require.Equal(t, 200, w.Code, w.Body.String())
 		})
 	}
 }
 
-func TestIntegrationOnePasswordVerificationCoversFollowingApproval(t *testing.T) {
+func TestIntegrationScopeEditWorksWithExistingLogin(t *testing.T) {
 	f, h := integrationAuthFlowFixture(t)
 	consent := flowConsent(t, f, h)
-	body, _ := json.Marshal(services.IntegrationConsentDecision{Allow: true, Nonce: consent.Nonce, Scopes: consent.RequestedScopes})
-	path := "/api/connected-apps/device-requests/" + consent.ID + "/decision"
-	w := integrationFlowRequest(t, f, "POST", path, string(body))
-	require.Equal(t, 403, w.Code, w.Body.String())
-	w = f.send(t, f.token, f.body("synthetic-password"))
-	require.Equal(t, 200, w.Code, w.Body.String())
-	var verified struct {
-		ValidUntil time.Time `json:"valid_until"`
-	}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &verified))
-	require.WithinDuration(t, time.Now().Add(30*time.Minute), verified.ValidUntil, time.Second)
-	h.auth.Now = func() time.Time { return time.Now().Add(25 * time.Minute) }
-	// 新请求在当前测试时间创建；验证证明属于当前会话，并可跨步骤复用。
-	consent = flowConsent(t, f, h)
-	body, _ = json.Marshal(services.IntegrationConsentDecision{Allow: true, Nonce: consent.Nonce, Scopes: consent.RequestedScopes})
-	w = integrationFlowRequest(t, f, "POST", "/api/connected-apps/device-requests/"+consent.ID+"/decision", string(body))
+	binding, err := h.auth.DecideConsent(context.Background(), f.user.ID, consent.ID, services.IntegrationConsentDecision{Allow: true, Nonce: consent.Nonce, Scopes: consent.RequestedScopes})
+	require.NoError(t, err)
+	body, _ := json.Marshal(services.IntegrationScopeUpdate{Scopes: []string{"profile:read_minimal", "community:read"}, ExpectedEpoch: binding.Epoch})
+	w := integrationFlowRequest(t, f, "POST", "/api/connected-apps/"+binding.ID+"/scopes", string(body))
 	require.Equal(t, 200, w.Code, w.Body.String())
 }
 
-func TestIntegrationOldSessionCanPreviewAndRejectButCannotPublishDraft(t *testing.T) {
+func TestIntegrationManagementRequiresValidLogin(t *testing.T) {
+	f, _ := integrationAuthFlowFixture(t)
+	for _, path := range []string{"/api/connected-apps/bot", "/api/connected-apps/example/scopes", "/api/connected-apps/device-requests/example/decision", "/api/connected-apps/actions/example/decision"} {
+		req := httptest.NewRequest("POST", path, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		f.r.ServeHTTP(w, req)
+		require.Equal(t, 401, w.Code, path)
+	}
+}
+
+func TestIntegrationOldSessionReachesPublishRulesWithoutPassword(t *testing.T) {
 	f, h := integrationAuthFlowFixture(t)
 	consent := flowConsent(t, f, h)
 	binding, err := h.auth.DecideConsent(context.Background(), f.user.ID, consent.ID, services.IntegrationConsentDecision{Allow: true, Nonce: consent.Nonce, Scopes: consent.RequestedScopes})
@@ -115,7 +151,8 @@ func TestIntegrationOldSessionCanPreviewAndRejectButCannotPublishDraft(t *testin
 	body, _ := json.Marshal(decision)
 	w = integrationFlowRequest(t, f, "POST", path+"/decision", string(body))
 	require.Equal(t, 403, w.Code, w.Body.String())
-	require.Contains(t, w.Body.String(), "recent_authentication_required")
+	require.Contains(t, w.Body.String(), "community_rules_required")
+	require.NotContains(t, w.Body.String(), "recent_authentication_required")
 	decision.Allow = false
 	body, _ = json.Marshal(decision)
 	w = integrationFlowRequest(t, f, "POST", path+"/decision", string(body))

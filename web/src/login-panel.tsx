@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { beginAuthTransition, entity, errorText, request, type Entity } from "./api";
+import { ApiError, beginAuthTransition, entity, errorText, request, type Entity } from "./api";
 import { Icon, useUI } from "./ui";
 import { ServerAvatar } from "./server-avatar";
 import { accountKey, canRememberPassword, clearSavedAccounts, forgetSavedPasswords, historyRevision, LOGIN_HISTORY_CHANNEL, rememberLogin, removeSavedAccount, savedAccounts, savedPassword, type SavedAccount } from "./login-history";
@@ -17,6 +17,7 @@ export function LoginPanel({ initialAccount = "", onAuthenticated, onRegister, o
   const [history, setHistory] = useState<SavedAccount[]>([]), [historyState, setHistoryState] = useState<"loading" | "ready" | "failed">("loading");
   const [busy, setBusy] = useState(false), [readingPassword, setReadingPassword] = useState(false), [editingHistory, setEditingHistory] = useState(false);
   const [error, setError] = useState(""), [storageMessage, setStorageMessage] = useState("");
+  const [loginLimited, setLoginLimited] = useState(false);
   const accountInput = useRef<HTMLInputElement>(null), historyPanel = useRef<HTMLDivElement>(null);
   const mounted = useRef(true), edited = useRef(false), selection = useRef(0), loadVersion = useRef(0), lock = useRef(false);
   const fromSaved = useRef<{ key: string; lastUsedAt: number } | undefined>(undefined);
@@ -119,7 +120,7 @@ export function LoginPanel({ initialAccount = "", onAuthenticated, onRegister, o
     const current = new AbortController(); controller.current = current;
     const isCurrent = () => mounted.current && controller.current === current && !current.signal.aborted;
     const loginStartedAt = Date.now();
-    setBusy(true); setError(""); setHistoryOpen(false);
+    setBusy(true); setError(""); setLoginLimited(false); setHistoryOpen(false);
     let revision: number | undefined;
     try {
       if (rememberAccount && historyState === "ready") {
@@ -139,7 +140,7 @@ export function LoginPanel({ initialAccount = "", onAuthenticated, onRegister, o
       await onAuthenticated(isCurrent);
       if (await saving) ui.notify("本机账号记录未能保存，可在下次登录时重试");
     } catch (e) {
-      if (isCurrent()) setError(errorText(e));
+      if (isCurrent()) { setError(errorText(e)); setLoginLimited(e instanceof ApiError && e.status === 429); }
     } finally {
       lock.current = false;
       if (isCurrent()) setBusy(false);
@@ -195,6 +196,7 @@ export function LoginPanel({ initialAccount = "", onAuthenticated, onRegister, o
       </fieldset>
     </form>
     {storageMessage && <div className="auth-storage-status" role="status"><span>{storageMessage}</span>{historyState === "failed" && <button className="link-btn" type="button" disabled={busy} onClick={() => readHistory()}>重试读取</button>}</div>}
+    {loginLimited && <p role="status">可等待冷却结束，或<a className="link-btn" href="/privacy" target="_blank" rel="noopener noreferrer">查看开发者联系方式并申诉</a>。请提供账号、受限时间和截图，无需提供密码或验证码。</p>}
     <footer className="auth-footer"><span>还没有账号？</span><button className="link-btn" type="button" disabled={busy} onClick={() => onRegister(account)}>注册账号</button></footer>
   </section>;
 }

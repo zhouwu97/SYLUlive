@@ -23,7 +23,8 @@ def multiuser_group():
     owner = SimpleNamespace(tokens={"scope": "checkin:write"}, call=AsyncMock())
     own = SimpleNamespace(tokens={"scope": "checkin:write"}, pending=None, generation=1,
                           call=AsyncMock(return_value={"data": {"already": False,
-                              "streak_days": 1, "exp_earned": 5, "check_in_date": "2026-11-02"}}))
+                              "streak_days": 7, "exp_earned": 7, "check_in_date": "2026-11-02",
+                              "makeup_cards_awarded": 1}}))
     plugin.client = owner
     plugin.accounts = SimpleNamespace(get=lambda actor, bot, create=False: (own, "own-installation"))
     return plugin, event, owner, own
@@ -39,7 +40,9 @@ async def test_group_checkin_uses_real_sender_account_never_owner():
     plugin.accounts.get = get
     for action in ("bind", "status", "unbind", "checkin"):
         assert plugin.permission(event, action).allowed
-    assert "签到成功" in await plugin.checkin_result(event, submit=True)
+    result = await plugin.checkin_result(event, submit=True)
+    assert "签到成功" in result
+    assert "获得补签卡 1 张" in result
     assert selected == [("222222", "synthetic-bot", False)]
     own.call.assert_awaited_once_with("POST", "/me/checkin")
     owner.call.assert_not_called()
@@ -69,6 +72,7 @@ async def test_group_checkin_fails_closed_without_falling_back_to_owner(case):
         plugin.accounts.get = missing
     elif case == "readonly":
         own.tokens = {"scope": "community:read"}
+        own.refresh_scope = AsyncMock(return_value="community:read")
     result = await plugin.checkin_result(event, submit=True)
     assert result and "签到成功" not in result
     own.call.assert_not_called()

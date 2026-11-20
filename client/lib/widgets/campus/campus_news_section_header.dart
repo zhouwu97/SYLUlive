@@ -1,5 +1,6 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
-import 'campus_theme.dart';
+import '../../theme/app_theme_style.dart';
 
 class CampusNewsSectionHeader extends StatelessWidget {
   final VoidCallback onCompetitionTap;
@@ -20,12 +21,12 @@ class CampusNewsSectionHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              ThemeSectionTitle(
                 '校园资讯',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : CampusTheme.text,
+                  color: AppThemeTokens.of(context).textPrimary,
                 ),
               ),
               const SizedBox(height: 4),
@@ -33,7 +34,7 @@ class CampusNewsSectionHeader extends StatelessWidget {
                 '校园通知与赛事信息',
                 style: TextStyle(
                   fontSize: 12,
-                  color: CampusTheme.subText,
+                  color: AppThemeTokens.of(context).textSecondary,
                 ),
               ),
             ],
@@ -42,8 +43,8 @@ class CampusNewsSectionHeader extends StatelessWidget {
         const SizedBox(width: 12),
         Material(
           color: isDark
-              ? CampusTheme.primary.withValues(alpha: 0.15)
-              : CampusTheme.primaryLight,
+              ? AppThemeTokens.of(context).primary.withValues(alpha: 0.15)
+              : AppThemeTokens.of(context).primaryContainer,
           borderRadius: BorderRadius.circular(999),
           child: InkWell(
             onTap: onCompetitionTap,
@@ -55,7 +56,9 @@ class CampusNewsSectionHeader extends StatelessWidget {
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(
                   color: isDark
-                      ? CampusTheme.primary.withValues(alpha: 0.2)
+                      ? AppThemeTokens.of(context)
+                          .primary
+                          .withValues(alpha: 0.2)
                       : Colors.transparent,
                 ),
               ),
@@ -67,17 +70,14 @@ class CampusNewsSectionHeader extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
-                      color: isDark
-                          ? CampusTheme.primaryLight
-                          : CampusTheme.primary,
+                      color: AppThemeTokens.of(context).tagText,
                     ),
                   ),
                   const SizedBox(width: 4),
                   Icon(
                     Icons.chevron_right_rounded,
                     size: 16,
-                    color:
-                        isDark ? CampusTheme.primaryLight : CampusTheme.primary,
+                    color: AppThemeTokens.of(context).tagText,
                   ),
                 ],
               ),

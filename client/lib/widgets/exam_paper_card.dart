@@ -119,7 +119,7 @@ class ExamPaperCard extends StatelessWidget {
           ),
           if (footer != null) ...[
             const SizedBox(height: 10),
-            AppCardDivider(height: 1, color: theme.colorScheme.outlineVariant),
+            const AppCardDivider(height: 1),
             const SizedBox(height: 10),
             footer!,
           ],

@@ -30,9 +30,9 @@ void main() {
           start: DateTime(2026, 9, 8, 8),
           end: DateTime(2026, 9, 8, 22),
         ),
-        duration: Duration(hours: 2),
-        dayStart: TimeOfDay(hour: 8, minute: 0),
-        dayEnd: TimeOfDay(hour: 22, minute: 0),
+        duration: const Duration(hours: 2),
+        dayStart: const TimeOfDay(hour: 8, minute: 0),
+        dayEnd: const TimeOfDay(hour: 22, minute: 0),
       ),
       busyItems: <CampusTimelineItem>[
         _busy(
@@ -56,9 +56,9 @@ void main() {
           start: DateTime(2026, 9, 8, 18),
           end: DateTime(2026, 9, 8, 20),
         ),
-        duration: Duration(hours: 2),
-        dayStart: TimeOfDay(hour: 18, minute: 0),
-        dayEnd: TimeOfDay(hour: 20, minute: 0),
+        duration: const Duration(hours: 2),
+        dayStart: const TimeOfDay(hour: 18, minute: 0),
+        dayEnd: const TimeOfDay(hour: 20, minute: 0),
       ),
       busyItems: <CampusTimelineItem>[
         _busy(

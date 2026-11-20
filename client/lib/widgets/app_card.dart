@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
-import '../theme/app_colors.dart';
+import '../theme/app_palette.dart';
+import '../theme/app_theme_style.dart';
+import '../theme/app_theme_tokens.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import 'frosted_glass.dart';
@@ -10,9 +12,7 @@ import 'app_surface_transition.dart';
 
 /// 卡片及系统弹层共用的最终底色，透明度只应用一次。
 Color appGlassSurfaceColor(BuildContext context, Color? color, double opacity) {
-  final base = Theme.of(context).brightness == Brightness.dark
-      ? AppColors.surfaceSecondaryDark
-      : AppColors.surfaceSecondaryLight;
+  final base = AppThemeTokens.of(context).card;
   // 语义色的浅色底（如 warning.withValues(alpha: .08)）仍保持原来的色调，
   // 仅把最终卡片底面的透明度交给全局设置。
   return Color.alphaBlend(color ?? base, base).withValues(alpha: opacity);
@@ -20,9 +20,13 @@ Color appGlassSurfaceColor(BuildContext context, Color? color, double opacity) {
 
 /// 壁纸上的说明文字使用实色语义前景，简洁模式保留原配色。
 Color appContentSecondaryColor(BuildContext context, Color fallback) =>
-    context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+    context.watch<ThemeProvider?>()?.canCustomizeCardMaterial == true
         ? Theme.of(context).colorScheme.onSurfaceVariant
         : fallback;
+
+/// 文字弹层与普通卡片使用同一底色强度区间。
+double appTextSheetSurfaceOpacity(BuildContext context) =>
+    context.watch<ThemeProvider?>()?.effectiveComponentOpacity ?? 1;
 
 Gradient _glassGradient(
     BuildContext context, Gradient gradient, double opacity) {
@@ -84,6 +88,10 @@ class AppCardDivider extends Divider {
     super.color,
   });
 
+  /// 卡片内部的分区线，两端统一留白；卡片外缘由底面自身分隔。
+  const AppCardDivider.inset({super.key, super.height = 1})
+      : super(indent: AppSpacing.lg, endIndent: AppSpacing.lg);
+
   @override
   Widget build(BuildContext context) {
     if (context.watch<ThemeProvider?>()?.frostedGlass == true) {
@@ -123,10 +131,8 @@ class AppContentSurface extends StatelessWidget {
             context.findAncestorWidgetOfExactType<AppCardMaterial>() != null ||
             context.findAncestorWidgetOfExactType<AppCard>() != null;
     final paint =
-        appearance?.shouldShowCustomBackground == true && !insideSurface;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final color =
-        dark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight;
+        appearance?.canCustomizeCardMaterial == true && !insideSurface;
+    final color = AppThemeTokens.of(context).card;
     if (_reading) {
       // 背景与前景分开绘制：圆角不会裁切首尾文字，开关也不改变内容宽度。
       return Stack(
@@ -142,6 +148,7 @@ class AppContentSurface extends StatelessWidget {
               child: AppCardSurface(
                 blur: paint ? 10 : 0,
                 surfaceOpacity: paint ? null : 0,
+                applyCardStyle: false,
                 decoration: BoxDecoration(
                   color: color,
                   borderRadius: BorderRadius.circular(AppRadius.md),
@@ -178,6 +185,12 @@ class AppCardSurface extends Container {
 
   /// 课表等已有独立透明度设置的表面保留自己的设置。
   final double? surfaceOpacity;
+
+  /// 显式指定是否套用主题 cardStyle；为 null 时仅对内容卡片自动生效。
+  final bool? applyCardStyle;
+
+  /// 是否画主题卡片淡底图；输入栏等工具条传 false。
+  final bool themeArt;
   AppCardSurface({
     super.key,
     super.alignment,
@@ -195,27 +208,80 @@ class AppCardSurface extends Container {
     super.clipBehavior,
     this.blur = 10,
     this.surfaceOpacity,
+    this.applyCardStyle,
+    this.themeArt = true,
   });
+
+  bool _shouldApplyCardStyle(BuildContext context, BoxDecoration? box) {
+    if (applyCardStyle != null) return applyCardStyle!;
+    if (surfaceOpacity == 0) return false;
+    if (box?.shape == BoxShape.circle) return false;
+    final br = box?.borderRadius;
+    if (br is BorderRadius) {
+      final r = br.topLeft.x;
+      if (br.topRight.x != r ||
+          br.bottomLeft.x != r ||
+          br.bottomRight.x != r) {
+        return false;
+      }
+      if (r >= 99) return false;
+    }
+    if (context.findAncestorWidgetOfExactType<Dialog>() != null) {
+      return false;
+    }
+    return true;
+  }
+
+  /// 主题淡底图只画在内容卡片上：圆形、胶囊、透明底和弹窗里的面板不画。
+  bool _shouldPaintArt(BuildContext context, BoxDecoration? box) {
+    if (!themeArt || applyCardStyle == false || surfaceOpacity == 0) {
+      return false;
+    }
+    if (box?.shape == BoxShape.circle) return false;
+    final br = box?.borderRadius;
+    if (br is BorderRadius && br.topLeft.x >= 99) return false;
+    return context.findAncestorWidgetOfExactType<Dialog>() == null;
+  }
+
+  /// 内容在上、主题淡底图在下；passthrough 保持原 Container 拿到的约束不变。
+  Widget _withArt(BuildContext context, BoxDecoration? box, Widget content) {
+    final art = AppThemeStyle.of(context).cardArt;
+    if (art == null || !_shouldPaintArt(context, box)) return content;
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        Positioned.fill(child: ThemeCardArt(spec: art)),
+        content,
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<ThemeProvider?>();
     final glass = settings?.frostedGlass == true && blur > 0;
     final progress = glass ? AppSurfaceTransition.progressOf(context) : 1.0;
-    final custom = settings?.shouldShowCustomBackground == true;
+    final custom = settings?.canCustomizeCardMaterial == true;
     final box =
         decoration is BoxDecoration ? decoration! as BoxDecoration : null;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final surface = color ??
-        box?.color ??
-        (dark
-            ? AppColors.surfaceSecondaryDark
-            : AppColors.surfaceSecondaryLight);
-    final alpha = (surfaceOpacity ??
-            (settings?.shouldShowCustomBackground == true
-                ? settings!.componentOpacity
-                : 1.0)) *
-        progress;
+    final extCardStyle = AppCardStyle.of(context);
+    final cardStyle = _shouldApplyCardStyle(context, box) &&
+            extCardStyle.hasOverrides
+        ? extCardStyle
+        : null;
+    final tokens = AppThemeTokens.of(context);
+    final resolvedBorder = cardStyle?.resolveBoxBorder(tokens.cardBorder);
+    final outerShadows = cardStyle?.resolveBoxShadows(
+      Theme.of(context).brightness == Brightness.dark,
+    );
+    final baseSurface = color ?? box?.color ?? tokens.card;
+    // 主题卡片填充为 tint 时，只给默认卡片底色混入 primaryContainer，显式指定底色的卡片保持原样。
+    final surface = cardStyle?.tinted == true && baseSurface == tokens.card
+        ? Color.lerp(tokens.card, tokens.primaryContainer, 0.32)!
+        : baseSurface;
+    final alpha =
+        (surfaceOpacity ?? settings?.effectiveComponentOpacity ?? 1.0) *
+            progress;
     final radius = box?.borderRadius ?? BorderRadius.zero;
     final plain = box == null
         ? BoxDecoration(color: surface)
@@ -236,6 +302,10 @@ class AppCardSurface extends Container {
             image: box?.image,
             borderRadius: box?.shape == BoxShape.circle ? null : radius,
             shape: box?.shape ?? BoxShape.rectangle,
+            border: (cardStyle?.borderWidth != null &&
+                    cardStyle!.borderWidth! > 0)
+                ? resolvedBorder
+                : null,
           )
         : plain.copyWith(
             color: plain.gradient != null
@@ -253,12 +323,22 @@ class AppCardSurface extends Container {
                     : alpha == 1
                         ? plain.gradient
                         : plain.gradient?.scale(alpha),
+            border: resolvedBorder ?? plain.border,
+            boxShadow:
+                outerShadows != null ? const <BoxShadow>[] : plain.boxShadow,
           );
     return Container(
       margin: margin,
       constraints: constraints,
       transform: transform,
       transformAlignment: transformAlignment,
+      decoration: (outerShadows != null && outerShadows.isNotEmpty)
+          ? BoxDecoration(
+              borderRadius: box?.shape == BoxShape.circle ? null : radius,
+              shape: box?.shape ?? BoxShape.rectangle,
+              boxShadow: outerShadows,
+            )
+          : null,
       child: ClipPath(
         clipper: ShapeBorderClipper(shape: shape),
         child: FrostedGlass(
@@ -268,16 +348,20 @@ class AppCardSurface extends Container {
           // 材质只替换绘制，保留原 Container 的边框占位和显式内容间距。
           child: DecoratedBox(
             decoration: material,
-            child: Container(
-              alignment: alignment,
-              padding: decoration?.padding == null
-                  ? padding
-                  : decoration!.padding.add(padding ?? EdgeInsets.zero),
-              foregroundDecoration: foregroundDecoration,
-              child: AppSurfaceTransition.foreground(
-                context,
-                progress: progress,
-                child: child,
+            child: _withArt(
+              context,
+              box,
+              Container(
+                alignment: alignment,
+                padding: decoration?.padding == null
+                    ? padding
+                    : decoration!.padding.add(padding ?? EdgeInsets.zero),
+                foregroundDecoration: foregroundDecoration,
+                child: AppSurfaceTransition.foreground(
+                  context,
+                  progress: progress,
+                  child: child,
+                ),
               ),
             ),
           ),
@@ -291,6 +375,7 @@ class AppCardSurface extends Container {
 class AppCard extends Card {
   /// 仅保留表示选中、警告等状态的边框，普通装饰描边统一隐藏。
   final bool preserveBorder;
+  final bool? applyCardStyle;
   const AppCard({
     super.key,
     super.color,
@@ -304,6 +389,7 @@ class AppCard extends Card {
     super.child,
     super.semanticContainer,
     this.preserveBorder = false,
+    this.applyCardStyle,
   });
 
   @override
@@ -313,9 +399,7 @@ class AppCard extends Card {
     final progress = glass ? AppSurfaceTransition.progressOf(context) : 1.0;
     final theme = Theme.of(context);
     final cardTheme = CardTheme.of(context);
-    final alpha = settings?.shouldShowCustomBackground == true
-        ? settings!.componentOpacity
-        : 1.0;
+    final alpha = settings?.effectiveComponentOpacity ?? 1.0;
     final fill = color ??
         cardTheme.color ??
         (theme.useMaterial3
@@ -326,48 +410,72 @@ class AppCard extends Card {
         RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(
                 Theme.of(context).useMaterial3 ? AppRadius.md : 4));
-    final glassShape =
+    final extCardStyle = theme.extension<AppCardStyle>() ?? const AppCardStyle();
+    final cardStyle = (applyCardStyle ??
+                context.findAncestorWidgetOfExactType<Dialog>() == null) &&
+            extCardStyle.hasOverrides
+        ? extCardStyle
+        : null;
+    final tokens = AppThemeTokens.of(context);
+    var effectiveShape =
         glass && !preserveBorder && originalShape is OutlinedBorder
             ? originalShape.copyWith(side: BorderSide.none)
             : originalShape;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final surface = color ??
-        cardTheme.color ??
-        (dark
-            ? AppColors.surfaceSecondaryDark
-            : AppColors.surfaceSecondaryLight);
-    return Padding(
-      padding: margin ?? cardTheme.margin ?? const EdgeInsets.all(4),
-      child: ClipPath(
-        clipper: ShapeBorderClipper(shape: glassShape),
-        child: FrostedGlass(
-          enabled: glass,
-          sigmaX: 10 * progress,
-          sigmaY: 10 * progress,
-          child: Card(
-            margin: EdgeInsets.zero,
-            color: glass
-                ? appGlassSurfaceColor(context, surface, alpha * progress)
-                : settings?.shouldShowCustomBackground == true
-                    ? appGlassSurfaceColor(context, surface, alpha)
-                    : alpha == 1
-                        ? color
-                        : fill.withValues(alpha: fill.a * alpha),
-            shape: glassShape,
-            shadowColor: glass ? Colors.transparent : shadowColor,
-            surfaceTintColor: glass ? Colors.transparent : surfaceTintColor,
-            elevation: glass ? 0 : elevation,
-            borderOnForeground: borderOnForeground,
-            clipBehavior: clipBehavior ?? Clip.antiAlias,
-            semanticContainer: semanticContainer,
-            child: AppSurfaceTransition.foreground(
-              context,
-              progress: progress,
-              child: child,
-            ),
+    if (!preserveBorder &&
+        cardStyle?.borderWidth != null &&
+        effectiveShape is OutlinedBorder) {
+      effectiveShape = effectiveShape.copyWith(
+        side: cardStyle!.resolveBorderSide(tokens.cardBorder)!,
+      );
+    }
+    final outerShadows = cardStyle?.resolveBoxShadows(
+      theme.brightness == Brightness.dark,
+    );
+    final surface = color ?? cardTheme.color ?? tokens.card;
+    Widget clipped = ClipPath(
+      clipper: ShapeBorderClipper(shape: effectiveShape),
+      child: FrostedGlass(
+        enabled: glass,
+        sigmaX: 10 * progress,
+        sigmaY: 10 * progress,
+        child: Card(
+          margin: EdgeInsets.zero,
+          color: glass
+              ? appGlassSurfaceColor(context, surface, alpha * progress)
+              : settings?.canCustomizeCardMaterial == true
+                  ? appGlassSurfaceColor(context, surface, alpha)
+                  : alpha == 1
+                      ? color
+                      : fill.withValues(alpha: fill.a * alpha),
+          shape: effectiveShape,
+          shadowColor: (glass || outerShadows != null)
+              ? Colors.transparent
+              : shadowColor,
+          surfaceTintColor: glass ? Colors.transparent : surfaceTintColor,
+          elevation: (glass || outerShadows != null) ? 0 : elevation,
+          borderOnForeground: borderOnForeground,
+          clipBehavior: clipBehavior ?? Clip.antiAlias,
+          semanticContainer: semanticContainer,
+          child: AppSurfaceTransition.foreground(
+            context,
+            progress: progress,
+            child: child,
           ),
         ),
       ),
+    );
+    if (outerShadows != null && outerShadows.isNotEmpty) {
+      clipped = DecoratedBox(
+        decoration: ShapeDecoration(
+          shape: effectiveShape,
+          shadows: outerShadows,
+        ),
+        child: clipped,
+      );
+    }
+    return Padding(
+      padding: margin ?? cardTheme.margin ?? const EdgeInsets.all(4),
+      child: clipped,
     );
   }
 }
@@ -416,15 +524,9 @@ class _AppCardMaterialState extends State<Material> {
     final shape = glass && originalShape is OutlinedBorder
         ? originalShape.copyWith(side: BorderSide.none)
         : originalShape;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final surface = widget.color ??
-        (dark
-            ? AppColors.surfaceSecondaryDark
-            : AppColors.surfaceSecondaryLight);
-    final alpha = material.surfaceOpacity ??
-        (settings?.shouldShowCustomBackground == true
-            ? settings!.componentOpacity
-            : 1.0);
+    final surface = widget.color ?? AppThemeTokens.of(context).card;
+    final alpha =
+        material.surfaceOpacity ?? settings?.effectiveComponentOpacity ?? 1.0;
     final plainColor = widget.color ??
         switch (widget.type) {
           MaterialType.canvas => Theme.of(context).canvasColor,
@@ -435,20 +537,13 @@ class _AppCardMaterialState extends State<Material> {
       type: widget.type,
       elevation: glass ? 0 : widget.elevation,
       color: glass
-          ? appGlassSurfaceColor(
-              context,
-              surface,
-              progress *
-                  (material.surfaceOpacity ??
-                      (settings!.shouldShowCustomBackground
-                          ? settings.componentOpacity
-                          : 1)))
+          ? appGlassSurfaceColor(context, surface, progress * alpha)
           : alpha == 1 || widget.type == MaterialType.transparency
-              ? settings?.shouldShowCustomBackground == true &&
+              ? settings?.canCustomizeCardMaterial == true &&
                       widget.type != MaterialType.transparency
                   ? appGlassSurfaceColor(context, surface, alpha)
                   : widget.color
-              : settings?.shouldShowCustomBackground == true
+              : settings?.canCustomizeCardMaterial == true
                   ? appGlassSurfaceColor(context, surface, alpha)
                   : plainColor?.withValues(alpha: plainColor.a * alpha),
       shadowColor: widget.shadowColor,

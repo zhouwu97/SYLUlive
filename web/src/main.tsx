@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useLayoutEffect, useState } from "react";
+import { StrictMode, Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import {
@@ -12,7 +12,9 @@ import {
 } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./auth";
-import { Empty, Icon, UIProvider, useUI, DialogOutlet } from "./ui";
+import { Empty, Head, Icon, UIProvider, useUI, DialogOutlet } from "./ui";
+import { RouteBoundary } from './route-boundary';
+import {LegalConfirmation} from './legal-consent';
 import { useApi } from "./api";
 import { CampusRail, ProfileSummary, SidebarBoards } from "./campus-chrome";
 import { ServerAvatar } from "./server-avatar";
@@ -21,32 +23,53 @@ import {
   Exams,
 } from "./pages";
 import {Toolbox} from './toolbox';
-import {Profile} from './profile';
+import {Profile, PublicProfile} from './profile';
 import "./styles.css";
 import "./social-shell.css";
 import "./web-polish.css";
 import { useWorkspaceMotion } from "./shell-motion";
 import { isDetailPath, useReportedDetailOrigin } from "./detail-origin";
-import {Admin} from "./admin";
-import { Polls } from "./polls";
-import {Competition} from './competition';
-import {CanteenPage} from './canteen-page';
-import {Campus} from './campus';
-import { Catalog, CatalogDetail, type CatalogKind } from "./catalog";
-import { AiPage } from "./ai";
-import { Feedback, TicketDetail, Notifications } from "./feedback";
-import { Community, PostDetail, PostForm } from "./community";
+import { type CatalogKind } from "./catalog";
+import {Polls} from './polls';
+import {AppScanLanding} from './phone-scan';
+import { Community, PostDetail } from "./community";
+import {PostEditorPage, usePostEditor} from './post-editor-page';
+import {clearPostDrafts} from './post-drafts';
 import { AcademicProvider, Schedule, Grades } from "./academic";
-import { ConnectedApps, ConnectedAction } from "./connected-apps";
-import { Messages } from "./messages";
 import "./commons.css";
 import { useMobile } from "./mobile";
 import { MobileHeader, MobileNavigation } from "./mobile-chrome";
 import "./mobile-app.css";
 import "./auth.css";
 import "./desktop-refresh.css";
+import "./motion.css";
+import "./component-finish.css";
+import { LoadingBar, PageLoading } from "./loading-bar";
 import { AppearanceButton, applyAppearance, readAppearance } from "./appearance";
 import { mountCollapsedTooltips, mountSlidingIndicator, revealTheme } from "./desktop-motion";
+import { useMobileThemeRuntime } from "./mobile-theme";
+import { MobileThemeBackdrop, MobileThemesPage, ThemeLandingPage } from "./mobile-theme-pages";
+const Admin = lazy(() => import('./admin').then(module => ({default: module.Admin})));
+const Competition = lazy(() => import('./competition').then(module => ({default: module.Competition})));
+const CanteenPage = lazy(() => import('./canteen-page').then(module => ({default: module.CanteenPage})));
+const Campus = lazy(() => import('./campus').then(module => ({default: module.Campus})));
+const Catalog = lazy(() => import('./catalog').then(module => ({default: module.Catalog})));
+const CatalogDetail = lazy(() => import('./catalog').then(module => ({default: module.CatalogDetail})));
+const AiPage = lazy(() => import('./ai').then(module => ({default: module.AiPage})));
+const Feedback = lazy(() => import('./feedback').then(module => ({default: module.Feedback})));
+const TicketDetail = lazy(() => import('./feedback').then(module => ({default: module.TicketDetail})));
+const Notifications = lazy(() => import('./feedback').then(module => ({default: module.Notifications})));
+const ConnectedApps = lazy(() => import('./connected-apps').then(module => ({default: module.ConnectedApps})));
+const ConnectedAction = lazy(() => import('./connected-apps').then(module => ({default: module.ConnectedAction})));
+const Messages = lazy(() => import('./messages').then(module => ({default: module.Messages})));
+
+function NotFound() {
+  return <><Head title="页面不存在" description="链接可能已失效或地址有误"/><Empty title="找不到这个页面" description="可以返回首页，或从工具箱重新选择要使用的功能。"><Link className="btn primary" to="/">返回首页</Link><Link className="btn" to="/toolbox">打开工具箱</Link></Empty></>;
+}
+function AgreementsPage() {
+  const auth = useAuth();
+  return <><Head title="协议与隐私"/>{auth.loading ? <div className="loading-state" role="status">正在加载…</div> : auth.user ? <LegalConfirmation/> : <Empty title="登录后确认协议"><button className="btn primary" onClick={auth.login}>登录</button></Empty>}</>;
+}
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 15000, refetchOnWindowFocus: false },
@@ -68,34 +91,60 @@ export const navigation = [
   ["polls", "投票 · 组队"],
   ["ai", "AI 校园助手"],
   ["toolbox", "工具箱"],
-  ["feedback", "反馈与工单"],
+  ["feedback", "我的工单"],
   ["profile", "我的主页"],
   ["admin", "管理中心"],
 ];
 function Search() {
   const [value, setValue] = useState("");
+  const results = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const ui = useUI();
   const matches = navigation.filter(([, name]) => name.toLowerCase().includes(value.trim().toLowerCase()));
+  function open(id: string) {
+    navigate(id === "dashboard" ? "/" : `/${id}`);
+    ui.close();
+  }
   return (
     <>
       <input
         className="full-width"
-        autoFocus
+        data-autofocus
         aria-label="搜索功能"
         placeholder="搜索功能，例如课表、工单、竞赛…"
         value={value}
         onChange={(e) => setValue(e.target.value)}
+        onKeyDown={event => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            if (matches[0]) open(matches[0][0]);
+          } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const buttons = results.current?.querySelectorAll<HTMLButtonElement>("button");
+            (event.key === "ArrowDown" ? buttons?.[0] : buttons?.[buttons.length - 1])?.focus();
+          }
+        }}
       />
-      <div className="palette-results">
+      <div className="palette-results" ref={results} onKeyDown={event => {
+        const buttons = Array.from(results.current?.querySelectorAll<HTMLButtonElement>("button") || []);
+        const index = buttons.indexOf(event.target as HTMLButtonElement);
+        if (index < 0) return;
+        let next: number;
+        switch (event.key) {
+          case "ArrowDown": next = (index + 1) % buttons.length; break;
+          case "ArrowUp": next = (index - 1 + buttons.length) % buttons.length; break;
+          case "Home": next = 0; break;
+          case "End": next = buttons.length - 1; break;
+          default: return;
+        }
+        event.preventDefault();
+        buttons[next].focus();
+      }}>
         {matches.map(([id, name]) => (
             <button
               className="palette-result"
               key={id}
-              onClick={() => {
-                navigate(id === "dashboard" ? "/" : `/${id}`);
-                ui.close();
-              }}
+              onClick={() => open(id)}
             >
               <Icon name={id} />
               <b>{name}</b>
@@ -107,19 +156,33 @@ function Search() {
   );
 }
 // 分区渐变的颜色归属：与顶栏五个主分区一致
-const zones: Record<string, string> = { dashboard: "home", community: "community", polls: "community", messages: "community", market: "market", schedule: "study", grades: "study", exams: "study", competition: "study", ratings: "study", campus: "discover", canteen: "discover", toolbox: "discover", ai: "discover" };
+const zones: Record<string, string> = { dashboard: "home", community: "community", polls: "community", messages: "community", market: "market", schedule: "study", grades: "study", exams: "study", competition: "study", ratings: "study", campus: "discover", canteen: "canteen", toolbox: "discover", ai: "discover" };
+// 桌面顶栏五个主入口：校园圈与首页同为信息流，并入「首页」，让出位置给食堂；「发现」改名为「校园」。
+const TOP_NAV = [["/", "首页", ["home", "community"]], ["/canteen", "食堂", ["canteen"]], ["/market", "集市", ["market"]], ["/schedule", "学习", ["study"]], ["/campus", "校园", ["discover"]]] as const;
+// 桌面侧栏「校园生活」分组：投票与组队已在首页信息流混排，入口换成校园；手机端抽屉对照 App 保持原样。
+const DESKTOP_SIDEBAR = ["dashboard", "canteen", "market", "schedule", "campus"];
+const DESKTOP_GROWTH = ["grades", "exams", "competition", "ratings", "polls", "community", "ai"];
+const MOBILE_SIDEBAR = ["dashboard", "community", "market", "schedule", "polls"];
+const DESKTOP_LABELS: Record<string, string> = { canteen: "食堂", campus: "校园" };
 const zoneOf = (active: string) => zones[active] || "home";
 function Shell() {
   const [menu, setMenu] = useState(false);
   const [navigationMotion, setNavigationMotion] = useState(true);
-  const [dark, setDark] = useState(
-    () => localStorage.getItem("sylulive-theme") === "dark",
-  );
+  const [dark, setDark] = useState(() => {
+    try {
+      return localStorage.getItem("sylulive-theme") === "dark";
+    } catch {
+      return false;
+    }
+  });
   const ui = useUI(),
     auth = useAuth(),
     location = useLocation(),
     navigate = useNavigate();
+  useEffect(() => () => clearPostDrafts(), [auth.user?.id]);
   const active = location.pathname.split("/")[1] || "dashboard";
+  const composing = active === 'compose' || /^\/post\/[^/]+\/edit$/.test(location.pathname);
+  const openPostEditor = usePostEditor();
   // 详情页沿用来源分区：从集市进入的闲置详情保持集市的收起侧栏与分区色，从首页进入的帖子保持首页选中
   const detail = isDetailPath(location.pathname);
   const statedFrom = typeof (location.state as { from?: unknown } | null)?.from === "string" ? (location.state as { from: string }).from : "";
@@ -129,13 +192,20 @@ function Shell() {
   const section = originPath ? originPathname.split("/")[1] || "dashboard" : active;
   const feedSearch = originPath ? originSearch : location.search.slice(1);
   const mobile = useMobile();
-  const standaloneProfile = active === "profile" && !mobile;
+  const mobileTheme = useMobileThemeRuntime(dark, location.pathname);
+  const standaloneProfile = (active === "profile" || active === "user") && !mobile;
+  // 管理中心在桌面端是独立工作台：用自己的分组导航替换社区侧栏；手机端仍对照 App 保留原导航。
+  const adminConsole = active === "admin" && !mobile;
   const workspace = useWorkspaceMotion(location.pathname, navigationMotion);
   const unread = useApi(auth.user ? '/api/user/notifications/unread-count' : null);
   const messageUnread = useApi(auth.user ? '/api/messages/unread_count' : null);
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
-    localStorage.setItem("sylulive-theme", dark ? "dark" : "light");
+    try {
+      localStorage.setItem("sylulive-theme", dark ? "dark" : "light");
+    } catch {
+      // 存储受限时保留当前会话明暗状态
+    }
   }, [dark]);
   useEffect(() => {
     setMenu(false);
@@ -152,7 +222,7 @@ function Shell() {
     const sidebar = document.querySelector<HTMLElement>(".sidebar");
     if (sidebar) cleanups.push(mountCollapsedTooltips(sidebar));
     return () => cleanups.forEach((cleanup) => cleanup());
-  }, [mobile, standaloneProfile]);
+  }, [mobile, standaloneProfile, adminConsole]);
   const toggleTheme = (from: Element | null) => {
     const next = !dark;
     revealTheme(from, () => {
@@ -188,7 +258,7 @@ function Shell() {
     if (navigation.some(([id]) => id === hash))
       navigate(hash === "dashboard" ? "/" : `/${hash}`, { replace: true });
   }, []);
-  const link = ([id, label]: string[]) => (
+  const link = ([id, fullLabel]: string[]) => { const label = (!mobile && DESKTOP_LABELS[id]) || fullLabel; return (
     <NavLink
       key={id}
       title={label}
@@ -204,9 +274,10 @@ function Shell() {
       <span className="nav-text">{label}</span>
       {id === "messages" && Number(messageUnread.data?.unread_count || messageUnread.data?.count) > 0 && <span className="nav-unread">{messageUnread.data?.unread_count || messageUnread.data?.count}</span>}
     </NavLink>
-  );
+  ); };
   return (
-    <div data-mobile-page={active} data-zone={zoneOf(section)} className={`app-shell social-shell ${section === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
+    <div data-mobile-page={active} data-has-mobile-wallpaper={mobile && mobileTheme.wallpaper ? "1" : undefined} data-zone={zoneOf(section)} className={`app-shell social-shell ${composing ? 'compose-shell' : ''} ${section === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${adminConsole ? "admin-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
+      {mobile && <MobileThemeBackdrop />}
       <a className="skip-link" href="#mainContent">
         跳到主要内容
       </a>
@@ -228,12 +299,12 @@ function Shell() {
             </div>
           </div>
           <nav className="desktop-top-nav" aria-label="快捷导航">
-            {[["/", "首页", "home"], ["/community", "校园圈", "community"], ["/market", "集市", "market"], ["/schedule", "学习", "study"], ["/campus", "发现", "discover"]].map(([to, label, zone]) => <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive || zones[section] === zone ? "active" : "")}>{label}</NavLink>)}
+            {TOP_NAV.map(([to, label, owned]) => <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive || (owned as readonly string[]).includes(zones[section]) ? "active" : "")}>{label}</NavLink>)}
           </nav>
           <div className="crumb">
             <span>校园</span>
             <span>›</span>
-            <b>{navigation.find(([id]) => id === active)?.[1] || "详情"}</b>
+            <b>{navigation.find(([id]) => id === active)?.[1] || (active === "user" ? "同学主页" : "详情")}</b>
           </div>
           <button
             className="search-trigger"
@@ -267,7 +338,7 @@ function Shell() {
               <Icon name="messages" />
               {Number(messageUnread.data?.unread_count || messageUnread.data?.count) > 0 && <span className="notification-count">{messageUnread.data?.unread_count || messageUnread.data?.count}</span>}
             </button>
-            <button className="btn primary header-publish" aria-label="发布校园内容" onClick={() => auth.requireUser() && ui.open("发布内容", <PostForm />)}><Icon name="plus" size={16} />发布</button>
+            {!composing && <button className="btn primary header-publish" aria-label="发布校园内容" onClick={() => openPostEditor()}><Icon name="plus" size={16} />发布</button>}
             <button
               className={auth.user ? 'avatar' : 'btn primary login-button'}
               aria-label={auth.user ? "我的账号" : "登录"}
@@ -278,7 +349,7 @@ function Shell() {
           </div>
         </div>
       </header>
-      {mobile && <MobileHeader menu={menu} onMenu={() => setMenu(!menu)} />}
+      {mobile && !composing && <MobileHeader menu={menu} onMenu={() => setMenu(!menu)} />}
       <div className="frame">
         <button
           className="nav-mask"
@@ -286,29 +357,48 @@ function Shell() {
           aria-label="收起导航"
           onClick={() => setMenu(false)}
         />
-        {!standaloneProfile && <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航">
+        {!composing && !standaloneProfile && !adminConsole && <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航">
           <div className="sidebar-scroll">
             {mobile && <div className="mobile-drawer-title"><b>校园服务</b><button className="mobile-icon-button" aria-label="切换主题" onClick={() => setDark(!dark)}><Icon name={dark ? "sun" : "moon"} /></button></div>}
             <ProfileSummary />
             {mobile && !auth.user && <button className="btn primary mobile-drawer-login" onClick={auth.login}>登录</button>}
-            {[
-              { label: "社区", ids: ["dashboard", "community", "market", "schedule", "polls"] },
-              { label: "我的", ids: ["messages"] },
-            ].map(({label, ids}) => (
-              <div className="nav-section" key={label}>
-                <div className="nav-label">{label}</div>
-                {ids.map(id => navigation.find(item => item[0] === id)!).map(link)}
+            {mobile ? <>
+              <div className="nav-section">
+                <div className="nav-label">社区</div>
+                {MOBILE_SIDEBAR.map(id => navigation.find(item => item[0] === id)!).map(link)}
               </div>
-            ))}
-            <div className="personal-feed-links">
-              <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=bookmarks") ? "active" : ""}`} to="/community?sort=bookmarks"><span className="nav-icon"><Icon name="bookmark" /></span><span className="nav-text">我的收藏</span></Link>
-              <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=mine") ? "active" : ""}`} to="/community?sort=mine"><span className="nav-icon"><Icon name="file" /></span><span className="nav-text">我的帖子</span></Link>
-            </div>
-            <SidebarBoards />
-            <details className="sidebar-more">
-              <summary>学习与校园服务 <Icon name="chevron" size={14} /></summary>
-              {["grades", "exams", "competition", "ratings", "campus", "canteen", "ai"].map(id => navigation.find(item => item[0] === id)!).map(link)}
-            </details>
+              <div className="nav-section">
+                <div className="nav-label">我的</div>
+                {["messages"].map(id => navigation.find(item => item[0] === id)!).map(link)}
+              </div>
+              <div className="personal-feed-links">
+                <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=bookmarks") ? "active" : ""}`} to="/community?sort=bookmarks"><span className="nav-icon"><Icon name="bookmark" /></span><span className="nav-text">我的收藏</span></Link>
+                <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=mine") ? "active" : ""}`} to="/community?sort=mine"><span className="nav-icon"><Icon name="file" /></span><span className="nav-text">我的帖子</span></Link>
+              </div>
+              <SidebarBoards />
+              <details className="sidebar-more">
+                <summary>学习与校园服务 <Icon name="chevron" size={14} /></summary>
+                {["grades", "exams", "competition", "ratings", "campus", "canteen", "ai"].map(id => navigation.find(item => item[0] === id)!).map(link)}
+              </details>
+            </> : <>
+              <div className="nav-section">
+                <div className="nav-label">校园生活</div>
+                {DESKTOP_SIDEBAR.map(id => navigation.find(item => item[0] === id)!).map(link)}
+              </div>
+              <details className="sidebar-more">
+                <summary>学习与成长 <Icon name="chevron" size={14} /></summary>
+                {DESKTOP_GROWTH.map(id => navigation.find(item => item[0] === id)!).map(link)}
+              </details>
+              <div className="nav-section">
+                <div className="nav-label">我的</div>
+                {["messages"].map(id => navigation.find(item => item[0] === id)!).map(link)}
+              </div>
+              <div className="personal-feed-links">
+                <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=bookmarks") ? "active" : ""}`} to="/community?sort=bookmarks"><span className="nav-icon"><Icon name="bookmark" /></span><span className="nav-text">我的收藏</span></Link>
+                <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=mine") ? "active" : ""}`} to="/community?sort=mine"><span className="nav-icon"><Icon name="file" /></span><span className="nav-text">我的帖子</span></Link>
+              </div>
+              <SidebarBoards />
+            </>}
           <div className="nav-section sidebar-account">
             {navigation
               .slice(13)
@@ -327,10 +417,12 @@ function Shell() {
             <div className="main-pane">
               {/* 授权成功清理一次性连接码时保留管理草稿；账号切换由页面账号 key 隔离。 */}
               <section key={location.pathname === "/connected-apps" ? location.pathname : `${location.pathname}${location.search}`} className="page active">
-                <Routes>
+                <RouteBoundary><Suspense fallback={<PageLoading />}><Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/community" element={<Community />} />
                   <Route path="/market" element={<Community market />} />
+                  <Route path="/compose" element={<PostEditorPage />} />
+                  <Route path="/post/:id/edit" element={<PostEditorPage />} />
                   <Route path="/messages" element={<Messages />} />
                   <Route path="/post/:id" element={<PostDetail />} />
                   <Route path="/polls/:id" element={<PostDetail poll />} />
@@ -376,18 +468,23 @@ function Shell() {
                   <Route path="/ai" element={<AiPage />} />
                   <Route path="/toolbox" element={<Toolbox />} />
                   <Route path="/profile" element={<Profile />} />
+                  <Route path="/user/:id" element={<PublicProfile />} />
+                  <Route path="/agreements" element={<AgreementsPage />} />
                   <Route path="/connected-apps" element={<ConnectedApps />} />
                   <Route path="/connected-apps/actions/:id" element={<ConnectedAction />} />
                   <Route path="/admin" element={<Admin />} />
-                  <Route path="*" element={<Dashboard />} />
-                </Routes>
+                  <Route path="/themes" element={<MobileThemesPage />} />
+                  <Route path="/theme/:id" element={<ThemeLandingPage />} />
+                  <Route path="/app-scan" element={<AppScanLanding />} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes></Suspense></RouteBoundary>
               </section>
             </div>
             {["dashboard", "community", "polls"].includes(active) && !detail && <CampusRail />}
           </div>
         </main>
       </div>
-      {mobile && <MobileNavigation />}
+      {mobile && !composing && <MobileNavigation />}
     </div>
   );
 }
@@ -398,6 +495,7 @@ createRoot(document.getElementById("root")!).render(
         <AuthProvider>
           <AcademicProvider>
             <BrowserRouter basename="/web/">
+              <LoadingBar />
               <Shell />
               <DialogOutlet />
             </BrowserRouter>

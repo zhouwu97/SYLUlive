@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_theme_tokens.dart';
 import '../../models/ai_quick_prompt.dart';
-import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import 'ai_action_grid.dart';
 import '../app_card.dart';
 
@@ -103,25 +103,21 @@ class AiPublicEmptyState extends StatelessWidget {
         label: '$title：$subtitle',
         child: AppCardSurface(
           decoration: BoxDecoration(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? AppColors.surfaceSecondaryDark
-                  : Colors.white,
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? AppColors.borderNormalDark
-                      : AppColors.borderNormalLight)),
+              color: AppThemeTokens.of(context).card,
+              borderRadius: BorderRadius.circular(AppShape.of(context).md),
+              border: Border.all(color: AppThemeTokens.of(context).cardBorder)),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
               onTap: chatEnabled ? () => onPromptSelected?.call(prompt) : null,
-              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderRadius: BorderRadius.circular(AppShape.of(context).md),
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(icon, size: 19, color: AppColors.brandPrimary),
+                      Icon(icon,
+                          size: 19, color: AppThemeTokens.of(context).primary),
                       const SizedBox(width: 8),
                       Expanded(
                           child: Column(

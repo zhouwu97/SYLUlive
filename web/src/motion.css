@@ -1,0 +1,160 @@
+/* 点击反馈与加载动效。
+ * 功能性的加载表达（骨架屏、忙碌按钮的转圈）手机与桌面共用；
+ * 装饰性动效（顶部进度条、按压缩放、点赞弹跳、页面淡入）只在桌面（≥601px）生效，
+ * 手机网页继续对照 Android App。所有动效在「减少动态效果」下关闭。 */
+
+/* ---------- 通用加载文字 ---------- */
+.loading-label { font-size: var(--text-caption, 13px); color: var(--text-2); }
+
+/* ---------- 帖子骨架屏 ---------- */
+.social-shell .loading-state.loading-skeleton,
+.loading-state.loading-skeleton {
+  display: grid;
+  /* 通用加载态的 justify-content:center 会让隐式网格列按内容收缩。 */
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  width: 100%;
+  min-width: 0;
+  align-content: start;
+  place-items: stretch;
+  gap: 16px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.loading-state.loading-skeleton::before,
+.loading-state.loading-skeleton::after { display: none; }
+.loading-skeleton .loading-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.skeleton-card {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card, 16px);
+  background: var(--surface);
+}
+.skeleton-card:nth-child(3) { opacity: .8; }
+.skeleton-card:nth-child(4) { opacity: .6; }
+.skeleton-author { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.skeleton-lines { display: grid; flex: 1; min-width: 0; gap: 8px; }
+.skeleton-block {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  height: 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-3) 12%, var(--surface-2));
+}
+.skeleton-block::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--surface);
+  opacity: .15;
+  /* 持续等待提示采用慢呼吸；只合成透明度，不逐帧重绘渐变。 */
+  animation: skeleton-pulse 1.6s var(--ease-in-out) infinite;
+}
+.skeleton-avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; }
+.skeleton-lines .skeleton-block:first-child { width: 32%; }
+.skeleton-lines .skeleton-block:last-child { width: 20%; height: 10px; }
+.skeleton-title { width: 56%; height: 16px; }
+.skeleton-short { width: 72%; }
+.skeleton-media { width: min(100%, 420px); height: 160px; border-radius: 14px; }
+.post-detail-page .loading-skeleton .skeleton-card { padding: 24px; }
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: .15; }
+  50% { opacity: .55; }
+}
+
+/* ---------- 忙碌按钮：提交、删除、撤销等等待服务端时显示转圈 ---------- */
+.btn[aria-busy="true"] { cursor: progress; }
+.btn[aria-busy="true"]::before {
+  content: "";
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: busy-spin .7s linear infinite;
+}
+@keyframes busy-spin { to { transform: rotate(360deg); } }
+
+/* 点赞、收藏已在本地切换，等待确认时不再整排变灰，只显示进行中的底色。 */
+.post-interaction[aria-busy="true"]:disabled { opacity: 1; cursor: progress; }
+
+/* ---------- 顶部进度条（桌面） ---------- */
+.route-progress { display: none; }
+@media (min-width: 601px) {
+  .route-progress {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 1000;
+    display: block;
+    height: 3px;
+    pointer-events: none;
+    opacity: 0;
+  }
+  .route-progress span {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 0 3px 3px 0;
+    background: linear-gradient(90deg, var(--color-accent-fill, var(--brand)), color-mix(in srgb, var(--color-accent-fill, var(--brand)) 55%, #fff));
+    box-shadow: 0 0 10px color-mix(in srgb, var(--color-accent-fill, var(--brand)) 55%, transparent);
+    transform: scaleX(0);
+    transform-origin: left center;
+  }
+  .route-progress[data-phase="active"] { opacity: 1; transition: opacity .12s ease; }
+  .route-progress[data-phase="active"] span { animation: progress-trickle 9s cubic-bezier(.08, .7, .2, 1) forwards; }
+  .route-progress[data-phase="done"] { opacity: 0; transition: opacity .32s ease .18s; }
+  .route-progress[data-phase="done"] span { transform: scaleX(1); transition: transform .22s var(--ease-out, ease-out); }
+}
+@keyframes progress-trickle {
+  0% { transform: scaleX(0); }
+  8% { transform: scaleX(.28); }
+  30% { transform: scaleX(.58); }
+  100% { transform: scaleX(.92); }
+}
+
+/* ---------- 桌面装饰动效 ---------- */
+@media (min-width: 601px) and (prefers-reduced-motion: no-preference) {
+  /* 加载占位稍晚出现：很快完成的读取不闪一下 */
+  .social-shell .loading-state { animation: loading-appear .24s ease .1s both; }
+
+  /* 按压反馈（整页切换动画在 social-shell.css 里有意关闭，筛选切换会重建页面，这里不再加） */
+  .social-shell .btn { transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .12s var(--ease-out, ease-out); }
+  .social-shell .btn:not(:disabled):active,
+  .modal .btn:not(:disabled):active { transform: scale(.97); }
+  .post-interaction { transition: background-color .15s ease, color .15s ease; }
+  .post-interaction .svg-icon { transition: transform .12s var(--ease-out, ease-out); }
+  .post-interaction:not(:disabled):active .svg-icon { transform: scale(.86); }
+  .home-quick a { transition: transform .12s var(--ease-out, ease-out); }
+  .home-quick a:active { transform: scale(.96); }
+  .social-shell .feed-card .post-summary { transition: opacity .12s ease; }
+  .social-shell .feed-card .post-summary:active { opacity: .72; }
+
+  /* 点赞：心形弹一下 */
+  .post-like.is-popped .svg-icon { animation: like-pop .42s cubic-bezier(.3, 1.6, .5, 1); }
+}
+@keyframes loading-appear { from { opacity: 0; } }
+@keyframes like-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.32); }
+  70% { transform: scale(.92); }
+  100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-block::after { animation: none; opacity: .15; }
+  .btn[aria-busy="true"]::before { animation-duration: 2.4s; }
+  .route-progress span { animation: none !important; transition: none !important; }
+}

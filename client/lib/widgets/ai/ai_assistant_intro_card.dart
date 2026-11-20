@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_theme_tokens.dart';
 
 class AiAssistantIntroCard extends StatelessWidget {
   final String title;
@@ -18,18 +19,18 @@ class AiAssistantIntroCard extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF20272B),
+            color: AppThemeTokens.of(context).textPrimary,
           ),
         ),
         const SizedBox(height: 8),
         Text(
           subtitle,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
-            color: Color(0xFF7B8388),
+            color: AppThemeTokens.of(context).textSecondary,
             height: 1.45,
           ),
         ),

@@ -8,11 +8,15 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const CheckInSchemaMigrationVersion = "20260716_01_checkin_facts_and_stats"
 const CheckInMakeupCardMigrationVersion = "20260717_02_checkin_makeup_cards"
 const CheckInMakeupCardScheduleMigrationVersion = "20261025_04_checkin_makeup_card_schedule"
+const CheckInStreakReconciliationMigrationVersion = "20261109_05_checkin_streak_reconciliation"
+const CheckInCompensationStreakMigrationVersion = "20261118_06_checkin_compensation_streak"
+const CheckInMakeupCardExpiryMigrationVersion = "20261118_07_checkin_makeup_card_expiry"
 
 // EnsureCheckInSchema 将旧的字符串日期迁移为 DATE，并在建立唯一约束前显式校验历史数据。
 func EnsureCheckInSchema(db *gorm.DB) error {
@@ -25,6 +29,7 @@ func EnsureCheckInSchema(db *gorm.DB) error {
 		&AppSchemaMigration{},
 		&CheckIn{},
 		&UserCheckInStat{},
+		&CheckInMakeupCardGrant{},
 		&CheckInRepairLog{},
 		&CheckInCompensationCampaign{},
 		&CheckInCompensationEligibility{},
@@ -80,7 +85,7 @@ func EnsureCheckInSchema(db *gorm.DB) error {
 		}
 	}
 	// 旧用户也按新周期重建卡数；事务确保失败重试时不会留下部分更新或重复奖励。
-	return db.Transaction(func(tx *gorm.DB) error {
+	if err := db.Transaction(func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&AppSchemaMigration{}).Where("version = ?", CheckInMakeupCardScheduleMigrationVersion).Count(&count).Error; err != nil {
 			return err
@@ -92,6 +97,117 @@ func EnsureCheckInSchema(db *gorm.DB) error {
 			return err
 		}
 		return tx.Create(&AppSchemaMigration{Version: CheckInMakeupCardScheduleMigrationVersion, AppliedAt: time.Now()}).Error
+	}); err != nil {
+		return err
+	}
+
+	// 检查并修复所有签到连续天数和汇总不一致的账号，保证历史事实、当前汇总与发放卡数一致。
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&AppSchemaMigration{}).Where("version = ?", CheckInStreakReconciliationMigrationVersion).Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 0 {
+			return nil
+		}
+		if _, err := ReconcileInconsistentCheckInStats(tx, 0); err != nil {
+			return err
+		}
+		return tx.Create(&AppSchemaMigration{Version: CheckInStreakReconciliationMigrationVersion, AppliedAt: time.Now()}).Error
+	}); err != nil {
+		return err
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		migration := tx.Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&AppSchemaMigration{Version: CheckInCompensationStreakMigrationVersion, AppliedAt: now})
+		if migration.Error != nil {
+			return migration.Error
+		}
+		if migration.RowsAffected == 0 {
+			return nil
+		}
+		// 历史活动允许指定未来日期，只回填迁移时已到达的业务日。
+		today := dateOnly(now.UTC().Add(8 * time.Hour))
+		var userIDs []uint
+		if err := tx.Raw(`
+			INSERT INTO check_ins (user_id, check_in_date, streak_days, exp_earned, is_compensation, created_at)
+			SELECT claim.user_id, claim.check_in_date, 1, 0, TRUE, MIN(claim.claimed_at)
+			FROM check_in_compensation_claims AS claim
+			JOIN users ON users.id = claim.user_id
+			WHERE claim.check_in_date <= ?
+			GROUP BY claim.user_id, claim.check_in_date
+			ON CONFLICT (user_id, check_in_date) DO NOTHING
+			RETURNING user_id
+		`, today).Scan(&userIDs).Error; err != nil {
+			return err
+		}
+		rebuilt := make(map[uint]bool, len(userIDs))
+		for _, userID := range userIDs {
+			if !rebuilt[userID] {
+				if _, _, err := RecomputeCheckInStreaks(tx, userID); err != nil {
+					return err
+				}
+				rebuilt[userID] = true
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return migrateCheckInMakeupCardExpiry(db)
+}
+
+func migrateCheckInMakeupCardExpiry(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		now := tx.NowFunc()
+		migration := tx.Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&AppSchemaMigration{Version: CheckInMakeupCardExpiryMigrationVersion, AppliedAt: now})
+		if migration.Error != nil || migration.RowsAffected == 0 {
+			return migration.Error
+		}
+		today := dateOnly(now.UTC().Add(8 * time.Hour))
+		var stats []UserCheckInStat
+		return tx.Where("makeup_cards_earned + makeup_cards_granted > makeup_cards_used").
+			FindInBatches(&stats, 200, func(batch *gorm.DB, _ int) error {
+				userIDs := make([]uint, 0, len(stats))
+				for _, stat := range stats {
+					userIDs = append(userIDs, stat.UserID)
+				}
+				var records []CheckIn
+				if err := batch.Select("user_id", "check_in_date", "streak_days").
+					Where("user_id IN ? AND check_in_date > ? AND check_in_date <= ?", userIDs, today.AddDate(0, 0, -31), today).
+					Order("check_in_date DESC").Find(&records).Error; err != nil {
+					return err
+				}
+				recent := make(map[uint][]time.Time)
+				for _, record := range records {
+					if IsCheckInMakeupCardRewardDay(record.StreakDays) {
+						recent[record.UserID] = append(recent[record.UserID], record.CheckInDate)
+					}
+				}
+				var grants []CheckInMakeupCardGrant
+				for _, stat := range stats {
+					// 旧账只有累计用量。按先到期先使用回溯，剩余的历史奖励保留最近的批次。
+					dates := recent[stat.UserID]
+					earned := min(len(dates), max(0, stat.MakeupCardsEarned-stat.MakeupCardsUsed))
+					for _, date := range dates[:earned] {
+						grant := newCheckInMakeupCardGrant(stat.UserID, date, 1)
+						if grant.ExpiresOn.After(today) {
+							grants = append(grants, grant)
+						}
+					}
+					undated := min(stat.MakeupCardsGranted, stat.MakeupCardsEarned+stat.MakeupCardsGranted-stat.MakeupCardsUsed)
+					if undated > 0 {
+						grants = append(grants, newCheckInMakeupCardGrant(stat.UserID, today, undated))
+					}
+				}
+				if len(grants) > 0 {
+					return batch.CreateInBatches(&grants, 200).Error
+				}
+				return nil
+			}).Error
 	})
 }
 
@@ -206,62 +322,79 @@ func RebuildAllUserCheckInStats(db *gorm.DB) error {
 func RebuildUserCheckInStats(db *gorm.DB, userID uint) (UserCheckInStat, error) {
 	var rebuilt UserCheckInStat
 	err := db.Transaction(func(tx *gorm.DB) error {
-		var existing UserCheckInStat
-		existingErr := tx.Select("user_id", "makeup_cards_earned", "makeup_cards_granted").Where("user_id = ?", userID).First(&existing).Error
-		if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
-			return existingErr
-		}
-
-		var records []CheckIn
-		if err := tx.Where("user_id = ?", userID).Order("check_in_date ASC, id ASC").Find(&records).Error; err != nil {
+		var user User
+		if err := tx.Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).Find(&user, userID).Error; err != nil {
 			return err
 		}
-		if len(records) == 0 {
-			if existing.MakeupCardsGranted == 0 {
-				return tx.Where("user_id = ?", userID).Delete(&UserCheckInStat{}).Error
-			}
-			rebuilt = UserCheckInStat{UserID: userID, MakeupCardsGranted: existing.MakeupCardsGranted}
-			return tx.Save(&rebuilt).Error
-		}
-		sort.SliceStable(records, func(i, j int) bool { return records[i].CheckInDate.Before(records[j].CheckInDate) })
-		current, longest := 0, 0
-		makeupCardsEarned, makeupCardsUsed := 0, 0
-		var previous time.Time
-		for index := range records {
-			if index == 0 || !sameCheckInDate(records[index].CheckInDate, previous.AddDate(0, 0, 1)) {
-				current = 1
-			} else {
-				current++
-			}
-			if current > longest {
-				longest = current
-			}
-			if IsCheckInMakeupCardRewardDay(current) {
-				makeupCardsEarned++
-			}
-			if records[index].IsMakeup {
-				makeupCardsUsed++
-			}
-			if records[index].StreakDays != current {
-				if err := tx.Model(&CheckIn{}).Where("id = ?", records[index].ID).Update("streak_days", current).Error; err != nil {
-					return err
-				}
-			}
-			previous = records[index].CheckInDate
-		}
-		last := dateOnly(previous)
-		rebuilt = UserCheckInStat{
-			UserID: userID, LastCheckInDate: &last, CurrentStreak: current, LongestStreak: longest,
-			MakeupCardsEarned:  makeupCardsEarned,
-			MakeupCardsGranted: existing.MakeupCardsGranted + max(0, existing.MakeupCardsEarned-makeupCardsEarned),
-			MakeupCardsUsed:    makeupCardsUsed,
-		}
-		if err := tx.Save(&rebuilt).Error; err != nil {
-			return err
-		}
-		return tx.Model(&User{}).Where("id = ?", userID).Update("last_check_in_date", last.Format("2006-01-02")).Error
+		var err error
+		rebuilt, _, err = RecomputeCheckInStreaks(tx, userID)
+		return err
 	})
 	return rebuilt, err
+}
+
+// RecomputeCheckInStreaks 在调用方的事务中重算签到汇总，返回更新后的日期序列供补签计算经验。
+func RecomputeCheckInStreaks(tx *gorm.DB, userID uint) (UserCheckInStat, []CheckIn, error) {
+	var records []CheckIn
+	var existing UserCheckInStat
+	existingErr := tx.Select("user_id", "makeup_cards_earned", "makeup_cards_granted").Where("user_id = ?", userID).First(&existing).Error
+	if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
+		return UserCheckInStat{}, nil, existingErr
+	}
+
+	if err := tx.Where("user_id = ?", userID).Order("check_in_date ASC, id ASC").Find(&records).Error; err != nil {
+		return UserCheckInStat{}, nil, err
+	}
+	if len(records) == 0 {
+		if existing.MakeupCardsGranted == 0 {
+			return UserCheckInStat{}, nil, tx.Where("user_id = ?", userID).Delete(&UserCheckInStat{}).Error
+		}
+		rebuilt := UserCheckInStat{UserID: userID, MakeupCardsGranted: existing.MakeupCardsGranted}
+		return rebuilt, nil, tx.Save(&rebuilt).Error
+	}
+	sort.SliceStable(records, func(i, j int) bool { return records[i].CheckInDate.Before(records[j].CheckInDate) })
+	current, longest := 0, 0
+	makeupCardsEarned, makeupCardsUsed := 0, 0
+	var previous time.Time
+	for index := range records {
+		if index == 0 {
+			current = 1
+		} else if sameCheckInDate(records[index].CheckInDate, previous) {
+			// 同一天重复记录，保留已计算的连续天数
+		} else if sameCheckInDate(records[index].CheckInDate, previous.AddDate(0, 0, 1)) {
+			current++
+		} else {
+			current = 1
+		}
+		if current > longest {
+			longest = current
+		}
+		if (index == 0 || !sameCheckInDate(records[index].CheckInDate, previous)) && IsCheckInMakeupCardRewardDay(current) {
+			makeupCardsEarned++
+		}
+		if records[index].IsMakeup {
+			makeupCardsUsed++
+		}
+		if records[index].StreakDays != current {
+			if err := tx.Model(&CheckIn{}).Where("id = ?", records[index].ID).Update("streak_days", current).Error; err != nil {
+				return UserCheckInStat{}, nil, err
+			}
+			records[index].StreakDays = current
+		}
+		previous = records[index].CheckInDate
+	}
+	last := dateOnly(previous)
+	rebuilt := UserCheckInStat{
+		UserID: userID, LastCheckInDate: &last, CurrentStreak: current, LongestStreak: longest,
+		MakeupCardsEarned:  makeupCardsEarned,
+		MakeupCardsGranted: existing.MakeupCardsGranted + max(0, existing.MakeupCardsEarned-makeupCardsEarned),
+		MakeupCardsUsed:    makeupCardsUsed,
+	}
+	if err := tx.Save(&rebuilt).Error; err != nil {
+		return UserCheckInStat{}, nil, err
+	}
+	err := tx.Model(&User{}).Where("id = ?", userID).Update("last_check_in_date", last.Format("2006-01-02")).Error
+	return rebuilt, records, err
 }
 
 func parseCheckInDate(raw string) (time.Time, error) {
@@ -278,4 +411,225 @@ func dateOnly(value time.Time) time.Time {
 
 func sameCheckInDate(left, right time.Time) bool {
 	return left.Format("2006-01-02") == right.Format("2006-01-02")
+}
+
+// CheckInInconsistency 记录单个用户签到事实、汇总或旧字段的不一致详情。
+type CheckInInconsistency struct {
+	UserID          uint       `json:"user_id"`
+	LastCheckInDate *time.Time `json:"last_check_in_date,omitempty"`
+	FactCount       int        `json:"fact_count"`
+	CurrentStreak   int        `json:"current_streak"`
+	ExpectedStreak  int        `json:"expected_streak"`
+	LongestStreak   int        `json:"longest_streak"`
+	ExpectedLongest int        `json:"expected_longest"`
+	CardsEarned     int        `json:"cards_earned"`
+	ExpectedCards   int        `json:"expected_cards"`
+	Reason          string     `json:"reason"`
+}
+
+// ReconcileReport 记录全局签到对账与修复结果。
+type ReconcileReport struct {
+	TotalUsersScanned int                    `json:"total_users_scanned"`
+	InconsistentCount int                    `json:"inconsistent_count"`
+	RepairedCount     int                    `json:"repaired_count"`
+	Details           []CheckInInconsistency `json:"details"`
+}
+
+// InspectUserCheckInStats 校验指定用户的签到事实与汇总一致性。一致时返回 nil。
+func InspectUserCheckInStats(db *gorm.DB, userID uint) (*CheckInInconsistency, error) {
+	var records []CheckIn
+	if err := db.Where("user_id = ?", userID).Order("check_in_date ASC, id ASC").Find(&records).Error; err != nil {
+		return nil, err
+	}
+	var stat UserCheckInStat
+	statErr := db.Where("user_id = ?", userID).First(&stat).Error
+	if statErr != nil && !errors.Is(statErr, gorm.ErrRecordNotFound) {
+		return nil, statErr
+	}
+	var user User
+	userErr := db.Select("id", "last_check_in_date").Where("id = ?", userID).First(&user).Error
+	if userErr != nil && !errors.Is(userErr, gorm.ErrRecordNotFound) {
+		return nil, userErr
+	}
+
+	if len(records) == 0 {
+		if errors.Is(statErr, gorm.ErrRecordNotFound) {
+			if userErr == nil && user.LastCheckInDate != "" {
+				return &CheckInInconsistency{
+					UserID: userID, FactCount: 0,
+					Reason: "无签到事实但用户表包含最后签到日",
+				}, nil
+			}
+			return nil, nil
+		}
+		if stat.CurrentStreak != 0 || stat.LongestStreak != 0 || stat.LastCheckInDate != nil {
+			return &CheckInInconsistency{
+				UserID: userID, FactCount: 0,
+				CurrentStreak: stat.CurrentStreak, LongestStreak: stat.LongestStreak,
+				Reason: "无签到事实但汇总包含非零连续天数或日期",
+			}, nil
+		}
+		if userErr == nil && user.LastCheckInDate != "" {
+			return &CheckInInconsistency{
+				UserID: userID, FactCount: 0,
+				Reason: "无签到事实但用户表包含最后签到日",
+			}, nil
+		}
+		return nil, nil
+	}
+
+	sort.SliceStable(records, func(i, j int) bool { return records[i].CheckInDate.Before(records[j].CheckInDate) })
+	current, longest := 0, 0
+	cardsEarned := 0
+	var previous time.Time
+	var reasons []string
+
+	for index := range records {
+		expected := 1
+		if index == 0 {
+			expected = 1
+		} else if sameCheckInDate(records[index].CheckInDate, previous) {
+			expected = current
+		} else if sameCheckInDate(records[index].CheckInDate, previous.AddDate(0, 0, 1)) {
+			expected = current + 1
+		} else {
+			expected = 1
+		}
+		current = expected
+		if current > longest {
+			longest = current
+		}
+		if (index == 0 || !sameCheckInDate(records[index].CheckInDate, previous)) && IsCheckInMakeupCardRewardDay(current) {
+			cardsEarned++
+		}
+		if records[index].StreakDays != current {
+			reasons = append(reasons, fmt.Sprintf("签到事实 %s 连续天数不一致（记录:%d 期望:%d）",
+				records[index].CheckInDate.Format("2006-01-02"), records[index].StreakDays, current))
+		}
+		previous = records[index].CheckInDate
+	}
+
+	last := dateOnly(previous)
+	recordedCurrent := 0
+	recordedLongest := 0
+	recordedCards := 0
+	var recordedLastDate *time.Time
+	if errors.Is(statErr, gorm.ErrRecordNotFound) {
+		reasons = append(reasons, "签到汇总记录缺失")
+	} else {
+		recordedCurrent = stat.CurrentStreak
+		recordedLongest = stat.LongestStreak
+		recordedCards = stat.MakeupCardsEarned
+		recordedLastDate = stat.LastCheckInDate
+		if stat.LastCheckInDate == nil || !sameCheckInDate(*stat.LastCheckInDate, last) {
+			reasons = append(reasons, "汇总最后签到日期与事实不一致")
+		}
+		if stat.CurrentStreak != current {
+			reasons = append(reasons, fmt.Sprintf("汇总连续天数与事实不一致（记录:%d 期望:%d）", stat.CurrentStreak, current))
+		}
+		if stat.LongestStreak != longest {
+			reasons = append(reasons, fmt.Sprintf("汇总最长连续天数与事实不一致（记录:%d 期望:%d）", stat.LongestStreak, longest))
+		}
+		if stat.MakeupCardsEarned != cardsEarned {
+			reasons = append(reasons, fmt.Sprintf("汇总补签卡发放数与事实不一致（记录:%d 期望:%d）", stat.MakeupCardsEarned, cardsEarned))
+		}
+	}
+
+	if userErr == nil && user.LastCheckInDate != last.Format("2006-01-02") {
+		reasons = append(reasons, fmt.Sprintf("用户表最后签到日与事实不一致（记录:%s 期望:%s）", user.LastCheckInDate, last.Format("2006-01-02")))
+	}
+
+	if len(reasons) == 0 {
+		return nil, nil
+	}
+
+	return &CheckInInconsistency{
+		UserID:          userID,
+		LastCheckInDate: recordedLastDate,
+		FactCount:       len(records),
+		CurrentStreak:   recordedCurrent,
+		ExpectedStreak:  current,
+		LongestStreak:   recordedLongest,
+		ExpectedLongest: longest,
+		CardsEarned:     recordedCards,
+		ExpectedCards:   cardsEarned,
+		Reason:          strings.Join(reasons, "; "),
+	}, nil
+}
+
+// InspectAllUserCheckInStats 扫描全量用户并报告所有存在签到天数或汇总不一致的账号。
+func InspectAllUserCheckInStats(db *gorm.DB) ([]CheckInInconsistency, error) {
+	var userIDs []uint
+	if db.Migrator().HasTable(&CheckIn{}) {
+		var checkInUserIDs []uint
+		if err := db.Model(&CheckIn{}).Distinct("user_id").Pluck("user_id", &checkInUserIDs).Error; err != nil {
+			return nil, err
+		}
+		userIDs = append(userIDs, checkInUserIDs...)
+	}
+	if db.Migrator().HasTable(&UserCheckInStat{}) {
+		var statUserIDs []uint
+		if err := db.Model(&UserCheckInStat{}).Distinct("user_id").Pluck("user_id", &statUserIDs).Error; err != nil {
+			return nil, err
+		}
+		userIDs = append(userIDs, statUserIDs...)
+	}
+	seen := make(map[uint]bool, len(userIDs))
+	uniqueIDs := make([]uint, 0, len(userIDs))
+	for _, id := range userIDs {
+		if !seen[id] && id > 0 {
+			seen[id] = true
+			uniqueIDs = append(uniqueIDs, id)
+		}
+	}
+	sort.Slice(uniqueIDs, func(i, j int) bool { return uniqueIDs[i] < uniqueIDs[j] })
+
+	inconsistencies := make([]CheckInInconsistency, 0)
+	for _, uid := range uniqueIDs {
+		item, err := InspectUserCheckInStats(db, uid)
+		if err != nil {
+			return nil, fmt.Errorf("检查用户 %d 签到状态失败: %w", uid, err)
+		}
+		if item != nil {
+			inconsistencies = append(inconsistencies, *item)
+		}
+	}
+	return inconsistencies, nil
+}
+
+// ReconcileInconsistentCheckInStats 检查并修复所有签到天数不一致的账号，并记录审计日志。
+func ReconcileInconsistentCheckInStats(db *gorm.DB, operatorID uint) (ReconcileReport, error) {
+	report := ReconcileReport{Details: make([]CheckInInconsistency, 0)}
+	inconsistencies, err := InspectAllUserCheckInStats(db)
+	if err != nil {
+		return report, err
+	}
+	report.InconsistentCount = len(inconsistencies)
+
+	var allUsersCount int64
+	if db.Migrator().HasTable(&CheckIn{}) {
+		db.Model(&CheckIn{}).Distinct("user_id").Count(&allUsersCount)
+	}
+	report.TotalUsersScanned = int(allUsersCount)
+
+	for _, item := range inconsistencies {
+		rebuilt, rebuildErr := RebuildUserCheckInStats(db, item.UserID)
+		if rebuildErr != nil {
+			return report, fmt.Errorf("修复用户 %d 连续签到天数失败: %w", item.UserID, rebuildErr)
+		}
+		repairLog := CheckInRepairLog{
+			UserID:         item.UserID,
+			OperatorID:     operatorID,
+			Action:         "reconcile_streak",
+			Reason:         fmt.Sprintf("签到天数对账修复：%s", item.Reason),
+			PreviousStreak: item.CurrentStreak,
+			NewStreak:      rebuilt.CurrentStreak,
+		}
+		if logErr := db.Create(&repairLog).Error; logErr != nil {
+			return report, fmt.Errorf("写入用户 %d 签到修复审计日志失败: %w", item.UserID, logErr)
+		}
+		report.RepairedCount++
+		report.Details = append(report.Details, item)
+	}
+	return report, nil
 }

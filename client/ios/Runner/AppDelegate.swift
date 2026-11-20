@@ -8,34 +8,156 @@ import WidgetKit
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private static let appGroup = "group.com.sylu.sylulive"
   private static let widgetChannel = "shenliyuan/widget"
+  private static let appIconChannel = "app_icon"
   private static let deepLinkChannel = "shenliyuan/deeplink"
   private static let pushChannel = "shenliyuan/private_message_notifications"
+  private static let maxThemePackageBytes = 48 * 1024 * 1024
 
   private var deepLinkChannelInstance: FlutterMethodChannel?
-  private var pendingDeepLink: String?
+  private var pendingDeepLink: Any?
+  private var themeImportGeneration: Int = 0
+  private let themeImportQueue = DispatchQueue(label: "online.sylulive.theme.import", qos: .userInitiated)
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     if let url = launchOptions?[.url] as? URL {
-      pendingDeepLink = url.absoluteString
+      handleIncomingURL(url)
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  override func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    handleIncomingURL(url)
+    return true
+  }
+
+  override func application(
+    _ application: UIApplication,
+    continue userActivity: NSUserActivity,
+    restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
+  ) -> Bool {
+    if userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+       let webpageURL = userActivity.webpageURL {
+      handleIncomingURL(webpageURL)
+      return true
+    }
+    return super.application(application, continue: userActivity, restorationHandler: restorationHandler)
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     let messenger = engineBridge.applicationRegistrar.messenger()
     registerWidgetChannel(messenger)
+    registerAppIconChannel(messenger)
     registerDeepLinkChannel(messenger)
     registerPushChannel(messenger)
     dispatchPendingDeepLink()
   }
 
+  func handleIncomingURL(_ url: URL) {
+    if url.isFileURL && url.pathExtension.lowercased() == "sltheme" {
+      enqueueIncomingThemeFile(url)
+      return
+    }
+    receiveDeepLink(url.absoluteString)
+  }
+
   func receiveDeepLink(_ rawValue: String) {
     pendingDeepLink = rawValue
     dispatchPendingDeepLink()
+  }
+
+  private func enqueueIncomingThemeFile(_ url: URL) {
+    themeImportGeneration += 1
+    let generation = themeImportGeneration
+    let eventId = "theme-\(UUID().uuidString)"
+    themeImportQueue.async { [weak self] in
+      guard let self else { return }
+      let accessed = url.startAccessingSecurityScopedResource()
+      defer {
+        if accessed {
+          url.stopAccessingSecurityScopedResource()
+        }
+      }
+      let fm = FileManager.default
+      let incomingDir = fm.temporaryDirectory.appendingPathComponent("incoming-theme", isDirectory: true)
+      try? fm.createDirectory(at: incomingDir, withIntermediateDirectories: true)
+      if let items = try? fm.contentsOfDirectory(at: incomingDir, includingPropertiesForKeys: nil) {
+        for item in items {
+          try? fm.removeItem(at: item)
+        }
+      }
+      let dest = incomingDir.appendingPathComponent("\(eventId).sltheme")
+      do {
+        guard let input = InputStream(url: url) else {
+          self.deliverIncomingThemeResult(generation: generation, eventId: eventId, path: nil, error: "permission_denied")
+          return
+        }
+        guard let output = OutputStream(url: dest, append: false) else {
+          self.deliverIncomingThemeResult(generation: generation, eventId: eventId, path: nil, error: "read_failed")
+          return
+        }
+        input.open()
+        output.open()
+        defer {
+          input.close()
+          output.close()
+        }
+        var total = 0
+        var buffer = [UInt8](repeating: 0, count: 16 * 1024)
+        while input.hasBytesAvailable {
+          let read = input.read(&buffer, maxLength: buffer.count)
+          if read < 0 {
+            try? fm.removeItem(at: dest)
+            self.deliverIncomingThemeResult(generation: generation, eventId: eventId, path: nil, error: "read_failed")
+            return
+          }
+          if read == 0 { break }
+          total += read
+          if total > Self.maxThemePackageBytes {
+            try? fm.removeItem(at: dest)
+            self.deliverIncomingThemeResult(generation: generation, eventId: eventId, path: nil, error: "theme_too_large")
+            return
+          }
+          let written = buffer.withUnsafeBufferPointer { ptr -> Int in
+            guard let base = ptr.baseAddress else { return -1 }
+            return output.write(base, maxLength: read)
+          }
+          if written < 0 {
+            try? fm.removeItem(at: dest)
+            self.deliverIncomingThemeResult(generation: generation, eventId: eventId, path: nil, error: "read_failed")
+            return
+          }
+        }
+        self.deliverIncomingThemeResult(generation: generation, eventId: eventId, path: dest.path, error: nil)
+      }
+    }
+  }
+
+  private func deliverIncomingThemeResult(generation: Int, eventId: String, path: String?, error: String?) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      if self.themeImportGeneration != generation {
+        if let path {
+          try? FileManager.default.removeItem(atPath: path)
+        }
+        return
+      }
+      var payload: [String: Any] = [
+        "type": "theme_file",
+        "id": eventId,
+      ]
+      if let path { payload["path"] = path }
+      if let error { payload["error"] = error }
+      self.pendingDeepLink = payload
+      self.dispatchPendingDeepLink()
+    }
   }
 
   private func registerWidgetChannel(_ messenger: FlutterBinaryMessenger) {
@@ -58,6 +180,21 @@ import WidgetKit
           if let exam = arguments["exam_data"] as? String {
             defaults?.set(exam, forKey: "widget_exam_data")
           }
+          if let appPalette = arguments["app_palette"] as? String {
+            defaults?.set(appPalette, forKey: "widget_app_palette_v1")
+          }
+          if let courseTheme = arguments["course_theme"] as? String {
+            defaults?.set(courseTheme, forKey: "widget_course_theme")
+          }
+          if let examTheme = arguments["exam_theme"] as? String {
+            defaults?.set(examTheme, forKey: "widget_exam_theme")
+          }
+          if let courseGlass = arguments["course_frosted_glass"] as? Bool {
+            defaults?.set(courseGlass, forKey: "widget_course_frosted_glass")
+          }
+          if let examGlass = arguments["exam_frosted_glass"] as? Bool {
+            defaults?.set(examGlass, forKey: "widget_exam_frosted_glass")
+          }
           defaults?.set(Date().timeIntervalSince1970, forKey: "widget_updated_at")
           defaults?.synchronize()
         }
@@ -66,6 +203,56 @@ import WidgetKit
           WidgetCenter.shared.reloadTimelines(ofKind: "ExamScheduleWidget")
         }
         result(nil)
+      }
+  }
+
+  private func registerAppIconChannel(_ messenger: FlutterBinaryMessenger) {
+    // 维护者备选源图合入前仅打包默认主图标（nil）。
+    let bundledAlternateIcons: [String: String?] = [
+      "default": nil,
+    ]
+    FlutterMethodChannel(name: Self.appIconChannel, binaryMessenger: messenger)
+      .setMethodCallHandler { call, result in
+        switch call.method {
+        case "setDesired":
+          let args = call.arguments as? [String: Any]
+          let rawId = (args?["id"] as? String) ?? "default"
+          let targetName = bundledAlternateIcons[rawId] ?? nil
+          guard UIApplication.shared.supportsAlternateIcons else {
+            result(nil)
+            return
+          }
+          if UIApplication.shared.alternateIconName == targetName {
+            result(nil)
+            return
+          }
+          UIApplication.shared.setAlternateIconName(targetName) { error in
+            if let error {
+              result(FlutterError(code: "ICON_CHANGE_FAILED", message: error.localizedDescription, details: nil))
+            } else {
+              result(nil)
+            }
+          }
+        case "current":
+          let currentAlt = UIApplication.shared.alternateIconName
+          let activeId = bundledAlternateIcons.first(where: { $0.value == currentAlt })?.key ?? "default"
+          result([
+            "activeId": activeId,
+            "desiredId": activeId,
+            "themed": false,
+            "sdkInt": 0,
+            "pinShortcutSupported": false,
+          ])
+        case "requestPinThemeShortcut":
+          result([
+            "status": "unsupported",
+            "message": "iOS 不支持创建自定义桌面快捷方式",
+          ])
+        case "openShortcutPermissionSettings":
+          result(false)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
       }
   }
 
@@ -84,7 +271,11 @@ import WidgetKit
         result(self.pendingDeepLink)
       case "ackPendingDeepLink":
         let acknowledged = (call.arguments as? [String: Any])?["link"] as? String
-        if acknowledged == nil || acknowledged == self.pendingDeepLink {
+        if acknowledged == nil {
+          self.pendingDeepLink = nil
+        } else if let str = self.pendingDeepLink as? String, str == acknowledged {
+          self.pendingDeepLink = nil
+        } else if let map = self.pendingDeepLink as? [String: Any], (map["id"] as? String) == acknowledged {
           self.pendingDeepLink = nil
         }
         result(nil)

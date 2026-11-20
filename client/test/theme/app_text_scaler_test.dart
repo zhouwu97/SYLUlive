@@ -85,7 +85,7 @@ void main() {
 
   test('组合缩放器可以限制最终最大倍率', () {
     final scaler = AppTextScaler(
-      TextScaler.linear(1.3),
+      const TextScaler.linear(1.3),
       AppFontSizePreset.extraLarge.scaleFactor,
     ).clamp(maxScaleFactor: AppTextScaler.maxScaleFactor);
 

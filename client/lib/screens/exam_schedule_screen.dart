@@ -55,8 +55,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
 
     for (int i = 0; i < count; i++) {
       int year = startYear + i;
-      s.add('${year}-${year + 1}-01');
-      s.add('${year}-${year + 1}-02');
+      s.add('$year-${year + 1}-01');
+      s.add('$year-${year + 1}-02');
     }
 
     if (!s.contains(_currentSemester)) {
@@ -73,11 +73,11 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     final now = DateTime.now();
     final year = now.year;
     if (now.month >= 8) {
-      _currentSemester = '${year}-${year + 1}-01';
+      _currentSemester = '$year-${year + 1}-01';
     } else if (now.month <= 2) {
-      _currentSemester = '${year - 1}-${year}-01';
+      _currentSemester = '${year - 1}-$year-01';
     } else {
-      _currentSemester = '${year - 1}-${year}-02';
+      _currentSemester = '${year - 1}-$year-02';
     }
     _loadExams();
   }
@@ -412,7 +412,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                       decoration: BoxDecoration(
                         color: Theme.of(
                           context,
-                        ).colorScheme.secondaryContainer.withOpacity(0.5),
+                        ).colorScheme.secondaryContainer.withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Column(
@@ -501,7 +501,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                         filled: true,
                         fillColor: Theme.of(
                           context,
-                        ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
                       ),
                     ),
                   ] else ...[
@@ -514,7 +514,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: selectedSemester,
+                      initialValue: selectedSemester,
                       decoration: const InputDecoration(
                         labelText: '归属学期',
                         border: OutlineInputBorder(),
@@ -525,8 +525,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                           )
                           .toList(),
                       onChanged: (val) {
-                        if (val != null)
+                        if (val != null) {
                           setModalState(() => selectedSemester = val);
+                        }
                       },
                     ),
                     const SizedBox(height: 12),
@@ -662,7 +663,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                   semester: _currentSemester,
                                 );
                               }).toList();
-                              if (mounted)
+                              if (mounted) {
                                 setState(() {
                                   _exams.addAll(newExams);
                                   _exams.sort(
@@ -670,6 +671,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                         a.startTime.compareTo(b.startTime),
                                   );
                                 });
+                              }
                               _saveToLocal();
                               Navigator.pop(ctx);
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -722,7 +724,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                               location: locCtrl.text.trim(),
                               semester: selectedSemester,
                             );
-                            if (mounted)
+                            if (mounted) {
                               setState(() {
                                 if (index != null && exam != null) {
                                   _exams[index] = newExam;
@@ -733,6 +735,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                   (a, b) => a.startTime.compareTo(b.startTime),
                                 );
                               });
+                            }
                             _saveToLocal();
                             Navigator.pop(ctx);
                           }
@@ -798,10 +801,11 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
             ),
             onChanged: (String? newValue) {
               if (newValue != null) {
-                if (mounted)
+                if (mounted) {
                   setState(() {
                     _currentSemester = newValue;
                   });
+                }
               }
             },
             items: availableSemesters.map<DropdownMenuItem<String>>((
@@ -982,16 +986,17 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     setState(() => _exams.remove(exam));
                     try {
                       await _examRepository.save(List<ExamModel>.of(_exams));
+                      if (!mounted || !context.mounted) return;
                       _syncWidget();
                     } catch (e) {
                       debugPrint('侧滑删除保存失败: $e');
-                      if (!mounted) return;
+                      if (!mounted || !context.mounted) return;
                       setState(() => _exams.add(exam));
                       ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('删除保存失败，“${exam.name}”已恢复')));
                       return;
                     }
-                    if (!mounted) return;
+                    if (!mounted || !context.mounted) return;
                     ScaffoldMessenger.of(
                       context,
                     ).showSnackBar(SnackBar(content: Text('已删除 ${exam.name}')));

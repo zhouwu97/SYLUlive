@@ -1044,11 +1044,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             children: [
               _buildGraduationCategoryRow(cat, isDark),
               if (!isLast)
-                AppCardDivider(
+                const AppCardDivider(
                   height: 1,
                   indent: 16,
                   endIndent: 16,
-                  color: _border(isDark),
                 ),
             ],
           );
@@ -1356,11 +1355,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             children: [
               _buildYearlyCategoryRow(cat, isDark),
               if (!isLast)
-                AppCardDivider(
+                const AppCardDivider(
                   height: 1,
                   indent: 16,
                   endIndent: 16,
-                  color: _border(isDark),
                 ),
             ],
           );

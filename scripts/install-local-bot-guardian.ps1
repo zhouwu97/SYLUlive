@@ -12,6 +12,12 @@ if (Test-Path -LiteralPath $target) {
     Copy-Item -LiteralPath $target -Destination ($target + '.before-' + (Get-Date -Format 'yyyyMMddHHmmss'))
 }
 Copy-Item -LiteralPath $source -Destination $target
+$serviceSource = Join-Path $PSScriptRoot 'local-bot-services.ps1'
+$serviceTarget = Join-Path $BotRoot 'manage-services.ps1'
+if (Test-Path -LiteralPath $serviceTarget) {
+    Copy-Item -LiteralPath $serviceTarget -Destination ($serviceTarget + '.before-' + (Get-Date -Format 'yyyyMMddHHmmss'))
+}
+Copy-Item -LiteralPath $serviceSource -Destination $serviceTarget
 $taskName = 'SYLUlive-LocalBot-Guardian'
 $arguments = '"' + $target + '" --root "' + $BotRoot + '"'
 $mode = 'scheduled_task'

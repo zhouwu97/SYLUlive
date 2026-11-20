@@ -1,4 +1,3 @@
-import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/features/campus_data/evaluation/evaluation_models.dart';
@@ -143,9 +142,9 @@ void main() {
   group('RadioGroup score extraction (data attributes only)', () {
     test('data-dyf selects highest', () {
       final opts = [
-        RadioOption(value: '1', dataDyf: '2'),
-        RadioOption(value: '2', dataDyf: '10'),
-        RadioOption(value: '3', dataDyf: '6'),
+        const RadioOption(value: '1', dataDyf: '2'),
+        const RadioOption(value: '2', dataDyf: '10'),
+        const RadioOption(value: '3', dataDyf: '6'),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.bestScore, 10);
@@ -154,8 +153,8 @@ void main() {
 
     test('data-score fallback', () {
       final opts = [
-        RadioOption(value: 'a', dataScore: '85'),
-        RadioOption(value: 'b', dataScore: '95'),
+        const RadioOption(value: 'a', dataScore: '85'),
+        const RadioOption(value: 'b', dataScore: '95'),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.bestScore, 95);
@@ -163,8 +162,8 @@ void main() {
 
     test('data-fz fallback', () {
       final opts = [
-        RadioOption(value: 'x', dataFz: '70'),
-        RadioOption(value: 'y', dataFz: '100'),
+        const RadioOption(value: 'x', dataFz: '70'),
+        const RadioOption(value: 'y', dataFz: '100'),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.bestScore, 100);
@@ -172,8 +171,8 @@ void main() {
 
     test('numeric value NEVER used as score', () {
       final opts = [
-        RadioOption(value: '100'), // looks like a score but has no data attrs
-        RadioOption(value: '1'),
+        const RadioOption(value: '100'), // looks like a score but has no data attrs
+        const RadioOption(value: '1'),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.hasScoreAttribute, false);
@@ -183,26 +182,26 @@ void main() {
 
     test('value=1/2/3/4/5 without data attrs → no selection', () {
       final opts = [
-        RadioOption(value: '1'),
-        RadioOption(value: '2'),
-        RadioOption(value: '3'),
-        RadioOption(value: '4'),
-        RadioOption(value: '5'),
+        const RadioOption(value: '1'),
+        const RadioOption(value: '2'),
+        const RadioOption(value: '3'),
+        const RadioOption(value: '4'),
+        const RadioOption(value: '5'),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.bestOption, isNull);
     });
 
     test('value=100 without data attrs → no selection', () {
-      final opts = [RadioOption(value: '50'), RadioOption(value: '100')];
+      final opts = [const RadioOption(value: '50'), const RadioOption(value: '100')];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.bestOption, isNull);
     });
 
     test('data-dyf present → works correctly', () {
       final opts = [
-        RadioOption(value: '1', dataDyf: '10'),
-        RadioOption(value: '2', dataDyf: '8'),
+        const RadioOption(value: '1', dataDyf: '10'),
+        const RadioOption(value: '2', dataDyf: '8'),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.hasScoreAttribute, true);
@@ -212,8 +211,8 @@ void main() {
 
     test('skips disabled options', () {
       final opts = [
-        RadioOption(value: '1', dataDyf: '10'),
-        RadioOption(value: '2', dataDyf: '99', disabled: true),
+        const RadioOption(value: '1', dataDyf: '10'),
+        const RadioOption(value: '2', dataDyf: '99', disabled: true),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.bestScore, 10);
@@ -221,8 +220,8 @@ void main() {
 
     test('all disabled → null', () {
       final opts = [
-        RadioOption(dataDyf: '10', disabled: true),
-        RadioOption(dataDyf: '99', disabled: true),
+        const RadioOption(dataDyf: '10', disabled: true),
+        const RadioOption(dataDyf: '99', disabled: true),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.bestScore, isNull);
@@ -230,7 +229,7 @@ void main() {
     });
 
     test('no score attributes → null', () {
-      final opts = [RadioOption(value: '完全符合'), RadioOption(value: '比较符合')];
+      final opts = [const RadioOption(value: '完全符合'), const RadioOption(value: '比较符合')];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.hasScoreAttribute, false);
       expect(group.bestOption, isNull);
@@ -238,8 +237,8 @@ void main() {
 
     test('isAlreadyCompleted detects checked', () {
       final opts = [
-        RadioOption(value: '1', checked: false),
-        RadioOption(value: '2', checked: true),
+        const RadioOption(value: '1', checked: false),
+        const RadioOption(value: '2', checked: true),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.isAlreadyCompleted, true);
@@ -247,8 +246,8 @@ void main() {
 
     test('isAlreadyCompleted ignores checked+disabled', () {
       final opts = [
-        RadioOption(value: '1', checked: false),
-        RadioOption(value: '2', checked: true, disabled: true),
+        const RadioOption(value: '1', checked: false),
+        const RadioOption(value: '2', checked: true, disabled: true),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.isAlreadyCompleted, false);

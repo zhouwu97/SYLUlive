@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../theme/app_theme_tokens.dart';
 import '../config/water_post_taxonomy.dart';
 import '../models/announcement.dart' as model;
 import '../models/water_section.dart';
 import '../providers/theme_provider.dart';
-import '../theme/app_radius.dart';
+import '../theme/app_palette.dart';
 import 'group_chat_dialog.dart';
 import 'app_card.dart';
 import 'global_background_wrapper.dart';
@@ -69,14 +70,13 @@ class HomeServiceDrawer extends StatelessWidget {
     final themeProvider = context.watch<ThemeProvider>();
     final isCustomMode = !themeProvider.isCleanBackgroundMode;
 
-    final drawerBg =
-        themeProvider.shouldShowCustomBackground
-            ? Colors.transparent
-            : isDark
-                ? const Color(0xFF151A24)
-                : isCustomMode
-                    ? kCleanWarmBackgroundLight.withValues(alpha: 0.96)
-                    : kCleanWarmBackgroundLight;
+    final drawerBg = themeProvider.shouldShowCustomBackground
+        ? Colors.transparent
+        : isDark
+            ? AppThemeTokens.of(context).background
+            : isCustomMode
+                ? AppThemeTokens.of(context).background.withValues(alpha: 0.96)
+                : AppThemeTokens.of(context).background;
 
     final drawer = Container(
       width: drawerWidth,
@@ -163,7 +163,7 @@ class HomeServiceDrawer extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppThemeTokens.of(context).textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -171,7 +171,7 @@ class HomeServiceDrawer extends StatelessWidget {
                   '常用功能与校园通知',
                   style: TextStyle(
                     fontSize: 13,
-                    color: isDark ? Colors.white54 : Colors.black54,
+                    color: AppThemeTokens.of(context).textSecondary,
                   ),
                 ),
               ],
@@ -187,12 +187,10 @@ class HomeServiceDrawer extends StatelessWidget {
     return AppCardSurface(
       height: 50,
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
+        color: AppThemeTokens.of(context).card,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : kCleanWarmCardBorderLight,
+          color: AppThemeTokens.of(context).cardBorder,
         ),
       ),
       child: Row(
@@ -202,8 +200,11 @@ class HomeServiceDrawer extends StatelessWidget {
               icon:
                   checkInError ? Icons.refresh_rounded : Icons.task_alt_rounded,
               iconColor: checkInError
-                  ? const Color(0xFFEF4444)
-                  : (checkedIn ? Colors.grey : const Color(0xFF16A34A)),
+                  ? const Color(0xFFEF4444) // theme: fixed 签到失败、待签到、已签到和未读状态色
+                  : (checkedIn
+                      ? Colors.grey
+                      : const Color(
+                          0xFF16A34A)), // theme: fixed 签到失败、待签到、已签到和未读状态色
               title: checkInError ? '签到重试' : (checkedIn ? '签到记录' : '签到'),
               isDark: isDark,
               isLoading: checkInLoading,
@@ -215,7 +216,8 @@ class HomeServiceDrawer extends StatelessWidget {
           Expanded(
             child: _CompactQuickEntryItem(
               icon: Icons.handyman_outlined,
-              iconColor: const Color(0xFFF97316),
+              iconColor: const Color(
+                  0xFFF97316), // theme: fixed 工具箱、公告、治理、服务和社区版块入口识别色
               title: '工具箱',
               isDark: isDark,
               onTap: onOpenToolbox,
@@ -232,9 +234,7 @@ class HomeServiceDrawer extends StatelessWidget {
       height: 24,
       color: context.watch<ThemeProvider>().frostedGlass
           ? Colors.transparent
-          : isDark
-          ? Colors.white.withValues(alpha: 0.08)
-          : const Color(0xFFE5E7EB),
+          : AppThemeTokens.of(context).divider,
     );
   }
 
@@ -252,12 +252,10 @@ class HomeServiceDrawer extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
+            color: AppThemeTokens.of(context).card,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : kCleanWarmCardBorderLight,
+              color: AppThemeTokens.of(context).cardBorder,
             ),
           ),
           child: Column(
@@ -269,12 +267,14 @@ class HomeServiceDrawer extends StatelessWidget {
                     width: 30,
                     height: 30,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                      color: const Color(0xFF3B82F6) // theme: fixed 公告识别色
+                          .withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(
                       Icons.campaign_outlined,
-                      color: Color(0xFF3B82F6),
+                      color: Color(
+                          0xFF3B82F6), // theme: fixed 工具箱、公告、治理、服务和社区版块入口识别色
                       size: 16,
                     ),
                   ),
@@ -285,7 +285,7 @@ class HomeServiceDrawer extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : Colors.black87,
+                        color: AppThemeTokens.of(context).textPrimary,
                       ),
                     ),
                   ),
@@ -294,7 +294,8 @@ class HomeServiceDrawer extends StatelessWidget {
                       width: 7,
                       height: 7,
                       decoration: const BoxDecoration(
-                        color: Color(0xFFEF4444),
+                        color: Color(
+                            0xFFEF4444), // theme: fixed 签到失败、待签到、已签到和未读状态色
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -303,7 +304,8 @@ class HomeServiceDrawer extends StatelessWidget {
                       '${unreadAnnouncements.length} 条未读',
                       style: const TextStyle(
                         fontSize: 13,
-                        color: Color(0xFFEF4444),
+                        color: Color(
+                            0xFFEF4444), // theme: fixed 签到失败、待签到、已签到和未读状态色
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -311,7 +313,7 @@ class HomeServiceDrawer extends StatelessWidget {
                   Icon(
                     Icons.chevron_right_rounded,
                     size: 20,
-                    color: isDark ? Colors.white38 : Colors.black26,
+                    color: AppThemeTokens.of(context).textTertiary,
                   ),
                 ],
               ),
@@ -321,7 +323,7 @@ class HomeServiceDrawer extends StatelessWidget {
                   '暂无公告',
                   style: TextStyle(
                     fontSize: 13,
-                    color: isDark ? Colors.white54 : Colors.black54,
+                    color: AppThemeTokens.of(context).textSecondary,
                   ),
                 )
               else ...[
@@ -332,7 +334,7 @@ class HomeServiceDrawer extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppThemeTokens.of(context).textPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -342,7 +344,7 @@ class HomeServiceDrawer extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? Colors.white54 : Colors.black54,
+                    color: AppThemeTokens.of(context).textSecondary,
                   ),
                 ),
               ],
@@ -371,7 +373,7 @@ class HomeServiceDrawer extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
-                      color: isDark ? Colors.white : const Color(0xFF111827),
+                      color: AppThemeTokens.of(context).textPrimary,
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -379,9 +381,7 @@ class HomeServiceDrawer extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.06)
-                          : const Color(0xFFF4F6F8),
+                      color: AppThemeTokens.of(context).surfaceMuted,
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -389,8 +389,7 @@ class HomeServiceDrawer extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w800,
-                        color:
-                            isDark ? Colors.white70 : const Color(0xFF6B7280),
+                        color: AppThemeTokens.of(context).textSecondary,
                       ),
                     ),
                   ),
@@ -410,15 +409,14 @@ class HomeServiceDrawer extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color:
-                            isDark ? Colors.white54 : const Color(0xFF6B7280),
+                        color: AppThemeTokens.of(context).textSecondary,
                       ),
                     ),
                     const SizedBox(width: 1),
                     Icon(
                       Icons.chevron_right_rounded,
                       size: 16,
-                      color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
+                      color: AppThemeTokens.of(context).textTertiary,
                     ),
                   ],
                 ),
@@ -441,8 +439,7 @@ class HomeServiceDrawer extends StatelessWidget {
                       height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color:
-                            isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+                        color: AppThemeTokens.of(context).textTertiary,
                       ),
                     ),
                   ),
@@ -500,24 +497,22 @@ class HomeServiceDrawer extends StatelessWidget {
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w800,
-            color: isDark ? Colors.white : const Color(0xFF111827),
+            color: AppThemeTokens.of(context).textPrimary,
           ),
         ),
         const SizedBox(height: 10),
         AppCardSurface(
           decoration: BoxDecoration(
-            color:
-                isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
+            color: AppThemeTokens.of(context).card,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.07)
-                  : kCleanWarmCardBorderLight,
+              color: AppThemeTokens.of(context).cardBorder,
             ),
           ),
           child: _ServiceRow(
             icon: Icons.gavel_rounded,
-            color: const Color(0xFF147C72),
+            color:
+                const Color(0xFF147C72), // theme: fixed 工具箱、公告、治理、服务和社区版块入口识别色
             title: '公众法庭',
             subtitle: '查看陪审任务与社区治理结果',
             isDark: isDark,
@@ -538,26 +533,24 @@ class HomeServiceDrawer extends StatelessWidget {
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w800,
-            color: isDark ? Colors.white : const Color(0xFF111827),
+            color: AppThemeTokens.of(context).textPrimary,
           ),
         ),
         const SizedBox(height: 10),
         AppCardSurface(
           decoration: BoxDecoration(
-            color:
-                isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
+            color: AppThemeTokens.of(context).card,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.07)
-                  : kCleanWarmCardBorderLight,
+              color: AppThemeTokens.of(context).cardBorder,
             ),
           ),
           child: Column(
             children: [
               _ServiceRow(
                 icon: Icons.workspace_premium_outlined,
-                color: const Color(0xFFD97706),
+                color: const Color(
+                    0xFFD97706), // theme: fixed 工具箱、公告、治理、服务和社区版块入口识别色
                 title: '竞赛中心',
                 subtitle: '比赛日历',
                 isDark: isDark,
@@ -566,7 +559,8 @@ class HomeServiceDrawer extends StatelessWidget {
               _buildServiceDivider(isDark),
               _ServiceRow(
                 icon: Icons.assessment_outlined,
-                color: const Color(0xFF5D64C4),
+                color: const Color(
+                    0xFF5D64C4), // theme: fixed 工具箱、公告、治理、服务和社区版块入口识别色
                 title: '成绩查询',
                 subtitle: '查看学期成绩与绩点',
                 isDark: isDark,
@@ -575,7 +569,8 @@ class HomeServiceDrawer extends StatelessWidget {
               _buildServiceDivider(isDark),
               _ServiceRow(
                 icon: Icons.event_note_rounded,
-                color: const Color(0xFF8B5CF6),
+                color: const Color(
+                    0xFF8B5CF6), // theme: fixed 工具箱、公告、治理、服务和社区版块入口识别色
                 title: '考试安排',
                 subtitle: 'AI 一键提取',
                 isDark: isDark,
@@ -584,7 +579,8 @@ class HomeServiceDrawer extends StatelessWidget {
               _buildServiceDivider(isDark),
               _ServiceRow(
                 icon: Icons.feedback_outlined,
-                color: const Color(0xFF0EA5E9),
+                color: const Color(
+                    0xFF0EA5E9), // theme: fixed 工具箱、公告、治理、服务和社区版块入口识别色
                 title: '意见反馈',
                 subtitle: 'Bug 报告与功能建议',
                 isDark: isDark,
@@ -593,7 +589,8 @@ class HomeServiceDrawer extends StatelessWidget {
               _buildServiceDivider(isDark),
               _ServiceRow(
                 icon: Icons.group_rounded,
-                color: const Color(0xFF2563EB),
+                color: const Color(
+                    0xFF2563EB), // theme: fixed 工具箱、公告、治理、服务和社区版块入口识别色
                 title: '加入群聊',
                 subtitle: '扫码进群交流反馈',
                 isDark: isDark,
@@ -607,14 +604,10 @@ class HomeServiceDrawer extends StatelessWidget {
   }
 
   Widget _buildServiceDivider(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 58, right: 14),
+    return const Padding(
+      padding: EdgeInsets.only(left: 58, right: 14),
       child: AppCardDivider(
         height: 1,
-        thickness: 1,
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : const Color(0xFFEFF3F8),
       ),
     );
   }
@@ -669,7 +662,7 @@ class _CompactQuickEntryItem extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white70 : const Color(0xFF20232A),
+                      color: AppThemeTokens.of(context).textPrimary,
                     ),
                   ),
                 ),
@@ -684,7 +677,7 @@ class _CompactQuickEntryItem extends StatelessWidget {
                 width: 6,
                 height: 6,
                 decoration: const BoxDecoration(
-                  color: Color(0xFFEF4444),
+                  color: Color(0xFFEF4444), // theme: fixed 签到失败、待签到、已签到和未读状态色
                   shape: BoxShape.circle,
                 ),
               ),
@@ -713,18 +706,16 @@ class _WaterCategoryMiniItem extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
+        borderRadius: BorderRadius.circular(AppShape.of(context).lg),
         child: AppCardSurface(
           key: ValueKey('drawer-section-${section.slug}'),
           height: 74,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
-            borderRadius: BorderRadius.circular(AppRadius.lg),
+            color: AppThemeTokens.of(context).card,
+            borderRadius: BorderRadius.circular(AppShape.of(context).lg),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.07)
-                  : kCleanWarmCardBorderLight,
+              color: AppThemeTokens.of(context).cardBorder,
             ),
           ),
           child: Row(
@@ -751,7 +742,7 @@ class _WaterCategoryMiniItem extends StatelessWidget {
                         fontSize: 12.5,
                         height: 1.1,
                         fontWeight: FontWeight.w800,
-                        color: isDark ? Colors.white : const Color(0xFF111827),
+                        color: AppThemeTokens.of(context).textPrimary,
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -765,8 +756,7 @@ class _WaterCategoryMiniItem extends StatelessWidget {
                         fontSize: 10.5,
                         height: 1.1,
                         fontWeight: FontWeight.w500,
-                        color:
-                            isDark ? Colors.white54 : const Color(0xFF6B7280),
+                        color: AppThemeTokens.of(context).textSecondary,
                       ),
                     ),
                   ],
@@ -829,7 +819,7 @@ class _ServiceRow extends StatelessWidget {
                         fontSize: 14,
                         height: 1.15,
                         fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : const Color(0xFF111827),
+                        color: AppThemeTokens.of(context).textPrimary,
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -838,8 +828,7 @@ class _ServiceRow extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 11.5,
                         height: 1.15,
-                        color:
-                            isDark ? Colors.white54 : const Color(0xFF8A93A3),
+                        color: AppThemeTokens.of(context).textSecondary,
                       ),
                     ),
                   ],
@@ -848,7 +837,7 @@ class _ServiceRow extends StatelessWidget {
               Icon(
                 Icons.chevron_right_rounded,
                 size: 20,
-                color: isDark ? Colors.white30 : const Color(0xFFB8C0CC),
+                color: AppThemeTokens.of(context).textTertiary,
               ),
             ],
           ),

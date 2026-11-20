@@ -48,7 +48,7 @@ class _SocialListScreenState extends State<SocialListScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('关注与粉丝'),
-        bottom: AppTabBarSurface(
+        bottom: AppTabBarSurface.rounded(
             child: TabBar(
           controller: _tabController,
           tabs: const [
@@ -121,7 +121,8 @@ class _UserListState extends State<_UserList> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _loadData(refresh: _users.isNotEmpty, silent: _users.isNotEmpty);
+      // 空列表缓存也可能已经翻到末页；重新进入时仍需刷新，避免一直 loading。
+      _loadData(refresh: true, silent: _users.isNotEmpty);
     });
   }
 

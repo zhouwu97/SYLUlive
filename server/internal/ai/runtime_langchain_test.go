@@ -340,18 +340,16 @@ func TestLangChainRuntimeCancelPropagatesAndReleasesReservation(t *testing.T) {
 	_, err = runtime.Cancel(context.Background(), 32, run.ID)
 	require.NoError(t, err)
 	waitRunState(t, db, run.ID, models.AIRunStateCancelled)
-	require.Eventually(t, func() bool {
-		select {
-		case <-blocking.cancelled:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
+	// 全量并行测试时调度较慢，等待上限与 waitRunState 对齐；断言内容不变：取消必须传到 RAG 流并退回额度。
+	select {
+	case <-blocking.cancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("取消没有传递到 RAG 流")
+	}
 	require.Eventually(t, func() bool {
 		quota, quotaErr := runtime.Quota(context.Background(), 32)
 		return quotaErr == nil && quota.Remaining == 3
-	}, time.Second, 10*time.Millisecond)
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 func TestLangChainRuntimeRejectsSourceRevokedBeforeFinalValidation(t *testing.T) {

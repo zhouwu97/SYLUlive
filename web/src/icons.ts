@@ -29,6 +29,7 @@ export const paths: Record<string, string> = {
   bookmark: '<path d="M7 3h10a1 1 0 0 1 1 1v17l-6-4-6 4V4a1 1 0 0 1 1-1Z"/>',
   share: '<path d="M12 15V3m-4 4 4-4 4 4M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>',
   more: '<g fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></g>',
+  image: '<rect data-tone x="3" y="3" width="18" height="18" rx="3"/><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 3-3 6 6"/>',
   chevron: '<path d="m7 10 5 5 5-5"/>',
   arrow: '<path d="M20 12H4m6-6-6 6 6 6"/>',
   file: '<path data-tone d="M6 3h8l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 1-2Z"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Zm0 0v5h5M9 12h6m-6 4h4"/>',
@@ -38,7 +39,15 @@ export const paths: Record<string, string> = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5V12l3.5 2"/>',
   trending: '<path data-tone d="M12 2c0 4 8 7 8 12a8 8 0 1 1-16 0c0-4 3-6 4-7 0 3 2 4 3 4-1-4 1-7 1-9Z"/><path d="M12 2c0 4 8 7 8 12a8 8 0 1 1-16 0c0-4 3-6 4-7 0 3 2 4 3 4-1-4 1-7 1-9Z"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  scan: '<path d="M4 8V6a2 2 0 0 1 2-2h2m8 0h2a2 2 0 0 1 2 2v2m0 8v2a2 2 0 0 1-2 2h-2m-8 0H6a2 2 0 0 1-2-2v-2M3 12h18"/>',
+  phone: '<rect data-tone x="6" y="2" width="12" height="20" rx="3"/><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10.5 18.5h3"/>',
   lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.5"/>',
   "eye-off": '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12ZM3 3l18 18"/><circle cx="12" cy="12" r="2.5"/>',
+  // 帖子菜单：不感兴趣、举报、复制链接、编辑、删除
+  block: '<circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/>',
+  flag: '<path data-tone d="M5 4h12l-2.5 4L17 12H5z"/><path d="M5 21V4h12l-2.5 4L17 12H5"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  edit: '<path data-tone d="M4 20h4L19 9l-4-4L4 16z"/><path d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4"/>',
+  trash: '<path d="M4 7h16M9 7V4.5h6V7M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M10 11v6m4-6v6"/>',
 };

@@ -114,7 +114,8 @@ func idempotencyMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 			strings.HasPrefix(c.Request.URL.Path, "/api/oauth/") ||
 			strings.HasPrefix(c.Request.URL.Path, "/api/integrations/") ||
 			strings.HasPrefix(c.Request.URL.Path, "/api/connected-apps") ||
-			(c.Request.Method == http.MethodPost && c.Request.URL.Path == "/api/emoji/submissions") {
+			(c.Request.Method == http.MethodPost && c.Request.URL.Path == "/api/emoji/submissions") ||
+			(c.Request.Method == http.MethodPost && c.Request.URL.Path == "/api/themes/submissions") {
 			c.Next()
 			return
 		}

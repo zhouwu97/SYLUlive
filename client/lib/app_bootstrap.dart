@@ -1,4 +1,6 @@
 import 'features/academic/data/academic_account_config_client.dart';
+import 'features/academic_transfer/academic_transfer_payload.dart';
+import 'screens/academic_transfer/academic_transfer_screen.dart';
 import 'features/emoji/application/emoji_recent_manager.dart';
 import 'dart:async';
 import 'dart:ui';
@@ -66,7 +68,6 @@ import 'screens/notifications_screen.dart';
 import 'screens/feedback/feedback_detail_screen.dart';
 import 'screens/team/team_recruitment_detail_screen.dart';
 import 'services/course_reminder_service.dart';
-import 'theme/app_theme.dart';
 import 'config/api_constants.dart';
 import 'config/private_chat_policy.dart';
 import 'utils/app_navigator.dart';
@@ -103,6 +104,11 @@ import 'widgets/global_background_wrapper.dart';
 import 'widgets/app_scroll_behavior.dart';
 import 'widgets/startup_recovery_screen.dart';
 import 'widgets/required_legal_consent_dialog.dart';
+import 'features/theme_pack/theme_beta_notice.dart';
+import 'features/theme_pack/theme_font_registry.dart';
+import 'features/theme_pack/theme_import_screen.dart';
+import 'features/theme_pack/theme_store_screen.dart';
+import 'features/theme_pack/theme_trial_banner.dart';
 import 'platform/contracts/preferences_store.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
@@ -440,10 +446,13 @@ Future<void> appBootstrap() async {
         );
       }
 
-      // 在创建 ThemeProvider 前预热偏好存储，使首帧直接采用用户的主题、壁纸
-      // 与字体档位。失败时 ThemeProvider 仍会异步回退，不阻断应用启动。
+      // 在创建 ThemeProvider 前预热偏好存储并预加载主题自定义字体，使首帧直接采用用户的主题、壁纸、字体与字号档位。
       try {
-        await AppPreferencesStore.getInstance();
+        final prewarmedPrefs = await AppPreferencesStore.getInstance();
+        await ThemeFontRegistry.preloadFromPreferences(
+          prewarmedPrefs,
+          appearanceKey: ThemeProvider.appearanceKey,
+        );
       } catch (error) {
         debugPrint('预热偏好存储失败: $error');
       }
@@ -738,6 +747,21 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
 
   _lastOpenedNotificationTarget = target;
   _lastOpenedNotificationAt = now;
+
+  // 回退到根路由会连带关闭校园服务侧栏等中间路由，真机误报时靠这条日志定位触发源。
+  DiagnosticLogService.instance
+      .record(
+        level: 'info',
+        source: '导航',
+        type: '通知跳转回退导航栈',
+        summary: '通知打开前清理路由栈: type=${target.type}',
+        detail: '',
+        eventCode: 'navigation_notification_stack_reset',
+        category: 'navigation',
+        operation: 'popUntil',
+        result: 'success',
+      )
+      .ignore();
 
   navigator.popUntil((route) => route.isFirst);
 
@@ -1650,6 +1674,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   static const _channel = MethodChannel('shenliyuan/deeplink');
   AuthProvider? _authProvider;
   String? _pendingTeamDeepLink;
+  Map<String, dynamic>? _pendingThemeFilePayload;
   bool _retryScheduled = false;
   bool _consumingDeepLink = false;
 
@@ -1673,8 +1698,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     // 监听原生端主动推送的深度链接（瞬间响应，避免打断动画）
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onDeepLink') {
-        final uri = call.arguments as String?;
-        await _consumeDeepLink(uri);
+        await _consumeDeepLinkPayload(call.arguments);
       }
     });
   }
@@ -1697,25 +1721,38 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   }
 
   void _retryPendingTeamDeepLink() {
-    if (!mounted || _pendingTeamDeepLink == null) return;
+    if (!mounted ||
+        (_pendingTeamDeepLink == null && _pendingThemeFilePayload == null)) {
+      return;
+    }
     _schedulePendingTeamDeepLinkRetry();
   }
 
   void _schedulePendingTeamDeepLinkRetry() {
-    if (_retryScheduled || _pendingTeamDeepLink == null || !mounted) return;
+    if (_retryScheduled ||
+        (_pendingTeamDeepLink == null && _pendingThemeFilePayload == null) ||
+        !mounted) {
+      return;
+    }
     _retryScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _retryScheduled = false;
+      if (!mounted) return;
+      final pendingTheme = _pendingThemeFilePayload;
+      if (pendingTheme != null) {
+        await _consumeDeepLinkPayload(pendingTheme);
+      }
       final pending = _pendingTeamDeepLink;
-      if (!mounted || pending == null) return;
-      await _consumeDeepLink(pending);
+      if (mounted && pending != null) {
+        await _consumeDeepLink(pending);
+      }
     });
   }
 
   Future<void> _checkDeepLink() async {
     try {
-      final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
-      await _consumeDeepLink(uri);
+      final payload = await _channel.invokeMethod<Object?>('getPendingDeepLink');
+      await _consumeDeepLinkPayload(payload);
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
       DiagnosticLogService.instance.record(
@@ -1732,6 +1769,59 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     }
   }
 
+  Future<void> _consumeDeepLinkPayload(Object? payload) async {
+    if (payload == null || !mounted) return;
+    if (payload is String) {
+      await _consumeDeepLink(payload);
+      return;
+    }
+    if (payload is Map) {
+      final map = payload.map((key, value) => MapEntry('$key', value));
+      if (map['type'] == 'theme_file') {
+        await _consumeThemeFilePayload(map);
+      }
+    }
+  }
+
+  Future<void> _consumeThemeFilePayload(Map<String, dynamic> map) async {
+    if (!mounted || _consumingDeepLink) return;
+    _consumingDeepLink = true;
+    try {
+      final navigator = appNavigatorKey.currentState;
+      if (navigator == null) {
+        _pendingThemeFilePayload = map;
+        _schedulePendingTeamDeepLinkRetry();
+        return;
+      }
+      if (_pendingThemeFilePayload?['id'] == map['id']) {
+        _pendingThemeFilePayload = null;
+      }
+      final eventId =
+          (map['id'] as String?) ?? '${DateTime.now().microsecondsSinceEpoch}';
+      final request = ThemeIncomingCoordinator.instance.accept(
+        eventId: eventId,
+        filePath: map['path'] as String?,
+        errorCode: map['error'] as String?,
+      );
+      if (!ThemeImportScreen.isIncomingRouteActive) {
+        unawaited(
+          navigator.push(
+            MaterialPageRoute<bool>(
+              builder: (_) => ThemeImportScreen(incomingRequest: request),
+            ),
+          ),
+        );
+      }
+      try {
+        await _channel.invokeMethod<void>('ackPendingDeepLink', {'link': eventId});
+      } catch (error) {
+        debugPrint('主题文件深链确认失败: $error');
+      }
+    } finally {
+      _consumingDeepLink = false;
+    }
+  }
+
   Future<void> _consumeDeepLink(String? uri) async {
     if (uri == null || !mounted || _consumingDeepLink) return;
     _consumingDeepLink = true;
@@ -1740,7 +1830,9 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
       if (result == _DeepLinkHandlingResult.deferred) {
         // Navigator 尚未就绪或会话门禁尚未通过时，组队链接必须留在 Dart
         // 层等待下一次状态变化；此时不能 ACK 原生 pending link。
-        if (TeamShareLink.parseRecruitmentId(uri) != null) {
+        if (TeamShareLink.parseRecruitmentId(uri) != null ||
+            ThemeShareLink.parseFamilyId(uri) != null ||
+            AcademicTransferLink.tryParse(uri) != null) {
           _pendingTeamDeepLink = uri;
         }
         return;
@@ -1796,6 +1888,20 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         uri == 'campus://timetable' ||
         uri.startsWith('sylulive://schedule')) {
       if (_isLoginRouteVisible()) return _DeepLinkHandlingResult.deferred;
+      // 该分支回退后停留首页，侧栏等中间路由会被一并关闭，记录触发源便于真机定位。
+      DiagnosticLogService.instance
+          .record(
+            level: 'info',
+            source: '导航',
+            type: '小组件深链回退导航栈',
+            summary: '课表小组件/深链触发回退到首页: $uri',
+            detail: '',
+            eventCode: 'navigation_widget_link_stack_reset',
+            category: 'navigation',
+            operation: 'popUntil',
+            result: 'success',
+          )
+          .ignore();
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
       return _DeepLinkHandlingResult.handled;
@@ -1813,16 +1919,55 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
           ? _DeepLinkHandlingResult.handled
           : _DeepLinkHandlingResult.unhandled;
     }
+    // 网页课表的同步二维码：系统相机扫码打开落地页后，经「在 App 中打开」回到这里。
+    final transferLink = AcademicTransferLink.tryParse(uri);
+    if (transferLink != null) {
+      final auth = context.read<AuthProvider>();
+      if (_isLoginRouteVisible() ||
+          !auth.isLoggedIn ||
+          !(auth.user?.legalConsentsActive ?? false)) {
+        _pendingTeamDeepLink = uri;
+        return _DeepLinkHandlingResult.deferred;
+      }
+      appNavigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (_) => AcademicTransferScreen(
+            dio: getSharedDio(),
+            initialLink: transferLink,
+          ),
+        ),
+      );
+      return _DeepLinkHandlingResult.handled;
+    }
     final postUri = Uri.tryParse(uri);
     if (postUri?.scheme == 'sylulive' &&
         postUri?.host == 'post' &&
         postUri?.pathSegments.length == 1) {
       final postId = int.tryParse(postUri!.pathSegments.single);
-      if (postId == null || postId <= 0)
+      if (postId == null || postId <= 0) {
         return _DeepLinkHandlingResult.unhandled;
+      }
       if (_isLoginRouteVisible()) return _DeepLinkHandlingResult.deferred;
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => PostDetailScreen(postId: postId)),
+      );
+      return _DeepLinkHandlingResult.handled;
+    }
+    final themeFamilyId = ThemeShareLink.parseFamilyId(uri);
+    if (themeFamilyId != null) {
+      final auth = context.read<AuthProvider>();
+      if (_isLoginRouteVisible() ||
+          !auth.isLoggedIn ||
+          !(auth.user?.legalConsentsActive ?? false)) {
+        _pendingTeamDeepLink = uri;
+        return _DeepLinkHandlingResult.deferred;
+      }
+      final navigator = appNavigatorKey.currentState;
+      if (navigator == null) return _DeepLinkHandlingResult.deferred;
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => ThemeDetailScreen(familyId: themeFamilyId),
+        ),
       );
       return _DeepLinkHandlingResult.handled;
     }
@@ -1911,7 +2056,7 @@ class _AppContent extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      theme: AppTheme.lightTheme.copyWith(
+      theme: themeProvider.buildAppTheme(Brightness.light).copyWith(
         pageTransitionsTheme: PageTransitionsTheme(
           builders: {
             TargetPlatform.android: themeProvider.predictiveBack
@@ -1919,13 +2064,12 @@ class _AppContent extends StatelessWidget {
                 : const FadeUpwardsPageTransitionsBuilder(),
           },
         ),
-        // 简洁模式下把全局 Scaffold 底色统一为暖白，覆盖所有走主题默认底色的页面。
-        // 自定义背景模式与暗色模式不受影响（null = 沿用 ColorScheme 默认）。
-        scaffoldBackgroundColor: themeProvider.isCleanBackgroundMode
+        // 没有主题配色时保留简洁模式暖白；其余路径沿用生成的 ThemeData。
+        scaffoldBackgroundColor: !themeProvider.hasThemeColors && themeProvider.isCleanBackgroundMode
             ? kCleanWarmBackgroundLight
             : null,
       ),
-      darkTheme: AppTheme.darkTheme.copyWith(
+      darkTheme: themeProvider.buildAppTheme(Brightness.dark).copyWith(
         pageTransitionsTheme: PageTransitionsTheme(
           builders: {
             TargetPlatform.android: themeProvider.predictiveBack
@@ -1948,7 +2092,9 @@ class _AppContent extends StatelessWidget {
           data: mediaQuery.copyWith(textScaler: appTextScaler),
           child: AppUpdateGate(
             navigatorKey: appNavigatorKey,
-            child: child ?? const SizedBox.shrink(),
+            child: ThemeTrialBannerHost(
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
       },
@@ -2233,10 +2379,11 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           _startupPlanReady = true;
         }
 
-        return HomeScreen(
+        final home = HomeScreen(
           initialTab: _startupPlan!.rootTabIndex,
           initialDeepPage: _startupPlan!.deepPage,
         );
+        return ThemeBetaNotice.enabled ? ThemeBetaNotice(child: home) : home;
       },
     );
   }

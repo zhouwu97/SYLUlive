@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../campus/campus_theme.dart';
+import '../app_card.dart';
 
 /// 标准设置列表项组件 (恢复舒适高档间距与图标尺寸)
 class SettingsTile extends StatelessWidget {
@@ -38,20 +40,20 @@ class SettingsTile extends StatelessWidget {
 
     final effectiveIconColor = danger
         ? CampusTheme.red
-        : (iconColor ??
-            (isDark ? const Color(0xFF7ED6C5) : CampusTheme.primary));
+        : (iconColor ?? (AppThemeTokens.of(context).primary));
 
     final effectiveIconBgColor = danger
         ? CampusTheme.red.withValues(alpha: 0.1)
         : (iconBgColor ??
             (isDark
-                ? const Color(0xFF7ED6C5).withValues(alpha: 0.15)
-                : CampusTheme.primaryLight));
+                ? AppThemeTokens.of(context).primary.withValues(alpha: 0.15)
+                : AppThemeTokens.of(context).primaryContainer));
 
     final titleColor =
-        danger ? CampusTheme.red : (isDark ? Colors.white : CampusTheme.text);
+        danger ? CampusTheme.red : (AppThemeTokens.of(context).textPrimary);
 
-    final subtitleColor = isDark ? Colors.white60 : CampusTheme.subText;
+    final subtitleColor = appContentSecondaryColor(
+        context, AppThemeTokens.of(context).textSecondary);
 
     Widget? leadingWidget;
     if (customIcon != null) {
@@ -77,9 +79,13 @@ class SettingsTile extends StatelessWidget {
       trailingWidget = Icon(
         Icons.chevron_right_rounded,
         size: 20,
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.3)
-            : CampusTheme.subText.withValues(alpha: 0.5),
+        color: appContentSecondaryColor(
+            context,
+            isDark
+                ? Colors.white.withValues(alpha: 0.3)
+                : AppThemeTokens.of(context)
+                    .textSecondary
+                    .withValues(alpha: 0.5)),
       );
     }
 

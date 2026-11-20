@@ -95,17 +95,19 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
         ],
       ),
     );
+    final name = nameCtrl.text.trim();
+    final department = deptCtrl.text.trim();
     nameCtrl.dispose();
     deptCtrl.dispose();
-    if (ok != true || nameCtrl.text.trim().isEmpty) return;
+    if (ok != true || name.isEmpty || !mounted) return;
 
     try {
       final dio = context.read<AuthProvider>().dio;
       await dio.post(
         '/teachers',
         data: {
-          'name': nameCtrl.text.trim(),
-          'department': deptCtrl.text.trim(),
+          'name': name,
+          'department': department,
         },
       );
       if (mounted) {
@@ -122,10 +124,11 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
       final msg = data is Map
           ? (data['message'] ?? data['error'])?.toString() ?? '添加失败'
           : '添加失败';
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(msg), backgroundColor: Colors.red),
         );
+      }
     }
   }
 
@@ -150,7 +153,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
       ),
     );
     commentCtrl.dispose();
-    if (rating == null) return;
+    if (rating == null || !mounted) return;
 
     try {
       final dio = context.read<AuthProvider>().dio;
@@ -169,10 +172,11 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
       final msg = data is Map
           ? (data['message'] ?? data['error'])?.toString() ?? '评价失败'
           : '评价失败';
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(msg), backgroundColor: Colors.red),
         );
+      }
     }
   }
 
@@ -257,9 +261,9 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.red.withOpacity(0.12),
+        color: Colors.red.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red.withOpacity(0.25)),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.25)),
       ),
       child: Row(
         children: [
@@ -281,8 +285,9 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   }
 
   Widget _buildRankTab(bool isDark) {
-    if (_teachers.isEmpty)
+    if (_teachers.isEmpty) {
       return _empty('暂无教师', '点击右上角 + 添加教师', Icons.school, isDark);
+    }
     return RefreshIndicator(
       onRefresh: _loadData,
       child: ListView.builder(
@@ -350,7 +355,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
                                 vertical: 1,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.orange.withOpacity(0.15),
+                                color: Colors.orange.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: const Text(
@@ -381,12 +386,12 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
                   children: [
                     Text(
                       '👍 $pos',
-                      style: TextStyle(fontSize: 12, color: Colors.green),
+                      style: const TextStyle(fontSize: 12, color: Colors.green),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       '👎 $neg',
-                      style: TextStyle(fontSize: 12, color: Colors.red),
+                      style: const TextStyle(fontSize: 12, color: Colors.red),
                     ),
                   ],
                 ),
@@ -454,7 +459,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
                 s,
                 style: TextStyle(
                   fontSize: 14,
-                  color: d ? Colors.white.withOpacity(0.4) : Colors.grey[400],
+                  color: d ? Colors.white.withValues(alpha: 0.4) : Colors.grey[400],
                 ),
               ),
             ],

@@ -134,7 +134,6 @@ class ErkeParser {
     final categories = <ErkeRequirementCategory>[];
 
     double requiredTotal = 0;
-    double earnedTotal = 0;
 
     for (final code in ['A', 'B', 'C', 'D', 'E']) {
       final name = _categoryLabels[code]!;
@@ -142,7 +141,6 @@ class ErkeParser {
       final earned = _requireSpanValue(doc, 'Count${code}1');
 
       requiredTotal += required;
-      earnedTotal += earned;
 
       categories.add(ErkeRequirementCategory(
         code: code,
@@ -197,8 +195,6 @@ class ErkeParser {
     final categories = <ErkeYearlyCategory>[];
 
     double requiredTotal = 0;
-    double yearEarnedTotal = 0;
-    double cumulativeTotal = 0;
 
     for (final code in ['A', 'B', 'C', 'D', 'E']) {
       final name = _categoryLabels[code]!;
@@ -207,8 +203,6 @@ class ErkeParser {
       final cumulative = _requireSpanValue(doc, 'Count${code}Sum');
 
       requiredTotal += required;
-      yearEarnedTotal += yearEarned;
-      cumulativeTotal += cumulative;
 
       categories.add(ErkeYearlyCategory(
         code: code,

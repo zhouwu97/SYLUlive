@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -133,38 +134,26 @@ func (s *IntegrationAuthService) ownerTx(ctx context.Context, owner uint, fn fun
 	})
 }
 
-// 只接受服务端当前可核验的身份；自报配置、旧投影与历史迁移不在集成准入中。
-func (s *IntegrationAuthService) eligible(tx *gorm.DB, user models.User, expected *models.IntegrationBinding) (models.AcademicIdentityBinding, error) {
-	var academic models.AcademicIdentityBinding
+// QQ 连接归属于本站账号；学校身份和学校连接状态不决定基础授权是否有效。
+func (s *IntegrationAuthService) eligible(tx *gorm.DB, user models.User) error {
 	if user.AccountStatus != "active" || user.LegalConsentRevokedAt != nil {
-		return academic, integrationError("account_unavailable", 403)
+		return integrationError("account_unavailable", 403)
 	}
 	state, err := models.LegalConsentStateForUser(tx, user)
 	if err != nil {
-		return academic, err
+		return err
 	}
 	if state != models.LegalConsentStateActive {
-		return academic, integrationError("legal_consent_required", 403)
+		return integrationError("legal_consent_required", 403)
 	}
-	query := tx.Where("user_id = ? AND verification_method = ? AND verification_version IN ? AND verified_at > ?", user.ID, models.AcademicVerificationMethodSchoolProfile, []string{"v1", "undergraduate-preverify-v1"}, time.Time{})
-	if expected != nil {
-		query = query.Where("id = ? AND binding_version = ?", expected.AcademicBindingID, expected.AcademicVersion)
-	}
-	if err := query.Order("id DESC").Take(&academic).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return academic, integrationError("academic_verification_required", 403)
-		}
-		return academic, err
-	}
-	return academic, nil
+	return nil
 }
 func (s *IntegrationAuthService) Eligible(ctx context.Context, owner uint) error {
 	var user models.User
 	if err := s.DB.WithContext(ctx).First(&user, owner).Error; err != nil {
 		return err
 	}
-	_, err := s.eligible(s.DB.WithContext(ctx), user, nil)
-	return err
+	return s.eligible(s.DB.WithContext(ctx), user)
 }
 
 func (s *IntegrationAuthService) CheckBinding(ctx context.Context, b models.IntegrationBinding) error {
@@ -249,7 +238,7 @@ func (s *IntegrationAuthService) LookupConsent(ctx context.Context, owner uint, 
 		return result, integrationError("invalid_user_code", 422)
 	}
 	err := s.ownerTx(ctx, owner, func(tx *gorm.DB, user models.User) error {
-		if _, err := s.eligible(tx, user, nil); err != nil {
+		if err := s.eligible(tx, user); err != nil {
 			return err
 		}
 		var row models.IntegrationDeviceRequest
@@ -308,8 +297,7 @@ func (s *IntegrationAuthService) DecideConsent(ctx context.Context, owner uint, 
 		if !input.Allow {
 			return tx.Model(&row).Updates(map[string]interface{}{"state": "denied", "nonce_hash": ""}).Error
 		}
-		academic, err := s.eligible(tx, user, nil)
-		if err != nil {
+		if err := s.eligible(tx, user); err != nil {
 			return err
 		}
 		scopes, err := integrationScopes(strings.Join(input.Scopes, " "))
@@ -346,7 +334,7 @@ func (s *IntegrationAuthService) DecideConsent(ctx context.Context, owner uint, 
 		if other > 0 {
 			return integrationError("installation_conflict", 409)
 		}
-		result = models.IntegrationBinding{ID: uuid.NewString(), OwnerID: owner, InstallationID: row.InstallationID, InstallationName: row.InstallationName, State: "active", Scopes: scopes, Epoch: 1, AcademicBindingID: academic.ID, AcademicVersion: academic.BindingVersion, TokenVersion: user.TokenVersion, CreatedAt: s.Now()}
+		result = models.IntegrationBinding{ID: uuid.NewString(), OwnerID: owner, InstallationID: row.InstallationID, InstallationName: row.InstallationName, State: "active", Scopes: scopes, Epoch: 1, TokenVersion: user.TokenVersion, CreatedAt: s.Now()}
 		if err = tx.Create(&result).Error; err != nil {
 			return err
 		}
@@ -430,8 +418,7 @@ func (s *IntegrationAuthService) bindingValid(tx *gorm.DB, b models.IntegrationB
 	if b.State != "active" || b.TokenVersion != user.TokenVersion {
 		return integrationError("invalid_token", 401)
 	}
-	_, err := s.eligible(tx, user, &b)
-	return err
+	return s.eligible(tx, user)
 }
 func (s *IntegrationAuthService) Authenticate(ctx context.Context, raw string) (models.IntegrationBinding, error) {
 	var b models.IntegrationBinding
@@ -463,6 +450,10 @@ func (s *IntegrationAuthService) issueTokens(tx *gorm.DB, b models.IntegrationBi
 	if err != nil {
 		return result, err
 	}
+	return s.persistTokens(tx, b, absolute, access, refresh)
+}
+
+func (s *IntegrationAuthService) persistTokens(tx *gorm.DB, b models.IntegrationBinding, absolute time.Time, access, refresh string) (IntegrationTokenResponse, error) {
 	now := s.Now()
 	accessExpiry := now.Add(10 * time.Minute)
 	refreshExpiry := now.Add(7 * 24 * time.Hour)
@@ -476,8 +467,8 @@ func (s *IntegrationAuthService) issueTokens(tx *gorm.DB, b models.IntegrationBi
 		{ID: uuid.NewString(), BindingID: b.ID, TokenHash: IntegrationSecretHash(access), Kind: "access", Epoch: b.Epoch, ExpiresAt: accessExpiry, AbsoluteExpiresAt: absolute, CreatedAt: now},
 		{ID: uuid.NewString(), BindingID: b.ID, TokenHash: IntegrationSecretHash(refresh), Kind: "refresh", Epoch: b.Epoch, ExpiresAt: refreshExpiry, AbsoluteExpiresAt: absolute, CreatedAt: now},
 	}
-	if err = tx.Create(&rows).Error; err != nil {
-		return result, err
+	if err := tx.Create(&rows).Error; err != nil {
+		return IntegrationTokenResponse{}, err
 	}
 	return IntegrationTokenResponse{access, "Bearer", int(accessExpiry.Sub(now).Seconds()), refresh, b.Scopes}, nil
 }
@@ -550,7 +541,17 @@ func (s *IntegrationAuthService) ExchangeDevice(ctx context.Context, raw string)
 }
 
 func (s *IntegrationAuthService) Refresh(ctx context.Context, raw string) (IntegrationTokenResponse, error) {
+	return s.RefreshWithRequest(ctx, raw, "")
+}
+
+// 同一次刷新在响应丢失后可恢复结果，数据库只保存请求和凭据摘要。
+func (s *IntegrationAuthService) RefreshWithRequest(ctx context.Context, raw, requestID string) (IntegrationTokenResponse, error) {
 	var result IntegrationTokenResponse
+	if requestID != "" {
+		if _, err := uuid.Parse(requestID); err != nil {
+			return result, integrationError("invalid_request", 400)
+		}
+	}
 	var snapshot models.IntegrationCredential
 	var b models.IntegrationBinding
 	if !strings.HasPrefix(raw, "sr_") || s.DB.WithContext(ctx).Where("token_hash = ? AND kind = ?", IntegrationSecretHash(raw), "refresh").Take(&snapshot).Error != nil || s.DB.WithContext(ctx).First(&b, "id = ?", snapshot.BindingID).Error != nil {
@@ -570,6 +571,11 @@ func (s *IntegrationAuthService) Refresh(ctx context.Context, raw string) (Integ
 			return nil
 		}
 		if cred.UsedAt != nil {
+			if requestID != "" && cred.RefreshRequestHash == IntegrationSecretHash(requestID) {
+				var err error
+				result, err = s.recoverRefresh(tx, b, raw, requestID)
+				return err
+			}
 			outcome = integrationError("invalid_grant", 400)
 			return s.revokeTx(tx, b)
 		}
@@ -579,17 +585,58 @@ func (s *IntegrationAuthService) Refresh(ctx context.Context, raw string) (Integ
 			return nil
 		}
 		now := s.Now()
-		if err := tx.Model(&cred).Update("used_at", now).Error; err != nil {
+		updates := map[string]interface{}{"used_at": now}
+		if requestID != "" {
+			updates["refresh_request_hash"] = IntegrationSecretHash(requestID)
+		}
+		if err := tx.Model(&cred).Updates(updates).Error; err != nil {
 			return err
 		}
 		var err error
-		result, err = s.issueTokens(tx, b, cred.AbsoluteExpiresAt)
+		if requestID == "" {
+			result, err = s.issueTokens(tx, b, cred.AbsoluteExpiresAt)
+		} else {
+			access, refresh := integrationRefreshSecrets(raw, requestID)
+			result, err = s.persistTokens(tx, b, cred.AbsoluteExpiresAt, access, refresh)
+		}
 		return err
 	})
 	if err != nil {
 		return result, err
 	}
 	return result, outcome
+}
+
+func (s *IntegrationAuthService) recoverRefresh(tx *gorm.DB, b models.IntegrationBinding, raw, requestID string) (IntegrationTokenResponse, error) {
+	access, refresh := integrationRefreshSecrets(raw, requestID)
+	var successor models.IntegrationCredential
+	if err := tx.Where("token_hash = ? AND kind = ? AND used_at IS NULL AND expires_at > ?", IntegrationSecretHash(refresh), "refresh", s.Now()).Take(&successor).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return IntegrationTokenResponse{}, integrationError("invalid_grant", 400)
+		}
+		return IntegrationTokenResponse{}, err
+	}
+	expires := s.Now().Add(10 * time.Minute)
+	if expires.After(successor.AbsoluteExpiresAt) {
+		expires = successor.AbsoluteExpiresAt
+	}
+	update := tx.Model(&models.IntegrationCredential{}).Where("token_hash = ? AND binding_id = ? AND kind = ?", IntegrationSecretHash(access), b.ID, "access").Update("expires_at", expires)
+	if update.Error != nil {
+		return IntegrationTokenResponse{}, update.Error
+	}
+	if update.RowsAffected != 1 {
+		return IntegrationTokenResponse{}, integrationError("invalid_grant", 400)
+	}
+	return IntegrationTokenResponse{access, "Bearer", int(expires.Sub(s.Now()).Seconds()), refresh, b.Scopes}, nil
+}
+
+func integrationRefreshSecrets(raw, requestID string) (string, string) {
+	derive := func(kind string) string {
+		mac := hmac.New(sha256.New, []byte(raw))
+		mac.Write([]byte("sylulive-refresh-v1/" + kind + "/" + requestID))
+		return kind + "_" + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	}
+	return derive("sa"), derive("sr")
 }
 
 func (s *IntegrationAuthService) ListBindings(ctx context.Context, owner uint) ([]models.IntegrationBinding, error) {

@@ -4,6 +4,8 @@ import 'package:shenliyuan/screens/user_home_screen.dart';
 import '../helpers/golden_test_app.dart';
 import '../helpers/golden_viewport.dart';
 import '../helpers/load_test_fonts.dart';
+import '../helpers/mock_public_image_http.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,11 +14,14 @@ import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
+import 'package:shenliyuan/providers/social_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/shuitie_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
+import 'package:shenliyuan/widgets/community_post_card.dart';
+import 'package:shenliyuan/widgets/global_background_wrapper.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
@@ -54,19 +59,48 @@ Map<String, dynamic> _post(int id, String title, DateTime createdAt) => {
 
 /// `/posts` 按 `sort` 返回不同数据：`time` 返回调用方传入的顺序，
 /// 其余 sort 返回空列表。这样能证明客户端没有对 time 结果做二次加工。
-Dio _feedDio({required List<Map<String, dynamic>> timePosts}) {
+Dio _feedDio({
+  required List<Map<String, dynamic>> timePosts,
+  bool authorSucceeds = false,
+  bool authorCover = true,
+}) {
   final dio = Dio();
   dio.interceptors.add(
     InterceptorsWrapper(
       onRequest: (options, handler) {
-        if (options.path == '/posts/100') {
+        if (authorSucceeds &&
+            (options.path == '/user/2' ||
+                options.path == '/user/2/posts' ||
+                options.path == '/user/2/market-posts')) {
+          handler.resolve(Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: options.path == '/user/2'
+                ? {
+                    'id': 2,
+                    'nickname': '分栏作者',
+                    'student_id': 'test2',
+                    'background': authorCover
+                        ? 'https://example.test/uploads/author-cover.jpg'
+                        : ''
+                  }
+                : options.path.endsWith('/market-posts')
+                    ? {'items': [], 'total': 0, 'sold': 0}
+                    : [_post(201, '个人主页测试帖', DateTime(2026, 10, 8))],
+          ));
+          return;
+        }
+        if (options.path == '/posts/100' || options.path == '/posts/201') {
           handler.resolve(Response(
               requestOptions: options,
               statusCode: 200,
-              data: _post(100, '平板测试帖 100', DateTime(2026, 10, 8))));
+              data: options.path.endsWith('/201')
+                  ? _post(201, '个人主页测试帖', DateTime(2026, 10, 8))
+                  : _post(100, '平板测试帖 100', DateTime(2026, 10, 8))));
           return;
         }
-        if (options.path == '/posts/100/replies') {
+        if (options.path == '/posts/100/replies' ||
+            options.path == '/posts/201/replies') {
           handler.resolve(Response(
               requestOptions: options,
               statusCode: 200,
@@ -106,6 +140,8 @@ Future<_FeedTestPage> _pumpFeed(
   WidgetTester tester, {
   required List<Map<String, dynamic>> timePosts,
   bool dark = false,
+  bool authorSucceeds = false,
+  bool authorCover = true,
 }) async {
   AppPreferencesStore.setMockInitialValues({});
   tester.view.devicePixelRatio = 1;
@@ -113,7 +149,8 @@ Future<_FeedTestPage> _pumpFeed(
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
-  final dio = _feedDio(timePosts: timePosts);
+  final dio = _feedDio(timePosts: timePosts, authorSucceeds: authorSucceeds,
+      authorCover: authorCover);
   final auth = _FeedAuthProvider(client: dio);
   final postProvider = PostProvider(dio, enableCache: false);
   final messageProvider = MessageProvider(dio);
@@ -128,6 +165,7 @@ Future<_FeedTestPage> _pumpFeed(
       providers: [
         ChangeNotifierProvider<AuthProvider>.value(value: auth),
         ChangeNotifierProvider<PostProvider>.value(value: postProvider),
+        ChangeNotifierProvider(create: (_) => SocialProvider(dio)),
         ChangeNotifierProvider<MessageProvider>.value(value: messageProvider),
         ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
         ChangeNotifierProvider<WaterSectionProvider>.value(
@@ -180,6 +218,44 @@ bool auditFeedRail = false;
 Size auditFeedSize = const Size(840, 1024);
 
 void main() {
+  testWidgets('信息流个人主页点帖留在右栏，收窄后逐层返回主页和列表', (tester) async {
+    auditFeedRail = true;
+    auditFeedSize = GoldenViewports.tabletLandscape1280x800;
+    final page = await _pumpFeed(tester,
+        authorSucceeds: true,
+        authorCover: false,
+        timePosts: [_post(100, '平板测试帖 100', DateTime(2026, 10, 8))]);
+    await tester.tap(find.text('最新').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('平板测试帖 100').first);
+    await tester.pumpAndSettle();
+    tester.widget<PostDetailScreen>(find.byType(PostDetailScreen)).onAuthorTap!(2);
+    await tester.pumpAndSettle();
+    final profileState = tester.state(find.byType(UserHomeScreen));
+    await tester.tap(find.text('个人主页测试帖'));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.byType(PostDetailScreen)).dx, 484);
+    expect(find.text('最新'), findsOneWidget);
+    final detailState = tester.state(find.byType(PostDetailScreen));
+    final input = find.byKey(const ValueKey('post-reply-input'));
+    await tester.enterText(input, '主页帖子草稿');
+    await setGoldenViewport(tester, GoldenViewports.tabletSplit600x800);
+    await tester.pumpAndSettle();
+    expect(tester.state(find.byType(PostDetailScreen)), same(detailState));
+    expect(tester.widget<TextField>(input).controller!.text, '主页帖子草稿');
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(PostDetailScreen), findsNothing);
+    expect(tester.state(find.byType(UserHomeScreen)), same(profileState));
+    expect(find.text('个人主页测试帖'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.arrow_back).first);
+    await tester.pumpAndSettle();
+    expect(find.byType(UserHomeScreen), findsNothing);
+    expect(find.text('最新'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _dispose(tester, page);
+  });
+
   testWidgets('分栏用户主页请求失败并收窄后仍可返回水贴列表', (tester) async {
     auditFeedRail = false;
     auditFeedSize = GoldenViewports.tabletLandscape1280x800;
@@ -205,6 +281,73 @@ void main() {
     await _dispose(tester, page);
   });
   setUpAll(loadTestFonts);
+
+  for (final dark in [false, true]) {
+    testWidgets('帖子分栏保留个人封面、共享壁纸并对齐主页卡片 dark=$dark', (tester) async {
+      await tester.runAsync(installMockPublicImageHttp);
+      addTearDown(uninstallMockPublicImageHttp);
+      auditFeedRail = true;
+      auditFeedSize = GoldenViewports.tabletLandscape1280x800;
+      final page = await _pumpFeed(tester,
+          dark: dark,
+          authorSucceeds: true,
+          timePosts: [_post(100, '平板测试帖 100', DateTime(2026, 10, 8))]);
+      await page.themeProvider.setBackgroundImage('morenbeijing.jpeg');
+      await tester.tap(find.text('最新').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('平板测试帖 100').first);
+      await tester.pumpAndSettle();
+      tester
+          .widget<PostDetailScreen>(find.byType(PostDetailScreen))
+          .onAuthorTap!(2);
+      await tester.pumpAndSettle();
+      final home = find.byType(UserHomeScreen);
+      expect(find.text('分栏作者'), findsOneWidget);
+      expect(find.text('个人主页测试帖'), findsOneWidget);
+      final tabs = find.descendant(of: home, matching: find.byType(TabBar));
+      final card = find.descendant(
+          of: home, matching: find.byType(CommunityPostCard));
+      expect(tester.getRect(card).left, tester.getRect(tabs).left);
+      expect(tester.getRect(card).right, tester.getRect(tabs).right);
+      expect(find.ancestor(of: home, matching: find.byType(SharedPageBackground)),
+          findsOneWidget);
+      expect(
+          tester
+              .widget<ColoredBox>(
+                  find.ancestor(of: home, matching: find.byType(ColoredBox)).first)
+              .color,
+          Colors.transparent);
+      final cover = find.descendant(
+          of: home,
+          matching: find.byWidgetPredicate((widget) =>
+              widget is CachedNetworkImage &&
+              widget.imageUrl ==
+                  'https://example.test/uploads/author-cover.jpg'));
+      expect(cover, findsOneWidget);
+      bool coverLoaded() => tester
+          .widgetList<RawImage>(
+              find.descendant(of: cover, matching: find.byType(RawImage)))
+          .any((image) => image.image != null);
+      await driveMockPublicImageLoads(tester, until: coverLoaded);
+      expect(coverLoaded(), isTrue);
+      expect(
+          find.descendant(
+              of: home,
+              matching: find.byWidgetPredicate((widget) =>
+                  widget is Image &&
+                  widget.image is AspectPreservingResizeImage)),
+          findsNothing);
+      for (final glass in [false, true]) {
+        await page.themeProvider.setFrostedGlass(glass);
+        await tester.pumpAndSettle();
+        expect(cover, findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+      expect(tester.takeException(), isNull);
+      await _dispose(tester, page);
+      await flushMockPublicImageTimers(tester);
+    });
+  }
   setUp(() {
     VisibilityDetectorController.instance.updateInterval = Duration.zero;
   });

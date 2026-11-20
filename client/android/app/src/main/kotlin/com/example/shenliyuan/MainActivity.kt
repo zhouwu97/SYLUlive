@@ -12,6 +12,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.icu.text.BreakIterator
 import androidx.core.content.FileProvider
@@ -22,7 +23,11 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodCall
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.util.Locale
+import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
 class MainActivity : FlutterActivity() {
     private var liquidGlassGravity: LiquidGlassGravityBridge? = null
@@ -31,6 +36,7 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val WIDGET_CHANNEL = "shenliyuan/widget"
+        private const val APP_ICON_CHANNEL = "app_icon"
         private const val DEEPLINK_CHANNEL = "shenliyuan/deeplink"
         private const val FOREGROUND_CHANNEL = "shenliyuan/foreground"
         private const val KEEP_ALIVE_CHANNEL = "shenliyuan/keep_alive"
@@ -54,13 +60,39 @@ class MainActivity : FlutterActivity() {
         const val EXTRA_PRIVATE_MESSAGE_JSON =
             "private_message_json"
 
+        private const val EXTRA_THEME_INTENT_HANDLED =
+            "com.example.shenliyuan.THEME_INTENT_HANDLED"
+        private const val MAX_THEME_PACKAGE_BYTES = 48L * 1024L * 1024L
+        private const val THEME_DIRECTORY_REQUEST = 39241
+
         private val activityInstanceLock = Any()
         private var liveActivityCount = 0
+        private val themeImportExecutor = Executors.newSingleThreadExecutor()
+        private val themeImportGeneration = AtomicLong(0)
     }
 
-    private var pendingDeepLink: String? = null
+    private var pendingDeepLink: Any? = null
     
     private var notificationOpenChannel: MethodChannel? = null
+    private var themeDirectoryResult: MethodChannel.Result? = null
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != THEME_DIRECTORY_REQUEST) return
+        val result = themeDirectoryResult ?: return
+        themeDirectoryResult = null
+        val uri = if (resultCode == RESULT_OK) data?.data else null
+        if (uri == null) {
+            result.success(false)
+            return
+        }
+        try {
+            ThemeDownloads.grant(this, uri)
+            result.success(true)
+        } catch (_: Exception) {
+            result.error("THEME_DIRECTORY", "请选择 Download/沈理校园/主题", null)
+        }
+    }
 
     private val keepAliveHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
@@ -137,6 +169,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        LauncherIconManager.registerLifecycleObserver(application)
         super.onCreate(savedInstanceState)
         lastWidgetNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         // 清理旧版本成绩提醒任务、状态和通知；新版本不再启用该能力。
@@ -361,6 +394,45 @@ class MainActivity : FlutterActivity() {
         liquidGlassGravity?.dispose()
         liquidGlassGravity = LiquidGlassGravityBridge(this, flutterEngine.dartExecutor.binaryMessenger)
 
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
+        MethodChannel(
+            messenger, "shenliyuan/theme_downloads",
+            io.flutter.plugin.common.StandardMethodCodec.INSTANCE, messenger.makeBackgroundTaskQueue(),
+        ).setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "list" -> result.success(ThemeDownloads.list(this))
+                    "read" -> result.success(ThemeDownloads.read(this, call.argument<String>("uri")!!))
+                    "save" -> result.success(ThemeDownloads.save(this,
+                        call.argument<String>("name")!!, call.argument<ByteArray>("bytes")!!))
+                    "selectDirectory" -> runOnUiThread {
+                        if (themeDirectoryResult != null) {
+                            result.success(false)
+                            return@runOnUiThread
+                        }
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                            putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI,
+                                android.provider.DocumentsContract.buildDocumentUri(
+                                    "com.android.externalstorage.documents",
+                                    "primary:Download/沈理校园/主题"))
+                        }
+                        try {
+                            themeDirectoryResult = result
+                            startActivityForResult(intent, THEME_DIRECTORY_REQUEST)
+                        } catch (_: android.content.ActivityNotFoundException) {
+                            themeDirectoryResult = null
+                            result.error("THEME_DIRECTORY", "无法打开系统文件夹选择器", null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            } catch (error: Exception) {
+                result.error("THEME_DOWNLOADS", error.message, null)
+            }
+        }
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger,
             "shenliyuan/academic_archive").setMethodCallHandler { call, result ->
             if (call.method != "save") {
@@ -563,6 +635,40 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // ── 桌面图标与自定义快捷方式 MethodChannel ──
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            APP_ICON_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setDesired" -> {
+                    LauncherIconManager.setDesired(
+                        context = this,
+                        id = call.argument<String>("id"),
+                        themed = call.argument<Boolean>("themed") ?: false,
+                    )
+                    result.success(null)
+                }
+                "current" -> {
+                    result.success(LauncherIconManager.current(this))
+                }
+                "requestPinThemeShortcut" -> {
+                    result.success(
+                        LauncherIconManager.requestPinThemeShortcut(
+                            context = this,
+                            imagePath = call.argument<String>("path"),
+                            themeId = call.argument<String>("id"),
+                            label = call.argument<String>("label"),
+                        )
+                    )
+                }
+                "openShortcutPermissionSettings" -> {
+                    result.success(LauncherIconManager.openShortcutPermissionSettings(this))
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         // ── 小组件 MethodChannel ──
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -581,6 +687,7 @@ class MainActivity : FlutterActivity() {
                             examFontSize = call.argument("exam_font_size"),
                             courseFrostedGlass = call.argument("course_frosted_glass"),
                             examFrostedGlass = call.argument("exam_frosted_glass"),
+                            appPalette = call.argument("app_palette"),
                         )
                         refreshWidgets()
                         result.success(true)
@@ -647,8 +754,16 @@ class MainActivity : FlutterActivity() {
                 }
                 "ackPendingDeepLink" -> {
                     val link = call.argument<String>("link")
-                    if (link != null && pendingDeepLink == link) {
-                        pendingDeepLink = null
+                    val current = pendingDeepLink
+                    if (link != null) {
+                        val matched = when (current) {
+                            is String -> current == link
+                            is Map<*, *> -> current["id"]?.toString() == link
+                            else -> false
+                        }
+                        if (matched) {
+                            pendingDeepLink = null
+                        }
                     }
                     result.success(true)
                 }
@@ -1076,6 +1191,17 @@ class MainActivity : FlutterActivity() {
         } else if (intent?.action == Intent.ACTION_VIEW && isTeamShareLink(data)) {
             pendingDeepLink = data.toString()
             return true
+        } else if (intent?.action == Intent.ACTION_VIEW && isAcademicTransferLink(data)) {
+            // 二维码参数（会话与一次性公钥）由 Dart 层严格校验后才使用。
+            pendingDeepLink = data.toString()
+            return true
+        } else if (isThemeFileIntent(intent)) {
+            if (intent?.getBooleanExtra(EXTRA_THEME_INTENT_HANDLED, false) == true) {
+                return false
+            }
+            intent?.putExtra(EXTRA_THEME_INTENT_HANDLED, true)
+            enqueueIncomingThemeFile(intent?.data)
+            return false
         } else if (intent?.action == "com.example.shenliyuan.ACTION_WIDGET_EXAM") {
             val examName = intent.getStringExtra("exam_name") ?: ""
             val examDate = intent.getStringExtra("exam_date") ?: ""
@@ -1087,6 +1213,150 @@ class MainActivity : FlutterActivity() {
             return true
         }
         return false
+    }
+
+    /** 网页课表「扫码同步」链接：落地页的自定义协议，或已验证域名下的同步二维码。 */
+    private fun isAcademicTransferLink(data: Uri?): Boolean {
+        if (data == null) return false
+        return (data.scheme == "sylulive" && data.host == "academic-transfer") ||
+            (data.scheme == "https" && data.host == "sylulive.online" && data.path == "/web/app-scan")
+    }
+
+    private fun isThemeFileIntent(intent: Intent?): Boolean {
+        if (intent?.action != Intent.ACTION_VIEW) return false
+        val data = intent.data ?: return false
+        val scheme = data.scheme?.lowercase(Locale.ROOT) ?: return false
+        if (scheme != "content" && scheme != "file") return false
+        val mime = intent.type?.lowercase(Locale.ROOT)
+        if (mime == "application/vnd.sylulive.theme+zip") return true
+        if (data.path?.lowercase(Locale.ROOT)?.endsWith(".sltheme") == true) return true
+        if (data.lastPathSegment?.lowercase(Locale.ROOT)?.endsWith(".sltheme") == true) return true
+        if (scheme == "content") {
+            try {
+                contentResolver.query(
+                    data,
+                    arrayOf(OpenableColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0) {
+                            val name = cursor.getString(idx)?.lowercase(Locale.ROOT)
+                            if (name?.endsWith(".sltheme") == true) return true
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return false
+    }
+
+    private fun enqueueIncomingThemeFile(uri: Uri?) {
+        val generation = themeImportGeneration.incrementAndGet()
+        val eventId = "theme-${UUID.randomUUID()}"
+        if (uri == null) {
+            deliverIncomingThemeResult(generation, eventId, null, "read_failed")
+            return
+        }
+        val appContext = applicationContext
+        themeImportExecutor.execute {
+            if (themeImportGeneration.get() != generation) return@execute
+            val incomingDir = File(appContext.cacheDir, "incoming-theme")
+            incomingDir.mkdirs()
+            incomingDir.listFiles()?.forEach { stale ->
+                try {
+                    stale.delete()
+                } catch (_: Exception) {
+                }
+            }
+            val dest = File(incomingDir, "$eventId.sltheme")
+            try {
+                if (uri.scheme.equals("file", ignoreCase = true)) {
+                    val rawPath = uri.path ?: throw IllegalArgumentException("missing path")
+                    val canonicalSource = File(rawPath).canonicalFile
+                    val privateDataRoot = File(appContext.applicationInfo.dataDir).canonicalFile
+                    val canonicalCache = appContext.cacheDir.canonicalFile
+                    if (canonicalSource.path.startsWith(privateDataRoot.path + File.separator) &&
+                        !canonicalSource.path.startsWith(canonicalCache.path + File.separator)
+                    ) {
+                        deliverIncomingThemeResult(generation, eventId, null, "permission_denied")
+                        return@execute
+                    }
+                }
+                val input = appContext.contentResolver.openInputStream(uri)
+                    ?: throw java.io.FileNotFoundException("null stream")
+                var total = 0L
+                input.use { stream ->
+                    FileOutputStream(dest).use { out ->
+                        val buffer = ByteArray(16 * 1024)
+                        while (true) {
+                            if (themeImportGeneration.get() != generation) {
+                                out.close()
+                                dest.delete()
+                                return@execute
+                            }
+                            val read = stream.read(buffer)
+                            if (read < 0) break
+                            total += read
+                            if (total > MAX_THEME_PACKAGE_BYTES) {
+                                out.close()
+                                dest.delete()
+                                deliverIncomingThemeResult(
+                                    generation,
+                                    eventId,
+                                    null,
+                                    "theme_too_large",
+                                )
+                                return@execute
+                            }
+                            out.write(buffer, 0, read)
+                        }
+                        out.flush()
+                    }
+                }
+                if (themeImportGeneration.get() != generation) {
+                    dest.delete()
+                    return@execute
+                }
+                deliverIncomingThemeResult(generation, eventId, dest.absolutePath, null)
+            } catch (_: SecurityException) {
+                dest.delete()
+                deliverIncomingThemeResult(generation, eventId, null, "permission_denied")
+            } catch (_: Exception) {
+                dest.delete()
+                deliverIncomingThemeResult(generation, eventId, null, "read_failed")
+            }
+        }
+    }
+
+    private fun deliverIncomingThemeResult(
+        generation: Long,
+        eventId: String,
+        copiedPath: String?,
+        errorCode: String?,
+    ) {
+        keepAliveHandler.post {
+            if (isDestroyed || themeImportGeneration.get() != generation) {
+                if (copiedPath != null) {
+                    try {
+                        File(copiedPath).delete()
+                    } catch (_: Exception) {
+                    }
+                }
+                return@post
+            }
+            val payload = mutableMapOf<String, Any?>(
+                "type" to "theme_file",
+                "id" to eventId,
+            )
+            if (copiedPath != null) payload["path"] = copiedPath
+            if (errorCode != null) payload["error"] = errorCode
+            pendingDeepLink = payload
+            dispatchPendingDeepLink()
+        }
     }
 
     /** 仅转发受清单约束且携带正整数编号的组队链接。 */

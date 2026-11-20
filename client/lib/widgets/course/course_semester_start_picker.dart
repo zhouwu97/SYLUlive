@@ -1,3 +1,4 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/theme_provider.dart';
@@ -135,13 +136,12 @@ class _PickerContentState extends State<_PickerContent> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final height = MediaQuery.of(context).size.height * 0.75;
 
     return AppCardSurface(
       height: height,
       decoration: BoxDecoration(
-        color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+        color: AppThemeTokens.of(context).card,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: Column(
@@ -154,7 +154,7 @@ class _PickerContentState extends State<_PickerContent> {
               width: 40,
               height: 5,
               decoration: BoxDecoration(
-                color: Colors.grey.withValues(alpha: 0.3),
+                color: AppThemeTokens.of(context).textTertiary,
                 borderRadius: BorderRadius.circular(2.5),
               ),
             ),
@@ -172,7 +172,9 @@ class _PickerContentState extends State<_PickerContent> {
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Text(
               widget.term.title,
-              style: TextStyle(color: CampusTheme.subText, fontSize: 14),
+              style: TextStyle(
+                  color: AppThemeTokens.of(context).textSecondary,
+                  fontSize: 14),
             ),
           ),
           const SizedBox(height: 6),
@@ -296,7 +298,6 @@ class _PickerContentState extends State<_PickerContent> {
                 final m = i + 1;
                 final curMonth = _monthForPage(_currentPage);
                 final sel = _pickerYear == curMonth.year && m == curMonth.month;
-                final isDark = Theme.of(context).brightness == Brightness.dark;
                 return GestureDetector(
                   onTap: () => _jumpToMonth(m),
                   child: AnimatedContainer(
@@ -304,16 +305,12 @@ class _PickerContentState extends State<_PickerContent> {
                     decoration: BoxDecoration(
                       color: sel
                           ? _primary(context)
-                          : (isDark
-                              ? Colors.white.withValues(alpha: 0.06)
-                              : Colors.grey[100]),
+                          : (AppThemeTokens.of(context).surfaceMuted),
                       borderRadius: BorderRadius.circular(12),
                       border: sel
                           ? null
                           : Border.all(
-                              color: isDark
-                                  ? Colors.white.withValues(alpha: 0.1)
-                                  : Colors.grey.withValues(alpha: 0.15)),
+                              color: AppThemeTokens.of(context).outline),
                     ),
                     alignment: Alignment.center,
                     child: Text('$m月',
@@ -321,8 +318,8 @@ class _PickerContentState extends State<_PickerContent> {
                             fontSize: 15,
                             fontWeight: sel ? FontWeight.bold : FontWeight.w500,
                             color: sel
-                                ? Colors.white
-                                : (isDark ? Colors.white70 : Colors.black87))),
+                                ? AppThemeTokens.of(context).onPrimary
+                                : (AppThemeTokens.of(context).textPrimary))),
                   ),
                 );
               },
@@ -347,7 +344,9 @@ class _PickerContentState extends State<_PickerContent> {
             width: 32,
             child: Text(day,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: CampusTheme.subText, fontSize: 13)),
+                style: TextStyle(
+                    color: AppThemeTokens.of(context).textSecondary,
+                    fontSize: 13)),
           );
         }).toList(),
       ),
@@ -369,7 +368,6 @@ class _PickerContentState extends State<_PickerContent> {
             _selectedMonday!.year == weekMonday.year &&
             _selectedMonday!.month == weekMonday.month &&
             _selectedMonday!.day == weekMonday.day;
-        final isDark = Theme.of(context).brightness == Brightness.dark;
         final primary = _primary(context)!;
 
         return Expanded(
@@ -409,8 +407,8 @@ class _PickerContentState extends State<_PickerContent> {
                       ),
                       alignment: Alignment.center,
                       child: Text('${day.day}',
-                          style: const TextStyle(
-                              color: Colors.white,
+                          style: TextStyle(
+                              color: AppThemeTokens.of(context).onPrimary,
                               fontSize: 14,
                               fontWeight: FontWeight.w700)),
                     );
@@ -420,8 +418,8 @@ class _PickerContentState extends State<_PickerContent> {
                             color: inMonth
                                 ? (isSelected
                                     ? primary
-                                    : (isDark ? Colors.white : Colors.black87))
-                                : Colors.grey.withValues(alpha: 0.45),
+                                    : (AppThemeTokens.of(context).textPrimary))
+                                : AppThemeTokens.of(context).textDisabled,
                             fontWeight: isSelected
                                 ? FontWeight.w600
                                 : FontWeight.normal,
@@ -443,8 +441,8 @@ class _PickerContentState extends State<_PickerContent> {
   // ---------------------------------------------------------------------------
 
   Widget _buildBottomArea() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     final primary = _primary(context)!;
 
     return Container(
@@ -455,15 +453,17 @@ class _PickerContentState extends State<_PickerContent> {
         bottom: MediaQuery.of(context).padding.bottom + 16,
       ),
       decoration: BoxDecoration(
-        color: glass
+        color: customBackground
             ? Colors.transparent
-            : (isDark ? CampusTheme.darkCard : CampusTheme.card),
-        boxShadow: glass ? null : [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 10,
-              offset: const Offset(0, -4))
-        ],
+            : (AppThemeTokens.of(context).card),
+        boxShadow: customBackground
+            ? null
+            : [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, -4))
+              ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -471,7 +471,9 @@ class _PickerContentState extends State<_PickerContent> {
         children: [
           if (_selectedMonday != null) ...[
             Text('已选择',
-                style: TextStyle(color: CampusTheme.subText, fontSize: 13)),
+                style: TextStyle(
+                    color: AppThemeTokens.of(context).textSecondary,
+                    fontSize: 13)),
             const SizedBox(height: 4),
             Text(
                 '第1周 · ${_fmt(_selectedMonday!)}—${_fmt(_selectedMonday!.add(const Duration(days: 6)))}',
@@ -482,7 +484,9 @@ class _PickerContentState extends State<_PickerContent> {
                 style: TextStyle(color: primary, fontSize: 13)),
           ] else ...[
             Text('尚未选择',
-                style: TextStyle(color: CampusTheme.subText, fontSize: 13)),
+                style: TextStyle(
+                    color: AppThemeTokens.of(context).textSecondary,
+                    fontSize: 13)),
             const SizedBox(height: 4),
             const Text('--',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -510,7 +514,7 @@ class _PickerContentState extends State<_PickerContent> {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     elevation: 0,
                     backgroundColor: primary,
-                    foregroundColor: Colors.white,
+                    foregroundColor: AppThemeTokens.of(context).onPrimary,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),

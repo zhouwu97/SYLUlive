@@ -15,11 +15,13 @@
 
 Go 的 8080 只允许本机或 Docker 内部访问，公网流量必须经过 Nginx。Python 教务服务不是新版客户端的默认个人教务路径。
 
+公开 `/terms`、`/privacy`、`/extension/privacy` 由 Go 二进制中的文档提供，必须在公网网关保留对应路由；正文来源、版本一致性、候选检查与回退见 [公开法律文档运维](docs/ops/public-legal-documents.md)。
+
 ## 部署环境要求
 
 - 服务器操作系统：Ubuntu 20.04+
 - 数据库：PostgreSQL 15 / pgvector
-- 运行环境：Go 1.26.10+。`deploy/deploy-shenliyuan` 会在部署前校验 Go 版本；未安装或版本过低时直接拒绝部署，不会自动安装或升级 Go。
+- 运行环境：Go 1.26.11+。`deploy/deploy-shenliyuan` 会在部署前校验 Go 版本；未安装或版本过低时直接拒绝部署，不会自动安装或升级 Go。
 
 ## 正式发布
 

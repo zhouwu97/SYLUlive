@@ -78,6 +78,11 @@ void main() {
   late ThemeProvider themeProvider;
 
   setUp(() async {
+    final view =
+        TestWidgetsFlutterBinding.instance.platformDispatcher.views.first;
+    view.physicalSize = const Size(400, 800);
+    view.devicePixelRatio = 1;
+    addTearDown(view.reset);
     AppPreferencesStore.setMockInitialValues({});
     authProvider = AuthProvider(
       Dio(),
@@ -85,6 +90,27 @@ void main() {
     );
     themeProvider = ThemeProvider(loadOnStart: false);
     await themeProvider.loadThemeForTesting();
+  });
+
+  testWidgets('平板界面设置显示侧边导航入口，旋转及收窄后名称和摘要同步', (tester) async {
+    await tester
+        .pumpWidget(_buildTestApp(auth: authProvider, theme: themeProvider));
+    for (final size in [
+      const Size(1280, 800),
+      const Size(834, 1194),
+      const Size(400, 800)
+    ]) {
+      tester.view.physicalSize = size;
+      await tester.pumpAndSettle();
+      final side = size.width >= 600;
+      final entry = find.widgetWithText(SettingsTile, side ? '侧边导航栏' : '底部导航栏');
+      await tester.scrollUntilVisible(entry, 200,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+      expect(tester.widget<SettingsTile>(entry).subtitle,
+          side ? '液态玻璃侧栏 · 高画质' : '液态玻璃底栏 · 高画质');
+      expect(tester.takeException(), isNull);
+    }
   });
 
   testWidgets('界面设置页面正确展示各配置项', (tester) async {
@@ -146,7 +172,8 @@ void main() {
   testWidgets('界面设置使用共享壁纸，切回简洁模式保留已选图片', (tester) async {
     await themeProvider.setBackgroundImage('morenbeijing.jpeg');
     await themeProvider.setFrostedGlass(true);
-    await tester.pumpWidget(_buildTestApp(auth: authProvider, theme: themeProvider));
+    await tester
+        .pumpWidget(_buildTestApp(auth: authProvider, theme: themeProvider));
     await tester.pumpAndSettle();
     expect(find.byType(CustomBackgroundLayer), findsOneWidget);
     expect(tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
@@ -214,10 +241,12 @@ void main() {
     expect(find.text('不透明度 100% · 毛玻璃关闭'), findsOneWidget);
     await tester.tap(find.text('卡片外观'));
     await tester.pumpAndSettle();
-    expect(find.byWidgetPredicate(
-      (widget) => widget is SettingsTile && widget.title == '毛玻璃卡片',
-      skipOffstage: false,
-    ), findsNothing);
+    expect(
+        find.byWidgetPredicate(
+          (widget) => widget is SettingsTile && widget.title == '毛玻璃卡片',
+          skipOffstage: false,
+        ),
+        findsNothing);
     expect(find.byType(Switch), findsNothing);
     expect(find.text('卡片不透明度'), findsOneWidget);
     await tester.ensureVisible(find.text('高性能'));
@@ -235,8 +264,10 @@ void main() {
 
   testWidgets('卡片外观入口展示预设及不透明度并打开统一设置页', (tester) async {
     await themeProvider.setBackgroundImage('morenbeijing.jpeg');
-    await themeProvider.setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode.highPerformance);
-    await tester.pumpWidget(_buildTestApp(auth: authProvider, theme: themeProvider));
+    await themeProvider.setFrostedGlassPerformanceMode(
+        FrostedGlassPerformanceMode.highPerformance);
+    await tester
+        .pumpWidget(_buildTestApp(auth: authProvider, theme: themeProvider));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('卡片外观'), 200);
     await tester.pumpAndSettle();
@@ -397,8 +428,10 @@ void main() {
   });
 
   testWidgets('底栏入口按零强度显示悬浮底栏，其余显示液态玻璃与当前预设', (tester) async {
-    await themeProvider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
-    await tester.pumpWidget(_buildTestApp(auth: authProvider, theme: themeProvider));
+    await themeProvider
+        .setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
+    await tester
+        .pumpWidget(_buildTestApp(auth: authProvider, theme: themeProvider));
     await tester.pumpAndSettle();
     final entry = find.widgetWithText(SettingsTile, '底部导航栏');
     await tester.scrollUntilVisible(entry, 200,

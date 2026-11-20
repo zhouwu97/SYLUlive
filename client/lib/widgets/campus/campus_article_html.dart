@@ -1,3 +1,4 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
@@ -6,8 +7,7 @@ import 'package:html/dom.dart' as html_dom;
 import 'package:html/parser.dart' show parseFragment;
 
 import '../../models/campus_article.dart';
-import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import '../../theme/app_spacing.dart';
 import '../../utils/image_decode_size.dart';
 import '../../utils/post_image_cache.dart';
@@ -77,10 +77,9 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
 
   TextStyle _bodyStyle(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     return (theme.textTheme.bodyLarge ?? const TextStyle()).copyWith(
       height: 1.75,
-      color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+      color: AppThemeTokens.of(context).textPrimary,
     );
   }
 
@@ -204,8 +203,8 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
           border: Border(
             left: BorderSide(
               color: isDark
-                  ? AppColors.brandPrimary.withValues(alpha: 0.7)
-                  : AppColors.brandPrimary.withValues(alpha: 0.45),
+                  ? AppThemeTokens.of(context).primary.withValues(alpha: 0.7)
+                  : AppThemeTokens.of(context).primary.withValues(alpha: 0.45),
               width: 3,
             ),
           ),
@@ -227,13 +226,11 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
     }
 
     if (tag == 'hr') {
-      final isDark = Theme.of(context).brightness == Brightness.dark;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
         child: AppCardDivider(
           height: 1,
-          color:
-              isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight,
+          color: AppThemeTokens.of(context).outline,
         ),
       );
     }
@@ -334,16 +331,14 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
     html_dom.Element element,
     TextStyle parentStyle,
   ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final text = element.text.trim();
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color:
-            isDark ? AppColors.surfaceMutedDark : AppColors.surfaceMutedLight,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
+        color: AppThemeTokens.of(context).surfaceMuted,
+        borderRadius: BorderRadius.circular(AppShape.of(context).sm),
       ),
       child: SelectableText(
         text,
@@ -381,7 +376,7 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
           fallbackLogicalSize: const Size(320, 240),
         );
         return ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadius.sm),
+          borderRadius: BorderRadius.circular(AppShape.of(context).sm),
           child: _CampusArticleNetworkImage(
             resources: resources,
             target: target,
@@ -398,7 +393,7 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(AppRadius.sm),
+                borderRadius: BorderRadius.circular(AppShape.of(context).sm),
                 onTap: () => widget.onOpenImage!(resources.originalUrl),
                 child: image,
               ),
@@ -422,11 +417,8 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
     final grid = _makeTableGrid(rows);
     if (grid.isEmpty || grid.first.isEmpty) return const SizedBox.shrink();
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final borderColor =
-        isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight;
-    final headerColor =
-        isDark ? AppColors.brandSurfaceDark : AppColors.brandSurfaceLight;
+    final borderColor = AppThemeTokens.of(context).outline;
+    final headerColor = AppThemeTokens.of(context).primaryContainer;
     final columnCount = grid.first.length;
 
     final tableWidget = Table(
@@ -602,9 +594,9 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
           spans.add(
             TextSpan(
               style: childStyle.copyWith(
-                color: AppColors.brandPrimary,
+                color: AppThemeTokens.of(context).primary,
                 decoration: TextDecoration.underline,
-                decorationColor: AppColors.brandPrimary,
+                decorationColor: AppThemeTokens.of(context).primary,
               ),
               recognizer: recognizer,
               children: children,
@@ -788,9 +780,7 @@ class _CampusArticleNetworkImageState
   Widget _buildPlaceholder(BuildContext context) {
     return Container(
       height: 160,
-      color: Theme.of(context).brightness == Brightness.dark
-          ? AppColors.surfaceMutedDark
-          : AppColors.surfaceMutedLight,
+      color: AppThemeTokens.of(context).surfaceMuted,
       alignment: Alignment.center,
       child: const CircularProgressIndicator.adaptive(),
     );
@@ -799,9 +789,7 @@ class _CampusArticleNetworkImageState
   Widget _buildError(BuildContext context) {
     return Container(
       height: 96,
-      color: Theme.of(context).brightness == Brightness.dark
-          ? AppColors.surfaceMutedDark
-          : AppColors.surfaceMutedLight,
+      color: AppThemeTokens.of(context).surfaceMuted,
       alignment: Alignment.center,
       child: const Icon(Icons.broken_image_outlined),
     );

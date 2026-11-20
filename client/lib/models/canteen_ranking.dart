@@ -22,8 +22,16 @@ class CanteenRankingItem {
 
   final List<SummaryTag> summaryTags;
 
+  /// 近 30 天出现过的全部体验标签 key（或管理员设定的标签），用于按标签筛选。
+  /// 旧服务端没有该字段时退回 [summaryTags] 里的 key。
+  final List<String> tagKeys;
+
+  /// 是否参与名次：没人评价的店不占名次。旧服务端没有该字段时按评价人数判断。
+  final bool ranked;
+
   const CanteenRankingItem({
     required this.rank,
+    this.ranked = true,
     required this.id,
     required this.name,
     this.locationArea = '',
@@ -38,12 +46,23 @@ class CanteenRankingItem {
     this.dishWithPhotoCount = 0,
     this.dishPhotoCount = 0,
     this.summaryTags = const [],
+    this.tagKeys = const [],
   });
 
   factory CanteenRankingItem.fromJson(Map<String, dynamic> json) {
     final rawTags = json['summary_tags'];
+    final summaryTags = rawTags is List
+        ? rawTags
+            .whereType<Map<String, dynamic>>()
+            .map(SummaryTag.fromJson)
+            .toList()
+        : const <SummaryTag>[];
+    final rawKeys = json['tag_keys'];
     return CanteenRankingItem(
       rank: (json['rank'] ?? 0).toInt(),
+      ranked: json['ranked'] is bool
+          ? json['ranked'] as bool
+          : ((json['rating_count'] ?? 0) as num) > 0,
       id: (json['id'] ?? 0).toInt(),
       name: json['name']?.toString() ?? '',
       locationArea: json['location_area']?.toString() ?? '',
@@ -59,12 +78,10 @@ class CanteenRankingItem {
       dishCount: (json['dish_count'] ?? 0).toInt(),
       dishWithPhotoCount: (json['dish_with_photo_count'] ?? 0).toInt(),
       dishPhotoCount: (json['dish_photo_count'] ?? 0).toInt(),
-      summaryTags: rawTags is List
-          ? rawTags
-              .whereType<Map<String, dynamic>>()
-              .map(SummaryTag.fromJson)
-              .toList()
-          : const [],
+      summaryTags: summaryTags,
+      tagKeys: rawKeys is List
+          ? rawKeys.map((key) => key.toString()).toList()
+          : summaryTags.map((tag) => tag.key).toList(),
     );
   }
 
@@ -104,6 +121,15 @@ class SummaryTag {
 }
 
 /// 排行页排序模式。
+/// 排行范围。
+class CanteenRankingScope {
+  /// 现有商家：只排营业中的商家，下架商家不占名次（默认）。
+  static const current = 'current';
+
+  /// 旧范围参数保留兼容；服务端统一按 current 返回，下架商家不参与排名。
+  static const all = 'all';
+}
+
 class CanteenRankingSort {
   static const composite = 'composite';
   static const rating = 'rating';

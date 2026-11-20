@@ -77,7 +77,7 @@ export function IntegrationPersonalSync({ enabled, refreshing, onRefresh }: {
         : error instanceof ApiError && error.code === "personal_data_disabled"
           ? "隐私设置已关闭该类上传，请本人先检查设置。"
         : error instanceof ApiError && error.code === "academic_verification_required"
-          ? "当前账号缺少受支持的教务身份核验；本机自报身份不能代替核验。"
+          ? "这份学校资料暂时无法同步，请重新连接并读取对应资料后重试；QQ 绑定和签到不受影响。"
         : error instanceof ApiError && error.code === "older_snapshot_rejected"
           ? "已有较新的成绩上传副本，本次未覆盖。请重新读取本机资料后再同步。"
         : error instanceof ApiError && ["invalid_personal_upload", "invalid_erke_snapshot"].includes(error.code)

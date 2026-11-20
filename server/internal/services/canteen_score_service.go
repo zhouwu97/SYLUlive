@@ -1,6 +1,7 @@
 package services
 
 import (
+	"math"
 	"sort"
 	"time"
 
@@ -154,6 +155,28 @@ func ComputeEffectiveUserRating(events []models.CanteenReviewEvent) EffectiveUse
 	return result
 }
 
+// 评分时间衰减：每过 ReviewDecayHalfLifeDays 天，一位同学评价的权重减半；
+// 最低保留 ReviewDecayMinWeight，老评价仍算数但不再和上周的评价一样重。
+// 店换了老板、口味变了，分数能更快跟上；评价很少的店也不会因此归零。
+const (
+	ReviewDecayHalfLifeDays = 180.0
+	ReviewDecayMinWeight    = 0.1
+)
+
+// TimeDecayWeight 返回 at 时刻的评价在 now 的时间权重，范围 [ReviewDecayMinWeight, 1]。
+// 未来时间或零值时间按刚发布处理。
+func TimeDecayWeight(at, now time.Time) float64 {
+	if at.IsZero() || !at.Before(now) {
+		return 1
+	}
+	ageDays := now.Sub(at).Hours() / 24
+	weight := math.Pow(0.5, ageDays/ReviewDecayHalfLifeDays)
+	if weight < ReviewDecayMinWeight {
+		return ReviewDecayMinWeight
+	}
+	return weight
+}
+
 // ComputeCreditWeight 将诚信度映射到 [0.5, 1.0]，避免低诚信用户完全失去发言权。
 func ComputeCreditWeight(creditScore int) float64 {
 	if creditScore < 0 {
@@ -220,7 +243,21 @@ func ComputeCanteenAggregate(samples []UserRatingSample) CanteenAggregate {
 		result.HygieneScore /= result.DimensionEffectiveSample
 		result.ServiceScore /= result.DimensionEffectiveSample
 	}
+	result.AverageScore = roundAggregateScore(result.AverageScore)
+	result.EffectiveSample = roundAggregateScore(result.EffectiveSample)
+	result.DimensionEffectiveSample = roundAggregateScore(result.DimensionEffectiveSample)
+	result.TasteScore = roundAggregateScore(result.TasteScore)
+	result.ValueScore = roundAggregateScore(result.ValueScore)
+	result.QueueScore = roundAggregateScore(result.QueueScore)
+	result.HygieneScore = roundAggregateScore(result.HygieneScore)
+	result.ServiceScore = roundAggregateScore(result.ServiceScore)
 	return result
+}
+
+// roundAggregateScore 把加权平均和有效样本量保留到 4 位小数。时间衰减权重随当前时刻连续变化，
+// 不取整时同一分数会出现 4.999999999999999 这样的浮点尾数，排名分也会在两次请求之间微小抖动。
+func roundAggregateScore(v float64) float64 {
+	return math.Round(v*10000) / 10000
 }
 
 type DishRatingSample struct {
@@ -257,9 +294,10 @@ func ComputeDishAggregate(samples []DishRatingSample) DishAggregate {
 	if result.EffectiveSample == 0 {
 		return result
 	}
-	result.AverageScore /= result.EffectiveSample
-	result.TasteScore /= result.EffectiveSample
-	result.ValueScore /= result.EffectiveSample
-	result.PortionScore /= result.EffectiveSample
+	result.AverageScore = roundAggregateScore(result.AverageScore / result.EffectiveSample)
+	result.TasteScore = roundAggregateScore(result.TasteScore / result.EffectiveSample)
+	result.ValueScore = roundAggregateScore(result.ValueScore / result.EffectiveSample)
+	result.PortionScore = roundAggregateScore(result.PortionScore / result.EffectiveSample)
+	result.EffectiveSample = roundAggregateScore(result.EffectiveSample)
 	return result
 }

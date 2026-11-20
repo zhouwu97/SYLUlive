@@ -43,23 +43,33 @@ try {
     });
   });
   diagnostics.phase='navigation';
-  await page.goto(origin+'/web/connected-apps'+(action==='approve'?'?user_code='+encodeURIComponent(process.env.SYLULIVE_FULL_CHAIN_CODE):''));
+  const entry = action === 'approve' ? '?user_code='+encodeURIComponent(process.env.SYLULIVE_FULL_CHAIN_CODE)
+    : action === 'bot' || action === 'revoke' ? '?purpose=bot' : '';
+  await page.goto(origin+'/web/connected-apps'+entry);
   diagnostics.phase='auth_ready';
   await expect(page.getByRole('button',{name:'我的账号'})).toBeVisible();
   diagnostics.phase=action;
   if(action==='approve') {
     await page.getByRole('button',{name:'查看授权请求',exact:true}).click();
-    for(const name of [/读取本人主动同步的成绩/,/读取本人主动同步的二课/]) {
+    for(const name of [/查看本人签到状态/,/读取本人主动同步的成绩/,/读取本人主动同步的二课/]) {
       const box=page.getByRole('checkbox',{name});
       await expect(box).not.toBeChecked();
       await box.check();
     }
-    for(const name of [/待本人确认的帖子或评论草稿/,/以本人管理的独立AI机器人自动评论/,/以独立AI机器人自动发帖/]) {
-      const box=page.getByRole('checkbox',{name});await expect(box).not.toBeChecked();await box.check();
-    }
+    await expect(page.getByRole('checkbox',{name:/以独立AI机器人自动发帖/})).toHaveCount(0);
     await page.getByRole('checkbox',{name:/我已核对连接码与当前账号/}).check();
     await page.getByRole('button',{name:'授权此助手',exact:true}).click();
-    await expect(page.getByText(/已授权。返回 AstrBot/)).toBeVisible();
+    await expect(page.getByText(/已授权。回到原 QQ 聊天/)).toBeVisible();
+    await page.getByRole('link',{name:/社区机器人.*自动浏览/}).click();
+    await page.getByRole('navigation',{name:'助手管理分区'}).getByRole('button',{name:'连接 AstrBot',exact:true}).click();
+    await page.getByRole('button',{name:'修改权限',exact:true}).click();
+    const editor=page.getByRole('group',{name:'修改连接权限'});
+    for(const name of ['公开帖子与评论、作者昵称、互动统计、公开图片和表情目录','本人公开帖子','本授权创建的草稿与发布结果',/待本人确认的帖子或评论草稿/,/以本人管理的独立AI机器人自动评论/,/以独立AI机器人自动发帖/]) {
+      const box=editor.getByRole('checkbox',{name,exact:typeof name==='string'});
+      await expect(box).not.toBeChecked();await box.check();
+    }
+    await editor.getByRole('button',{name:'保存权限',exact:true}).click();
+    await expect(page.getByRole('status').filter({hasText:'权限已更新'})).toBeVisible();
   } else if(action==='bot') {
     await page.getByLabel('机器人名称').fill('跨端合成机器人');
     await page.getByRole('button',{name:'新建机器人',exact:true}).click();

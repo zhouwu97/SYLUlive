@@ -290,8 +290,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
           pending.accountSessionEpoch == scope.accountSessionEpoch;
       final idempotencyKey = resolveIdempotencyKey(
         fingerprint: fingerprint,
-        pendingFingerprint: samePendingSession ? pending?.fingerprint : null,
-        pendingKey: samePendingSession ? pending?.idempotencyKey : null,
+        pendingFingerprint: samePendingSession ? pending.fingerprint : null,
+        pendingKey: samePendingSession ? pending.idempotencyKey : null,
       );
       _pendingMessage = (
         idempotencyKey: idempotencyKey,
@@ -420,7 +420,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         }
       }
     } catch (e) {
-      if (_ownsWriteScope(auth, scope)) {
+      if (mounted && context.mounted && _ownsWriteScope(auth, scope)) {
         AppFeedback.showGlobalToast('图片上传失败: $e',
             isError: true, context: context);
       }
@@ -490,7 +490,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
           await _loadDetail();
         }
       } catch (e) {
-        if (_ownsWriteScope(auth, scope)) {
+        if (mounted && context.mounted && _ownsWriteScope(auth, scope)) {
           AppFeedback.showGlobalToast('操作失败: $e', isError: true);
         }
       }
@@ -514,7 +514,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         await _loadDetail();
       }
     } catch (e) {
-      if (_ownsWriteScope(auth, scope)) {
+      if (mounted && context.mounted && _ownsWriteScope(auth, scope)) {
         AppFeedback.showGlobalToast('操作失败: $e', isError: true);
       }
     }
@@ -609,36 +609,36 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         builder: (context, setDialogState) => AppAlertDialog(
           title: const Text('更新处理进度'),
           content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ...statusOptions.map((opt) {
-                  return RadioListTile<String>(
-                    dense: true,
-                    value: opt['value']!,
-                    groupValue: selectedStatus,
-                    title: Text(opt['label']!),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setDialogState(() => selectedStatus = val);
-                      }
-                    },
-                  );
-                }),
-                const SizedBox(height: 12),
-                const Text('进度说明（如版本号或修复说明）：',
-                    style:
-                        TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: noteController,
-                  decoration: const InputDecoration(
-                    hintText: '例如：内测版 v2.8.3 或 已定位问题',
-                    border: OutlineInputBorder(),
+            child: RadioGroup<String>(
+              groupValue: selectedStatus,
+              onChanged: (value) {
+                if (value != null) setDialogState(() => selectedStatus = value);
+              },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ...statusOptions.map((opt) {
+                    return RadioListTile<String>(
+                      dense: true,
+                      value: opt['value']!,
+                      title: Text(opt['label']!),
+                    );
+                  }),
+                  const SizedBox(height: 12),
+                  const Text('进度说明（如版本号或修复说明）：',
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: noteController,
+                    decoration: const InputDecoration(
+                      hintText: '例如：内测版 v2.8.3 或 已定位问题',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           actions: [
@@ -672,7 +672,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     await _loadDetail();
                   }
                 } catch (e) {
-                  if (_ownsWriteScope(auth, scope)) {
+                  if (mounted &&
+                      context.mounted &&
+                      _ownsWriteScope(auth, scope)) {
                     AppFeedback.showSnackBar(context, '更新失败: $e',
                         isError: true);
                   }
@@ -785,7 +787,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     await _loadDetail();
                   }
                 } catch (e) {
-                  if (_ownsWriteScope(auth, scope)) {
+                  if (mounted &&
+                      context.mounted &&
+                      _ownsWriteScope(auth, scope)) {
                     AppFeedback.showSnackBar(context, '操作失败: $e',
                         isError: true);
                   }
@@ -823,54 +827,56 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       }
       return;
     }
-    if (!_ownsWriteScope(auth, scope)) return;
+    if (!mounted || !_ownsWriteScope(auth, scope)) return;
     showAppDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AppAlertDialog(
           title: const Text('设置工单优先级'),
           content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ...['P0', 'P1', 'P2', 'P3'].map((p) {
-                  return RadioListTile<String>(
-                    dense: true,
-                    value: p,
-                    groupValue: priority,
-                    title: Text('$p 级别'),
-                    onChanged: (val) {
-                      if (val != null) setDialogState(() => priority = val);
-                    },
-                  );
-                }),
-                const AppCardDivider(),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('负责人',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+            child: RadioGroup<String>(
+              groupValue: priority,
+              onChanged: (value) {
+                if (value != null) setDialogState(() => priority = value);
+              },
+              child: RadioGroup<int>(
+                groupValue: selectedAssignee,
+                onChanged: (value) =>
+                    setDialogState(() => selectedAssignee = value ?? 0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ...['P0', 'P1', 'P2', 'P3'].map((p) {
+                      return RadioListTile<String>(
+                        dense: true,
+                        value: p,
+                        title: Text('$p 级别'),
+                      );
+                    }),
+                    const AppCardDivider(),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('负责人',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                    const RadioListTile<int>(
+                      dense: true,
+                      value: 0,
+                      title: Text('未分配'),
+                    ),
+                    ...assignees.map((assignee) {
+                      final id = (assignee['id'] as num?)?.toInt() ?? 0;
+                      final name = assignee['nickname']?.toString().trim();
+                      return RadioListTile<int>(
+                        dense: true,
+                        value: id,
+                        title:
+                            Text(name?.isNotEmpty == true ? name! : '管理员 $id'),
+                      );
+                    }),
+                  ],
                 ),
-                RadioListTile<int>(
-                  dense: true,
-                  value: 0,
-                  groupValue: selectedAssignee,
-                  title: const Text('未分配'),
-                  onChanged: (value) =>
-                      setDialogState(() => selectedAssignee = value ?? 0),
-                ),
-                ...assignees.map((assignee) {
-                  final id = (assignee['id'] as num?)?.toInt() ?? 0;
-                  final name = assignee['nickname']?.toString().trim();
-                  return RadioListTile<int>(
-                    dense: true,
-                    value: id,
-                    groupValue: selectedAssignee,
-                    title: Text(name?.isNotEmpty == true ? name! : '管理员 $id'),
-                    onChanged: (value) =>
-                        setDialogState(() => selectedAssignee = value ?? 0),
-                  );
-                }),
-              ],
+              ),
             ),
           ),
           actions: [
@@ -897,7 +903,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     await _loadDetail();
                   }
                 } catch (e) {
-                  if (_ownsWriteScope(auth, scope)) {
+                  if (mounted &&
+                      context.mounted &&
+                      _ownsWriteScope(auth, scope)) {
                     AppFeedback.showSnackBar(context, '保存失败: $e',
                         isError: true);
                   }
@@ -1075,7 +1083,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                 radius: 16,
                 backgroundColor: AppColors.brandPrimary.withValues(alpha: 0.15),
                 child: Text(widget.isAdmin ? '用户' : '我',
-                    style: TextStyle(
+                    style: const TextStyle(
                         fontSize: 13,
                         color: AppColors.brandPrimary,
                         fontWeight: FontWeight.bold)),
@@ -1085,8 +1093,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(widget.isAdmin ? '用户初始反馈' : '初始反馈',
-                      style:
-                          TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.bold)),
                   Text(
                     _formatDateTime(initialCreatedAt),
                     style: const TextStyle(fontSize: 11, color: Colors.grey),
@@ -1717,8 +1725,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       child: Row(
         children: [
           const Expanded(child: AppCardDivider(indent: 40, endIndent: 10)),
-          Text(label,
-                  style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
           const Expanded(child: AppCardDivider(indent: 10, endIndent: 40)),
         ],
       ),

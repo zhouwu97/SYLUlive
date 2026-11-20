@@ -56,9 +56,12 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
   @override
   void didChangePlatformBrightness() {
     super.didChangePlatformBrightness();
-    final hasSystemTheme =
-        _appearances.values.any((a) => a.theme == HomeWidgetTheme.system);
-    if (hasSystemTheme) {
+    final followsSystem = _appearances.values.any(
+      (a) =>
+          a.theme == HomeWidgetTheme.system ||
+          a.theme == HomeWidgetTheme.appTheme,
+    );
+    if (followsSystem) {
       HomeWidgetService.syncAll();
     }
   }
@@ -499,6 +502,7 @@ class _HomeWidgetPreview extends StatelessWidget {
     final palette = HomeWidgetThemePalette.resolve(
       appearance.theme,
       systemBrightness: Theme.of(context).brightness,
+      frostedGlass: appearance.frostedGlass,
     );
     final typography = HomeWidgetTypography.resolve(size, appearance.fontSize);
     final isWide = size == HomeWidgetSize.size4x2;
@@ -549,9 +553,11 @@ class _HomeWidgetPreview extends StatelessWidget {
               height: previewHeight,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: appearance.frostedGlass
-                    ? palette.background.withValues(alpha: 0.78)
-                    : palette.background,
+                color: appearance.theme == HomeWidgetTheme.appTheme
+                    ? palette.background
+                    : (appearance.frostedGlass
+                        ? palette.background.withValues(alpha: 0.78)
+                        : palette.background),
                 borderRadius: BorderRadius.circular(22),
                 boxShadow: [
                   BoxShadow(

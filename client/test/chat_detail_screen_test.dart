@@ -49,9 +49,6 @@ void main() {
     await _pumpChat(tester, provider);
 
     final disabledSendButton = _sendButton(tester);
-    final colors = Theme.of(
-      tester.element(find.byKey(const ValueKey('chat-send-button'))),
-    ).colorScheme;
     expect(disabledSendButton.onPressed, isNull);
     expect(
       find.descendant(

@@ -219,8 +219,12 @@ class _EmojiDownloadScreenState extends State<EmojiDownloadScreen> {
                         const EmojiStateView(
                             title: '暂无可下载的表情', detail: '稍后再来看看。')
                       else
-                        for (final entry in _entries ?? <EmojiCatalogEntry>[])
-                          _tile(entry),
+                        for (var index = 0;
+                            index < (_entries?.length ?? 0);
+                            index++) ...[
+                          if (index > 0) const AppCardDivider(height: 1),
+                          _tile(_entries![index]),
+                        ],
                     ],
                   )),
                 ],
@@ -315,7 +319,6 @@ class _EmojiDownloadScreenState extends State<EmojiDownloadScreen> {
                     .textTheme
                     .bodySmall
                     ?.copyWith(color: Theme.of(context).colorScheme.error))),
-      AppCardDivider(height: 1, color: emojiBorder(context)),
     ]);
   }
 }

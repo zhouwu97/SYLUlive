@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
+import '../../../theme/app_theme_tokens.dart';
 import '../../../config/wallpaper_catalog.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/theme_provider.dart';
@@ -207,8 +208,10 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
         uiSettings: [
           AndroidUiSettings(
             toolbarTitle: '裁剪背景图片',
-            toolbarColor: const Color(0xFF147C72),
-            toolbarWidgetColor: Colors.white,
+            toolbarColor: const Color(
+                0xFF147C72), // theme: fixed Android 原生裁剪工具栏，P1.5 真机时迁移
+            toolbarWidgetColor:
+                Colors.white, // theme: fixed Android 原生裁剪工具栏，P1.5 真机时迁移
             initAspectRatio: CropAspectRatioPreset.original,
             lockAspectRatio: true,
           ),
@@ -237,7 +240,9 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
       debugPrint('Pick gallery background failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('设置背景失败'), backgroundColor: Colors.red),
+          const SnackBar(
+              content: Text('设置背景失败'),
+              backgroundColor: Colors.red), // theme: fixed 裁剪失败、删除背景危险操作语义色
         );
       }
     }
@@ -258,7 +263,9 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: CampusTheme.red),
+            style: TextButton.styleFrom(
+                foregroundColor:
+                    CampusTheme.red), // theme: fixed 裁剪失败、删除背景危险操作语义色
             child: const Text('删除'),
           ),
         ],
@@ -290,7 +297,9 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: CampusTheme.red),
+            style: TextButton.styleFrom(
+                foregroundColor:
+                    CampusTheme.red), // theme: fixed 裁剪失败、删除背景危险操作语义色
             child: const Text('删除全部'),
           ),
         ],
@@ -330,7 +339,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
         maxHeight: MediaQuery.of(context).size.height * 0.82,
       ),
       decoration: BoxDecoration(
-        color: isDark ? CampusTheme.darkBg : CampusTheme.bg,
+        color: AppThemeTokens.of(context).background,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.only(
@@ -349,8 +358,12 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
               height: 4,
               decoration: BoxDecoration(
                 color: isDark
-                    ? Colors.white24
-                    : CampusTheme.subText.withValues(alpha: 0.3),
+                    ? AppThemeTokens.of(context)
+                        .textSecondary
+                        .withValues(alpha: 0x3D / 255)
+                    : AppThemeTokens.of(context)
+                        .textSecondary
+                        .withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -363,7 +376,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : CampusTheme.text,
+                  color: AppThemeTokens.of(context).textPrimary,
                 ),
               ),
               const Spacer(),
@@ -431,10 +444,8 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
                               color: isSelected
-                                  ? CampusTheme.primary
-                                  : (isDark
-                                      ? Colors.white.withValues(alpha: 0.1)
-                                      : CampusTheme.softBorder),
+                                  ? AppThemeTokens.of(context).primary
+                                  : (AppThemeTokens.of(context).cardBorder),
                               width: isSelected ? 2 : 1,
                             ),
                             boxShadow: [
@@ -456,8 +467,10 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                                   alignment: Alignment.center,
                                   errorBuilder: (_, __, ___) => Container(
                                     color: isDark
-                                        ? CampusTheme.darkCard
-                                        : Colors.grey[200],
+                                        ? CampusTheme
+                                            .darkCard // theme: fixed 图片错误占位色；契约第 3 节保留图片占位颜色
+                                        : Colors.grey[
+                                            200], // theme: fixed 图片错误占位色；契约第 3 节保留图片占位颜色
                                     child:
                                         const Icon(Icons.image_not_supported),
                                   ),
@@ -468,14 +481,16 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                                     right: 6,
                                     child: Container(
                                       padding: const EdgeInsets.all(4),
-                                      decoration: const BoxDecoration(
-                                        color: CampusTheme.primary,
+                                      decoration: BoxDecoration(
+                                        color:
+                                            AppThemeTokens.of(context).primary,
                                         shape: BoxShape.circle,
                                       ),
-                                      child: const Icon(
+                                      child: Icon(
                                         Icons.check_rounded,
                                         size: 14,
-                                        color: Colors.white,
+                                        color: AppThemeTokens.of(context)
+                                            .onPrimary,
                                       ),
                                     ),
                                   ),
@@ -489,9 +504,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                   const SizedBox(height: 18),
                   // 美化版“从相册选择图片”主按钮
                   Material(
-                    color: isDark
-                        ? CampusTheme.primary.withValues(alpha: 0.15)
-                        : CampusTheme.primaryLight,
+                    color: AppThemeTokens.of(context).primaryContainer,
                     borderRadius: BorderRadius.circular(14),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(14),
@@ -508,9 +521,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                             Icon(
                               Icons.add_photo_alternate_rounded,
                               size: 20,
-                              color: isDark
-                                  ? const Color(0xFF7ED6C5)
-                                  : CampusTheme.primary,
+                              color: AppThemeTokens.of(context).primary,
                             ),
                             const SizedBox(width: 8),
                             Text(
@@ -518,9 +529,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
-                                color: isDark
-                                    ? const Color(0xFF7ED6C5)
-                                    : CampusTheme.primary,
+                                color: AppThemeTokens.of(context).primary,
                               ),
                             ),
                           ],
@@ -532,7 +541,8 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                     const SizedBox(height: 12),
                     Container(
                       decoration: BoxDecoration(
-                        color: CampusTheme.red.withValues(alpha: 0.06),
+                        color: CampusTheme.red.withValues(
+                            alpha: 0.06), // theme: fixed 裁剪失败、删除背景危险操作语义色
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Material(
@@ -549,7 +559,8 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                                 const Icon(
                                   Icons.delete_outline_rounded,
                                   size: 18,
-                                  color: CampusTheme.red,
+                                  color: CampusTheme
+                                      .red, // theme: fixed 裁剪失败、删除背景危险操作语义色
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
@@ -557,7 +568,8 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                                   style: const TextStyle(
                                     fontSize: 13.5,
                                     fontWeight: FontWeight.w600,
-                                    color: CampusTheme.red,
+                                    color: CampusTheme
+                                        .red, // theme: fixed 裁剪失败、删除背景危险操作语义色
                                   ),
                                 ),
                               ],
@@ -571,7 +583,8 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                     const SizedBox(height: 8),
                     Container(
                       decoration: BoxDecoration(
-                        color: CampusTheme.red.withValues(alpha: 0.06),
+                        color: CampusTheme.red.withValues(
+                            alpha: 0.06), // theme: fixed 裁剪失败、删除背景危险操作语义色
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Material(
@@ -587,7 +600,8 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                                 Icon(
                                   Icons.cleaning_services_rounded,
                                   size: 18,
-                                  color: CampusTheme.red,
+                                  color: CampusTheme
+                                      .red, // theme: fixed 裁剪失败、删除背景危险操作语义色
                                 ),
                                 SizedBox(width: 6),
                                 Text(
@@ -595,7 +609,8 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                                   style: TextStyle(
                                     fontSize: 13.5,
                                     fontWeight: FontWeight.w600,
-                                    color: CampusTheme.red,
+                                    color: CampusTheme
+                                        .red, // theme: fixed 裁剪失败、删除背景危险操作语义色
                                   ),
                                 ),
                               ],

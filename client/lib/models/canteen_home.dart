@@ -204,6 +204,9 @@ class CanteenHotDish {
   final double averageScore;
   final int reviewerCount;
 
+  /// 近 30 天被多少条到店评价提到（“近期热门”的排序依据）。
+  final int recentMentionCount;
+
   const CanteenHotDish({
     required this.id,
     required this.name,
@@ -214,6 +217,7 @@ class CanteenHotDish {
     this.photoCount = 0,
     this.averageScore = 0,
     this.reviewerCount = 0,
+    this.recentMentionCount = 0,
   });
 
   factory CanteenHotDish.fromJson(Map<String, dynamic> json) {
@@ -228,6 +232,7 @@ class CanteenHotDish {
       photoCount: (json['photo_count'] ?? 0).toInt(),
       averageScore: (json['average_score'] ?? 0).toDouble(),
       reviewerCount: (json['reviewer_count'] ?? 0).toInt(),
+      recentMentionCount: _toInt(json['recent_mention_count']),
     );
   }
 
@@ -301,6 +306,10 @@ class CanteenHomeReview {
 /// 食堂发现首页完整数据。
 class CanteenHomeData {
   final CanteenHero hero;
+
+  /// “今天吃什么”可轮换的候选（综合排名前几的有评价商家）。旧服务端没有该字段时
+  /// 只包含 [hero] 一家。
+  final List<CanteenHero> heroCandidates;
   final CanteenRankingEntry rankingEntry;
 
   /// 旧首页推荐流契约，供旧客户端和非首页调用方继续读取。
@@ -314,6 +323,7 @@ class CanteenHomeData {
 
   const CanteenHomeData({
     this.hero = const CanteenHero(),
+    this.heroCandidates = const [],
     this.rankingEntry = const CanteenRankingEntry(),
     this.feed = const [],
     this.hotDishes = const [],
@@ -324,12 +334,22 @@ class CanteenHomeData {
 
   factory CanteenHomeData.fromJson(Map<String, dynamic> json) {
     final rawFeed = json['feed'];
+    final hero = CanteenHero.fromJson(
+      json['hero'] is Map<String, dynamic>
+          ? json['hero'] as Map<String, dynamic>
+          : null,
+    );
+    final candidates = json['hero_candidates'] is List
+        ? (json['hero_candidates'] as List)
+            .whereType<Map<String, dynamic>>()
+            .map(CanteenHero.fromJson)
+            .where((candidate) => !candidate.isEmpty)
+            .toList()
+        : <CanteenHero>[];
     return CanteenHomeData(
-      hero: CanteenHero.fromJson(
-        json['hero'] is Map<String, dynamic>
-            ? json['hero'] as Map<String, dynamic>
-            : null,
-      ),
+      hero: hero,
+      heroCandidates:
+          candidates.isNotEmpty ? candidates : [if (!hero.isEmpty) hero],
       rankingEntry: CanteenRankingEntry.fromJson(
         json['ranking_entry'] is Map<String, dynamic>
             ? json['ranking_entry'] as Map<String, dynamic>

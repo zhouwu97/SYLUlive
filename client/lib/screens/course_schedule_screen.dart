@@ -1,3 +1,4 @@
+import '../widgets/app_page_background.dart';
 import '../widgets/app_dialog.dart';
 import 'dart:async';
 import 'dart:io';
@@ -25,6 +26,7 @@ import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey, currentHomeTabIndex;
 import '../utils/responsive_util.dart';
 import 'course_schedule_settings_screen.dart';
+import 'academic_transfer/academic_transfer_screen.dart';
 import 'home_widget_settings_screen.dart';
 import 'edu_screen.dart';
 import '../services/home_widget_service.dart';
@@ -32,7 +34,6 @@ import '../models/course_term.dart';
 import '../widgets/course/course_empty_state_card.dart';
 import '../widgets/course/course_fetch_progress_dialog.dart';
 import '../widgets/course/course_action_menu.dart';
-import '../widgets/course/course_evaluation_section.dart';
 import '../widgets/course/course_import_sheet.dart';
 import '../widgets/course/course_term_switch_sheet.dart';
 import '../widgets/course/course_preview_sheet.dart';
@@ -41,6 +42,9 @@ import '../widgets/campus/campus_theme.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'schedule/course_detail_sheet.dart';
 import '../theme/app_theme_tokens.dart';
+import '../theme/app_theme_style.dart';
+import '../theme/app_palette.dart';
+import '../features/theme_pack/theme_contrast.dart';
 import '../widgets/app_card.dart';
 
 /// 每节课槽的默认高度
@@ -49,18 +53,10 @@ const double defaultSlotHeight = 75.0;
 /// 左侧时间轴宽度（必须与表头左侧留空一致）
 const double timeColumnWidth = 35.0;
 
-/// 颜色池（5色，确保各不相同）
-const List<Color> courseColors = [
-  Color(0xFF448AFF), // 蓝
-  Color(0xFF00C853), // 绿
-  Color(0xFF9C27B0), // 紫
-  Color(0xFFFF5252), // 红
-  Color(0xFFFF9800), // 橙
-];
-
 /// 根据课程名哈希计算颜色索引（不同课程不同颜色，非随机）
-/// 空名称时 fallback 到 courseCode + location 做区分
-int getCourseColorIndex(String name, {String? courseCode, String? location}) {
+/// 空名称使用课程代码和地点区分。
+int getCourseColorIndex(String name,
+    {required int paletteLength, String? courseCode, String? location}) {
   String input = name;
   if (name.isEmpty) {
     input = '${courseCode ?? ''}_${location ?? ''}';
@@ -70,23 +66,27 @@ int getCourseColorIndex(String name, {String? courseCode, String? location}) {
   for (int i = 0; i < input.length; i++) {
     hash += input.codeUnitAt(i);
   }
-  return hash % courseColors.length;
+  return hash % paletteLength;
 }
 
 /// 获取课程卡片颜色
 Color getCourseColor(
   String name, {
+  required List<Color> palette,
   bool isActive = true,
   String? courseCode,
   String? location,
 }) {
   final idx = getCourseColorIndex(
     name,
+    paletteLength: palette.length,
     courseCode: courseCode,
     location: location,
   );
-  final base = courseColors[idx];
-  return isActive ? base.withOpacity(0.45) : Colors.grey.withOpacity(0.4);
+  final base = palette[idx];
+  return isActive
+      ? base.withValues(alpha: 0.45)
+      : Colors.grey.withValues(alpha: 0.4);
 }
 
 /// 星期标签
@@ -125,7 +125,6 @@ const _ends = [
 ];
 
 /// 格式化月/日
-String _md(DateTime d) => '${d.month}/${d.day}';
 
 /// 课表页的终态判定。
 ///
@@ -216,8 +215,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final now = DateTime.now();
       final end = start.add(Duration(days: sc.currentTerm.maxWeek * 7));
       if (now.isBefore(start)) return start;
-      if (now.isAfter(end))
+      if (now.isAfter(end)) {
         return start.add(Duration(days: (sc.currentTerm.maxWeek - 1) * 7));
+      }
       return _mondayOf(now);
     }
     return _mondayOf(DateTime.now());
@@ -244,7 +244,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final coordinator = _coordinatorOrNull();
     if (coordinator == null) return;
     if (coordinator.controller.sourceKind == AcademicSourceKind.local &&
-        !await coordinator.hasSavedCredential()) return;
+        !await coordinator.hasSavedCredential()) {
+      return;
+    }
     final outcome = await coordinator.ensureAuthenticated();
     if (!mounted || !outcome.isSuccess) return;
     await context.read<EduProvider>().refreshStatus();
@@ -488,9 +490,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final themeProvider = context.watch<ThemeProvider>();
-    final cleanLightMode = themeProvider.isCleanBackgroundMode && !isDark;
-    final overlayStyle = (cleanLightMode
+    final background = AppThemeTokens.of(context).background;
+    final lightBackground =
+        ThemeData.estimateBrightnessForColor(background) == Brightness.light;
+    final overlayStyle = (lightBackground
             ? SystemUiOverlayStyle.dark
             : SystemUiOverlayStyle.light)
         .copyWith(
@@ -506,7 +509,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       value: overlayStyle,
       child: Scaffold(
         // 课表路由由 GlobalBackgroundWrapper 提供页面背景，保持透明以展示自定义壁纸。
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(
+            context, AppThemeTokens.of(context).background),
         body: SafeArea(
           bottom: false,
           child: Consumer<AuthProvider>(
@@ -613,7 +617,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(
+            context, AppThemeTokens.of(context).background),
         body: SafeArea(
           bottom: false,
           child: Consumer<AuthProvider>(
@@ -762,12 +767,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       width: 320,
       margin: const EdgeInsets.only(right: 16, top: 16, bottom: 16, left: 16),
       decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0x33FFFFFF)
-            : Colors.white.withValues(alpha: 0.5),
+        color: AppThemeTokens.of(context)
+            .card
+            .withValues(alpha: isDark ? 0.2 : 0.5),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: isDark ? Colors.white12 : Colors.white,
+          color: AppThemeTokens.of(context).cardBorder,
           width: 1,
         ),
       ),
@@ -784,7 +789,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppThemeTokens.of(context).textPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -792,7 +797,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   '${targetDate.month}月${targetDate.day}日 周${_wd[today.weekday - 1]}',
                   style: TextStyle(
                     fontSize: 14,
-                    color: isDark ? Colors.white54 : Colors.black54,
+                    color: AppThemeTokens.of(context).textSecondary,
                   ),
                 ),
               ],
@@ -807,13 +812,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         Icon(
                           Icons.coffee,
                           size: 48,
-                          color: isDark ? Colors.white24 : Colors.black12,
+                          color: AppThemeTokens.of(context).textTertiary,
                         ),
                         const SizedBox(height: 16),
                         Text(
                           '今日无课，好好休息',
                           style: TextStyle(
-                            color: isDark ? Colors.white54 : Colors.black54,
+                            color: AppThemeTokens.of(context).textSecondary,
                           ),
                         ),
                       ],
@@ -829,17 +834,18 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       final providerPeriodLabel = _providerPeriodLabel(c);
                       final color = getCourseColor(
                         c.name,
+                        palette: AppThemeTokens.of(context).coursePalette,
                         courseCode: c.courseCode,
                         location: c.location,
-                      ).withOpacity(1.0);
+                      ).withValues(alpha: 1.0);
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: color.withOpacity(0.15),
+                          color: color.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: color.withOpacity(0.3)),
+                          border: Border.all(color: color.withValues(alpha: 0.3)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -852,7 +858,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: color.withOpacity(0.2),
+                                    color: color.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
@@ -870,7 +876,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   Text(
                                     '第${c.startSection}-${c.endSection}节',
                                     style: TextStyle(
-                                      color: color.withOpacity(0.8),
+                                      color: color.withValues(alpha: 0.8),
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -881,7 +887,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                             Text(
                               c.name,
                               style: TextStyle(
-                                color: isDark ? Colors.white : Colors.black87,
+                                color: AppThemeTokens.of(context).textPrimary,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
                                 height: 1.2,
@@ -895,16 +901,15 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   Icon(
                                     Icons.location_on,
                                     size: 14,
-                                    color: color.withOpacity(0.8),
+                                    color: color.withValues(alpha: 0.8),
                                   ),
                                   const SizedBox(width: 4),
                                   Expanded(
                                     child: Text(
                                       c.location!,
                                       style: TextStyle(
-                                        color: isDark
-                                            ? Colors.white70
-                                            : Colors.black87,
+                                        color: AppThemeTokens.of(context)
+                                            .textPrimary,
                                         fontSize: 13,
                                       ),
                                     ),
@@ -919,16 +924,15 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   Icon(
                                     Icons.person,
                                     size: 14,
-                                    color: color.withOpacity(0.8),
+                                    color: color.withValues(alpha: 0.8),
                                   ),
                                   const SizedBox(width: 4),
                                   Expanded(
                                     child: Text(
                                       c.teacher!,
                                       style: TextStyle(
-                                        color: isDark
-                                            ? Colors.white70
-                                            : Colors.black87,
+                                        color: AppThemeTokens.of(context)
+                                            .textPrimary,
                                         fontSize: 13,
                                       ),
                                     ),
@@ -1005,7 +1009,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   Widget _buildBackToCurrentWeekButton() {
-    final primary = CampusTheme.primary;
+    final primary = AppThemeTokens.of(context).primary;
     return Tooltip(
       message: '回到本周',
       child: IconButton(
@@ -1022,12 +1026,17 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Widget _buildDateHeader(CourseScheduleProvider sc) {
     final academicWeek = sc.getAcademicWeek(_weekStart);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor = isDark ? Colors.white : CampusTheme.text;
-    final secondaryColor = appContentSecondaryColor(context, CampusTheme.subText);
+    final tokens = AppThemeTokens.of(context);
+    final titleColor = tokens.textPrimary;
+    final secondaryColor = appContentSecondaryColor(
+      context,
+      tokens.textSecondary,
+    );
+    final weekEnd = _weekStart.add(const Duration(days: 6));
 
     return Container(
       color: Colors.transparent,
-      padding: EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.only(top: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1043,14 +1052,20 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     children: [
                       Row(
                         children: [
-                          GestureDetector(
-                            onTap: () => _pickSemesterStart(context),
-                            child: Text(
-                              academicWeek != null ? '第 $academicWeek 周' : '课表',
-                              style: TextStyle(
-                                color: titleColor,
-                                fontSize: 28,
-                                fontWeight: FontWeight.w900,
+                          Flexible(
+                            child: GestureDetector(
+                              onTap: () => _pickSemesterStart(context),
+                              child: Text(
+                                academicWeek != null
+                                    ? '第 $academicWeek 周'
+                                    : '课表',
+                                style: AppThemeStyle.of(context).title(
+                                  TextStyle(
+                                    color: titleColor,
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1060,31 +1075,35 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           ],
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      GestureDetector(
-                        onTap: () => _openTermSwitchSheet(context),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '${sc.currentTerm.title}  ${_weekStart.month}/${_weekStart.day} - ${_weekStart.add(const Duration(days: 6)).month}/${_weekStart.add(const Duration(days: 6)).day}',
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: secondaryColor,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                      Wrap(
+                        spacing: 10,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          TextButton(
+                            onPressed: () => _openTermSwitchSheet(context),
+                            style: TextButton.styleFrom(
+                              backgroundColor: tokens.tagBackground,
+                              foregroundColor: tokens.tagText,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
                               ),
-                              const SizedBox(width: 4),
-                              Icon(Icons.arrow_drop_down,
-                                  size: 16, color: secondaryColor),
-                            ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(child: Text(sc.currentTerm.title)),
+                                const Icon(Icons.expand_more, size: 16),
+                              ],
+                            ),
                           ),
-                        ),
+                          Text(
+                            '${_weekStart.month}/${_weekStart.day} – ${weekEnd.month}/${weekEnd.day}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: secondaryColor,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1142,7 +1161,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   /// 内容高度因此有上界；时间轴顶部留出同高空位即可与网格行对齐。
   double _weekHeaderHeightOf(BuildContext context) {
     final scale = MediaQuery.textScalerOf(context).scale(1.0);
-    return (16 * scale) * 1.5 + 4 + (12 * scale) * 1.5 + 8;
+    return (16 * scale) * 1.5 + 4 + (12 * scale) * 1.5 + 14;
   }
 
   Widget _buildWeekdayHeader(
@@ -1151,10 +1170,21 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }) {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryColor = CampusTheme.primary;
-    final titleColor = isDark ? Colors.white : CampusTheme.text;
-    final secondaryColor = appContentSecondaryColor(context, CampusTheme.subText);
+    final tokens = AppThemeTokens.of(context);
+    final todayFill = tokens.timetableToday.a == 0
+        ? tokens.primaryContainer
+        : Color.alphaBlend(tokens.timetableToday, tokens.background);
+    final todayText =
+        ThemeContrast.ratio(tokens.onPrimaryContainer, todayFill) >= 4.5
+        ? tokens.onPrimaryContainer
+        : ThemeContrast.ratio(Colors.white, todayFill) >= 4.5
+        ? Colors.white
+        : Colors.black;
+    final titleColor = tokens.textPrimary;
+    final secondaryColor = appContentSecondaryColor(
+      context,
+      tokens.textSecondary,
+    );
 
     return SizedBox(
       height: _weekHeaderHeightOf(context),
@@ -1167,30 +1197,46 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 final d = weekStart.add(Duration(days: i));
                 final isToday = d == todayDate;
                 return Expanded(
-                  child: Column(
-                    children: [
-                      Text(
-                        _wd[i],
-                        style: TextStyle(
-                          color: isToday ? primaryColor : titleColor,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          '${d.month}/${d.day}',
-                          style: TextStyle(
-                            color: isToday ? primaryColor : secondaryColor,
-                            fontSize: 12,
-                            fontWeight:
-                                isToday ? FontWeight.w600 : FontWeight.w500,
+                  child: Semantics(
+                    selected: isToday,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      decoration: isToday
+                          ? BoxDecoration(
+                              color: todayFill,
+                              borderRadius: BorderRadius.circular(
+                                AppShape.of(context).sm,
+                              ),
+                            )
+                          : null,
+                      child: Column(
+                        children: [
+                          Text(
+                            _wd[i],
+                            style: TextStyle(
+                              color: isToday ? todayText : titleColor,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 4),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              '${d.month}/${d.day}',
+                              style: TextStyle(
+                                color: isToday ? todayText : secondaryColor,
+                                fontSize: 12,
+                                fontWeight: isToday
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 );
               }),
@@ -1203,6 +1249,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   // ====== 未登录引导 ======
+
   Widget _buildLoginPrompt(BuildContext context, bool isDark) {
     return CourseEmptyStateCard(
       type: CourseEmptyStateType.unlogged,
@@ -1260,24 +1307,26 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
-        20,
-        22,
-        20,
+        0,
+        16,
+        0,
         24 + MediaQuery.paddingOf(context).bottom,
       ),
-      child: Column(
-        children: [
-          CourseEmptyStateCard(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: CourseEmptyStateCard(
             type: isCurrentTerm
                 ? CourseEmptyStateType.noCache
                 : CourseEmptyStateType.currentTermNoCache,
             isDark: isDark,
-            recommendedTerm:
-                isCurrentTerm ? sc.currentTerm : CourseTerm.inferCurrentTerm(),
+            recommendedTerm: isCurrentTerm
+                ? sc.currentTerm
+                : CourseTerm.inferCurrentTerm(),
             onMainAction: () => _openCoursePullSheet(context),
             onSecondaryAction: () => _openTermSwitchSheet(context),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1302,10 +1351,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
             decoration: BoxDecoration(
-              color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+              color: AppThemeTokens.of(context).card,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isDark ? Colors.white12 : CampusTheme.border,
+                color: AppThemeTokens.of(context).cardBorder,
               ),
               boxShadow: isDark
                   ? null
@@ -1322,14 +1371,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 Icon(
                   Icons.calendar_month_outlined,
                   size: 42,
-                  color: CampusTheme.primary,
+                  color: AppThemeTokens.of(context).primary,
                 ),
                 const SizedBox(height: 16),
                 Text(
                   '先设置开学第一周',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: isDark ? Colors.white : CampusTheme.text,
+                    color: AppThemeTokens.of(context).textPrimary,
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
                   ),
@@ -1339,7 +1388,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   '已导入 ${sc.courses.length} 门课程。设置后才会按教学周显示课表，设置前不能切换周次。',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: isDark ? Colors.white70 : CampusTheme.subText,
+                    color: AppThemeTokens.of(context).textSecondary,
                     fontSize: 14,
                     height: 1.5,
                   ),
@@ -1363,19 +1412,21 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const EduScreen()));
-    if (mounted) {
+    if (mounted && context.mounted) {
       final sc = context.read<CourseScheduleProvider>();
-      if (mounted)
+      if (mounted && context.mounted) {
         setState(() {
           _initializing = sc.courses.isEmpty;
         });
+      }
       await sc.loadCachedCoursesIfAvailable();
       await _syncCourseReminders(sc);
-      if (mounted)
+      if (mounted && context.mounted) {
         setState(() {
           _hasCache = sc.courses.isNotEmpty;
           _initializing = false;
         });
+      }
     }
   }
 
@@ -1397,7 +1448,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       controller: academicController,
       coordinator: _coordinatorOrNull(),
     );
-    if (!academicReady || !mounted) {
+    if (!mounted || !context.mounted) return;
+    if (!academicReady) {
       messenger.showSnackBar(
         const SnackBar(content: Text('教务会话尚未恢复，未开始拉取课表；请按提示登录后重试')),
       );
@@ -1412,26 +1464,28 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child:
-                const Text('取消', style: TextStyle(color: CampusTheme.subText)),
+            child: Text('取消',
+                style:
+                    TextStyle(color: AppThemeTokens.of(context).textSecondary)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-                backgroundColor: CampusTheme.primary,
-                foregroundColor: Colors.white),
+                backgroundColor: AppThemeTokens.of(context).primary,
+                foregroundColor: AppThemeTokens.of(context).onPrimary),
             child: const Text('刷新'),
           ),
         ],
       ),
     );
-    if (confirm != true || !mounted) return;
+    if (confirm != true || !mounted || !context.mounted) return;
 
-    if (mounted)
+    if (mounted && context.mounted) {
       setState(() {
         _isFetchingCourses = true;
         _initializing = sc.courses.isEmpty;
       });
+    }
 
     // 弹出精美加载动画，防止用户乱点
     showAppDialog(
@@ -1451,13 +1505,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           .getCourses(requestedTerm.year, requestedTerm.semester,
               providerTermId: requestedTerm.providerTermId)
           .timeout(_courseFetchTimeout);
-      if (mounted &&
+      if (mounted && context.mounted &&
           (sc.contextGeneration != requestedGeneration ||
               sc.currentTerm.id != requestedTerm.id)) {
         Navigator.pop(context);
         return;
       }
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
 
       if (result == null || !result.success) {
         Navigator.pop(context); // 关闭加载弹窗
@@ -1495,17 +1549,19 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       } catch (error) {
         reminderError = error;
       }
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
 
-      if (mounted)
+      if (mounted && context.mounted) {
         setState(() {
           _hasCache = sc.courses.isNotEmpty;
           _didLoad = true;
         });
+      }
 
       // 给底层 Widget 预留微小的重绘时间，防止部分机型路由弹窗关闭时阻断下层 setState 渲染
       await Future.delayed(const Duration(milliseconds: 100));
-      if (mounted) {
+      if (!mounted || !context.mounted) return;
+      if (mounted && context.mounted) {
         Navigator.pop(context); // 确保课表加载进状态后再关闭加载弹窗
       }
       messenger.showSnackBar(
@@ -1517,7 +1573,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     ? '课表已拉取，但教务身份暂未同步；联网后会自动重试。'
                     : '课表已拉取。首次导入请点击顶部“设置周数”，选择开学第一天。',
           ),
-          duration: Duration(seconds: 4),
+          duration: const Duration(seconds: 4),
         ),
       );
 
@@ -1540,9 +1596,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     vertical: 24,
                   ),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? CampusTheme.darkCard
-                        : Colors.white,
+                    color: AppThemeTokens.of(context).card,
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
@@ -1561,7 +1615,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           color: Colors.green.shade50,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(
+                        child: const Icon(
                           Icons.check_circle,
                           color: Colors.green,
                           size: 48,
@@ -1582,7 +1636,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         '已为您更新 ${sc.courses.length} 门课程',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.grey.shade600,
+                          color: AppThemeTokens.of(context).textSecondary,
                           decoration: TextDecoration.none,
                           fontWeight: FontWeight.normal,
                         ),
@@ -1598,10 +1652,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       // 1.5秒后自动关闭成功弹窗
       Future.delayed(const Duration(milliseconds: 1500), () {
-        if (mounted) Navigator.pop(context);
+        if (mounted && context.mounted) Navigator.pop(context);
       });
     } on TimeoutException {
-      if (mounted) {
+      if (mounted && context.mounted) {
         Navigator.pop(context);
         AppFeedback.showErrorDialog(
           context,
@@ -1611,7 +1665,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && context.mounted) {
         Navigator.pop(context);
         AppFeedback.showErrorDialog(
           context,
@@ -1620,7 +1674,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         );
       }
     } finally {
-      if (mounted) {
+      if (mounted && context.mounted) {
         setState(() {
           _isFetchingCourses = false;
           _initializing = false;
@@ -1649,7 +1703,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       controller: controller,
       coordinator: _coordinatorOrNull(),
     );
-    if (!ready || !mounted) return;
+    if (!ready || !mounted || !context.mounted) return;
 
     final result = await CourseImportSheet.show(
       context,
@@ -1658,7 +1712,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       initialSemester: sc.currentTerm.semester,
     );
 
-    if (result == null || !mounted) return;
+    if (result == null || !mounted || !context.mounted) return;
 
     final confirm = await CoursePreviewSheet.show(
       context,
@@ -1669,7 +1723,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       eduProvider: edu,
     );
 
-    if (confirm != true || !mounted) return;
+    if (confirm != true || !mounted || !context.mounted) return;
 
     final oldTerm = sc.currentTerm;
     final sameTerm = oldTerm.id == result.term.id;
@@ -1689,7 +1743,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         resetHidden: true,
       );
 
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
 
       if (importedCount == 0) {
         final rawCount = result.courses.length;
@@ -1705,7 +1759,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       await _syncCourseReminders(sc);
 
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
 
       setState(() {
         _resetWeekPager(sc, _pageAnchorDate(sc));
@@ -1722,12 +1776,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ),
       );
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('课表拉取失败：$e')),
       );
     } finally {
-      if (mounted) {
+      if (mounted && context.mounted) {
         setState(() {
           _isFetchingCourses = false;
           _isImportingCourses = false;
@@ -1773,10 +1827,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       _initializing = false;
       _didLoad = true;
     });
-  }
-
-  Future<void> _openCourseImportSheet(BuildContext context) {
-    return _openCoursePullSheet(context);
   }
 
   Future<void> _shareSchedule(CourseScheduleProvider sc) async {
@@ -1996,6 +2046,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             updateScheduleOpacity: _updateScheduleOpacityFromSettings,
             updateScheduleSlotHeight: _updateScheduleSlotHeightFromSettings,
             resetScheduleDisplay: _resetScheduleDisplayFromSettings,
+            scanToWeb: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => AcademicTransferScreen(
+                  dio: context.read<AuthProvider>().dio,
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -2236,18 +2293,21 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             const Text('开启后，系统会根据当前课表在每节课开始前提前发送静音提醒。'),
             const SizedBox(height: 12),
             _permissionHint(
+              context: dialogContext,
               icon: Icons.notifications_none,
               text: '通知权限用于显示上课提醒，不会改变你的系统铃声设置。',
               isDark: isDark,
             ),
             const SizedBox(height: 8),
             _permissionHint(
+              context: dialogContext,
               icon: Icons.schedule,
               text: '精确闹钟用于尽量按时提醒，尤其适合早八和晚课。',
               isDark: isDark,
             ),
             const SizedBox(height: 8),
             _permissionHint(
+              context: dialogContext,
               icon: Icons.battery_saver_outlined,
               text: '后台保活用于清除任务卡片后仍能由系统唤起提醒。',
               isDark: isDark,
@@ -2270,6 +2330,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   static Widget _permissionHint({
+    required BuildContext context,
     required IconData icon,
     required String text,
     required bool isDark,
@@ -2280,7 +2341,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         Icon(
           icon,
           size: 18,
-          color: isDark ? Colors.white70 : Colors.blueGrey[600],
+          color: AppThemeTokens.of(context).textSecondary,
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -2289,7 +2350,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             style: TextStyle(
               fontSize: 13,
               height: 1.35,
-              color: isDark ? Colors.white70 : Colors.black87,
+              color: AppThemeTokens.of(context).textPrimary,
             ),
           ),
         ),
@@ -2301,11 +2362,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   void _showArchiveSheet(BuildContext context, CourseScheduleProvider sc) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = Theme.of(context).primaryColor;
-    final panelColor = isDark ? const Color(0xFF111827) : Colors.white;
-    final tileColor =
-        isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF8FAFC);
-    final borderColor =
-        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE5E7EB);
+    final panelColor = AppThemeTokens.of(context).surfaceElevated;
+    final tileColor = AppThemeTokens.of(context).inputFill;
+    final borderColor = AppThemeTokens.of(context).outline;
     bool isRefreshing = false;
     bool isLoadingArchive = false;
     String? loadingArchiveId;
@@ -2354,8 +2413,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       width: 42,
                       height: 4,
                       decoration: BoxDecoration(
-                        color:
-                            isDark ? Colors.white24 : const Color(0xFFD1D5DB),
+                        color: AppThemeTokens.of(context).textTertiary,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -2384,7 +2442,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                               style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.w800,
-                                color: isDark ? Colors.white : Colors.black87,
+                                color: AppThemeTokens.of(context).textPrimary,
                               ),
                             ),
                             const SizedBox(height: 6),
@@ -2392,8 +2450,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                               '管理存档、刷新课表',
                               style: TextStyle(
                                 fontSize: 13,
-                                color:
-                                    isDark ? Colors.white60 : Colors.grey[600],
+                                color: AppThemeTokens.of(context).textSecondary,
                               ),
                             ),
                           ],
@@ -2423,19 +2480,21 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                 ? null
                                 : LinearGradient(
                                     colors: [
-                                      const Color(
-                                        0xFF6366F1,
-                                      ).withValues(alpha: isDark ? 0.25 : 0.12),
-                                      const Color(
-                                        0xFF8B5CF6,
-                                      ).withValues(alpha: isDark ? 0.18 : 0.08),
+                                      AppThemeTokens.of(context)
+                                          .primary
+                                          .withValues(
+                                              alpha: isDark ? 0.25 : 0.12),
+                                      AppThemeTokens.of(context)
+                                          .primary
+                                          .withValues(
+                                              alpha: isDark ? 0.18 : 0.08),
                                     ],
                                   ),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: const Color(
-                                0xFF6366F1,
-                              ).withValues(alpha: 0.2),
+                              color: AppThemeTokens.of(context)
+                                  .primary
+                                  .withValues(alpha: 0.2),
                             ),
                           ),
                           child: Material(
@@ -2448,7 +2507,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                       setSheetState(() => isRefreshing = true);
                                       Navigator.pop(ctx);
                                       await _fetchCourses(context);
-                                      if (mounted) {
+                                      if (mounted && context.mounted) {
                                         setState(() {});
                                       }
                                     },
@@ -2460,26 +2519,28 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                 child: Row(
                                   children: [
                                     if (isRefreshing)
-                                      const SizedBox(
+                                      SizedBox(
                                         width: 22,
                                         height: 22,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2.5,
-                                          color: Color(0xFF818CF8),
+                                          color: AppThemeTokens.of(context)
+                                              .primary,
                                         ),
                                       )
                                     else
                                       Container(
                                         padding: const EdgeInsets.all(6),
                                         decoration: BoxDecoration(
-                                          color: const Color(
-                                            0xFF6366F1,
-                                          ).withValues(alpha: 0.2),
+                                          color: AppThemeTokens.of(context)
+                                              .primary
+                                              .withValues(alpha: 0.2),
                                           shape: BoxShape.circle,
                                         ),
-                                        child: const Icon(
+                                        child: Icon(
                                           Icons.cloud_download_outlined,
-                                          color: Color(0xFF818CF8),
+                                          color: AppThemeTokens.of(context)
+                                              .primary,
                                           size: 20,
                                         ),
                                       ),
@@ -2496,9 +2557,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                             style: TextStyle(
                                               fontSize: 15,
                                               fontWeight: FontWeight.w600,
-                                              color: isDark
-                                                  ? Colors.white
-                                                  : Colors.black87,
+                                              color: AppThemeTokens.of(context)
+                                                  .textPrimary,
                                             ),
                                           ),
                                           const SizedBox(height: 2),
@@ -2506,9 +2566,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                             '拉取最新数据并覆盖当前课表',
                                             style: TextStyle(
                                               fontSize: 12,
-                                              color: isDark
-                                                  ? Colors.white54
-                                                  : Colors.grey[600],
+                                              color: AppThemeTokens.of(context)
+                                                  .textSecondary,
                                             ),
                                           ),
                                         ],
@@ -2517,9 +2576,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                     if (!isRefreshing)
                                       Icon(
                                         Icons.chevron_right,
-                                        color: isDark
-                                            ? Colors.white38
-                                            : Colors.grey[400],
+                                        color: AppThemeTokens.of(context)
+                                            .textTertiary,
                                       ),
                                   ],
                                 ),
@@ -2564,14 +2622,15 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                     Container(
                                       padding: const EdgeInsets.all(6),
                                       decoration: BoxDecoration(
-                                        color: const Color(
-                                          0xFF10B981,
-                                        ).withValues(alpha: 0.15),
+                                        color: AppThemeTokens.of(context)
+                                            .primary
+                                            .withValues(alpha: 0.15),
                                         shape: BoxShape.circle,
                                       ),
-                                      child: const Icon(
+                                      child: Icon(
                                         Icons.save_outlined,
-                                        color: Color(0xFF10B981),
+                                        color:
+                                            AppThemeTokens.of(context).primary,
                                         size: 20,
                                       ),
                                     ),
@@ -2586,9 +2645,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                             style: TextStyle(
                                               fontSize: 15,
                                               fontWeight: FontWeight.w600,
-                                              color: isDark
-                                                  ? Colors.white
-                                                  : Colors.black87,
+                                              color: AppThemeTokens.of(context)
+                                                  .textPrimary,
                                             ),
                                           ),
                                           const SizedBox(height: 2),
@@ -2598,9 +2656,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                                 : '当前 ${sc.courses.length} 门课',
                                             style: TextStyle(
                                               fontSize: 12,
-                                              color: isDark
-                                                  ? Colors.white70
-                                                  : const Color(0xFF49454F),
+                                              color: AppThemeTokens.of(context)
+                                                  .textSecondary,
                                             ),
                                           ),
                                         ],
@@ -2608,9 +2665,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                     ),
                                     Icon(
                                       Icons.chevron_right,
-                                      color: isDark
-                                          ? Colors.white38
-                                          : Colors.grey[400],
+                                      color: AppThemeTokens.of(context)
+                                          .textTertiary,
                                     ),
                                   ],
                                 ),
@@ -2628,7 +2684,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
-                                color: isDark ? Colors.white : Colors.black87,
+                                color: AppThemeTokens.of(context).textPrimary,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -2649,7 +2705,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                   color: isDark
-                                      ? Colors.white.withValues(alpha: 0.9)
+                                      ? AppThemeTokens.of(context)
+                                          .textPrimary
+                                          .withValues(alpha: 0.9)
                                       : primary,
                                 ),
                               ),
@@ -2696,9 +2754,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w500,
-                                    color: isDark
-                                        ? Colors.white38
-                                        : Colors.grey[500],
+                                    color:
+                                        AppThemeTokens.of(context).textTertiary,
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -2706,9 +2763,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   '点击上方按钮保存当前课表',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: isDark
-                                        ? Colors.white24
-                                        : Colors.grey[400],
+                                    color:
+                                        AppThemeTokens.of(context).textTertiary,
                                   ),
                                 ),
                               ],
@@ -2789,7 +2845,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                                   archive.id,
                                                 );
                                                 await _syncCourseReminders(sc);
-                                                if (mounted) {
+                                                if (mounted && context.mounted) {
                                                   setState(() {
                                                     _hasCache = true;
                                                     _didLoad = true;
@@ -2798,7 +2854,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                                 if (ctx.mounted) {
                                                   Navigator.pop(ctx);
                                                 }
-                                                if (mounted) {
+                                                if (mounted && context.mounted) {
                                                   ScaffoldMessenger.of(
                                                     context,
                                                   ).showSnackBar(
@@ -2810,7 +2866,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                                   );
                                                 }
                                               } catch (e) {
-                                                if (mounted) {
+                                                if (mounted && context.mounted) {
                                                   ScaffoldMessenger.of(
                                                     context,
                                                   ).showSnackBar(
@@ -2875,9 +2931,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                                       fontSize: 15,
                                                       fontWeight:
                                                           FontWeight.w600,
-                                                      color: isDark
-                                                          ? Colors.white
-                                                          : Colors.black87,
+                                                      color: AppThemeTokens.of(
+                                                              context)
+                                                          .textPrimary,
                                                     ),
                                                     maxLines: 1,
                                                     overflow:
@@ -2888,9 +2944,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                                     '${archive.courseCount} 门课 · $dateStr',
                                                     style: TextStyle(
                                                       fontSize: 12,
-                                                      color: isDark
-                                                          ? Colors.white54
-                                                          : Colors.grey[600],
+                                                      color: AppThemeTokens.of(
+                                                              context)
+                                                          .textSecondary,
                                                     ),
                                                   ),
                                                 ],
@@ -2915,9 +2971,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                               '← 滑动删除',
                                               style: TextStyle(
                                                 fontSize: 10,
-                                                color: isDark
-                                                    ? Colors.white24
-                                                    : Colors.grey[400],
+                                                color:
+                                                    AppThemeTokens.of(context)
+                                                        .textTertiary,
                                               ),
                                             ),
                                           ],
@@ -2934,7 +2990,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           '存档数据保存在本地，导出按钮会写入下载目录并显示实际路径。',
                           style: TextStyle(
                             fontSize: 12,
-                            color: isDark ? Colors.white30 : Colors.grey[400],
+                            color: AppThemeTokens.of(context).textTertiary,
                           ),
                         ),
                         const SizedBox(height: 24),
@@ -2990,14 +3046,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
         await sc.importArchiveFromJson(fileName, jsonStr);
         setSheetState(() {});
-        if (mounted) {
+        if (mounted && context.mounted) {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(content: Text('已导入存档「$fileName」')));
         }
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && context.mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('导入失败，文件可能已损坏: $e')));
@@ -3019,7 +3075,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final fileName = '沈理校园课表_$safeName.json';
       final file = await _writeArchiveExportFile(fileName, jsonStr);
 
-      if (mounted) {
+      if (mounted && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('存档已保存至：${file.savedPath}'),
@@ -3036,7 +3092,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && context.mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('导出失败: $e')));
@@ -3223,7 +3279,7 @@ $classFilterRule
                             const SizedBox(height: 12),
                             // 星期几
                             DropdownButtonFormField<int>(
-                              value: weekday,
+                              initialValue: weekday,
                               decoration:
                                   const InputDecoration(labelText: '星期'),
                               items: List.generate(7, (i) => i + 1)
@@ -3243,7 +3299,7 @@ $classFilterRule
                               children: [
                                 Expanded(
                                   child: DropdownButtonFormField<int>(
-                                    value: startSection,
+                                    initialValue: startSection,
                                     decoration: const InputDecoration(
                                         labelText: '开始节次'),
                                     items: List.generate(12, (i) => i + 1)
@@ -3267,7 +3323,7 @@ $classFilterRule
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: DropdownButtonFormField<int>(
-                                    value: endSection,
+                                    initialValue: endSection,
                                     decoration: const InputDecoration(
                                         labelText: '结束节次'),
                                     items: List.generate(12, (i) => i + 1)
@@ -3292,7 +3348,7 @@ $classFilterRule
                               children: [
                                 Expanded(
                                   child: DropdownButtonFormField<int>(
-                                    value: startWeek.clamp(1, maxWeek),
+                                    initialValue: startWeek.clamp(1, maxWeek),
                                     decoration:
                                         const InputDecoration(labelText: '开始周'),
                                     items: List.generate(maxWeek, (i) => i + 1)
@@ -3315,7 +3371,7 @@ $classFilterRule
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: DropdownButtonFormField<int>(
-                                    value: endWeek.clamp(startWeek, maxWeek),
+                                    initialValue: endWeek.clamp(startWeek, maxWeek),
                                     decoration:
                                         const InputDecoration(labelText: '结束周'),
                                     items: List.generate(maxWeek, (i) => i + 1)
@@ -3359,7 +3415,7 @@ $classFilterRule
                                 )
                                     .colorScheme
                                     .secondaryContainer
-                                    .withOpacity(0.5),
+                                    .withValues(alpha: 0.5),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Column(
@@ -3466,7 +3522,7 @@ $classFilterRule
                                         : aiPromptTemplate;
                                 Clipboard.setData(ClipboardData(text: prompt));
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
+                                  const SnackBar(
                                     content: Text(
                                       '提示词已复制。请前往你选择的外部 AI 服务提交，处理规则由对应服务商决定。',
                                     ),
@@ -3488,7 +3544,7 @@ $classFilterRule
                                 )
                                     .colorScheme
                                     .surfaceContainerHighest
-                                    .withOpacity(0.3),
+                                    .withValues(alpha: 0.3),
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -3741,7 +3797,7 @@ $classFilterRule
                   for (var oldCourse in conflictingCourses) {
                     await sc.removeCustomCourse(oldCourse.id);
                   }
-                  if (mounted) {
+                  if (mounted && dialogCtx.mounted) {
                     _executeImport(dialogCtx, action, validCourses);
                   }
                 },
@@ -3760,7 +3816,7 @@ $classFilterRule
     } catch (e) {
       debugPrint('AI 导入解析失败: ${e.runtimeType}');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text(
             '解析失败，请检查数据格式。',
           ),
@@ -3849,8 +3905,6 @@ $classFilterRule
   }
 
   Widget _buildWeekEmptyPlaceholder(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
       child: Column(
@@ -3858,7 +3912,7 @@ $classFilterRule
           Icon(
             Icons.free_breakfast_rounded,
             size: 42,
-            color: isDark ? Colors.white24 : const Color(0xFFCBD5D1),
+            color: AppThemeTokens.of(context).textTertiary,
           ),
           const SizedBox(height: 12),
           Text(
@@ -3866,7 +3920,7 @@ $classFilterRule
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
-              color: isDark ? Colors.white70 : CampusTheme.text,
+              color: AppThemeTokens.of(context).textPrimary,
             ),
           ),
           const SizedBox(height: 6),
@@ -3875,7 +3929,7 @@ $classFilterRule
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 12.5,
-              color: isDark ? Colors.white38 : CampusTheme.subText,
+              color: AppThemeTokens.of(context).textTertiary,
             ),
           ),
         ],
@@ -3976,11 +4030,7 @@ $classFilterRule
     int slotCount,
     double slotHeight,
   ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cleanLightMode =
-        context.watch<ThemeProvider>().isCleanBackgroundMode && !isDark;
-    final timeTextColor =
-        cleanLightMode ? const Color(0xFF6B7280) : const Color(0xFF888888);
+    final timeTextColor = AppThemeTokens.of(context).textSecondary;
 
     return Column(
       children: List.generate(
@@ -4007,15 +4057,8 @@ $classFilterRule
     int slotCount,
     double slotHeight,
   ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cleanLightMode =
-        context.watch<ThemeProvider>().isCleanBackgroundMode && !isDark;
-    final verticalLineColor = cleanLightMode
-        ? Colors.black.withValues(alpha: 0.06)
-        : Colors.white.withValues(alpha: 0.16);
-    final horizontalLineColor = cleanLightMode
-        ? Colors.black.withValues(alpha: 0.05)
-        : Colors.white.withValues(alpha: 0.2);
+    final verticalLineColor = AppThemeTokens.of(context).timetableGrid;
+    final horizontalLineColor = AppThemeTokens.of(context).timetableGrid;
 
     return Stack(
       clipBehavior: Clip.none,
@@ -4141,7 +4184,6 @@ $classFilterRule
     int wn,
     double slotHeight,
   ) {
-    final glass = context.watch<ThemeProvider>().frostedGlass;
     final first = courses.first;
     final minStart =
         courses.map((c) => c.startSection).reduce((a, b) => a < b ? a : b);
@@ -4167,7 +4209,7 @@ $classFilterRule
           padding: EdgeInsets.all(paddingVal),
           clipBehavior: Clip.hardEdge,
           decoration: BoxDecoration(
-            color: const Color(0xFFE65100).withValues(alpha: glass ? 1 : 0.90),
+            color: const Color(0xFFE65100), // theme: fixed 调课状态识别色
             borderRadius: BorderRadius.circular(6.0),
             border: Border.all(
               color: Colors.white.withValues(alpha: 0.6),
@@ -4326,7 +4368,6 @@ $classFilterRule
     int? wn,
     double slotHeight,
   ) {
-    final glass = context.watch<ThemeProvider>().frostedGlass;
     final cardOpacity = isActive ? _scheduleCardOpacity : 0.2;
     final top = (c.startSection - 1) * slotHeight;
     final h = c.span * slotHeight - 2;
@@ -4336,10 +4377,13 @@ $classFilterRule
     }
     final base = getCourseColor(
       c.name,
+      palette: AppThemeTokens.of(context).coursePalette,
       isActive: isActive,
       courseCode: c.courseCode,
       location: c.location,
-    ).withValues(alpha: glass ? 1 : cardOpacity);
+    ).withValues(alpha: 1);
+
+    // 独立透明度由 AppCardSurface 应用；底色再次设 alpha 会使简洁模式变成平方。
 
     // 根据可用宽度动态放大字体和内边距，解决大屏下太空的问题
     final double scale = (exactW / 45.0).clamp(1.0, 1.35);
@@ -4382,14 +4426,16 @@ $classFilterRule
                   style: TextStyle(
                     fontSize: 8 * scale,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white54,
+                    color: AppThemeTokens.of(context)
+                        .courseCardText
+                        .withValues(alpha: Colors.white54.a),
                   ),
                 ),
               Flexible(
                 child: Text(
                   c.name.isNotEmpty ? c.name : '未知课名',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppThemeTokens.of(context).courseCardText,
                     fontSize: (isCompact ? 11 : 13) * scale,
                     fontWeight: FontWeight.bold,
                     height: 1.15,
@@ -4402,14 +4448,16 @@ $classFilterRule
               if (c.location != null && c.location!.isNotEmpty) ...[
                 SizedBox(height: 1 * scale),
                 Text(
-                  '@${c.location}',
+                  c.location!,
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppThemeTokens.of(context).courseCardText,
                     fontSize: (isCompact ? 9 : 11) * scale,
                     fontWeight: FontWeight.w600,
                     height: 1.15,
                   ),
                   textAlign: TextAlign.left,
+                  maxLines: isCompact ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
               if (!isCompact &&
@@ -4419,7 +4467,11 @@ $classFilterRule
                 SizedBox(height: 1 * scale),
                 Text(
                   c.teacher!,
-                  style: TextStyle(color: Colors.white60, fontSize: 10 * scale),
+                  style: TextStyle(
+                      color: AppThemeTokens.of(context)
+                          .courseCardText
+                          .withValues(alpha: 0.6),
+                      fontSize: 10 * scale),
                   textAlign: TextAlign.left,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -4466,7 +4518,7 @@ $classFilterRule
         ],
       ),
     );
-    if (confirmed == true) {
+    if (confirmed == true && mounted) {
       await context.read<CourseScheduleProvider>().removeCustomCourse(c.id);
       if (mounted) setState(() {});
       if (mounted) {
@@ -4547,7 +4599,7 @@ class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
                     } catch (_) {
                       // App 内存档已成功保存，公开导出失败时保留它供用户重试。
                     }
-                    if (!mounted) return;
+                    if (!mounted || !context.mounted) return;
                     Navigator.pop(context);
                     widget.setSheetState(() {});
                     scaffoldMessenger.showSnackBar(
@@ -4557,12 +4609,12 @@ class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
                               : '存档已保存至：${exported.savedPath}')),
                     );
                   } catch (error) {
-                    if (!mounted) return;
+                    if (!mounted || !context.mounted) return;
                     scaffoldMessenger.showSnackBar(
                       SnackBar(content: Text('保存失败：$error')),
                     );
                   } finally {
-                    if (mounted) setState(() => _saving = false);
+                    if (mounted && context.mounted) setState(() => _saving = false);
                   }
                 },
           child: Text(_saving ? '保存中…' : '保存'),

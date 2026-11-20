@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import 'campus_theme.dart';
 import '../app_card.dart';
 
@@ -44,7 +44,7 @@ class CampusTodayCard extends StatelessWidget {
     final iconColor = colors.onSurfaceVariant;
 
     return AppCardSurface(
-      decoration: CampusTheme.cardDecoration(isDark),
+      decoration: CampusTheme.themedCardDecoration(context),
       child: Material(
         color: Colors.transparent,
         child: Padding(
@@ -79,7 +79,7 @@ class CampusTodayCard extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return InkWell(
       key: ValueKey('campus-today-${item.id}'),
-      borderRadius: BorderRadius.circular(AppRadius.md),
+      borderRadius: BorderRadius.circular(AppShape.of(context).md),
       onTap: item.onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 9),

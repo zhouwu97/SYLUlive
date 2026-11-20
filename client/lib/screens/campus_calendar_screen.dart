@@ -636,12 +636,9 @@ class _CalendarActionSheet extends StatelessWidget {
                 isDark: isDark,
                 onTap: onImportantEvents,
               ),
-              AppCardDivider(
+              const AppCardDivider(
                 height: 1,
                 indent: 58,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : _CalendarPalette.border,
               ),
               _CalendarActionTile(
                 icon: Icons.image_search_rounded,

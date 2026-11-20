@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"shenliyuan/internal/community"
 	"shenliyuan/internal/models"
 )
 
@@ -26,6 +27,93 @@ type ManagedBotUpdate struct {
 
 const ManagedBotMaxDailyReplies = 100
 const ManagedBotMinReplyIntervalMinutes = 1
+
+type ManagedBotReplyTarget struct {
+	PostID        uint   `json:"post_id"`
+	PostType      string `json:"post_type"`
+	ReplyID       uint   `json:"reply_id"`
+	SourceVersion string `json:"source_version"`
+}
+
+// BotReplyTargets only discovers current public sources. Publication still takes the
+// runtime lease and repeats the version, author, scope and quota checks in its transaction.
+func (s *IntegrationActionService) BotReplyTargets(ctx context.Context, binding models.IntegrationBinding, bot models.ManagedBot) ([]ManagedBotReplyTarget, error) {
+	targets := []ManagedBotReplyTarget{}
+	policy := ManagedBotPolicy(bot)
+	if bot.OwnerID != binding.OwnerID || !bot.Enabled || !policy.PublicReadEnabled || !policy.ReplyEnabled ||
+		!IntegrationHasScope(binding, IntegrationReadScope) || !IntegrationHasScope(binding, IntegrationAutoReplyScope) || len(policy.AllowedPostTypes) == 0 {
+		return targets, nil
+	}
+	db := s.Auth.DB.WithContext(ctx)
+	now := s.Auth.Now()
+	if err := managedBotReplyQuota(db, bot.UserID, now, policy, 0); err != nil {
+		var problem *IntegrationError
+		if errors.As(err, &problem) && problem.Status == 429 {
+			return targets, nil
+		}
+		return nil, err
+	}
+	var actor models.User
+	if err := db.Select("id", "nickname", "account_status").First(&actor, bot.UserID).Error; err != nil {
+		return nil, err
+	}
+	if actor.AccountStatus != "bot" {
+		return targets, nil
+	}
+	var sections []models.WaterSection
+	if err := db.Where("slug IN ?", policy.AllowedPostTypes).Find(&sections).Error; err != nil {
+		return nil, err
+	}
+	allowed := []string{}
+	for _, section := range sections {
+		if ManagedBotSectionAllowed(section) {
+			allowed = append(allowed, section.Slug)
+		}
+	}
+	posts := community.VisiblePosts(db).Select("id").Where("post_type IN ?", allowed)
+	ownPosts := community.VisiblePosts(db).Select("id").Where("author_id = ?", actor.ID)
+	addressed := db.Where("replies.reply_to_user_id = ? OR (replies.parent_reply_id IS NULL AND replies.post_id IN (?))", actor.ID, ownPosts)
+	nickname := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(actor.Nickname, "[AI] ")))
+	mention := (*regexp.Regexp)(nil)
+	if nickname != "" {
+		var names int64
+		if err := db.Model(&models.User{}).Where("LOWER(nickname) IN ?", []string{nickname, "[ai] " + nickname}).Count(&names).Error; err != nil {
+			return nil, err
+		}
+		if names == 1 {
+			mention = regexp.MustCompile(`(?:^|[^\pL\pN_@])@(?:\[ai\] )?` + regexp.QuoteMeta(nickname) + `(?:$|[^\pL\pN_])`)
+			escape := strings.NewReplacer("!", "!!", "%", "!%", "_", "!_")
+			addressed = addressed.Or("LOWER(replies.content) LIKE ? ESCAPE '!' OR LOWER(replies.content) LIKE ? ESCAPE '!'",
+				"%@"+escape.Replace(nickname)+"%", "%@[ai] "+escape.Replace(nickname)+"%")
+		}
+	}
+	var replies []struct {
+		models.Reply
+		PostAuthor uint
+		PostType   string
+	}
+	err := db.Model(&models.Reply{}).Select("replies.*, posts.author_id AS post_author, posts.post_type").
+		Joins("JOIN posts ON posts.id = replies.post_id").
+		Joins("JOIN users ON users.id = replies.author_id AND users.account_status <> ?", "bot").
+		Where("replies.post_id IN (?) AND replies.status = ? AND replies.created_at > ?", posts, models.ReplyStatusNormal, now.Add(-24*time.Hour)).
+		Where("NOT EXISTS (SELECT 1 FROM managed_bots WHERE managed_bots.user_id = replies.author_id)").
+		Where("NOT EXISTS (SELECT 1 FROM replies AS answered WHERE answered.author_id = ? AND answered.reply_to_reply_id = replies.id)", actor.ID).
+		Where(addressed).Order("replies.id DESC").Limit(40).Find(&replies).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range replies {
+		reply := candidate.Reply
+		direct := reply.ReplyToUserID != nil && *reply.ReplyToUserID == actor.ID || reply.ParentReplyID == nil && candidate.PostAuthor == actor.ID
+		if direct || mention != nil && mention.MatchString(strings.ToLower(reply.Content)) {
+			targets = append(targets, ManagedBotReplyTarget{PostID: reply.PostID, PostType: candidate.PostType, ReplyID: reply.ID, SourceVersion: community.ReplyDTO(reply).SourceVersion})
+			if len(targets) == 8 {
+				break
+			}
+		}
+	}
+	return targets, nil
+}
 
 // Legacy rows have no policy. Keep them read-only until the owner explicitly grants participation.
 func DefaultManagedBotPolicy() models.ManagedBotPolicy {
@@ -292,14 +380,6 @@ func (s *IntegrationActionService) botActor(tx *gorm.DB, owner uint, now time.Ti
 	if !ManagedBotSectionAllowed(currentSection) {
 		return 0, integrationError("bot_section_denied", 403)
 	}
-	limit := policy.DailyReplyLimit
-	if limit < 1 || limit > ManagedBotMaxDailyReplies {
-		limit = 3
-	}
-	interval := policy.MinReplyIntervalMinutes
-	if interval < ManagedBotMinReplyIntervalMinutes {
-		interval = ManagedBotMinReplyIntervalMinutes
-	}
 	var count int64
 	if p.ReplyToReplyID == 0 {
 		var postAuthor models.User
@@ -338,22 +418,42 @@ func (s *IntegrationActionService) botActor(tx *gorm.DB, owner uint, now time.Ti
 			return 0, integrationError("bot_reply_already_answered", 409)
 		}
 	}
-	if err := tx.Model(&models.Reply{}).Where("author_id = ? AND created_at > ?", actor.ID, now.Add(-24*time.Hour)).Count(&count).Error; err != nil {
-		return 0, err
-	}
-	if count >= int64(limit) {
-		return 0, integrationError("bot_daily_quota", 429)
-	}
-	query := tx.Model(&models.Reply{}).Where("author_id = ? AND created_at > ?", actor.ID, now.Add(-time.Duration(interval)*time.Minute))
+	var topLevelPostID uint
 	if p.ReplyToReplyID == 0 {
-		// Top-level participation stays once per post; only specific human targets get follow-ups.
-		query = tx.Model(&models.Reply{}).Where("author_id = ? AND (post_id = ? OR created_at > ?)", actor.ID, post.ID, now.Add(-time.Duration(interval)*time.Minute))
+		topLevelPostID = post.ID
 	}
-	if err := query.Count(&count).Error; err != nil {
+	if err := managedBotReplyQuota(tx, actor.ID, now, policy, topLevelPostID); err != nil {
 		return 0, err
-	}
-	if count > 0 {
-		return 0, integrationError("bot_reply_cooldown", 429)
 	}
 	return actor.ID, nil
+}
+
+func managedBotReplyQuota(db *gorm.DB, actor uint, now time.Time, policy models.ManagedBotPolicy, topLevelPostID uint) error {
+	limit := policy.DailyReplyLimit
+	if limit < 1 || limit > ManagedBotMaxDailyReplies {
+		limit = 3
+	}
+	interval := max(ManagedBotMinReplyIntervalMinutes, policy.MinReplyIntervalMinutes)
+	var count int64
+	if err := db.Model(&models.Reply{}).Where("author_id = ? AND created_at > ?", actor, now.Add(-24*time.Hour)).Count(&count).Error; err != nil {
+		return err
+	}
+	if count >= int64(limit) {
+		return integrationError("bot_daily_quota", 429)
+	}
+	cutoff := now.Add(-time.Duration(interval) * time.Minute)
+	query := db.Model(&models.Reply{}).Where("author_id = ?", actor)
+	if topLevelPostID > 0 {
+		// A top-level comment is still allowed only on a post this bot hasn't joined.
+		query = query.Where("post_id = ? OR created_at > ?", topLevelPostID, cutoff)
+	} else {
+		query = query.Where("created_at > ?", cutoff)
+	}
+	if err := query.Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return integrationError("bot_reply_cooldown", 429)
+	}
+	return nil
 }

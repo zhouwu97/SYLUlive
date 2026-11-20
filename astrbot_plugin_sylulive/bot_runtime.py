@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -12,7 +13,7 @@ from .approved_media import ApprovedMedia
 from .client import IntegrationProblem
 from .community_publisher import CommunityPublisher
 from .managed_bot_access import ManagedBotAccess
-from .public_agent import PublicAgent, PublicMemory
+from .public_agent import BrowsePolicy, PublicAgent, PublicMemory
 
 
 @dataclass
@@ -203,8 +204,11 @@ class BotRuntimeManager:
                 json.dumps({"binding": result.get("binding"), **{key: result.get(key) for key in ("auto_reply_server_enabled", "auto_reply_authorized", "auto_post_server_enabled", "auto_post_authorized")}}, sort_keys=True),
                 json.dumps(dict(self.config), sort_keys=True, ensure_ascii=False))
 
-    async def _policy(self, worker):
-        result = await worker.client.call("GET", "/bot/policy")
+    async def _policy(self, worker, *, check_targets=False):
+        if check_targets:
+            result = await worker.client.call("GET", "/bot/policy", params={"reply_targets": "1"})
+        else:
+            result = await worker.client.call("GET", "/bot/policy")
         if not isinstance(result, dict) or result.get("runtime_supported") is not True:
             raise IntegrationProblem("runtime_unavailable")
         bot = result.get("bot")
@@ -226,7 +230,10 @@ class BotRuntimeManager:
     async def sync(self, worker, *, schedule=True):
         try:
             async with self.network_slots:
-                result = await self._policy(worker)
+                automatic = schedule and self.config.get("community_auto_browse", False) is True
+                check_targets = (automatic and not worker.round_task and self.config.get("community_auto_comment", False) is True
+                                 and (worker.agent is None or not worker.agent.paused))
+                result = await self._policy(worker, check_targets=check_targets)
                 if result.get("bot") is None:
                     await self._cancel_round(worker)
                     worker.bot, worker.leased = None, False
@@ -258,9 +265,11 @@ class BotRuntimeManager:
                         state = "disabled"
                 await self._report(worker, state)
                 worker.control_error = ""
-                if schedule and self.config.get("community_auto_browse", False) is True and self._ready(worker) and not worker.round_task and self.monotonic() >= worker.agent.next_run:
-                    worker.phase = "waiting"
-                    worker.round_task = asyncio.create_task(self._browse(worker))
+                if automatic and self._ready(worker) and not worker.round_task:
+                    target = self._next_reply_target(worker, result) if check_targets else None
+                    if target or self.monotonic() >= worker.agent.next_run:
+                        worker.phase = "waiting"
+                        worker.round_task = asyncio.create_task(self._browse(worker, reply_target=target))
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -271,6 +280,19 @@ class BotRuntimeManager:
             worker.leased = False
             await self._cancel_round(worker)
             worker.state, worker.error = "error", "service_unavailable"
+
+    def _next_reply_target(self, worker, result):
+        targets = result.get("reply_targets", [])
+        if not worker.agent.publisher.authorized() or not isinstance(targets, list) or len(targets) > 8:
+            return None
+        policy = BrowsePolicy(self.config)
+        for target in targets:
+            if (isinstance(target, dict) and policy.permits({**target, "status": "normal"})
+                    and type(target.get("reply_id")) is int and target["reply_id"] > 0
+                    and isinstance(target.get("source_version"), str) and re.fullmatch(r"[0-9a-f]{64}", target["source_version"])
+                    and not worker.agent.publisher.target_attempted(target["reply_id"])):
+                return target
+        return None
 
     async def _report(self, worker, state):
         async with worker.report_lock:
@@ -294,7 +316,7 @@ class BotRuntimeManager:
             raise IntegrationProblem("bot_runtime_required")
         return {"runtime_session_id": worker.session, "bot_revision": worker.bot["revision"]}
 
-    async def _browse(self, worker):
+    async def _browse(self, worker, *, reply_target=None):
         try:
             async with self.model_slots:
                 current = await self._policy(worker)
@@ -303,9 +325,12 @@ class BotRuntimeManager:
                 worker.phase, worker.error = "loading", ""
                 await self._report(worker, "loading")
                 # Reserve the cooldown before any model or publication request, including crashes.
-                with worker.agent.memory.db:
-                    worker.agent.memory.db.execute("INSERT OR REPLACE INTO runtime_schedule VALUES (1,?,?)", (worker.bot["bot_user_id"], self.clock() + worker.agent.interval()))
-                result = await worker.agent.browse(self.context)
+                if reply_target is None:
+                    with worker.agent.memory.db:
+                        worker.agent.memory.db.execute("INSERT OR REPLACE INTO runtime_schedule VALUES (1,?,?)", (worker.bot["bot_user_id"], self.clock() + worker.agent.interval()))
+                    result = await worker.agent.browse(self.context)
+                else:
+                    result = await worker.agent.browse(self.context, reply_target=reply_target)
                 worker.state = result["state"]
                 if worker.state not in {"completed", "empty", "error", "cooldown", "scope_required", "paused", "disabled"}:
                     worker.state = "error"

@@ -93,7 +93,7 @@ test('手机校园资讯搜索、失败重试和清空仍留在资讯列表', as
   expect(queries.at(-1)?.searchParams.get('page')).toBe('1');
   failed = false;
   await page.locator('main').getByRole('button', {name: '重试', exact: true}).click();
-  await expect(page.getByRole('link', {name: '奖学金通知 测试中心 ·', exact: true})).toBeVisible();
+  await expect(page.getByRole('link', {name: '奖学金通知 测试中心', exact: true})).toBeVisible();
   await input.fill('');
   await input.press('Enter');
   await expect(input).toBeVisible();

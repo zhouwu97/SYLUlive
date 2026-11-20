@@ -10,7 +10,7 @@ import '../widgets/security_session_guard.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/app_card.dart';
 
-/// 超级管理员查看并解除当前生效的来源封禁。
+/// 管理员查看并解除当前生效的来源封禁；来源键原值只有超级管理员接口才返回。
 class AdminSecurityBlocksScreen extends StatefulWidget {
   const AdminSecurityBlocksScreen({super.key});
 
@@ -45,7 +45,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
     _observedEpoch = auth.accountSessionEpoch;
     _observedUserId = auth.user?.id;
     _observedRole = auth.user?.role;
-    _session = auth.isLoggedIn && auth.user?.isSuperAdmin == true
+    _session = auth.isLoggedIn && auth.user?.isAdmin == true
         ? PublishSessionScope(
             accountId: auth.user!.id,
             accountSessionEpoch: auth.accountSessionEpoch)
@@ -54,7 +54,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
     _blocks = const [];
     _busy = false;
     _loading = _session != null;
-    _error = _session == null ? '需要超级管理员权限，请返回安全中心' : null;
+    _error = _session == null ? '需要管理员权限，请返回安全中心' : null;
     final session = _session;
     if (session != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -66,7 +66,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
   bool _owns(PublishSessionScope session) =>
       mounted &&
       SecuritySessionGuard.owns(context.read<AuthProvider>(), session,
-          requireSuperAdmin: true);
+          requireAdmin: true);
 
   Future<void> _load() async {
     final session = _session;
@@ -102,7 +102,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
         builder: (dialogContext) => SecuritySessionGuard(
             auth: context.read<AuthProvider>(),
             session: session,
-            requireSuperAdmin: true,
+            requireAdmin: true,
             child: AppAlertDialog(
               title: const Text('解除来源封禁'),
               content: Text('将一次解除此操作的全部 ${block.routePrefixes.length} 个路由封禁。'),
@@ -176,7 +176,8 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
                 ])),
               )
             else if (_blocks.isEmpty)
-              const Center(child: AppContentSurface.reading(child: Text('当前没有生效封禁')))
+              const Center(
+                  child: AppContentSurface.reading(child: Text('当前没有生效封禁')))
             else
               for (final block in _blocks)
                 Padding(

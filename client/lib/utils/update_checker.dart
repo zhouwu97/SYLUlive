@@ -47,6 +47,8 @@ class UpdateChecker {
       );
       return;
     }
+    await coordinator.deferOptionalUpdate();
+    if (!context.mounted) return;
     final status = coordinator.downloadStatus;
     if (status.state == AppUpdateDownloadState.ready) {
       await _showReady(context, coordinator, info);

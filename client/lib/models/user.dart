@@ -97,7 +97,10 @@ class User {
     return User(
       id: json['id'] ?? 0,
       studentId: json['student_id'] ?? '',
-      nickname: json['nickname'] ?? '',
+      // 机器人身份由系统标签展示，昵称和正文里的服务端前缀不再重复显示。
+      nickname: bot != null
+          ? (json['nickname'] ?? '').toString().replaceFirst('[AI] ', '')
+          : json['nickname'] ?? '',
       gender: json['gender'] ?? '',
       avatar: json['avatar'] ?? '',
       background: json['background'] ?? '',
@@ -196,75 +199,74 @@ class User {
     };
   }
 
+  static String aiBotDisplayContent(String content, User? author) =>
+      author?.isAiBot == true ? content.replaceFirst('[AI机器人] ', '') : content;
+
   bool get isAdmin => role == 'admin' || role == 'super_admin';
   bool get isSuperAdmin => role == 'super_admin';
   String get publicIdLabel => 'ID $id';
   String get aiBotLabel => botOwnerNickname.trim().isEmpty
       ? '独立 AI 机器人'
       : '${botOwnerNickname.trim()} 的 AI';
+
+  /// 标签上的归属前缀：「纯合子创建的」；创建者未知时为空，只显示 AI 等级。
+  String get aiBotOwnerPrefix => botOwnerNickname.trim().isNotEmpty
+      ? '${botOwnerNickname.trim()}创建的'
+      : botOwnerId != null
+          ? '用户 #$botOwnerId 创建的'
+          : '';
   String get aiBotCreatorLabel => botOwnerNickname.trim().isNotEmpty
       ? '由${botOwnerNickname.trim()}创建'
       : botOwnerId != null
           ? '由用户 #$botOwnerId 创建'
           : '创建者未公开';
 
-  /// 根据经验值计算用户等级
-  /// Level 1: 0-49 exp
-  /// Level 2: 50-149 exp
-  /// Level 3: 150-499 exp
-  /// Level 4: 500-999 exp
-  /// Level 5: 1000-2499 exp
-  /// Level 6: 2500-4999 exp
-  /// Level 7: 5000-7999 exp
-  /// Level 8: 8000+ exp
-  int get level {
-    if (exp >= 8000) return 8;
-    if (exp >= 5000) return 7;
-    if (exp >= 2500) return 6;
-    if (exp >= 1000) return 5;
-    if (exp >= 500) return 4;
-    if (exp >= 150) return 3;
-    if (exp >= 50) return 2;
-    return 1;
-  }
+  /// 用户等级阈值：Lv.1 0 / Lv.2 50 / Lv.3 150 / Lv.4 500 / Lv.5 1000 /
+  /// Lv.6 2500 / Lv.7 5000 / Lv.8 8000。
+  static const userLevelThresholds = [0, 50, 150, 500, 1000, 2500, 5000, 8000];
 
-  /// 升级到下一级所需经验
-  int get expToNextLevel {
-    switch (level) {
-      case 1:
-        return 50;
-      case 2:
-        return 150;
-      case 3:
-        return 500;
-      case 4:
-        return 1000;
-      case 5:
-        return 2500;
-      case 6:
-        return 5000;
-      case 7:
-        return 8000;
-      default:
-        return 0; // 已满级
-    }
-  }
+  /// AI 机器人只靠每日首帖/首评和人类获赞积累经验，阈值单独一套：
+  /// Lv.1 0 / Lv.2 30 / Lv.3 100 / Lv.4 250 / Lv.5 600 / Lv.6 1200 / Lv.7 2500 / Lv.8 5000。
+  static const aiLevelThresholds = [0, 30, 100, 250, 600, 1200, 2500, 5000];
+
+  List<int> get _levelThresholds =>
+      isAiBot ? aiLevelThresholds : userLevelThresholds;
+
+  /// 根据经验值计算等级；AI 机器人使用 [aiLevelThresholds]。
+  int get level =>
+      (_levelThresholds.lastIndexWhere((threshold) => exp >= threshold) + 1)
+          .clamp(1, 8);
+
+  /// 升级到下一级所需的累计经验，满级为 0。
+  int get expToNextLevel => level >= 8 ? 0 : _levelThresholds[level];
 
   /// 当前等级进度（0.0 - 1.0）
   double get levelProgress {
     if (level >= 8) return 1.0;
-    final currentMin =
-        level == 1 ? 0 : [0, 50, 150, 500, 1000, 2500, 5000, 8000][level - 1];
+    final currentMin = _levelThresholds[level - 1];
     final needed = expToNextLevel - currentMin;
     if (needed <= 0) return 1.0;
     return ((exp - currentMin) / needed).clamp(0.0, 1.0);
   }
 
   /// 等级标签文字
-  String get levelLabel => 'Lv.$level';
+  String get levelLabel => isAiBot ? 'AI Lv.$level' : 'Lv.$level';
+
+  /// AI 等级主色，依次为天蓝、蓝青、青绿、雾靛、琥珀、珊瑚、樱粉、黑白。
+  static const aiLevelColorValues = [
+    0xFF3B82F6,
+    0xFF0EA5E9,
+    0xFF14B8A6,
+    0xFF5B67E0,
+    0xFFF59E0B,
+    0xFFF26B4A,
+    0xFFF43F5E,
+    0xFF1F2329,
+  ];
 
   /// 等级颜色
   int get levelColorValue {
+    if (isAiBot) return aiLevelColorValues[level - 1];
     switch (level) {
       case 8:
         return 0xFFFF0000; // 烈焰红 - 终极神话

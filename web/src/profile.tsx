@@ -8,7 +8,7 @@ import {PostCard} from './community';
 import {AiBotIdentity} from './ai-bot-identity';
 import {useMobile} from './mobile';
 import {ServerAvatar} from './server-avatar';
-import {displayName,userHref,userLevel} from './user-level';
+import {displayName,isAiBotUser,userHref,userLevel} from './user-level';
 import {clearDismissed,feedFeedbackApi} from './feed-feedback';
 import {LevelBadge} from './level-badge';
 import {forgetSavedPasswords} from './login-history';
@@ -72,7 +72,7 @@ function MobileProfile() {
     ] },
   ];
   return <div className="mobile-profile">
-    <button className="mobile-profile-identity" aria-label="编辑资料与图片" onClick={() => ui.open('编辑资料', <EditProfile user={user} />)}><span className="mobile-profile-avatar"><ServerAvatar src={user.avatar} name={displayName(user.nickname)} /></span><span><b>{displayName(user.nickname)}</b><span className="mobile-profile-badges"><small>Lv.{userLevel(user)}</small>{user.credit_score != null && <small>诚信 {user.credit_score}%</small>}</span></span><span aria-hidden="true">›</span></button>
+    <button className="mobile-profile-identity" aria-label="编辑资料与图片" onClick={() => ui.open('编辑资料', <EditProfile user={user} />)}><span className="mobile-profile-avatar"><ServerAvatar src={user.avatar} name={displayName(user.nickname)} /></span><span><b>{displayName(user.nickname)}</b><span className="mobile-profile-badges"><LevelBadge level={userLevel(user)} />{user.credit_score != null && <small>诚信 {user.credit_score}%</small>}</span></span><span aria-hidden="true">›</span></button>
     <section className="mobile-profile-stats" aria-label="我的统计"><Link to="/profile?view=posts"><b>{posts.data?.count ?? posts.data?.total ?? (posts.isPending ? '…' : '—')}</b><span>我的内容</span></Link><Link to="/profile?view=following"><b>{user.following_count ?? '—'}</b><span>关注的人</span></Link><Link to="/profile?view=followers"><b>{user.followers_count ?? '—'}</b><span>关注我的</span></Link></section>
     {posts.error && <button className="link-btn" onClick={() => posts.refetch()}>内容数量加载失败，点击重试</button>}
     {groups.map(group => <section className="mobile-profile-group" key={group.title}><h2>{group.title}</h2><div>{group.items.map(item => {
@@ -120,7 +120,7 @@ function DesktopProfile() {
           <div className="profile-card-body">
             <div className="profile-identity">
               <div className="profile-avatar"><ProfilePhoto key={`${user.id}:${avatar}`} src={avatar} name={nickname}/></div>
-              <div className="profile-name"><div className="profile-name-heading"><h2 title={nickname}>{nickname}</h2><span className="profile-level" aria-label={`等级 ${userLevel(user)}`}>Lv.{userLevel(user)}</span></div><AiBotIdentity user={user}/><span className="profile-account">账号 #{user.id}</span></div>
+              <div className="profile-name"><div className="profile-name-heading"><h2 title={nickname}>{nickname}</h2>{!isAiBotUser(user) && <LevelBadge className="profile-level" level={userLevel(user)}/>}</div><AiBotIdentity user={user}/><span className="profile-account">账号 #{user.id}</span></div>
               <div className="profile-actions">
                 <button className="btn primary profile-edit" aria-label="编辑资料与图片" onClick={() => ui.open('编辑资料', <EditProfile user={user}/>)}><Icon name="profile" size={16}/>编辑资料</button>
                 <button className="btn" onClick={() => ui.open('账号安全', <Security/>)}><Icon name="admin" size={16}/>账号安全</button>
@@ -202,12 +202,12 @@ function MyContent({tab,userId,self=true}:{tab:string;userId:number;self?:boolea
   const rawItems=rows(q.data,'users','following','followers');
   const items=!self&&tab==='posts'?rawItems.filter(x=>Number((x.post||x)?.board_id)!==2):rawItems;
   const empty=(self?profileEmpty:publicProfileEmpty)[tab]||(self?profileEmpty.posts:publicProfileEmpty.posts);
-  if (!q.isPending && !q.error && !items.length) return <Empty title={empty.title} description={empty.description}><Link className="btn profile-empty-action" to={empty.to}>{empty.action}<span aria-hidden="true">→</span></Link></Empty>;
+  if (!q.isPending && !q.error && !items.length) return <Empty title={empty.title} description={empty.description}><Link className="btn profile-empty-action" to={empty.to}>{empty.action}</Link></Empty>;
   const back={from:location.pathname+location.search};
   return <QueryState query={q}><div className={tab==='market'&&!self?'market-grid':`profile-feed ${people||tab==='evaluations'?'panel':''}`}>{items.map(x=>{
     if(people){
       const name=displayName(x.nickname),href=userHref(x.id,auth.user?.id);
-      const inner=<><span className="avatar user-list-avatar"><ServerAvatar src={x.avatar} name={name}/></span><div className="list-main"><div className="user-list-name"><b>{name}</b><LevelBadge className="author-level" level={userLevel(x)}/></div><AiBotIdentity user={x}/></div></>;
+      const inner=<><span className="avatar user-list-avatar"><ServerAvatar src={x.avatar} name={name}/></span><div className="list-main"><div className="user-list-name"><b>{name}</b>{!isAiBotUser(x) && <LevelBadge className="author-level" level={userLevel(x)}/>}</div><AiBotIdentity user={x}/></div></>;
       return <div className="list-row user-list-row" key={x.id}>{href?<Link className="user-list-link" to={href} state={back}>{inner}</Link>:<div className="user-list-link">{inner}</div>}{self&&tab==='following'&&<button className="btn" onClick={()=>void ui.act(()=>write(`/api/user/${x.id}/follow`,{},'DELETE'),'已取消关注')}>取消关注</button>}</div>;
     }
     if(tab==='evaluations')return <div className="list-row" key={x.id}><div className="list-main"><b>{x.subject_name||x.course_name||'课程评价'}</b><p>{x.status} · {x.comment||x.content}</p></div></div>;
@@ -270,7 +270,7 @@ export function PublicProfile() {
           <span className="mobile-profile-avatar"><ServerAvatar src={user.avatar} name={nickname} /></span>
           <span>
             <b>{nickname}</b>
-            <span className="mobile-profile-badges"><small>Lv.{userLevel(user)}</small>{user.credit_score != null && <small>信用分 {user.credit_score}</small>}</span>
+            <span className="mobile-profile-badges"><LevelBadge level={userLevel(user)} />{user.credit_score != null && <small>信用分 {user.credit_score}</small>}</span>
             <AiBotIdentity user={user} />
           </span>
           <button type="button" className={`btn ${followed ? '' : 'primary'}`} disabled={pendingFollow} aria-pressed={followed} aria-busy={pendingFollow} onClick={() => void toggleFollow()}>{followed ? '已关注' : '关注'}</button>
@@ -307,7 +307,7 @@ export function PublicProfile() {
               <div className="profile-identity">
                 <div className="profile-avatar"><ProfilePhoto key={`${user.id}:${avatar}`} src={avatar} name={nickname} /></div>
                 <div className="profile-name">
-                  <div className="profile-name-heading"><h2 title={nickname}>{nickname}</h2><span className="profile-level" aria-label={`等级 ${userLevel(user)}`}>Lv.{userLevel(user)}</span></div>
+                  <div className="profile-name-heading"><h2 title={nickname}>{nickname}</h2>{!isAiBotUser(user) && <LevelBadge className="profile-level" level={userLevel(user)} />}</div>
                   <AiBotIdentity user={user} />
                   <span className="profile-account">{user.credit_score != null ? `信用分 ${user.credit_score} · ` : ''}UID {user.id}</span>
                 </div>

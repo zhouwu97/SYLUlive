@@ -921,7 +921,6 @@ body {
 .comment-row .sticker-render { width: 72px; height: 72px; margin-top: 7px; }
 .comment-row .link-btn { margin-left: 10px; font-size: 12px; }
 .author-name-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.author-level { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 999px; background: var(--brand-soft); color: var(--brand-strong); font-size: 11px; font-weight: 800; letter-spacing: .01em; }
 .author-follow { margin-left: auto; flex: 0 0 auto; border: 1px solid var(--line); background: var(--surface-2); color: var(--brand-strong); border-radius: 999px; min-height: 30px; padding: 0 12px; font-size: 12px; font-weight: 750; transition: background .16s ease, color .16s ease, border-color .16s ease, transform .16s ease; }
 .author-follow:hover { border-color: color-mix(in srgb, var(--brand) 35%, var(--line)); background: var(--brand-soft); transform: translateY(-1px); }
 .author-follow.active { background: var(--brand); border-color: var(--brand); color: #fff; }
@@ -1271,7 +1270,6 @@ body { background: var(--bg); }
 .profile-name { flex: 1; min-width: 0; padding-top: 14px; }
 .profile-name-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 4px; }
 .profile-name h2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-width: 0; margin: 0; color: var(--text); font-size: 26px; line-height: 1.35; letter-spacing: -.02em; overflow-wrap: anywhere; }
-.profile-name .profile-level { flex-shrink: 0; min-height: 24px; padding: 2px 8px; background: var(--brand-soft); }
 .profile-account { color: var(--profile-muted); font-size: 13px; }
 .profile-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-left: auto; padding-bottom: 2px; }
 .profile-actions .btn { min-height: 40px; box-shadow: none; }
@@ -1306,7 +1304,7 @@ body { background: var(--bg); }
 .profile-feed .post-action { min-width: 44px; min-height: 44px; padding: 8px; border-radius: 8px; font-size: 12px; color: var(--profile-muted); }
 .profile-feed .post-action:hover { background: var(--brand-soft); color: var(--profile-accent); }
 .profile-feed .author-meta > span { color: var(--profile-muted); font-size: 12px; }
-.profile-feed .author-avatar, .profile-feed .author-level { background: var(--brand-soft); color: var(--profile-accent); }
+.profile-feed .author-avatar { background: var(--brand-soft); color: var(--profile-accent); }
 .profile-feed .author-avatar { width: 36px; height: 36px; border-radius: 12px; }
 .profile-content-region > .empty-state, .profile-content-region > .loading-state { min-height: 260px; padding: 32px 24px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface-opaque); }
 .profile-content-region .empty-state .svg-icon { width: 44px; height: 44px; border-radius: 12px; color: var(--profile-accent); }

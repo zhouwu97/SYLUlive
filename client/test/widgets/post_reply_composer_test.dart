@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shenliyuan/controllers/post_reply_composer_controller.dart';
+import 'package:shenliyuan/models/reply.dart';
+import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 import 'package:shenliyuan/widgets/post_reply_composer.dart';
 
@@ -20,6 +22,7 @@ Widget _buildComposer({
   PostReplyImagePicker? pickImage,
   double? emojiPanelFallbackHeight,
   double? emojiPanelMaxHeight,
+  List<Reply> mentionReplies = const [],
 }) {
   return MaterialApp(
     theme: theme,
@@ -46,10 +49,37 @@ Widget _buildComposer({
             pickImage: pickImage,
             emojiPanelFallbackHeight: emojiPanelFallbackHeight,
             emojiPanelMaxHeight: emojiPanelMaxHeight,
+            mentionReplies: mentionReplies,
           ),
         ],
       ),
     ),
+  );
+}
+
+Reply _mentionReply(
+  int id,
+  int authorId,
+  String nickname, {
+  int? parentReplyId,
+  int minute = 0,
+  String status = 'normal',
+}) {
+  final createdAt = DateTime(2026, 11, 20, 1, minute);
+  return Reply(
+    id: id,
+    postId: 1,
+    parentReplyId: parentReplyId,
+    authorId: authorId,
+    content: '评论$id',
+    status: status,
+    author: User(
+      id: authorId,
+      studentId: '',
+      nickname: nickname,
+      createdAt: createdAt,
+    ),
+    createdAt: createdAt,
   );
 }
 
@@ -208,6 +238,104 @@ void main() {
     expect(controller.parentReplyId, isNull);
     expect(
         find.byKey(const ValueKey('post-reply-target-banner')), findsNothing);
+  });
+
+  testWidgets('输入 @ 弹出候选，点选后插入 @昵称 并随草稿发送被提及用户', (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+    PostReplyDraft? submitted;
+
+    await tester.pumpWidget(
+      _buildComposer(
+        controller: controller,
+        mentionReplies: [
+          _mentionReply(1, 11, '芹菜虾仁'),
+          _mentionReply(2, 12, '纯合子', parentReplyId: 1, minute: 1),
+        ],
+        onSubmit: (draft) async {
+          submitted = draft;
+          return true;
+        },
+      ),
+    );
+    final input = find.byKey(const ValueKey('post-reply-input'));
+    await tester.tap(input);
+    await tester.enterText(input, '早八 @');
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('post-reply-mention-list')), findsOneWidget);
+    expect(find.byKey(const ValueKey('post-reply-mention-11')), findsOneWidget);
+    expect(find.byKey(const ValueKey('post-reply-mention-12')), findsOneWidget);
+
+    await tester.enterText(input, '早八 @纯');
+    await tester.pump();
+    expect(find.byKey(const ValueKey('post-reply-mention-11')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('post-reply-mention-12')));
+    await tester.pump();
+
+    expect(controller.textController.text, '早八 @纯合子 ');
+    expect(find.byKey(const ValueKey('post-reply-mention-list')), findsNothing);
+    expect(controller.focusNode.hasFocus, isTrue);
+    // @ 是独立提及，不改动回复对象。
+    expect(controller.parentReplyId, isNull);
+    expect(controller.draft.mentionUserIds, [12]);
+
+    // 删掉 @昵称 后不再通知对方。
+    await tester.enterText(input, '早八 同感');
+    expect(controller.draft.mentionUserIds, isEmpty);
+
+    await tester.enterText(input, '早八 @纯合子 同感');
+    await tester.tap(find.byKey(const ValueKey('post-reply-send-button')));
+    await tester.pumpAndSettle();
+    expect(submitted?.mentionUserIds, [12]);
+  });
+
+  test('只在开头或分隔符后的 @ 进入提及输入', () {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+    final cases = <String, String?>{
+      '@': '',
+      '@芹菜': '芹菜',
+      '好的 @芹': '芹',
+      '好的，@芹': '芹',
+      'a@b': null,
+      '@芹菜 ': null,
+      '无提及': null,
+    };
+    for (final entry in cases.entries) {
+      controller.textController.value = TextEditingValue(
+        text: entry.key,
+        selection: TextSelection.collapsed(offset: entry.key.length),
+      );
+      expect(controller.activeMention?.query, entry.value, reason: entry.key);
+    }
+  });
+
+  test('@ 候选先列本帖最近评论者再补全站搜索，去重、排除自己并最多 4 人', () {
+    final replies = [
+      _mentionReply(1, 11, '芹菜虾仁', minute: 1),
+      _mentionReply(2, 11, '芹菜虾仁', parentReplyId: 9, minute: 5),
+      _mentionReply(3, 12, '自己', minute: 6),
+      _mentionReply(4, 13, '已删', minute: 7, status: 'deleted'),
+      for (var i = 0; i < 5; i++)
+        _mentionReply(10 + i, 20 + i, '同学$i', minute: i),
+    ];
+
+    final all = replyMentionCandidates(replies, query: '', viewerId: 12);
+    expect(all.map((u) => u.id), [11, 24, 23, 22]);
+
+    final searched = replyMentionCandidates(
+      replies,
+      query: '芹',
+      viewerId: 12,
+      searched: const [
+        ReplyMentionUser(id: 11, nickname: '芹菜虾仁'),
+        ReplyMentionUser(id: 30, nickname: '芹菜汤'),
+        ReplyMentionUser(id: 12, nickname: '芹自己'),
+      ],
+    );
+    expect(searched.map((u) => u.id), [11, 30]);
   });
 
   testWidgets('取消回复对象保留草稿并改为顶级评论，失败仍保留对象', (tester) async {

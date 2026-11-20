@@ -105,7 +105,7 @@ func (h *AcademicIdentityHandler) VerifySession(c *gin.Context) {
 			return err
 		}
 		if consent != models.LegalConsentStateActive {
-			return errAcademicBindingChanged
+			return errAcademicLegalConsentRequired
 		}
 		if err := tx.Where("user_id = ? AND provider_id = ? AND student_id = ? AND state = ?", userID, input.ProviderID, input.StudentID, "active").First(&config).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -127,7 +127,10 @@ func (h *AcademicIdentityHandler) VerifySession(c *gin.Context) {
 		return tx.Create(&attempt).Error
 	})
 	if err != nil {
-		if errors.Is(err, errAcademicBindingChanged) {
+		if errors.Is(err, errAcademicLegalConsentRequired) {
+			// 协议未确认不是身份冲突；单独返回，客户端才能提示先确认协议，确认后再补交。
+			c.JSON(409, gin.H{"code": "LEGAL_CONSENT_REQUIRED"})
+		} else if errors.Is(err, errAcademicBindingChanged) {
 			c.JSON(409, gin.H{"code": "ACADEMIC_BINDING_CHANGED"})
 		} else {
 			if errors.Is(err, ErrAcademicRateLimited) {

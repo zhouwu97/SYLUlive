@@ -392,7 +392,8 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
       if (!mounted || response.statusCode != 200) return;
       final data = Map<String, dynamic>.from(response.data as Map);
       final already = data['already'] == true;
-      final earnedExp = _readInt(data['exp_earned']);
+      final checkInExp = _readInt(data['check_in_exp']);
+      final streakExpAdjustment = _readInt(data['exp_earned']) - checkInExp;
       final cardsAwarded = _readInt(data['makeup_cards_awarded']);
       setState(() {
         _makeupCards = _readInt(data['makeup_cards']);
@@ -406,10 +407,13 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
         AppFeedback.showSnackBar(context, '该日期已经签到');
       } else {
         HapticFeedback.lightImpact();
+        final streakMessage = streakExpAdjustment > 0
+            ? '，连续签到补差 +$streakExpAdjustment'
+            : '';
         final cardMessage = cardsAwarded > 0 ? '，获得补签卡 +$cardsAwarded' : '';
         AppFeedback.showSnackBar(
           context,
-          '补签成功，经验 +$earnedExp$cardMessage',
+          '补签成功，补签日 +$checkInExp$streakMessage$cardMessage',
         );
       }
     } on DioException catch (error) {

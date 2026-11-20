@@ -1,6 +1,7 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useLayoutEffect, useSyncExternalStore } from "react";
 
 export const MOBILE_THEME_STORAGE_KEY = "sylulive-theme-pack-v1";
+const DEFAULT_THEME_STORAGE_KEY = "sylulive-theme-default-v1";
 const MAX_UNCOMPRESSED_BYTES = 96 * 1024 * 1024;
 
 export interface WallpaperAdjustments {
@@ -155,9 +156,9 @@ export function buildWallpaperCssFilter(slot: WallpaperSlotConfig): string {
   return parts.length > 0 ? parts.join(" ") : "none";
 }
 
-function readStoredMeta(): SavedMobileThemeMeta | null {
+function readStoredMeta(key: string): SavedMobileThemeMeta | null {
   try {
-    const raw = localStorage.getItem(MOBILE_THEME_STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<SavedMobileThemeMeta>;
     if (
@@ -320,8 +321,10 @@ let snapshot: MobileThemeRuntimeSnapshot = {
 const listeners = new Set<() => void>();
 let resourceGeneration = 0;
 let activeFetchAbort: AbortController | null = null;
-let cachedArchiveKey = "";
-let cachedArchiveEntries: Map<string, Uint8Array> | null = null;
+let defaultTheme: SavedMobileThemeMeta | null = null;
+let restoreFailed = false;
+let wallpaperImages = new Map<string, HTMLImageElement>();
+let currentDark = false;
 let currentPathname = "/";
 let initialized = false;
 const registeredFontFamilies = new Set<string>();
@@ -335,14 +338,8 @@ function setSnapshot(partial: Partial<MobileThemeRuntimeSnapshot>) {
   emit();
 }
 
-function revokeCurrentWallpaperUrl() {
-  if (snapshot.wallpaper?.objectUrl) {
-    try {
-      URL.revokeObjectURL(snapshot.wallpaper.objectUrl);
-    } catch {
-      // 忽略已释放 URL
-    }
-  }
+function releaseWallpapers(images: Map<string, HTMLImageElement>) {
+  for (const image of images.values()) URL.revokeObjectURL(image.src);
 }
 
 function resolveSlotConfig(
@@ -357,36 +354,44 @@ function resolveSlotConfig(
   return walls[preferred] || walls.global || null;
 }
 
-function applyWallpaperFromEntries(
+async function prepareWallpapers(
   saved: SavedMobileThemeMeta,
   entries: Map<string, Uint8Array>,
-  dark: boolean,
-  pathname: string,
 ) {
-  const slot = resolveSlotConfig(saved, dark, pathname);
-  revokeCurrentWallpaperUrl();
-  if (!slot || !slot.portrait) {
-    setSnapshot({ wallpaper: null });
-    return;
+  const images = new Map<string, HTMLImageElement>();
+  try {
+    for (const variant of [saved.light, saved.dark]) {
+      for (const slot of Object.values(variant.wallpapers ?? {})) {
+        if (!slot?.portrait) continue;
+        const key = slot.portrait.replace(/^\/+/, "");
+        if (images.has(key)) continue;
+        const bytes = entries.get(key) || entries.get(slot.portrait);
+        if (!bytes) throw new Error("主题包壁纸资源缺失");
+        const image = new Image();
+        image.src = URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type: mimeForPath(key) }));
+        images.set(key, image);
+      }
+    }
+    await Promise.all(Array.from(images.values(), (image) => image.decode()));
+    return images;
+  } catch (error) {
+    releaseWallpapers(images);
+    throw error;
   }
-  const cleanKey = slot.portrait.replace(/^\/+/, "");
-  const imgBytes = entries.get(cleanKey) || entries.get(slot.portrait);
-  if (!imgBytes) {
-    setSnapshot({ wallpaper: null });
-    return;
-  }
-  const blob = new Blob([imgBytes as unknown as BlobPart], { type: mimeForPath(cleanKey) });
-  const objectUrl = URL.createObjectURL(blob);
-  setSnapshot({
-    wallpaper: {
-      objectUrl,
-      fit: slot.fit === "contain" ? "contain" : "cover",
-      focalX: typeof slot.focalX === "number" ? slot.focalX : 0.5,
-      focalY: typeof slot.focalY === "number" ? slot.focalY : 0.5,
-      scrim: typeof slot.scrim === "number" ? Math.min(0.85, Math.max(0, slot.scrim)) : 0,
-      cssFilter: buildWallpaperCssFilter(slot),
-    },
-  });
+}
+
+function resolveWallpaper(saved: SavedMobileThemeMeta): ActiveWallpaperRenderState | null {
+  const slot = resolveSlotConfig(saved, currentDark, currentPathname);
+  const image = slot && wallpaperImages.get(slot.portrait.replace(/^\/+/, ""));
+  if (!slot || !image) return null;
+  return {
+    objectUrl: image.src,
+    fit: slot.fit === "contain" ? "contain" : "cover",
+    focalX: typeof slot.focalX === "number" ? slot.focalX : 0.5,
+    focalY: typeof slot.focalY === "number" ? slot.focalY : 0.5,
+    scrim: typeof slot.scrim === "number" ? Math.min(0.85, Math.max(0, slot.scrim)) : 0,
+    cssFilter: buildWallpaperCssFilter(slot),
+  };
 }
 
 async function applyFontFromEntries(
@@ -432,82 +437,125 @@ async function applyFontFromEntries(
   }
 }
 
-async function hydrateArchiveResources(
-  saved: SavedMobileThemeMeta,
-  gen: number,
-  forceNetwork = false,
+async function loadThemeResources(
+  source: SavedMobileThemeMeta | CatalogThemeItem,
+  action: "hydrate" | "retry" | "apply" | "restore",
 ) {
-  const archiveKey = `${saved.familyId}@${saved.version}:${saved.packageUrl}`;
-  if (!forceNetwork && cachedArchiveKey === archiveKey && cachedArchiveEntries) {
-    try {
-      await applyFontFromEntries(saved, cachedArchiveEntries, gen);
-      if (gen !== resourceGeneration) return;
-      applyWallpaperFromEntries(saved, cachedArchiveEntries, isDarkActive(), currentPathname);
-      setSnapshot({ loading: false, resourceError: null });
-      return;
-    } catch {
-      if (gen !== resourceGeneration) return;
-      cachedArchiveKey = "";
-      cachedArchiveEntries = null;
-    }
-  }
-
+  const gen = ++resourceGeneration;
   activeFetchAbort?.abort();
   const controller = new AbortController();
   activeFetchAbort = controller;
-  setSnapshot({ loading: true, resourceError: null });
+  restoreFailed = false;
+  setSnapshot({
+    loading: true,
+    applyingFamilyId: action === "apply" ? source.familyId : null,
+    resourceError: null,
+  });
 
+  let prepared: Map<string, HTMLImageElement> | undefined;
   try {
-    const resp = await fetch(saved.packageUrl, {
+    const resp = await fetch(source.packageUrl, {
       signal: controller.signal,
       credentials: "same-origin",
-      cache: forceNetwork ? "no-cache" : "default",
+      cache: action === "retry" ? "no-cache" : "default",
     });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (!resp.ok) throw new Error(`下载主题包失败 (${resp.status})`);
     const buf = await resp.arrayBuffer();
     if (gen !== resourceGeneration) return;
-
     const entries = await extractSlthemeEntries(buf);
     if (gen !== resourceGeneration) return;
 
+    const saved = "light" in source ? source : readCatalogTheme(source, entries);
+    prepared = await prepareWallpapers(saved, entries);
+    if (gen !== resourceGeneration) return;
     await applyFontFromEntries(saved, entries, gen);
     if (gen !== resourceGeneration) return;
 
-    cachedArchiveKey = archiveKey;
-    cachedArchiveEntries = entries;
+    let storageWarning = snapshot.storageWarning;
+    if (action === "apply" || action === "restore") {
+      defaultTheme ??= saved;
+      try {
+        localStorage.setItem(DEFAULT_THEME_STORAGE_KEY, JSON.stringify(defaultTheme));
+        localStorage.setItem(MOBILE_THEME_STORAGE_KEY, JSON.stringify(saved));
+        storageWarning = null;
+      } catch {
+        storageWarning = "浏览器本地存储不可用或空间已满，当前主题仅在本次页面会话生效。";
+      }
+    }
 
-    applyWallpaperFromEntries(saved, entries, isDarkActive(), currentPathname);
-    setSnapshot({ loading: false, resourceError: null });
-  } catch {
-    if (gen !== resourceGeneration || controller.signal.aborted) return;
-    if (cachedArchiveKey === archiveKey) {
-      cachedArchiveKey = "";
-      cachedArchiveEntries = null;
-    }
-    if (typeof document !== "undefined") {
-      document.documentElement.style.removeProperty("--theme-font-family");
-    }
-    revokeCurrentWallpaperUrl();
+    const previousImages = wallpaperImages;
+    wallpaperImages = prepared;
+    prepared = undefined;
+    applySavedTokensToDom(saved, currentDark);
     setSnapshot({
-      wallpaper: null,
+      saved,
+      wallpaper: resolveWallpaper(saved),
       loading: false,
-      resourceError: "主题壁纸或字体暂未加载，当前已保留主题配色；联网后可点击重试。",
+      applyingFamilyId: null,
+      resourceError: null,
+      storageWarning,
     });
+    releaseWallpapers(previousImages);
+  } catch (err) {
+    if (gen !== resourceGeneration || controller.signal.aborted) return;
+    restoreFailed = action === "restore";
+    setSnapshot({
+      loading: false,
+      applyingFamilyId: null,
+      resourceError: action === "restore"
+        ? "初始主题资源未加载，已保留当前外观，请重新点击恢复默认。"
+        : action === "apply"
+          ? err instanceof Error ? err.message : "应用主题失败，请重试"
+          : "主题壁纸或字体暂未加载，当前已保留主题配色；联网后可点击重试。",
+    });
+    if (action === "apply") throw err;
+  } finally {
+    if (prepared) releaseWallpapers(prepared);
+    if (activeFetchAbort === controller) activeFetchAbort = null;
   }
+}
+
+function readCatalogTheme(item: CatalogThemeItem, entries: Map<string, Uint8Array>): SavedMobileThemeMeta {
+  const manifestBytes = entries.get("manifest.json");
+  if (!manifestBytes) throw new Error("主题包缺少 manifest.json");
+  const manifest = JSON.parse(new TextDecoder("utf-8").decode(manifestBytes)) as Record<string, any>;
+
+  return {
+    familyId: item.familyId,
+    version: item.version,
+    name: item.name || String(manifest.name || "主题"),
+    authorName: item.author?.nickname || String(manifest.author || ""),
+    packageUrl: item.packageUrl,
+    light: {
+      tokens: (manifest.light?.tokens as Record<string, string>) || {},
+      wallpapers: manifest.light?.wallpapers || undefined,
+    },
+    dark: {
+      tokens: (manifest.dark?.tokens as Record<string, string>) || {},
+      wallpapers: manifest.dark?.wallpapers || undefined,
+    },
+    font: manifest.font
+      ? {
+          name: String(manifest.font.name || ""),
+          regular: String(manifest.font.regular || ""),
+          bold: manifest.font.bold ? String(manifest.font.bold) : undefined,
+          license: String(manifest.font.license || "OFL-1.1"),
+        }
+      : null,
+  };
 }
 
 export function initMobileThemeRuntime() {
   if (initialized || typeof window === "undefined") return;
   initialized = true;
-  const saved = readStoredMeta();
+  currentDark = isDarkActive();
+  const saved = readStoredMeta(MOBILE_THEME_STORAGE_KEY);
+  defaultTheme = readStoredMeta(DEFAULT_THEME_STORAGE_KEY) ?? saved;
   snapshot = { ...snapshot, saved };
-  applySavedTokensToDom(saved, isDarkActive());
-  if (saved) {
-    const gen = ++resourceGeneration;
-    void hydrateArchiveResources(saved, gen);
-  }
+  applySavedTokensToDom(saved, currentDark);
+  if (saved) void loadThemeResources(saved, "hydrate");
   window.addEventListener("online", () => {
-    if (snapshot.saved && snapshot.resourceError) {
+    if (snapshot.saved && snapshot.resourceError && !restoreFailed) {
       retryMobileThemeResources();
     }
   });
@@ -515,131 +563,29 @@ export function initMobileThemeRuntime() {
 
 export function syncMobileThemeContext(dark: boolean, pathname: string) {
   initMobileThemeRuntime();
+  const changedMode = currentDark !== dark;
+  if (!changedMode && currentPathname === pathname) return;
+  currentDark = dark;
   currentPathname = pathname;
-  applySavedTokensToDom(snapshot.saved, dark);
-  if (!snapshot.saved) return;
-  const archiveKey = `${snapshot.saved.familyId}@${snapshot.saved.version}:${snapshot.saved.packageUrl}`;
-  if (cachedArchiveKey === archiveKey && cachedArchiveEntries) {
-    applyWallpaperFromEntries(snapshot.saved, cachedArchiveEntries, dark, pathname);
-  }
+  if (changedMode) applySavedTokensToDom(snapshot.saved, dark);
+  if (snapshot.saved) setSnapshot({ wallpaper: resolveWallpaper(snapshot.saved) });
 }
 
-export async function applyMobileThemeFromCatalog(item: CatalogThemeItem): Promise<void> {
+export function applyMobileThemeFromCatalog(item: CatalogThemeItem): Promise<void> {
   initMobileThemeRuntime();
-  const gen = ++resourceGeneration;
-  activeFetchAbort?.abort();
-  const controller = new AbortController();
-  activeFetchAbort = controller;
-  setSnapshot({
-    loading: true,
-    applyingFamilyId: item.familyId,
-    resourceError: null,
-    storageWarning: null,
-  });
-
-  try {
-    const resp = await fetch(item.packageUrl, {
-      signal: controller.signal,
-      credentials: "same-origin",
-    });
-    if (!resp.ok) throw new Error(`下载主题包失败 (${resp.status})`);
-    const buf = await resp.arrayBuffer();
-    if (gen !== resourceGeneration) return;
-
-    const entries = await extractSlthemeEntries(buf);
-    if (gen !== resourceGeneration) return;
-
-    const manifestBytes = entries.get("manifest.json");
-    if (!manifestBytes) throw new Error("主题包缺少 manifest.json");
-    const manifest = JSON.parse(new TextDecoder("utf-8").decode(manifestBytes)) as Record<string, any>;
-
-    const saved: SavedMobileThemeMeta = {
-      familyId: item.familyId,
-      version: item.version,
-      name: item.name || String(manifest.name || "主题"),
-      authorName: item.author?.nickname || String(manifest.author || ""),
-      packageUrl: item.packageUrl,
-      light: {
-        tokens: (manifest.light?.tokens as Record<string, string>) || {},
-        wallpapers: manifest.light?.wallpapers || undefined,
-      },
-      dark: {
-        tokens: (manifest.dark?.tokens as Record<string, string>) || {},
-        wallpapers: manifest.dark?.wallpapers || undefined,
-      },
-      font: manifest.font
-        ? {
-            name: String(manifest.font.name || ""),
-            regular: String(manifest.font.regular || ""),
-            bold: manifest.font.bold ? String(manifest.font.bold) : undefined,
-            license: String(manifest.font.license || "OFL-1.1"),
-          }
-        : null,
-    };
-
-    await applyFontFromEntries(saved, entries, gen);
-    if (gen !== resourceGeneration) return;
-
-    let storageWarning: string | null = null;
-    try {
-      localStorage.setItem(MOBILE_THEME_STORAGE_KEY, JSON.stringify(saved));
-    } catch {
-      storageWarning = "浏览器本地存储不可用或空间已满，当前主题仅在本次页面会话生效。";
-    }
-
-    cachedArchiveKey = `${saved.familyId}@${saved.version}:${saved.packageUrl}`;
-    cachedArchiveEntries = entries;
-
-    applySavedTokensToDom(saved, isDarkActive());
-    applyWallpaperFromEntries(saved, entries, isDarkActive(), currentPathname);
-    setSnapshot({
-      saved,
-      loading: false,
-      applyingFamilyId: null,
-      resourceError: null,
-      storageWarning,
-    });
-  } catch (err) {
-    if (gen !== resourceGeneration || controller.signal.aborted) return;
-    setSnapshot({
-      loading: false,
-      applyingFamilyId: null,
-      resourceError: err instanceof Error ? err.message : "应用主题失败，请重试",
-    });
-    throw err;
-  }
+  return loadThemeResources(item, "apply");
 }
 
 export function retryMobileThemeResources() {
-  if (!snapshot.saved) return;
-  const archiveKey = `${snapshot.saved.familyId}@${snapshot.saved.version}:${snapshot.saved.packageUrl}`;
-  if (cachedArchiveKey === archiveKey) {
-    cachedArchiveKey = "";
-    cachedArchiveEntries = null;
-  }
-  const gen = ++resourceGeneration;
-  void hydrateArchiveResources(snapshot.saved, gen, true);
+  if (restoreFailed) restoreDefaultMobileTheme();
+  else if (snapshot.saved && !snapshot.loading) void loadThemeResources(snapshot.saved, "retry");
 }
 
 export function restoreDefaultMobileTheme() {
-  resourceGeneration += 1;
-  activeFetchAbort?.abort();
-  activeFetchAbort = null;
-  revokeCurrentWallpaperUrl();
-  try {
-    localStorage.removeItem(MOBILE_THEME_STORAGE_KEY);
-  } catch {
-    // 忽略受限隐私存储异常
-  }
-  applySavedTokensToDom(null, isDarkActive());
-  setSnapshot({
-    saved: null,
-    wallpaper: null,
-    loading: false,
-    applyingFamilyId: null,
-    resourceError: null,
-    storageWarning: null,
-  });
+  const current = snapshot.saved;
+  if (!defaultTheme || !current || snapshot.loading) return;
+  if (defaultTheme.packageUrl === current.packageUrl && !snapshot.resourceError) return;
+  void loadThemeResources(defaultTheme, "restore");
 }
 
 function subscribe(listener: () => void) {
@@ -654,7 +600,7 @@ function getSnapshot() {
 }
 
 export function useMobileThemeRuntime(dark?: boolean, pathname?: string): MobileThemeRuntimeSnapshot {
-  useEffect(() => {
+  useLayoutEffect(() => {
     initMobileThemeRuntime();
     if (typeof dark === "boolean" && typeof pathname === "string") {
       syncMobileThemeContext(dark, pathname);

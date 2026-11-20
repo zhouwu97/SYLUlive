@@ -191,6 +191,7 @@ function Shell() {
   const [originPathname, originSearch = ""] = originPath.split("?");
   const section = originPath ? originPathname.split("/")[1] || "dashboard" : active;
   const feedSearch = originPath ? originSearch : location.search.slice(1);
+  const topZone = section === "messages" || (section === "community" && /sort=(bookmarks|mine)/.test(feedSearch)) ? "" : zones[section] || "";
   const mobile = useMobile();
   const mobileTheme = useMobileThemeRuntime(dark, location.pathname);
   const standaloneProfile = (active === "profile" || active === "user") && !mobile;
@@ -299,7 +300,7 @@ function Shell() {
             </div>
           </div>
           <nav className="desktop-top-nav" aria-label="快捷导航">
-            {TOP_NAV.map(([to, label, owned]) => <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive || (owned as readonly string[]).includes(zones[section]) ? "active" : "")}>{label}</NavLink>)}
+            {TOP_NAV.map(([to, label, owned]) => <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive || (owned as readonly string[]).includes(topZone) ? "active" : "")}>{label}</NavLink>)}
           </nav>
           <div className="crumb">
             <span>校园</span>
@@ -386,7 +387,7 @@ function Shell() {
                 {DESKTOP_SIDEBAR.map(id => navigation.find(item => item[0] === id)!).map(link)}
               </div>
               <details className="sidebar-more">
-                <summary>学习与成长 <Icon name="chevron" size={14} /></summary>
+                <summary aria-label="学习与成长" title="学习与成长">学习与成长 <Icon name="chevron" size={14} /></summary>
                 {DESKTOP_GROWTH.map(id => navigation.find(item => item[0] === id)!).map(link)}
               </details>
               <div className="nav-section">
@@ -473,7 +474,7 @@ function Shell() {
                   <Route path="/connected-apps" element={<ConnectedApps />} />
                   <Route path="/connected-apps/actions/:id" element={<ConnectedAction />} />
                   <Route path="/admin" element={<Admin />} />
-                  <Route path="/themes" element={<MobileThemesPage />} />
+                  <Route path="/themes" element={<MobileThemesPage dark={dark} />} />
                   <Route path="/theme/:id" element={<ThemeLandingPage />} />
                   <Route path="/app-scan" element={<AppScanLanding />} />
                   <Route path="*" element={<NotFound />} />

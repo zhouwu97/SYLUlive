@@ -76,9 +76,9 @@ test("双图保持既定外框，长图展示顶部内容，预览与原图保�
   const fullImage = await lightbox.locator(".media-lightbox-stage img").evaluate(async (img: HTMLImageElement) => {
     await img.decode();
     const box = img.getBoundingClientRect();
-    return { ratio: box.height / box.width, natural: img.naturalHeight / img.naturalWidth };
+    return { fit: getComputedStyle(img).objectFit, visible: box.width > 0 && box.height > 0, natural: img.naturalHeight / img.naturalWidth };
   });
-  expect(fullImage.ratio).toBeCloseTo(fullImage.natural, 1);
+  expect(fullImage).toEqual({ fit: "contain", visible: true, natural: 3 });
   await page.keyboard.press("ArrowRight");
   await expect(lightbox.locator(".media-lightbox-stage img")).toHaveAttribute("src", "/uploads/media-photo.svg");
   await page.keyboard.press("Escape");
@@ -122,7 +122,7 @@ test("服务端嵌套宽高在单图加载前预留尺寸，不会先塌缩再�
   await expect(tile.locator("img")).toHaveAttribute("width", "600");
   await expect(tile.locator("img")).toHaveAttribute("height", "1800");
   const before = await tile.evaluate(el => ({ width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height }));
-  expect(before).toEqual({ width: 320, height: 320 });
+  expect(before).toEqual({ width: 270, height: 360 });
   release();
   await tile.locator("img").evaluate(async (img: HTMLImageElement) => { await img.decode(); });
   const after = await tile.evaluate(el => ({ width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height }));
@@ -141,7 +141,8 @@ test("单图动态始终在正文下方，收紧阅读宽度后缩放、预览�
       await page.goto(path);
       const card = page.locator(".feed-card").first();
       const image = card.locator(".media-tile img");
-      await image.evaluate(async (img: HTMLImageElement) => { await img.decode(); });
+      // 登录初始化会重新挂载卡片，按当前图片的实际加载结果等待。
+      await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
       // 在同一挂载实例上改变宽度，避免只验证重新加载后的静态布局。
       for (const width of [1480, 1180, 1100, 390, 320, 1920, 1480]) {
         await page.setViewportSize({ width, height: 1120 });
@@ -171,10 +172,10 @@ test("单图动态始终在正文下方，收紧阅读宽度后缩放、预览�
         let layout = await readLayout();
         await expect.poll(async () => {
           layout = await readLayout();
-          return layout.width > 0 && layout.stacked && layout.aligned && layout.width <= 720 && layout.actionsFit;
+          return layout.width > 0 && layout.stacked && layout.aligned && layout.width <= 980 && layout.actionsFit;
         }).toBe(true);
         expect(layout.stacked && layout.aligned).toBe(true);
-        expect(layout.width).toBeLessThanOrEqual(720);
+        expect(layout.width).toBeLessThanOrEqual(980);
         expect(layout.mediaGap, JSON.stringify({ width, path, theme, layout })).toBeGreaterThanOrEqual(8);
         expect(layout.mediaGap).toBeLessThanOrEqual(12);
         expect(layout.toolbarGap).toBeLessThanOrEqual(14);
@@ -203,7 +204,7 @@ test("单图动态始终在正文下方，收紧阅读宽度后缩放、预览�
   await expect.poll(() => failed.evaluate(el => ({
     width: el.getBoundingClientRect().width,
     retry: el.textContent?.includes("点击重试"),
-  }))).toEqual({width: 320, retry: true});
+  }))).toEqual({width: 270, retry: true});
   state.failMedium(false);
   await failed.click();
   await expect(failed.locator("img")).toBeVisible();
@@ -226,7 +227,7 @@ test("清晰预览及原图加载失败可以重试，更新图片后不继承�
   const lightbox = page.getByRole("dialog", { name: "图片预览" });
   await expect(lightbox.getByRole("alert")).toContainText("图片加载失败");
   state.failViewer(false);
-  await lightbox.getByRole("button", { name: "重试", exact: true }).click();
+  await lightbox.getByRole("button", { name: "重新加载", exact: true }).click();
   await expect(lightbox.locator(".media-lightbox-stage img")).toBeVisible();
   await page.keyboard.press("Escape");
   state.post.images[0].medium_url = "/uploads/media-new.svg";

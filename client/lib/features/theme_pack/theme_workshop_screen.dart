@@ -18,9 +18,11 @@ import 'package:share_plus/share_plus.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/app_theme_tokens.dart';
+import '../../widgets/app_bottom_sheet.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/global_background_wrapper.dart';
+import '../../widgets/opacity_safe_backdrop_filter.dart';
 import 'launcher_icon_service.dart';
 import 'theme_appearance.dart';
 import 'theme_appearance_exporter.dart';
@@ -54,18 +56,24 @@ enum WorkshopTab {
 }
 
 enum _WorkshopCategory {
-  colors(
-      '颜色', Icons.colorize_outlined, [WorkshopTab.colors, WorkshopTab.courses]),
-  wallpapers('背景', Icons.wallpaper_outlined, [WorkshopTab.wallpapers]),
-  cards('卡片与页头', Icons.dashboard_customize_outlined,
-      [WorkshopTab.material, WorkshopTab.layout, WorkshopTab.decoration]),
-  navigation('底栏', Icons.space_bar_rounded, [WorkshopTab.icons]),
-  typography('图标与字体', Icons.text_fields_rounded,
-      [WorkshopTab.font, WorkshopTab.launcherIcon, WorkshopTab.widgets]),
-  packages('主题包', Icons.inventory_2_outlined, [WorkshopTab.packages]);
+  colors('颜色', '种子色、配色方案与课表色板', Icons.colorize_outlined,
+      [WorkshopTab.colors, WorkshopTab.courses]),
+  wallpapers(
+      '背景', '各页面壁纸、模糊与遮罩', Icons.wallpaper_outlined, [WorkshopTab.wallpapers]),
+  material(
+      '卡片材质', '透明度、毛玻璃与描边阴影', Icons.layers_outlined, [WorkshopTab.material]),
+  cards('页头装饰', '页头布局、贴纸与装饰图', Icons.dashboard_customize_outlined,
+      [WorkshopTab.layout, WorkshopTab.decoration]),
+  navigation('底栏导航', '底栏图标与选中样式', Icons.space_bar_rounded, [WorkshopTab.icons]),
+  typography('字体', '标题与正文字体', Icons.text_fields_rounded, [WorkshopTab.font]),
+  desktop('桌面组件', '桌面图标与小部件', Icons.widgets_outlined,
+      [WorkshopTab.launcherIcon, WorkshopTab.widgets]),
+  packages(
+      '主题包', '导入、导出与管理主题包', Icons.inventory_2_outlined, [WorkshopTab.packages]);
 
-  const _WorkshopCategory(this.label, this.icon, this.tabs);
+  const _WorkshopCategory(this.label, this.description, this.icon, this.tabs);
   final String label;
+  final String description;
   final IconData icon;
   final List<WorkshopTab> tabs;
 }
@@ -1010,6 +1018,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
   bool _forceAllowPop = false;
 
   late TextEditingController _seedHexController;
+  final _seedHexFocus = FocusNode();
 
   @override
   void initState() {
@@ -1032,6 +1041,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
   void dispose() {
     _autosaveTimer?.cancel();
     _seedHexController.dispose();
+    _seedHexFocus.dispose();
     super.dispose();
   }
 
@@ -1687,11 +1697,19 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
         onFocusTarget: onFocusTarget,
       );
 
+  /// 预览手机的高宽比跟随当前屏幕，避免缩略图比真机矮胖。
+  double get _phoneRatio {
+    final size = MediaQuery.sizeOf(context);
+    final short = math.min(size.width, size.height);
+    final long = math.max(size.width, size.height);
+    return short <= 0 ? 2.0 : (long / short).clamp(1.6, 2.4);
+  }
+
   Widget _scaledSample(ThemeAppearance appearance) => FittedBox(
         fit: BoxFit.contain,
         child: SizedBox(
           width: 360,
-          height: 570,
+          height: 360 * _phoneRatio,
           child: _sample(appearance),
         ),
       );
@@ -1777,197 +1795,379 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
         if (mounted) setState(() {});
       });
 
+  String _previewName() {
+    final provider = context.read<ThemeProvider?>();
+    if (provider == null) return '当前外观';
+    final trial = provider.trial;
+    if (trial != null) return trial.manifest.name;
+    final appearance = provider.persistedAppearance;
+    return appearance.singleThemeName ??
+        (appearance.activeGroupSources.isEmpty ? '默认外观' : '混搭外观');
+  }
+
+  /// 主题设置页的分组面板：无描边、无主题卡片样式，只靠半透明底和圆角分段。
+  /// 主题设置页的分组面板：半透明磨砂底，壁纸能透出来；不套全局卡片材质，
+  /// 各面板互不重叠，共用页面背景的一次模糊采样。
+  Widget _panel({
+    Key? key,
+    required BorderRadius radius,
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+  }) {
+    return ClipRRect(
+      key: key,
+      borderRadius: radius,
+      child: OpacitySafeBackdropFilter(
+        grouped: true,
+        filter: ui.ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppThemeTokens.of(context).card.withValues(alpha: .4),
+          ),
+          child:
+              padding == null ? child : Padding(padding: padding, child: child),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPreviewCard(ThemeAppearance appearance) {
     final tokens = AppThemeTokens.of(context);
     final preview = appearance.buildTheme(_brightness).colorScheme;
-    final provider = context.watch<ThemeProvider?>();
+    context.watch<ThemeProvider?>();
     final typography = Theme.of(context).textTheme;
-    final accentWash =
-        Color.alphaBlend(preview.primary.withValues(alpha: .13), tokens.card);
-    return AppCardSurface(
-      decoration: BoxDecoration(
-        border: Border.all(color: tokens.cardBorder),
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          begin: AlignmentDirectional.topStart,
-          end: AlignmentDirectional.bottomEnd,
-          colors: [accentWash, tokens.card],
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: preview.onSurface,
-                borderRadius: BorderRadius.circular(19),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: .16),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+    return _panel(
+      radius: BorderRadius.circular(24),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: () => _showFullscreenPreview(appearance),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
+            child: Row(
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: preview.onSurface,
+                    borderRadius: BorderRadius.circular(26),
                   ),
-                ],
-              ),
-              child: Semantics(
-                button: true,
-                label: '打开全屏主题预览',
-                child: InkWell(
-                  key: const ValueKey('workshop-preview-thumbnail'),
-                  borderRadius: BorderRadius.circular(19),
-                  onTap: () => _showFullscreenPreview(appearance),
-                  child: Padding(
-                    padding: const EdgeInsets.all(3),
-                    child: SizedBox(
-                      width: 100,
-                      height: 158.33,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: ExcludeSemantics(
-                          child:
-                              IgnorePointer(child: _scaledSample(appearance)),
+                  child: Semantics(
+                    button: true,
+                    label: '打开全屏主题预览',
+                    child: InkWell(
+                      key: const ValueKey('workshop-preview-thumbnail'),
+                      borderRadius: BorderRadius.circular(26),
+                      onTap: () => _showFullscreenPreview(appearance),
+                      child: Padding(
+                        padding: const EdgeInsets.all(2.5),
+                        child: SizedBox(
+                          width: 76,
+                          height: 76 * _phoneRatio,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(23.5),
+                            child: ExcludeSemantics(
+                              child: IgnorePointer(
+                                  child: _scaledSample(appearance)),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '实时预览',
-                    style: typography.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (provider != null)
-                    Text(
-                      provider.currentAppearanceSummary,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: tokens.textSecondary),
-                    ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (final color in [
-                        preview.primary,
-                        preview.secondaryContainer,
-                        preview.tertiaryContainer,
-                        preview.surfaceContainerHighest,
-                      ])
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: color,
-                            border: Border.all(color: tokens.divider),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const SizedBox(width: 23, height: 18),
+                      Text(
+                        '预览 · ${_previewName()}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: typography.titleSmall?.copyWith(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          height: 1.3,
+                          color: tokens.textPrimary,
                         ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${_brightness == Brightness.light ? '浅色' : '深色'}'
+                        ' · ${_currentVariant.schemeVariant}',
+                        style: typography.bodySmall?.copyWith(
+                          fontSize: 12.5,
+                          color: tokens.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          for (final color in [
+                            preview.primary,
+                            preview.secondaryContainer,
+                            preview.tertiaryContainer,
+                            preview.surfaceContainerHighest,
+                          ])
+                            Padding(
+                              padding: const EdgeInsetsDirectional.only(end: 6),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const SizedBox(width: 18, height: 18),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        '调整下方设置，预览会实时更新 · 点按可全屏查看',
+                        style: typography.bodySmall?.copyWith(
+                          fontSize: 11.5,
+                          color: tokens.textSecondary,
+                          height: 1.45,
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  FilledButton.tonalIcon(
-                    onPressed: () => _showFullscreenPreview(appearance),
-                    icon: const Icon(Icons.fullscreen_rounded, size: 18),
-                    label: const Text('全屏预览'),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 选中态主色填充、未选中浅色底的小圆角块，分类网格和分段条共用。
+  Widget _choiceTile({
+    required Key key,
+    required bool selected,
+    required VoidCallback onTap,
+    required Widget Function(Color foreground) builder,
+    double minHeight = 52,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    final tokens = AppThemeTokens.of(context);
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: selected
+            ? colors.primary
+            : colors.surfaceContainerHighest.withValues(alpha: .5),
+        borderRadius: BorderRadius.circular(selected ? 20 : 12),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: key,
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: minHeight),
+            child: Center(
+              child: builder(selected ? colors.onPrimary : tokens.textPrimary),
+            ),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildCategories(_WorkshopCategory category) {
-    final colors = Theme.of(context).colorScheme;
-    final tokens = AppThemeTokens.of(context);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const gap = 8.0;
-        final columns = constraints.maxWidth >= 510 ? 3 : 2;
-        final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [
-            for (final item in _WorkshopCategory.values)
-              SizedBox(
-                width: width,
-                child: Semantics(
-                  button: true,
-                  selected: item == category,
-                  child: Material(
-                    color: item == category
-                        ? colors.primaryContainer
-                        : tokens.card,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(
-                          color: item == category
-                              ? Colors.transparent
-                              : tokens.cardBorder),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      key: ValueKey('workshop-category-${item.name}'),
-                      onTap: () => setState(() => _activeTab = item.tabs.first),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(minHeight: 54),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 9, vertical: 7),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 30,
-                                height: 30,
-                                decoration: BoxDecoration(
-                                  color: item == category
-                                      ? colors.primary
-                                      : colors.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(9),
-                                ),
-                                child: Icon(item.icon,
-                                    size: 17,
-                                    color: item == category
-                                        ? colors.onPrimary
-                                        : tokens.textSecondary),
-                              ),
-                              const SizedBox(width: 7),
-                              Flexible(
-                                child: Text(
-                                  item.label,
-                                  style: TextStyle(
-                                    fontWeight: item == category
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: item == category
-                                        ? colors.onPrimaryContainer
-                                        : tokens.textPrimary,
-                                  ),
-                                ),
-                              ),
-                            ],
+    return _panel(
+      radius: BorderRadius.circular(22),
+      padding: const EdgeInsets.all(5),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const gap = 3.0;
+          final columns = constraints.maxWidth >= 510 ? 8 : 4;
+          final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: [
+              for (final item in _WorkshopCategory.values)
+                SizedBox(
+                  width: width,
+                  child: _choiceTile(
+                    key: ValueKey('workshop-category-${item.name}'),
+                    selected: item == category,
+                    onTap: () => setState(() => _activeTab = item.tabs.first),
+                    builder: (foreground) => Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 7),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(item.icon, size: 19, color: foreground),
+                          const SizedBox(height: 3),
+                          Text(
+                            item.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: foreground,
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
                 ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// 分组列表里的一段：首段上圆角大、末段下圆角大，中间段只留小圆角。
+  BorderRadius _groupRadius({required bool first, required bool last}) {
+    const outer = Radius.circular(22);
+    const inner = Radius.circular(6);
+    return BorderRadius.vertical(
+      top: first ? outer : inner,
+      bottom: last ? outer : inner,
+    );
+  }
+
+  Widget _buildSectionHeader(_WorkshopCategory category, BorderRadius radius) {
+    final tokens = AppThemeTokens.of(context);
+    final typography = Theme.of(context).textTheme;
+    return _panel(
+      radius: radius,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: tokens.surface.withValues(alpha: .92),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(category.icon, size: 19, color: tokens.textPrimary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  category.label,
+                  style: typography.titleSmall?.copyWith(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: tokens.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  category.description,
+                  style: typography.bodySmall?.copyWith(
+                    fontSize: 12.5,
+                    color: tokens.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSegments<T>({
+    required List<T> values,
+    required T selected,
+    required String Function(T) label,
+    IconData? Function(T)? icon,
+    required Key Function(T) keyOf,
+    required ValueChanged<T> onSelected,
+    required BorderRadius radius,
+  }) {
+    return _panel(
+      radius: radius,
+      padding: const EdgeInsets.all(6),
+      child: Row(
+        children: [
+          for (final (index, value) in values.indexed) ...[
+            if (index > 0) const SizedBox(width: 3),
+            Expanded(
+              child: _choiceTile(
+                key: keyOf(value),
+                selected: value == selected,
+                minHeight: 38,
+                onTap: () => onSelected(value),
+                builder: (foreground) => Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon?.call(value) case final data?) ...[
+                      Icon(data, size: 17, color: foreground),
+                      const SizedBox(width: 5),
+                    ],
+                    Flexible(
+                      child: Text(
+                        label(value),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: foreground,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
+            ),
           ],
-        );
-      },
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionGroup(
+      ThemeAppearance appearance, _WorkshopCategory category) {
+    final showBrightness = category != _WorkshopCategory.packages;
+    final showTabs = category.tabs.length > 1;
+    const middle = BorderRadius.all(Radius.circular(6));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSectionHeader(category, _groupRadius(first: true, last: false)),
+        if (showBrightness) ...[
+          const SizedBox(height: 3),
+          _buildSegments<Brightness>(
+            values: const [Brightness.light, Brightness.dark],
+            selected: _brightness,
+            label: (mode) => mode == Brightness.light ? '浅色' : '深色',
+            icon: (mode) => mode == Brightness.light
+                ? Icons.light_mode_outlined
+                : Icons.dark_mode_outlined,
+            keyOf: (mode) => ValueKey('workshop-brightness-${mode.name}'),
+            onSelected: _selectBrightness,
+            radius: middle,
+          ),
+        ],
+        if (showTabs) ...[
+          const SizedBox(height: 3),
+          _buildSegments<WorkshopTab>(
+            values: category.tabs,
+            selected: _activeTab,
+            label: (tab) => tab.label,
+            keyOf: (tab) => ValueKey('workshop-tab-${tab.name}'),
+            onSelected: (tab) => setState(() => _activeTab = tab),
+            radius: middle,
+          ),
+        ],
+        SizedBox(key: _editorAnchor, height: 3),
+        ..._buildEditorSegments(appearance),
+      ],
     );
   }
 
@@ -1994,8 +2194,41 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
         child: Scaffold(
           backgroundColor: Colors.transparent,
           appBar: AppBar(
-            titleSpacing: 8,
-            title: const Text('主题设置'),
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            scrolledUnderElevation: 0,
+            toolbarHeight: 64,
+            leadingWidth: 64,
+            leading: Navigator.of(context).canPop()
+                ? Padding(
+                    padding: const EdgeInsetsDirectional.only(start: 16),
+                    child: Center(
+                      child: IconButton.filledTonal(
+                        tooltip:
+                            MaterialLocalizations.of(context).backButtonTooltip,
+                        style: IconButton.styleFrom(
+                          fixedSize: const Size.square(40),
+                          backgroundColor: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withValues(alpha: .7),
+                        ),
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: const Icon(Icons.arrow_back_rounded, size: 21),
+                      ),
+                    ),
+                  )
+                : null,
+            centerTitle: false,
+            titleSpacing: 10,
+            title: Text(
+              '主题设置',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w500,
+                    color: AppThemeTokens.of(context).textPrimary,
+                  ),
+            ),
             actions: [
               FilledButton(
                 key: const ValueKey('workshop-apply'),
@@ -2066,7 +2299,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                         absorbing: _exporting,
                         child: SingleChildScrollView(
                           key: const ValueKey('workshop-scroll'),
-                          padding: const EdgeInsets.fromLTRB(14, 6, 14, 24),
+                          padding: const EdgeInsets.fromLTRB(14, 2, 14, 28),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
@@ -2074,52 +2307,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                               const SizedBox(height: 10),
                               _buildCategories(category),
                               const SizedBox(height: 10),
-                              if (category != _WorkshopCategory.packages)
-                                Wrap(
-                                  spacing: 6,
-                                  children: [
-                                    for (final mode in [
-                                      Brightness.light,
-                                      Brightness.dark
-                                    ])
-                                      ChoiceChip(
-                                        label: Text(mode == Brightness.light
-                                            ? '浅色'
-                                            : '深色'),
-                                        selected: _brightness == mode,
-                                        onSelected: (_) =>
-                                            _selectBrightness(mode),
-                                      ),
-                                  ],
-                                ),
-                              if (category.tabs.length > 1)
-                                Wrap(
-                                  spacing: 6,
-                                  children: [
-                                    for (final tab in category.tabs)
-                                      ChoiceChip(
-                                        key: ValueKey(
-                                            'workshop-tab-${tab.name}'),
-                                        label: Text(tab.label),
-                                        selected: _activeTab == tab,
-                                        onSelected: (_) =>
-                                            setState(() => _activeTab = tab),
-                                      ),
-                                  ],
-                                ),
-                              SizedBox(key: _editorAnchor, height: 8),
-                              AppCardSurface(
-                                key: ValueKey(
-                                    'workshop-editor-${_activeTab.name}'),
-                                decoration: BoxDecoration(
-                                  color: AppThemeTokens.of(context).card,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(14),
-                                  child: _buildActiveTabEditor(appearance),
-                                ),
-                              ),
+                              _buildSectionGroup(appearance, category),
                             ],
                           ),
                         ),
@@ -2135,44 +2323,6 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     );
   }
 
-  Widget _buildActiveTabEditor(ThemeAppearance appearance) {
-    switch (_activeTab) {
-      case WorkshopTab.colors:
-        return _buildColorsEditor();
-      case WorkshopTab.courses:
-        return _buildCoursesEditor();
-      case WorkshopTab.wallpapers:
-        return _buildWallpapersEditor();
-      case WorkshopTab.material:
-        return _buildMaterialEditor();
-      case WorkshopTab.layout:
-        return _buildLayoutEditor();
-      case WorkshopTab.decoration:
-        return _buildDecorationEditor();
-      case WorkshopTab.icons:
-        return _buildIconsEditor();
-      case WorkshopTab.font:
-        return _buildFontEditor();
-      case WorkshopTab.launcherIcon:
-        return _buildLauncherIconEditor();
-      case WorkshopTab.widgets:
-        return ThemeWorkshopWidgetPreviewPanel(appearance: appearance);
-      case WorkshopTab.packages:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            OutlinedButton.icon(
-              key: const ValueKey('workshop-export-button'),
-              onPressed: _exporting ? null : _openExportSheet,
-              icon: const Icon(Icons.ios_share_outlined),
-              label: const Text('导出编辑中的主题'),
-            ),
-            const ThemeSection(),
-          ],
-        );
-    }
-  }
-
   void _changePalette(VoidCallback change) {
     final variant = _currentVariant;
     final defaults = AppPalette.defaults(_brightness).toJson();
@@ -2186,7 +2336,306 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     });
   }
 
-  Widget _buildColorsEditor() {
+  static const _schemeVariants = [
+    ('tonalSpot', '柔和协调，系统默认'),
+    ('neutral', '低饱和，接近灰调'),
+    ('vibrant', '高饱和，色彩更鲜明'),
+    ('expressive', '跳色更大胆'),
+    ('fidelity', '尽量贴近种子色'),
+    ('content', '按内容取色'),
+  ];
+
+  static final _swatchSchemes = <String, ColorScheme>{};
+
+  /// 编辑区内的芯片、按钮和输入框统一去掉描边，改成浅色底胶囊。
+  ThemeData _expressiveEditorTheme() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final tonal = colors.surfaceContainerHighest.withValues(alpha: .55);
+    final field = OutlineInputBorder(
+      borderSide: BorderSide.none,
+      borderRadius: BorderRadius.circular(14),
+    );
+    return theme.copyWith(
+      chipTheme: theme.chipTheme.copyWith(
+        side: BorderSide.none,
+        shape: const StadiumBorder(),
+        color: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? colors.secondaryContainer
+              : tonal,
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          side: BorderSide.none,
+          backgroundColor: tonal,
+          shape: const StadiumBorder(),
+        ).merge(theme.outlinedButtonTheme.style),
+      ),
+      inputDecorationTheme: theme.inputDecorationTheme.copyWith(
+        filled: true,
+        fillColor: tonal,
+        border: field,
+        enabledBorder: field,
+        focusedBorder: field.copyWith(
+          borderSide: BorderSide(color: colors.primary, width: 1.5),
+        ),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: SegmentedButton.styleFrom(
+          side: BorderSide.none,
+          backgroundColor: tonal,
+          selectedBackgroundColor: colors.secondaryContainer,
+        ).merge(theme.segmentedButtonTheme.style),
+      ),
+      switchTheme: theme.switchTheme.copyWith(
+        thumbIcon: WidgetStateProperty.resolveWith(
+          (states) => Icon(
+            states.contains(WidgetState.selected)
+                ? Icons.check_rounded
+                : Icons.close_rounded,
+            size: 16,
+          ),
+        ),
+      ),
+      sliderTheme: theme.sliderTheme.copyWith(
+        trackHeight: 8,
+        tickMarkShape: SliderTickMarkShape.noTickMark,
+      ),
+      expansionTileTheme: theme.expansionTileTheme.copyWith(
+        shape: const Border(),
+        collapsedShape: const Border(),
+      ),
+    );
+  }
+
+  Widget _iconTile(Widget child) {
+    return Container(
+      width: 38,
+      height: 38,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppThemeTokens.of(context).surface.withValues(alpha: .92),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: child,
+    );
+  }
+
+  /// 分组列表的一行：左侧图标块，中间标题与说明，右侧取值或操作。
+  Widget _settingRow({
+    Key? key,
+    required Widget leading,
+    required String title,
+    String? subtitle,
+    Color? subtitleColor,
+    Widget? trailing,
+    VoidCallback? onTap,
+  }) {
+    final tokens = AppThemeTokens.of(context);
+    final typography = Theme.of(context).textTheme;
+    final content = Padding(
+      padding: const EdgeInsets.fromLTRB(14, 11, 12, 11),
+      child: Row(
+        children: [
+          _iconTile(leading),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: typography.titleSmall?.copyWith(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: tokens.textPrimary,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    subtitle,
+                    style: typography.bodySmall?.copyWith(
+                      fontSize: 12.5,
+                      color: subtitleColor ?? tokens.textSecondary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (trailing != null) ...[const SizedBox(width: 8), trailing],
+        ],
+      ),
+    );
+    if (onTap == null) return KeyedSubtree(key: key, child: content);
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(key: key, onTap: onTap, child: content),
+    );
+  }
+
+  Widget _rowValue(String text) {
+    final tokens = AppThemeTokens.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 12.5,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        Icon(Icons.chevron_right_rounded,
+            size: 20, color: tokens.textSecondary),
+      ],
+    );
+  }
+
+  /// 种子色色块：上下两半取该种子推导出的浅色调，中心点是主色。
+  Widget _seedSwatch({
+    required Key key,
+    required String? hex,
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final page = Theme.of(context);
+    final colors = page.colorScheme;
+    final tokens = AppThemeTokens.of(context);
+    final scheme = hex == null
+        ? null
+        : _swatchSchemes.putIfAbsent(
+            '$hex-${page.brightness.name}',
+            () => ColorScheme.fromSeed(
+              seedColor: ThemeContrast.parseColor(hex),
+              brightness: page.brightness,
+            ),
+          );
+    final Widget circle;
+    if (scheme == null) {
+      circle = Container(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          color: tokens.surface.withValues(alpha: .92),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(Icons.add_rounded, size: 22, color: tokens.textPrimary),
+      );
+    } else {
+      circle = SizedBox(
+        width: 46,
+        height: 46,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(
+              child: ClipOval(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: ColoredBox(color: scheme.primaryFixed)),
+                    Expanded(child: ColoredBox(color: scheme.tertiaryFixedDim)),
+                  ],
+                ),
+              ),
+            ),
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: scheme.primary,
+                shape: BoxShape.circle,
+              ),
+              child: selected
+                  ? Icon(Icons.check_rounded, size: 15, color: scheme.onPrimary)
+                  : null,
+            ),
+          ],
+        ),
+      );
+    }
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: scheme?.surfaceContainerHigh ??
+            colors.surfaceContainerHighest.withValues(alpha: .55),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(selected ? 26 : 18),
+          side: selected
+              ? BorderSide(color: colors.primary, width: 2)
+              : BorderSide.none,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: key,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 12, 4, 9),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                circle,
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                    color: tokens.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _applySeedHex(String raw) {
+    final parsed = ThemeResolver.tryParseHex(raw);
+    if (parsed == null) return;
+    final hex = ThemeResolver.formatHex(parsed);
+    _seedHexController.text = hex;
+    _changePalette(() => _currentVariant.seedColor = hex);
+  }
+
+  Future<void> _pickSchemeVariant() async {
+    final current = _currentVariant.schemeVariant;
+    final picked = await showAppModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (name, description) in _schemeVariants)
+              ListTile(
+                key: ValueKey('workshop-scheme-$name'),
+                title: Text(name),
+                subtitle: Text(description),
+                trailing:
+                    name == current ? const Icon(Icons.check_rounded) : null,
+                onTap: () => Navigator.of(sheet).pop(name),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked != null && mounted && picked != current) {
+      _changePalette(() => _currentVariant.schemeVariant = picked);
+    }
+  }
+
+  List<Widget> _buildColorSegments() {
     final v = _currentVariant;
     final tokens = v.effectiveTokens(_brightness);
     final issues = ThemeResolver.checkVariant(
@@ -2194,192 +2643,176 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
       tokens: tokens,
       coursePalette: v.coursePalette,
     );
+    final colors = Theme.of(context).colorScheme;
+    final appTokens = AppThemeTokens.of(context);
+    final seed = v.seedColor.toUpperCase();
+    final isPreset = _seedPresets.any((p) => p.$1.toUpperCase() == seed);
+    final tonal = colors.surfaceContainerHighest.withValues(alpha: .55);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                '${_brightness == Brightness.light ? '浅色' : '深色'}种子色与方案',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-            ),
-            if (v.overrides.isNotEmpty)
-              TextButton(
-                onPressed: () => _mutate(() => v.overrides.clear()),
-                child: const Text('清空覆盖项'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final preset in _seedPresets)
-              ActionChip(
-                avatar: CircleAvatar(
-                  backgroundColor: ThemeContrast.parseColor(preset.$1),
+    return [
+      Padding(
+        padding: const EdgeInsets.all(10),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const gap = 8.0;
+            final width = (constraints.maxWidth - 3 * gap) / 4;
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final preset in _seedPresets)
+                  SizedBox(
+                    width: width,
+                    child: _seedSwatch(
+                      key: ValueKey('workshop-seed-${preset.$2}'),
+                      hex: preset.$1,
+                      label: preset.$2,
+                      selected: preset.$1.toUpperCase() == seed,
+                      onTap: () => _applySeedHex(preset.$1),
+                    ),
+                  ),
+                SizedBox(
+                  width: width,
+                  child: _seedSwatch(
+                    key: const ValueKey('workshop-seed-custom'),
+                    hex: isPreset ? null : v.seedColor,
+                    label: '自定义',
+                    selected: !isPreset,
+                    onTap: _seedHexFocus.requestFocus,
+                  ),
                 ),
-                label: Text(preset.$2),
-                onPressed: () {
-                  _seedHexController.text = preset.$1;
-                  _changePalette(() => v.seedColor = preset.$1);
-                },
-              ),
-          ],
+              ],
+            );
+          },
         ),
-        const SizedBox(height: 8),
-        Row(
+      ),
+      _settingRow(
+        leading:
+            Icon(Icons.tag_rounded, size: 19, color: appTokens.textPrimary),
+        title: '种子色',
+        subtitle: '输入 #RRGGBB',
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
+            SizedBox(
+              width: 112,
               child: TextField(
                 key: const ValueKey('workshop-seed-hex-input'),
                 controller: _seedHexController,
-                decoration: const InputDecoration(
-                  labelText: '种子色 HEX (#RRGGBB)',
+                focusNode: _seedHexFocus,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14),
+                decoration: InputDecoration(
                   isDense: true,
+                  filled: true,
+                  fillColor: tonal,
+                  hintText: '#RRGGBB',
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderSide: BorderSide.none,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
-                onSubmitted: (raw) {
-                  final parsed = ThemeResolver.tryParseHex(raw);
-                  if (parsed != null) {
-                    final hex = ThemeResolver.formatHex(parsed);
-                    _seedHexController.text = hex;
-                    _changePalette(() => v.seedColor = hex);
-                  }
+                onSubmitted: _applySeedHex,
+              ),
+            ),
+            IconButton(
+              tooltip: '应用种子色',
+              icon: const Icon(Icons.check_rounded),
+              onPressed: () => _applySeedHex(_seedHexController.text),
+            ),
+          ],
+        ),
+      ),
+      _settingRow(
+        key: const ValueKey('workshop-scheme-variant'),
+        leading:
+            Icon(Icons.style_outlined, size: 19, color: appTokens.textPrimary),
+        title: '色彩风格',
+        trailing: _rowValue(v.schemeVariant),
+        onTap: _pickSchemeVariant,
+      ),
+      for (final (label, key) in const [
+        ('版块标签底色', 'feedSectionSurface'),
+        ('标签文字颜色', 'tagText'),
+      ])
+        _settingRow(
+          leading: Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: ThemeContrast.parseColor(tokens[key]!),
+              shape: BoxShape.circle,
+            ),
+          ),
+          title: label,
+          trailing: _rowValue(tokens[key]!),
+          onTap: () => _editTokenHex(key, tokens[key]!),
+        ),
+      _settingRow(
+        leading: Icon(
+          issues.isEmpty ? Icons.check_circle_outline : Icons.error_outline,
+          size: 20,
+          color: issues.isEmpty ? Colors.green.shade700 : colors.error,
+        ),
+        title: issues.isEmpty ? '对比度全部达标' : '${issues.length} 项对比度未达标',
+        subtitle: issues.isEmpty
+            ? '当前${_brightness == Brightness.light ? '浅色' : '深色'}模式文字清晰可读'
+            : [
+                for (final issue in issues)
+                  '${issue.foreground} / ${issue.background}：${issue.ratio.toStringAsFixed(2)}:1（要求 ≥ ${issue.minimum}:1）',
+              ].join('\n'),
+        subtitleColor: issues.isEmpty ? null : colors.error,
+        trailing: issues.isEmpty
+            ? null
+            : FilledButton.tonal(
+                key: const ValueKey('workshop-contrast-autofix'),
+                onPressed: () {
+                  final fixed = ThemeResolver.autoFixVariant(
+                    brightness: _brightness,
+                    tokens: tokens,
+                    coursePalette: v.coursePalette,
+                  );
+                  _mutate(() {
+                    v.overrides.addAll(fixed.changedOverrides);
+                    v.coursePalette = fixed.coursePalette;
+                  });
                 },
+                child: const Text('自动修正'),
               ),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.tonal(
-              onPressed: () {
-                final parsed =
-                    ThemeResolver.tryParseHex(_seedHexController.text);
-                if (parsed != null) {
-                  final hex = ThemeResolver.formatHex(parsed);
-                  _seedHexController.text = hex;
-                  _changePalette(() => v.seedColor = hex);
-                }
-              },
-              child: const Text('应用种子色'),
-            ),
-          ],
+      ),
+      if (v.overrides.isNotEmpty)
+        _settingRow(
+          leading: Icon(Icons.restart_alt_rounded,
+              size: 19, color: appTokens.textPrimary),
+          title: '清空覆盖项',
+          subtitle: '恢复按种子色自动推导',
+          onTap: () => _mutate(() => v.overrides.clear()),
         ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            for (final variantName in const [
-              'tonalSpot',
-              'neutral',
-              'vibrant',
-              'expressive',
-              'fidelity',
-              'content',
-            ])
-              ChoiceChip(
-                label: Text(variantName),
-                selected: v.schemeVariant == variantName,
-                onSelected: (_) =>
-                    _changePalette(() => v.schemeVariant = variantName),
-              ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        for (final (label, key) in const [
-          ('版块标签底色', 'feedSectionSurface'),
-          ('标签文字颜色', 'tagText'),
-        ])
-          ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: CircleAvatar(
-              radius: 11,
-              backgroundColor: ThemeContrast.parseColor(tokens[key]!),
-            ),
-            title: Text(label),
-            subtitle: Text(tokens[key]!),
-            trailing: const Icon(Icons.edit_outlined, size: 18),
-            onTap: () => _editTokenHex(key, tokens[key]!),
-          ),
-        const SizedBox(height: 8),
-        // 对比度检查面板
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: issues.isEmpty
-                ? Colors.green.withValues(alpha: 0.1)
-                : Theme.of(context)
-                    .colorScheme
-                    .errorContainer
-                    .withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    issues.isEmpty
-                        ? Icons.check_circle_outline
-                        : Icons.error_outline,
-                    size: 18,
-                    color: issues.isEmpty
-                        ? Colors.green.shade700
-                        : Theme.of(context).colorScheme.error,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      issues.isEmpty
-                          ? '当前模式对比度全部达标'
-                          : '${issues.length} 项对比度未达标',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  if (issues.isNotEmpty)
-                    FilledButton.tonal(
-                      key: const ValueKey('workshop-contrast-autofix'),
-                      onPressed: () {
-                        final fixed = ThemeResolver.autoFixVariant(
-                          brightness: _brightness,
-                          tokens: tokens,
-                          coursePalette: v.coursePalette,
-                        );
-                        _mutate(() {
-                          v.overrides.addAll(fixed.changedOverrides);
-                          v.coursePalette = fixed.coursePalette;
-                        });
-                      },
-                      child: const Text('自动修正'),
-                    ),
-                ],
-              ),
-              for (final issue in issues)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    '• ${issue.foreground} / ${issue.background}：${issue.ratio.toStringAsFixed(2)}:1（要求 ≥ ${issue.minimum}:1）',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        ExpansionTile(
+      Theme(
+        data: _expressiveEditorTheme(),
+        child: ExpansionTile(
           initiallyExpanded: _advancedTokensExpanded,
           onExpansionChanged: (e) =>
               setState(() => _advancedTokensExpanded = e),
-          tilePadding: EdgeInsets.zero,
-          title: Text('高级 Token 覆盖（已覆盖 ${v.overrides.length} 项）'),
+          tilePadding: const EdgeInsets.fromLTRB(14, 4, 12, 4),
+          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 8, 10),
+          leading: _iconTile(
+            Icon(Icons.tune_rounded, size: 19, color: appTokens.textPrimary),
+          ),
+          title: Text(
+            '高级 Token 覆盖',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: appTokens.textPrimary,
+            ),
+          ),
+          subtitle: Text(
+            '已覆盖 ${v.overrides.length} 项',
+            style: TextStyle(fontSize: 12.5, color: appTokens.textSecondary),
+          ),
           children: [
             for (final entry in tokens.entries)
               ListTile(
@@ -2422,8 +2855,8 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
               ),
           ],
         ),
-      ],
-    );
+      ),
+    ];
   }
 
   Future<void> _editTokenHex(String tokenKey, String currentHex) async {
@@ -2465,329 +2898,624 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     }
   }
 
-  Widget _buildCoursesEditor() {
-    final v = _currentVariant;
-    final tokens = v.effectiveTokens(_brightness);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            FilledButton.tonalIcon(
-              onPressed: () {
-                final generated = ThemeResolver.generateCoursePalette(
-                  seedColor: ThemeContrast.parseColor(v.seedColor),
-                  brightness: _brightness,
-                  background: ThemeContrast.parseColor(tokens['background']!),
-                  courseCardText:
-                      ThemeContrast.parseColor(tokens['courseCardText']!),
-                );
-                _mutate(() => v.coursePalette = generated);
-              },
-              icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-              label: const Text('从种子色生成 8 色'),
-            ),
-            OutlinedButton.icon(
-              onPressed: v.coursePalette.length >= 12
-                  ? null
-                  : () => _mutate(() => v.coursePalette.add('#26A69A')),
-              icon: const Icon(Icons.add, size: 18),
-              label: Text('新增颜色 (${v.coursePalette.length}/12)'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        for (var i = 0; i < v.coursePalette.length; i++)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: ThemeContrast.parseColor(v.coursePalette[i]),
-                borderRadius: BorderRadius.circular(8),
+  Widget _rowIcon(IconData data) =>
+      Icon(data, size: 19, color: AppThemeTokens.of(context).textPrimary);
+
+  Widget _rowSwitch(bool value, ValueChanged<bool> onChanged) =>
+      Switch(value: value, onChanged: onChanged);
+
+  Widget _rowDivider() => Divider(
+        height: 1,
+        indent: 14,
+        endIndent: 14,
+        color: AppThemeTokens.of(context).divider.withValues(alpha: .6),
+      );
+
+  /// 共享编辑器（壁纸参数、卡片描边等）放进分组里时统一留白。
+  Widget _embedded(Widget child) => Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: child,
+      );
+
+  /// 一段里的选项块：可带一行小标题，选中项主色填满。
+  Widget _choiceGrid<T>({
+    String? title,
+    required List<T> values,
+    required T selected,
+    required String Function(T) label,
+    required ValueChanged<T> onSelected,
+    Key Function(T)? keyOf,
+    int? columns,
+  }) {
+    final tokens = AppThemeTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (title != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                  color: tokens.textSecondary,
+                ),
               ),
             ),
-            title: Text('课程色 ${i + 1} · ${v.coursePalette[i]}'),
-            trailing: Wrap(
-              spacing: 4,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  onPressed: () async {
-                    final ctrl =
-                        TextEditingController(text: v.coursePalette[i]);
-                    final res = await showAppDialog<String>(
-                      context: context,
-                      builder: (ctx) => AppAlertDialog(
-                        title: Text('修改课程色 ${i + 1}'),
-                        content: TextField(
-                          controller: ctrl,
-                          decoration:
-                              const InputDecoration(labelText: '#RRGGBB'),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const gap = 3.0;
+              final perRow = columns ?? values.length;
+              final width =
+                  (constraints.maxWidth - (perRow - 1) * gap) / perRow;
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: [
+                  for (final value in values)
+                    SizedBox(
+                      width: width,
+                      child: _choiceTile(
+                        key: keyOf?.call(value) ??
+                            ValueKey('workshop-choice-${label(value)}'),
+                        selected: value == selected,
+                        minHeight: 40,
+                        onTap: () => onSelected(value),
+                        builder: (foreground) => Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Text(
+                            label(value),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: foreground,
+                            ),
+                          ),
                         ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(ctx).pop(),
-                            child: const Text('取消'),
-                          ),
-                          FilledButton(
-                            onPressed: () {
-                              final p = ThemeResolver.tryParseHex(ctrl.text);
-                              if (p != null) {
-                                Navigator.of(ctx)
-                                    .pop(ThemeResolver.formatHex(p));
-                              }
-                            },
-                            child: const Text('保存'),
-                          ),
-                        ],
                       ),
-                    );
-                    ctrl.dispose();
-                    if (res != null && mounted) {
-                      _mutate(() => v.coursePalette[i] = res);
-                    }
-                  },
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 滑杆行：图标、标题与当前值在上，滑杆铺满整行。
+  Widget _sliderRow({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required String value,
+    required Widget slider,
+  }) {
+    final tokens = AppThemeTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 38,
+                child: Icon(icon, size: 22, color: tokens.textPrimary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: tokens.textPrimary,
+                      ),
+                    ),
+                    if (subtitle != null)
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: tokens.textSecondary,
+                        ),
+                      ),
+                  ],
                 ),
-                if (v.coursePalette.length > 5)
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    onPressed: () => _mutate(() => v.coursePalette.removeAt(i)),
+              ),
+              Text(
+                value,
+                style: TextStyle(fontSize: 13.5, color: tokens.textSecondary),
+              ),
+            ],
+          ),
+          slider,
+        ],
+      ),
+    );
+  }
+
+  Future<T?> _pickOption<T>({
+    required T current,
+    required List<(T, String, String?)> options,
+    String keyPrefix = 'workshop-option',
+  }) {
+    return showAppModalBottomSheet<T>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (value, title, description) in options)
+              ListTile(
+                key: ValueKey('$keyPrefix-$value'),
+                title: Text(title),
+                subtitle: description == null ? null : Text(description),
+                trailing:
+                    value == current ? const Icon(Icons.check_rounded) : null,
+                onTap: () => Navigator.of(sheet).pop(value),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildActiveTabSegments(ThemeAppearance appearance) {
+    switch (_activeTab) {
+      case WorkshopTab.colors:
+        return _buildColorSegments();
+      case WorkshopTab.courses:
+        return _buildCourseSegments();
+      case WorkshopTab.wallpapers:
+        return _buildWallpaperSegments();
+      case WorkshopTab.material:
+        return _buildMaterialSegments();
+      case WorkshopTab.layout:
+        return _buildLayoutSegments();
+      case WorkshopTab.decoration:
+        return _buildDecorationSegments();
+      case WorkshopTab.icons:
+        return _buildIconSegments();
+      case WorkshopTab.font:
+        return _buildFontSegments();
+      case WorkshopTab.launcherIcon:
+        return _buildLauncherIconSegments();
+      case WorkshopTab.widgets:
+        return [
+          _embedded(ThemeWorkshopWidgetPreviewPanel(appearance: appearance)),
+        ];
+      case WorkshopTab.packages:
+        return [
+          _settingRow(
+            key: const ValueKey('workshop-export-button'),
+            leading: _rowIcon(Icons.ios_share_outlined),
+            title: '导出编辑中的主题',
+            subtitle: '保存为可分享、可导入的主题包',
+            trailing: _rowValue(_exporting ? '导出中' : '导出'),
+            onTap: _exporting ? null : _openExportSheet,
+          ),
+          _embedded(const ThemeSection()),
+        ];
+    }
+  }
+
+  List<Widget> _buildEditorSegments(ThemeAppearance appearance) {
+    final segments = _buildActiveTabSegments(appearance);
+    final theme = _expressiveEditorTheme();
+    return [
+      for (final (index, segment) in segments.indexed) ...[
+        if (index > 0) const SizedBox(height: 3),
+        _panel(
+          key: index == 0
+              ? ValueKey('workshop-editor-${_activeTab.name}')
+              : null,
+          radius:
+              _groupRadius(first: false, last: index == segments.length - 1),
+          child: Theme(data: theme, child: segment),
+        ),
+      ],
+    ];
+  }
+
+  Future<void> _editCourseColor(int index) async {
+    final v = _currentVariant;
+    final ctrl = TextEditingController(text: v.coursePalette[index]);
+    final res = await showAppDialog<String>(
+      context: context,
+      builder: (ctx) => AppAlertDialog(
+        title: Text('修改课程色 ${index + 1}'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(labelText: '#RRGGBB'),
+        ),
+        actions: [
+          if (v.coursePalette.length > 5)
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(''),
+              child: const Text('删除'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final p = ThemeResolver.tryParseHex(ctrl.text);
+              if (p != null) {
+                Navigator.of(ctx).pop(ThemeResolver.formatHex(p));
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (res == null || !mounted) return;
+    _mutate(() {
+      if (res.isEmpty) {
+        v.coursePalette.removeAt(index);
+      } else {
+        v.coursePalette[index] = res;
+      }
+    });
+  }
+
+  List<Widget> _buildCourseSegments() {
+    final v = _currentVariant;
+    final tokens = v.effectiveTokens(_brightness);
+    final appTokens = AppThemeTokens.of(context);
+    final tonal = Theme.of(context)
+        .colorScheme
+        .surfaceContainerHighest
+        .withValues(alpha: .55);
+
+    Widget tile({
+      required VoidCallback? onTap,
+      required Widget swatch,
+      required String label,
+      String? caption,
+    }) {
+      return Material(
+        color: tonal,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                swatch,
+                const SizedBox(height: 5),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                    color: appTokens.textPrimary,
+                  ),
+                ),
+                if (caption != null)
+                  Text(
+                    caption,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: appTokens.textSecondary,
+                    ),
                   ),
               ],
             ),
           ),
-      ],
-    );
-  }
-
-  Widget _buildWallpapersEditor() {
-    final v = _currentVariant;
-    final slotData = v.wallpapers[_wallpaperSlot];
-
-    Future<void> pickWall({required bool landscape}) async {
-      final draft = _state;
-      final slot = _wallpaperSlot;
-      final brightness = _brightness;
-      try {
-        final raw = await _pickRawFile(
-          'wallpaper_${slot}_${landscape ? 'landscape' : 'portrait'}',
-          allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
-        );
-        if (raw == null || !mounted) return;
-        await ThemePackCodec.validateLocalImageFile(
-          raw,
-          ThemeAssetKind.wallpaper,
-        );
-        final copied = await _draftStore.copyAssetIntoDraft(
-          draft.draftId,
-          raw,
-          'wallpaper_${ThemeWorkshopStateData.newUuid()}${path.extension(raw)}',
-        );
-        if (!mounted || !identical(draft, _state)) return;
-        _mutate(() {
-          final current = Map<String, dynamic>.from(
-            v.wallpapers[slot] ??
-                {
-                  'portrait': copied,
-                  'fit': 'cover',
-                  'focalX': 0.5,
-                  'focalY': 0.5,
-                  'blur': 0.0,
-                  'scrim': brightness == Brightness.dark ? 0.35 : 0.0,
-                },
-          );
-          current[landscape ? 'landscape' : 'portrait'] = copied;
-          v.wallpapers[slot] = current;
-        });
-      } on ThemePackError catch (e) {
-        if (mounted) setState(() => _bannerMessage = e.message);
-      }
+        ),
+      );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            for (final item in const [
-              ('global', '全局壁纸'),
-              ('home', '首页壁纸'),
-              ('schedule', '课表壁纸'),
-              ('me', '我的壁纸'),
-            ])
-              ChoiceChip(
-                label: Text(item.$2),
-                selected: _wallpaperSlot == item.$1,
-                onSelected: (_) => setState(() => _wallpaperSlot = item.$1),
-              ),
-          ],
+    return [
+      _settingRow(
+        leading: _rowIcon(Icons.auto_awesome_outlined),
+        title: '从种子色生成',
+        subtitle: '按当前种子色重新推导 8 种课程色',
+        trailing: _rowValue('生成'),
+        onTap: () {
+          final generated = ThemeResolver.generateCoursePalette(
+            seedColor: ThemeContrast.parseColor(v.seedColor),
+            brightness: _brightness,
+            background: ThemeContrast.parseColor(tokens['background']!),
+            courseCardText: ThemeContrast.parseColor(tokens['courseCardText']!),
+          );
+          _mutate(() => v.coursePalette = generated);
+        },
+      ),
+      Padding(
+        padding: const EdgeInsets.all(10),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const gap = 8.0;
+            final width = (constraints.maxWidth - 3 * gap) / 4;
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (var i = 0; i < v.coursePalette.length; i++)
+                  SizedBox(
+                    width: width,
+                    child: tile(
+                      onTap: () => _editCourseColor(i),
+                      swatch: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: ThemeContrast.parseColor(v.coursePalette[i]),
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                      ),
+                      label: '课程 ${i + 1}',
+                      caption: v.coursePalette[i],
+                    ),
+                  ),
+                if (v.coursePalette.length < 12)
+                  SizedBox(
+                    width: width,
+                    child: tile(
+                      onTap: () =>
+                          _mutate(() => v.coursePalette.add('#26A69A')),
+                      swatch: SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: Icon(Icons.add_rounded,
+                            color: appTokens.textPrimary),
+                      ),
+                      label: '新增',
+                      caption: '${v.coursePalette.length}/12',
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            OutlinedButton.icon(
-              onPressed: () => pickWall(landscape: false),
-              icon: const Icon(Icons.image_outlined, size: 18),
-              label: Text(slotData == null ? '选择竖屏图' : '更换竖屏图'),
-            ),
-            if (slotData != null)
-              OutlinedButton.icon(
-                onPressed: () => pickWall(landscape: true),
-                icon: const Icon(Icons.stay_current_landscape, size: 18),
-                label: Text(
-                  slotData['landscape'] == null ? '添加横屏图' : '更换横屏图',
-                ),
-              ),
-            if (slotData != null)
-              TextButton(
-                onPressed: () =>
-                    _mutate(() => v.wallpapers[_wallpaperSlot] = null),
-                child: const Text('清空此槽位'),
-              ),
-            if (_brightness == Brightness.dark)
-              TextButton.icon(
-                key: const ValueKey('workshop-copy-light-wallpapers'),
-                onPressed: () => _mutate(() {
-                  _state.dark.wallpapers = {
-                    for (final entry in _state.light.wallpapers.entries)
-                      entry.key: entry.value == null
-                          ? null
-                          : Map<String, dynamic>.from(entry.value!),
-                  };
-                }),
-                icon: const Icon(Icons.copy_outlined, size: 16),
-                label: const Text('复制浅色壁纸设置'),
-              ),
-          ],
+      ),
+    ];
+  }
+
+  Future<void> _pickWallpaper({required bool landscape}) async {
+    final draft = _state;
+    final v = _currentVariant;
+    final slot = _wallpaperSlot;
+    final brightness = _brightness;
+    try {
+      final raw = await _pickRawFile(
+        'wallpaper_${slot}_${landscape ? 'landscape' : 'portrait'}',
+        allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
+      );
+      if (raw == null || !mounted) return;
+      await ThemePackCodec.validateLocalImageFile(
+        raw,
+        ThemeAssetKind.wallpaper,
+      );
+      final copied = await _draftStore.copyAssetIntoDraft(
+        draft.draftId,
+        raw,
+        'wallpaper_${ThemeWorkshopStateData.newUuid()}${path.extension(raw)}',
+      );
+      if (!mounted || !identical(draft, _state)) return;
+      _mutate(() {
+        final current = Map<String, dynamic>.from(
+          v.wallpapers[slot] ??
+              {
+                'portrait': copied,
+                'fit': 'cover',
+                'focalX': 0.5,
+                'focalY': 0.5,
+                'blur': 0.0,
+                'scrim': brightness == Brightness.dark ? 0.35 : 0.0,
+              },
+        );
+        current[landscape ? 'landscape' : 'portrait'] = copied;
+        v.wallpapers[slot] = current;
+      });
+    } on ThemePackError catch (e) {
+      if (mounted) setState(() => _bannerMessage = e.message);
+    }
+  }
+
+  List<Widget> _buildWallpaperSegments() {
+    final v = _currentVariant;
+    final slotData = v.wallpapers[_wallpaperSlot];
+    const slots = {
+      'global': '全局',
+      'home': '首页',
+      'schedule': '课表',
+      'me': '我的',
+    };
+    return [
+      _choiceGrid<String>(
+        title: '壁纸位置',
+        values: slots.keys.toList(),
+        selected: _wallpaperSlot,
+        label: (slot) => slots[slot]!,
+        keyOf: (slot) => ValueKey('workshop-wallpaper-slot-$slot'),
+        onSelected: (slot) => setState(() => _wallpaperSlot = slot),
+      ),
+      _settingRow(
+        key: const ValueKey('workshop-wallpaper-portrait'),
+        leading: _rowIcon(Icons.image_outlined),
+        title: '竖屏图',
+        subtitle: slotData == null
+            ? '未设置，选择后用于${slots[_wallpaperSlot]}页面'
+            : '已设置，可调整焦点、模糊与遮罩',
+        trailing: _rowValue(slotData == null ? '选择' : '更换'),
+        onTap: () => _pickWallpaper(landscape: false),
+      ),
+      if (slotData != null) ...[
+        _settingRow(
+          leading: _rowIcon(Icons.stay_current_landscape),
+          title: '横屏图',
+          subtitle: slotData['landscape'] == null ? '可选，平板和横屏时使用' : '已设置',
+          trailing: _rowValue(slotData['landscape'] == null ? '添加' : '更换'),
+          onTap: () => _pickWallpaper(landscape: true),
         ),
-        if (slotData != null) ...[
-          const SizedBox(height: 10),
+        _settingRow(
+          leading: _rowIcon(Icons.delete_outline_rounded),
+          title: '清空此位置',
+          subtitle: '恢复使用全局壁纸或默认背景',
+          onTap: () => _mutate(() => v.wallpapers[_wallpaperSlot] = null),
+        ),
+      ],
+      if (_brightness == Brightness.dark)
+        _settingRow(
+          key: const ValueKey('workshop-copy-light-wallpapers'),
+          leading: _rowIcon(Icons.copy_outlined),
+          title: '复制浅色壁纸设置',
+          subtitle: '深色模式沿用浅色的全部壁纸位置',
+          onTap: () => _mutate(() {
+            _state.dark.wallpapers = {
+              for (final entry in _state.light.wallpapers.entries)
+                entry.key: entry.value == null
+                    ? null
+                    : Map<String, dynamic>.from(entry.value!),
+            };
+          }),
+        ),
+      if (slotData != null)
+        _embedded(
           ThemeImageAdjustmentsEditor(
             settings: slotData,
             onChanged: (updated) =>
                 _mutate(() => v.wallpapers[_wallpaperSlot] = updated),
           ),
-        ],
-      ],
-    );
+        ),
+    ];
   }
 
-  Widget _buildMaterialEditor() {
+  List<Widget> _buildMaterialSegments() {
     final v = _currentVariant;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text('全局圆角档位'),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final item in const [
-              ('compact', '紧凑'),
-              ('standard', '标准'),
-              ('rounded', '圆润'),
-            ])
-              ChoiceChip(
-                label: Text(item.$2),
-                selected: _state.shape == item.$1,
-                onSelected: (_) => _mutate(() => _state.shape = item.$1),
+    const shapes = {'compact': '紧凑', 'standard': '标准', 'rounded': '圆润'};
+    return [
+      _choiceGrid<String>(
+        title: '全局圆角',
+        values: shapes.keys.toList(),
+        selected: _state.shape,
+        label: (shape) => shapes[shape]!,
+        onSelected: (shape) => _mutate(() => _state.shape = shape),
+      ),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _sliderRow(
+            icon: Icons.opacity_rounded,
+            title: '卡片不透明度',
+            subtitle: '调节卡片底面的不透明程度',
+            value: '${(v.componentOpacity * 100).round()}%',
+            slider: Slider(
+              value: v.componentOpacity.clamp(0.75, 1.0),
+              min: 0.75,
+              max: 1.0,
+              divisions: 25,
+              onChanged: (val) => _mutate(
+                () => v.componentOpacity = (val * 100).round() / 100,
               ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Text('组件底面不透明度 ${(v.componentOpacity * 100).round()}%'),
-        Slider(
-          value: v.componentOpacity.clamp(0.75, 1.0),
-          min: 0.75,
-          max: 1.0,
-          divisions: 25,
-          onChanged: (val) => _mutate(
-            () => v.componentOpacity = (val * 100).round() / 100,
+            ),
           ),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('开启卡片毛玻璃'),
-          value: v.frostedEnabled,
-          onChanged: (on) => _mutate(() {
-            v.frostedEnabled = on;
-            if (on && v.frostedStrength == 0) v.frostedStrength = 0.5;
-          }),
-        ),
-        if (v.frostedEnabled) ...[
-          Text('毛玻璃强度 ${(v.frostedStrength * 100).round()}%'),
-          Slider(
-            value: v.frostedStrength.clamp(0.0, 1.0),
-            min: 0.0,
-            max: 1.0,
-            divisions: 20,
-            onChanged: (val) => _mutate(
-              () => v.frostedStrength = (val * 100).round() / 100,
+          _rowDivider(),
+          _settingRow(
+            leading: _rowIcon(Icons.blur_on_rounded),
+            title: '卡片毛玻璃',
+            subtitle: '模糊卡片背后的壁纸',
+            trailing: _rowSwitch(v.frostedEnabled, (on) => _setFrosted(on)),
+            onTap: () => _setFrosted(!v.frostedEnabled),
+          ),
+          if (v.frostedEnabled) ...[
+            _rowDivider(),
+            _sliderRow(
+              icon: Icons.blur_linear_rounded,
+              title: '毛玻璃强度',
+              value: '${(v.frostedStrength * 100).round()}%',
+              slider: Slider(
+                value: v.frostedStrength.clamp(0.0, 1.0),
+                min: 0.0,
+                max: 1.0,
+                divisions: 20,
+                onChanged: (val) => _mutate(
+                  () => v.frostedStrength = (val * 100).round() / 100,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _settingRow(
+            leading: _rowIcon(Icons.border_style_rounded),
+            title: '描边与阴影',
+            subtitle: '内容卡片的描边宽度和阴影强弱',
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+            child: ThemeCardStyleEditor(
+              cardStyle: v.cardStyle,
+              onChanged: (next) => _mutate(() => v.cardStyle = next),
             ),
           ),
         ],
-        const Divider(height: 24),
-        Text('内容卡片描边与阴影', style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 6),
-        ThemeCardStyleEditor(
-          cardStyle: v.cardStyle,
-          onChanged: (next) => _mutate(() => v.cardStyle = next),
-        ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton(
-            onPressed: () => _mutate(() {
-              v.componentOpacity = 1.0;
-              v.frostedEnabled = false;
-              v.frostedStrength = 0.0;
-              v.cardStyle = null;
-            }),
-            child: const Text('重置当前明暗材质'),
-          ),
-        ),
-      ],
-    );
+      ),
+      _settingRow(
+        leading: _rowIcon(Icons.restart_alt_rounded),
+        title: '恢复默认材质',
+        subtitle: '重置当前明暗的不透明度、毛玻璃与描边阴影',
+        onTap: () => _mutate(() {
+          v.componentOpacity = 1.0;
+          v.frostedEnabled = false;
+          v.frostedStrength = 0.0;
+          v.cardStyle = null;
+        }),
+      ),
+    ];
   }
 
-  Widget _buildLayoutEditor() {
-    final rawSlot = _state.layout[_headerSlot];
-    final slotLabel = switch (_headerSlot) {
-      'campus' => '校园',
-      'me' => '我的',
-      _ => '首页',
-    };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final s in const [
-              ('home', '首页页头'),
-              ('campus', '校园页头'),
-              ('me', '我的页头'),
-            ])
-              ChoiceChip(
-                label: Text(s.$2),
-                selected: _headerSlot == s.$1,
-                onSelected: (_) => setState(() => _headerSlot = s.$1),
-              ),
-          ],
-        ),
-        const SizedBox(height: 12),
+  void _setFrosted(bool on) {
+    final v = _currentVariant;
+    _mutate(() {
+      v.frostedEnabled = on;
+      if (on && v.frostedStrength == 0) v.frostedStrength = 0.5;
+    });
+  }
+
+  static const _headerSlots = {'home': '首页', 'campus': '校园', 'me': '我的'};
+
+  Widget _headerSlotGrid(String title) => _choiceGrid<String>(
+        title: title,
+        values: _headerSlots.keys.toList(),
+        selected: _headerSlot,
+        label: (slot) => _headerSlots[slot]!,
+        keyOf: (slot) => ValueKey('workshop-header-slot-$slot'),
+        onSelected: (slot) => setState(() => _headerSlot = slot),
+      );
+
+  List<Widget> _buildLayoutSegments() {
+    return [
+      _headerSlotGrid('页头位置'),
+      _embedded(
         ThemeHeaderLayoutEditor(
-          slotLabel: slotLabel,
-          rawLayout: rawSlot,
+          slotLabel: _headerSlots[_headerSlot]!,
+          rawLayout: _state.layout[_headerSlot],
           onChanged: (next) => _mutate(() {
             if (next == null) {
               _state.layout.remove(_headerSlot);
@@ -2796,464 +3524,420 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
             }
           }),
         ),
-        if (_state.layout.isNotEmpty)
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: () => _mutate(() => _state.layout.clear()),
-              child: const Text('重置全部页头布局'),
-            ),
-          ),
-      ],
-    );
+      ),
+      if (_state.layout.isNotEmpty)
+        _settingRow(
+          leading: _rowIcon(Icons.restart_alt_rounded),
+          title: '重置全部页头布局',
+          subtitle: '首页、校园和我的页头恢复默认模板',
+          onTap: () => _mutate(() => _state.layout.clear()),
+        ),
+    ];
   }
 
-  Widget _buildDecorationEditor() {
-    final v = _currentVariant;
-    final slotLabel = switch (_headerSlot) {
-      'campus' => '校园',
-      'me' => '我的',
-      _ => '首页',
-    };
-    final layoutSpec =
-        ThemeHeaderLayoutSpec.fromMap(_state.layout[_headerSlot]);
-
-    Future<String?> pickDecoAsset(ThemeAssetKind kind) async {
-      try {
-        final raw = await _pickRawFile(
-          'deco_${_headerSlot}_${kind.name}',
-          allowedExtensions: kind == ThemeAssetKind.sticker
-              ? const ['png', 'webp']
-              : const ['png', 'jpg', 'jpeg', 'webp'],
-        );
-        if (raw == null || !mounted) return null;
-        await ThemePackCodec.validateLocalImageFile(raw, kind);
-        return await _draftStore.copyAssetIntoDraft(
-          _state.draftId,
-          raw,
-          'deco_${_brightness.name}_${_headerSlot}_${DateTime.now().microsecondsSinceEpoch}${path.extension(raw)}',
-        );
-      } on ThemePackError catch (e) {
-        if (mounted) setState(() => _bannerMessage = e.message);
-        return null;
-      }
+  Future<String?> _pickDecorationAsset(ThemeAssetKind kind) async {
+    try {
+      final raw = await _pickRawFile(
+        'deco_${_headerSlot}_${kind.name}',
+        allowedExtensions: kind == ThemeAssetKind.sticker
+            ? const ['png', 'webp']
+            : const ['png', 'jpg', 'jpeg', 'webp'],
+      );
+      if (raw == null || !mounted) return null;
+      await ThemePackCodec.validateLocalImageFile(raw, kind);
+      return await _draftStore.copyAssetIntoDraft(
+        _state.draftId,
+        raw,
+        'deco_${_brightness.name}_${_headerSlot}_${DateTime.now().microsecondsSinceEpoch}${path.extension(raw)}',
+      );
+    } on ThemePackError catch (e) {
+      if (mounted) setState(() => _bannerMessage = e.message);
+      return null;
     }
+  }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final s in const [
-              ('home', '首页装饰'),
-              ('campus', '校园装饰'),
-              ('me', '我的装饰'),
-            ])
-              ChoiceChip(
-                label: Text(s.$2),
-                selected: _headerSlot == s.$1,
-                onSelected: (_) => setState(() => _headerSlot = s.$1),
-              ),
-          ],
-        ),
-        const SizedBox(height: 12),
+  List<Widget> _buildDecorationSegments() {
+    final v = _currentVariant;
+    return [
+      _headerSlotGrid('装饰位置'),
+      _embedded(
         ThemeHeaderDecorationEditor(
           slot: _headerSlot,
-          slotLabel: slotLabel,
-          layoutSpec: layoutSpec,
+          slotLabel: _headerSlots[_headerSlot]!,
+          layoutSpec: ThemeHeaderLayoutSpec.fromMap(_state.layout[_headerSlot]),
           decoration: v.decorations[_headerSlot],
           assetResolver: _resolveLocalImage,
-          onPickHeaderBackground: () => pickDecoAsset(ThemeAssetKind.header),
-          onPickSticker: () => pickDecoAsset(ThemeAssetKind.sticker),
+          onPickHeaderBackground: () =>
+              _pickDecorationAsset(ThemeAssetKind.header),
+          onPickSticker: () => _pickDecorationAsset(ThemeAssetKind.sticker),
           onChanged: (next) => _mutate(() => v.decorations[_headerSlot] = next),
         ),
-      ],
-    );
+      ),
+    ];
   }
 
-  Widget _buildIconsEditor() {
-    Future<void> pickNavIcon(String slot, String iconState) async {
-      final draft = _state;
-      try {
-        final raw = await _pickRawFile(
-          'nav_${slot}_$iconState',
-          allowedExtensions: const ['png', 'webp', 'jpg', 'jpeg'],
-        );
-        if (raw == null || !mounted) return;
-        final croppedPng = await Isolate.run(() async {
-          final bytes = await File(raw).readAsBytes();
-          final decoded = img.decodeImage(bytes);
-          if (decoded == null) return null;
-          final side = math.min(decoded.width, decoded.height);
-          final square = img.copyCrop(
-            decoded,
-            x: (decoded.width - side) ~/ 2,
-            y: (decoded.height - side) ~/ 2,
-            width: side,
-            height: side,
-          );
-          final resized = img.copyResize(square, width: 192, height: 192);
-          return Uint8List.fromList(img.encodePng(resized));
-        });
-        if (croppedPng == null) {
-          throw const ThemePackError('theme_image_invalid', 'bottomNav.icons');
-        }
-        final savedPath = await _draftStore.writeAssetBytes(
-          draft.draftId,
-          'nav_${ThemeWorkshopStateData.newUuid()}.png',
-          croppedPng,
-        );
-        if (!mounted || !identical(draft, _state)) return;
-        _mutate(() {
-          final existing = _state.navIcons[slot];
-          _state.navIcons[slot] = {
-            'normal': iconState == 'normal'
-                ? savedPath
-                : (existing?['normal'] ?? savedPath),
-            'selected': iconState == 'selected'
-                ? savedPath
-                : (existing?['selected'] ?? savedPath),
-          };
-        });
-      } on ThemePackError catch (e) {
-        if (mounted) setState(() => _bannerMessage = e.message);
-      }
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text('底栏样式'),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ChoiceChip(
-              label: const Text('沿用用户设置'),
-              selected: _state.bottomNavStyle == null,
-              onSelected: (_) => _mutate(() => _state.bottomNavStyle = null),
-            ),
-            for (final item in const [
-              ('normal', '标准底栏'),
-              ('floating', '悬浮底栏'),
-              ('liquid_glass', '液态玻璃'),
-            ])
-              ChoiceChip(
-                label: Text(item.$2),
-                selected: _state.bottomNavStyle == item.$1,
-                onSelected: (_) =>
-                    _mutate(() => _state.bottomNavStyle = item.$1),
-              ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        const Text('图标着色模式'),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ChoiceChip(
-              label: const Text('单色剪影 (template)'),
-              selected: _state.iconTint == 'template',
-              onSelected: (_) => _mutate(() => _state.iconTint = 'template'),
-            ),
-            ChoiceChip(
-              label: const Text('保留原色 (original)'),
-              selected: _state.iconTint == 'original',
-              onSelected: (_) => _mutate(() => _state.iconTint = 'original'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        const Text(
-          '导航图标槽位（选图后自动居中裁为正方形并缩放至 192×192 PNG）',
-          style: TextStyle(fontSize: 12),
-        ),
-        for (final item in const [
-          ('home', '首页'),
-          ('market', '集市'),
-          ('schedule', '课表'),
-          ('campus', '校园'),
-          ('me', '我'),
-        ])
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(item.$2),
-            subtitle: Text(
-              _state.navIcons[item.$1] == null ? '使用系统默认图标' : '已设置常态与选中态图标',
-              style: const TextStyle(fontSize: 12),
-            ),
-            trailing: Wrap(
-              spacing: 6,
-              children: [
-                OutlinedButton(
-                  onPressed: () => pickNavIcon(item.$1, 'normal'),
-                  child: const Text('常态'),
-                ),
-                OutlinedButton(
-                  onPressed: () => pickNavIcon(item.$1, 'selected'),
-                  child: const Text('选中'),
-                ),
-                if (_state.navIcons[item.$1] != null)
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () =>
-                        _mutate(() => _state.navIcons[item.$1] = null),
-                  ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildFontEditor() {
-    Future<void> pickFontFile({required bool bold}) async {
-      final draft = _state;
-      try {
-        final raw = await _pickRawFile(
-          bold ? 'font_bold' : 'font_regular',
-          allowedExtensions: const ['ttf', 'otf'],
-        );
-        if (raw == null || !mounted) return;
+  Future<void> _pickNavIcon(String slot, String iconState) async {
+    final draft = _state;
+    try {
+      final raw = await _pickRawFile(
+        'nav_${slot}_$iconState',
+        allowedExtensions: const ['png', 'webp', 'jpg', 'jpeg'],
+      );
+      if (raw == null || !mounted) return;
+      final croppedPng = await Isolate.run(() async {
         final bytes = await File(raw).readAsBytes();
-        if (bytes.isEmpty || bytes.length > 24 * 1024 * 1024) {
-          throw const ThemePackError('theme_font_invalid', 'font');
-        }
-        final copied = await _draftStore.copyAssetIntoDraft(
-          draft.draftId,
-          raw,
-          'font_${ThemeWorkshopStateData.newUuid()}${path.extension(raw)}',
+        final decoded = img.decodeImage(bytes);
+        if (decoded == null) return null;
+        final side = math.min(decoded.width, decoded.height);
+        final square = img.copyCrop(
+          decoded,
+          x: (decoded.width - side) ~/ 2,
+          y: (decoded.height - side) ~/ 2,
+          width: side,
+          height: side,
         );
-        if (!mounted || !identical(draft, _state)) return;
-        final candidateFont = <String, dynamic>{
-          'name': _state.font?['name'] ??
-              path.basenameWithoutExtension(raw).takeRunes(30),
-          'regular': bold ? (_state.font?['regular'] ?? copied) : copied,
-          if (bold)
-            'bold': copied
-          else if (_state.font?['bold'] != null)
-            'bold': _state.font!['bold'],
-          'license': _state.font?['license'] ?? 'OFL-1.1',
-        };
-        final loaded = await ThemeFontRegistry.ensureLoaded(candidateFont);
-        if (loaded == null) {
-          throw const ThemePackError('theme_font_invalid', 'font');
-        }
-        if (!mounted || !identical(draft, _state)) return;
-        _mutate(() => _state.font = candidateFont);
-      } on ThemePackError catch (e) {
-        if (mounted) setState(() => _bannerMessage = e.message);
+        final resized = img.copyResize(square, width: 192, height: 192);
+        return Uint8List.fromList(img.encodePng(resized));
+      });
+      if (croppedPng == null) {
+        throw const ThemePackError('theme_image_invalid', 'bottomNav.icons');
       }
+      final savedPath = await _draftStore.writeAssetBytes(
+        draft.draftId,
+        'nav_${ThemeWorkshopStateData.newUuid()}.png',
+        croppedPng,
+      );
+      if (!mounted || !identical(draft, _state)) return;
+      _mutate(() {
+        final existing = _state.navIcons[slot];
+        _state.navIcons[slot] = {
+          'normal': iconState == 'normal'
+              ? savedPath
+              : (existing?['normal'] ?? savedPath),
+          'selected': iconState == 'selected'
+              ? savedPath
+              : (existing?['selected'] ?? savedPath),
+        };
+      });
+    } on ThemePackError catch (e) {
+      if (mounted) setState(() => _bannerMessage = e.message);
     }
+  }
 
+  List<Widget> _buildIconSegments() {
+    const styles = {
+      null: '沿用设置',
+      'normal': '标准底栏',
+      'floating': '悬浮底栏',
+      'liquid_glass': '液态玻璃',
+    };
+    const tints = {'template': '单色剪影', 'original': '保留原色'};
+    final scheme = Theme.of(context).colorScheme;
+    final compact = FilledButton.styleFrom(
+      backgroundColor: scheme.secondaryContainer,
+      foregroundColor: scheme.onSecondaryContainer,
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      minimumSize: const Size(0, 34),
+      textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
+    );
+    return [
+      _choiceGrid<String?>(
+        title: '底栏样式',
+        values: styles.keys.toList(),
+        selected: _state.bottomNavStyle,
+        label: (style) => styles[style]!,
+        columns: 2,
+        onSelected: (style) => _mutate(() => _state.bottomNavStyle = style),
+      ),
+      _choiceGrid<String>(
+        title: '图标着色',
+        values: tints.keys.toList(),
+        selected: _state.iconTint,
+        label: (tint) => tints[tint]!,
+        onSelected: (tint) => _mutate(() => _state.iconTint = tint),
+      ),
+      _settingRow(
+        leading: _rowIcon(Icons.apps_rounded),
+        title: '导航图标',
+        subtitle: '选图后自动居中裁成 192×192 正方形',
+      ),
+      for (final (slot, name, icon) in const [
+        ('home', '首页', Icons.home_outlined),
+        ('market', '集市', Icons.storefront_outlined),
+        ('schedule', '课表', Icons.calendar_month_outlined),
+        ('campus', '校园', Icons.school_outlined),
+        ('me', '我', Icons.person_outline_rounded),
+      ])
+        _settingRow(
+          leading: _rowIcon(icon),
+          title: name,
+          subtitle: _state.navIcons[slot] == null ? '默认图标' : '已自定义',
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FilledButton.tonal(
+                style: compact,
+                onPressed: () => _pickNavIcon(slot, 'normal'),
+                child: const Text('常态'),
+              ),
+              const SizedBox(width: 6),
+              FilledButton.tonal(
+                style: compact,
+                onPressed: () => _pickNavIcon(slot, 'selected'),
+                child: const Text('选中'),
+              ),
+              if (_state.navIcons[slot] != null)
+                IconButton(
+                  tooltip: '恢复默认图标',
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  onPressed: () => _mutate(() => _state.navIcons[slot] = null),
+                ),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  Future<void> _pickFontFile({required bool bold}) async {
+    final draft = _state;
+    try {
+      final raw = await _pickRawFile(
+        bold ? 'font_bold' : 'font_regular',
+        allowedExtensions: const ['ttf', 'otf'],
+      );
+      if (raw == null || !mounted) return;
+      final bytes = await File(raw).readAsBytes();
+      if (bytes.isEmpty || bytes.length > 24 * 1024 * 1024) {
+        throw const ThemePackError('theme_font_invalid', 'font');
+      }
+      final copied = await _draftStore.copyAssetIntoDraft(
+        draft.draftId,
+        raw,
+        'font_${ThemeWorkshopStateData.newUuid()}${path.extension(raw)}',
+      );
+      if (!mounted || !identical(draft, _state)) return;
+      final candidateFont = <String, dynamic>{
+        'name': _state.font?['name'] ??
+            path.basenameWithoutExtension(raw).takeRunes(30),
+        'regular': bold ? (_state.font?['regular'] ?? copied) : copied,
+        if (bold)
+          'bold': copied
+        else if (_state.font?['bold'] != null)
+          'bold': _state.font!['bold'],
+        'license': _state.font?['license'] ?? 'OFL-1.1',
+      };
+      final loaded = await ThemeFontRegistry.ensureLoaded(candidateFont);
+      if (loaded == null) {
+        throw const ThemePackError('theme_font_invalid', 'font');
+      }
+      if (!mounted || !identical(draft, _state)) return;
+      _mutate(() => _state.font = candidateFont);
+    } on ThemePackError catch (e) {
+      if (mounted) setState(() => _bannerMessage = e.message);
+    }
+  }
+
+  static const _fontLicenses = [
+    ('OFL-1.1', 'SIL OFL-1.1', '开源字体常用许可'),
+    ('Apache-2.0', 'Apache-2.0', null),
+    ('CC0-1.0', 'CC0-1.0', '放弃全部权利'),
+    ('author-owned', '作者本人拥有版权', 'author-owned'),
+  ];
+
+  List<Widget> _buildFontSegments() {
     final fontMap = _state.font;
     final resolvedFamily = ThemeFontRegistry.resolvedFamilyFor(
       _state.buildAppearance().group(ThemeGroup.font),
     );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            OutlinedButton.icon(
-              onPressed: () => pickFontFile(bold: false),
-              icon: const Icon(Icons.font_download_outlined, size: 18),
-              label: Text(fontMap == null ? '选择常规体 (.ttf/.otf)' : '更换常规体'),
-            ),
-            if (fontMap != null)
-              OutlinedButton.icon(
-                onPressed: () => pickFontFile(bold: true),
-                icon: const Icon(Icons.format_bold, size: 18),
-                label: Text(fontMap['bold'] == null ? '添加粗体（可选）' : '更换粗体'),
-              ),
-            if (fontMap != null)
-              TextButton(
-                onPressed: () => _mutate(() => _state.font = null),
-                child: const Text('移除自定义字体'),
-              ),
-          ],
+    final appTokens = AppThemeTokens.of(context);
+    final license = fontMap?['license'] as String? ?? 'OFL-1.1';
+    final licenseLabel = _fontLicenses
+        .firstWhere((item) => item.$1 == license,
+            orElse: () => _fontLicenses.first)
+        .$2;
+    return [
+      _settingRow(
+        leading: _rowIcon(Icons.font_download_outlined),
+        title: '常规体',
+        subtitle: fontMap == null
+            ? '选择 .ttf / .otf 字体文件'
+            : '${fontMap['name'] ?? '自定义字体'}',
+        trailing: _rowValue(fontMap == null ? '选择' : '更换'),
+        onTap: () => _pickFontFile(bold: false),
+      ),
+      if (fontMap != null) ...[
+        _settingRow(
+          leading: _rowIcon(Icons.format_bold_rounded),
+          title: '粗体',
+          subtitle: fontMap['bold'] == null ? '可选，未设置时由常规体加粗' : '已设置',
+          trailing: _rowValue(fontMap['bold'] == null ? '添加' : '更换'),
+          onTap: () => _pickFontFile(bold: true),
         ),
-        if (fontMap != null) ...[
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: fontMap['license'] as String? ?? 'OFL-1.1',
-            decoration: const InputDecoration(labelText: '字体开源/版权许可'),
-            items: const [
-              DropdownMenuItem(value: 'OFL-1.1', child: Text('SIL OFL-1.1')),
-              DropdownMenuItem(value: 'Apache-2.0', child: Text('Apache-2.0')),
-              DropdownMenuItem(value: 'CC0-1.0', child: Text('CC0-1.0')),
-              DropdownMenuItem(
-                value: 'author-owned',
-                child: Text('作者本人拥有版权 (author-owned)'),
-              ),
-            ],
-            onChanged: (lic) {
-              if (lic != null) {
-                _mutate(() => _state.font = {...fontMap, 'license': lic});
-              }
-            },
-          ),
-        ],
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppThemeTokens.of(context).surfaceMuted,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '标题样例：沈阳理工大学校园生活',
-                style: TextStyle(
-                  fontFamily: resolvedFamily,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '正文样例：春风拂过浑河南岸，今天上午八点在主教 302 教室上高等数学。',
-                style: TextStyle(fontFamily: resolvedFamily, fontSize: 14),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '数字与英文：2026-10-18 · Room B204 · GPA 3.92',
-                style: TextStyle(fontFamily: resolvedFamily, fontSize: 13.5),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                '等宽对照（保持不变）：0x147C72 · SHA-256',
-                style: TextStyle(fontFamily: 'monospace', fontSize: 12),
-              ),
-            ],
-          ),
+        _settingRow(
+          leading: _rowIcon(Icons.verified_outlined),
+          title: '字体许可',
+          trailing: _rowValue(licenseLabel),
+          onTap: () async {
+            final picked = await _pickOption<String>(
+              current: license,
+              options: _fontLicenses,
+              keyPrefix: 'workshop-font-license',
+            );
+            if (picked != null && mounted && _state.font != null) {
+              _mutate(() => _state.font = {..._state.font!, 'license': picked});
+            }
+          },
+        ),
+        _settingRow(
+          leading: _rowIcon(Icons.delete_outline_rounded),
+          title: '移除自定义字体',
+          subtitle: '恢复系统默认字体',
+          onTap: () => _mutate(() => _state.font = null),
         ),
       ],
-    );
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '标题样例：沈阳理工大学校园生活',
+              style: TextStyle(
+                fontFamily: resolvedFamily,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: appTokens.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '正文样例：春风拂过浑河南岸，今天上午八点在主教 302 教室上高等数学。',
+              style: TextStyle(
+                fontFamily: resolvedFamily,
+                fontSize: 14,
+                color: appTokens.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '数字与英文：2026-10-18 · Room B204 · GPA 3.92',
+              style: TextStyle(
+                fontFamily: resolvedFamily,
+                fontSize: 13.5,
+                color: appTokens.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '等宽对照（保持不变）：0x147C72 · SHA-256',
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: appTokens.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 
-  Widget _buildLauncherIconEditor() {
-    Future<void> pickCustomLauncher() async {
-      try {
-        final raw = await _pickRawFile(
-          'launcher_custom',
-          allowedExtensions: const ['png', 'webp'],
-        );
-        if (raw == null || !mounted) return;
-        await ThemePackCodec.validateLocalImageFile(
-          raw,
-          ThemeAssetKind.launcher,
-        );
-        final copied = await _draftStore.copyAssetIntoDraft(
-          _state.draftId,
-          raw,
-          'launcher_custom${path.extension(raw)}',
-        );
-        if (!mounted) return;
-        _mutate(() => _state.customLauncherIconPath = copied);
-      } on ThemePackError catch (e) {
-        if (mounted) setState(() => _bannerMessage = e.message);
-      }
+  Future<void> _pickCustomLauncher() async {
+    try {
+      final raw = await _pickRawFile(
+        'launcher_custom',
+        allowedExtensions: const ['png', 'webp'],
+      );
+      if (raw == null || !mounted) return;
+      await ThemePackCodec.validateLocalImageFile(
+        raw,
+        ThemeAssetKind.launcher,
+      );
+      final copied = await _draftStore.copyAssetIntoDraft(
+        _state.draftId,
+        raw,
+        'launcher_custom${path.extension(raw)}',
+      );
+      if (!mounted) return;
+      _mutate(() => _state.customLauncherIconPath = copied);
+    } on ThemePackError catch (e) {
+      if (mounted) setState(() => _bannerMessage = e.message);
     }
+  }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text('此处编辑随主题包分享的图标。本机桌面图标可在主题包分类中单独设置。'),
-        const SizedBox(height: 8),
-        const Text('内置备选桌面图标'),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+  List<Widget> _buildLauncherIconSegments() {
+    final custom = _state.customLauncherIconPath;
+    final appTokens = AppThemeTokens.of(context);
+    final names = {
+      null: '不指定',
+      for (final spec in LauncherIconService.builtinIcons) spec.id: spec.name,
+    };
+
+    Widget preview(Widget clip, String label) => Column(
           children: [
-            ChoiceChip(
-              label: const Text('不指定'),
-              selected: _state.builtinLauncherIcon == null,
-              onSelected: (_) =>
-                  _mutate(() => _state.builtinLauncherIcon = null),
+            clip,
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(fontSize: 11.5, color: appTokens.textSecondary),
             ),
-            for (final spec in LauncherIconService.builtinIcons)
-              ChoiceChip(
-                label: Text('${spec.name} (${spec.id})'),
-                selected: _state.builtinLauncherIcon == spec.id,
-                onSelected: (_) =>
-                    _mutate(() => _state.builtinLauncherIcon = spec.id),
-              ),
           ],
-        ),
-        const SizedBox(height: 14),
-        const Text('自定义桌面快捷方式图标（432–1024px 正方形不透明 PNG/WebP）'),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            OutlinedButton.icon(
-              onPressed: pickCustomLauncher,
-              icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-              label: Text(
-                _state.customLauncherIconPath == null ? '选择自定义图标' : '更换自定义图标',
-              ),
-            ),
-            if (_state.customLauncherIconPath != null)
-              TextButton(
-                onPressed: () =>
-                    _mutate(() => _state.customLauncherIconPath = null),
-                child: const Text('移除自定义图标'),
-              ),
-          ],
-        ),
-        if (_state.customLauncherIconPath != null) ...[
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 16,
+        );
+
+    return [
+      _settingRow(
+        leading: _rowIcon(Icons.info_outline_rounded),
+        title: '随主题包分享的图标',
+        subtitle: '本机桌面图标可在「主题包」分类中单独设置',
+      ),
+      _choiceGrid<String?>(
+        title: '内置备选桌面图标',
+        values: names.keys.toList(),
+        selected: _state.builtinLauncherIcon,
+        label: (id) => names[id]!,
+        columns: 2,
+        onSelected: (id) => _mutate(() => _state.builtinLauncherIcon = id),
+      ),
+      _settingRow(
+        leading: _rowIcon(Icons.add_photo_alternate_outlined),
+        title: '自定义图标',
+        subtitle: '432–1024px 正方形不透明 PNG/WebP',
+        trailing: _rowValue(custom == null ? '选择' : '更换'),
+        onTap: _pickCustomLauncher,
+      ),
+      if (custom != null) ...[
+        Padding(
+          padding: const EdgeInsets.all(14),
+          child: Wrap(
+            spacing: 20,
             runSpacing: 12,
             children: [
-              Column(
-                children: [
-                  ClipOval(
-                    child: Image.file(
-                      File(_state.customLauncherIconPath!),
-                      width: 64,
-                      height: 64,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text('圆形遮罩', style: TextStyle(fontSize: 11.5)),
-                ],
+              preview(
+                ClipOval(
+                  child: Image.file(File(custom),
+                      width: 64, height: 64, fit: BoxFit.cover),
+                ),
+                '圆形遮罩',
               ),
-              Column(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(15),
-                    child: Image.file(
-                      File(_state.customLauncherIconPath!),
-                      width: 64,
-                      height: 64,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text('圆角方形遮罩', style: TextStyle(fontSize: 11.5)),
-                ],
+              preview(
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(15),
+                  child: Image.file(File(custom),
+                      width: 64, height: 64, fit: BoxFit.cover),
+                ),
+                '圆角方形遮罩',
               ),
             ],
           ),
-        ],
+        ),
+        _settingRow(
+          leading: _rowIcon(Icons.delete_outline_rounded),
+          title: '移除自定义图标',
+          onTap: () => _mutate(() => _state.customLauncherIconPath = null),
+        ),
       ],
-    );
+    ];
   }
 }
 

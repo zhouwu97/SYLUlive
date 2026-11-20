@@ -308,19 +308,21 @@ func (s *CheckInService) Makeup(userID uint, targetDate, now time.Time) (MakeupC
 				result.StreakDays = record.StreakDays
 				result.CheckInExp = expectedExp
 			} else if hasLedger {
-				// 补签前，这段连续记录从补签日的次日开始。只结算本次补签改变的奖励。
+				// 补签前，这段连续记录从补签日的次日开始。已到账的经验也计入补差基准。
 				previousStreak := int(date.Sub(targetDate) / (24 * time.Hour))
 				if previousStreak >= record.StreakDays {
 					continue
 				}
-				correction := expectedExp - CheckInExpReward(previousStreak)
+				baseline := max(CheckInExpReward(previousStreak), ledger.Delta)
+				correction := expectedExp - baseline
+				if correction <= 0 {
+					continue
+				}
 				expectedExp = ledger.Delta + correction
 				expDelta += correction
-				if ledger.Delta != expectedExp {
-					if err := tx.Model(&models.UserExperienceLedger{}).Where("id = ?", ledger.ID).
-						Update("delta", expectedExp).Error; err != nil {
-						return err
-					}
+				if err := tx.Model(&models.UserExperienceLedger{}).Where("id = ?", ledger.ID).
+					Update("delta", expectedExp).Error; err != nil {
+					return err
 				}
 			} else {
 				continue

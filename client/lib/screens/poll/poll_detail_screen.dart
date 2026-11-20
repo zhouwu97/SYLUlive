@@ -897,6 +897,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
               enabled: context.watch<AuthProvider>().isLoggedIn,
               onSubmit: (draft) async => await _createReply(draft) != null,
               onNeedLogin: _openLogin,
+              mentionReplies: _replies,
             ),
           ],
         ),

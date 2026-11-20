@@ -6,6 +6,7 @@ import '../../providers/theme_provider.dart';
 import '../../config/api_constants.dart';
 import '../../models/reply.dart';
 import '../../models/user.dart';
+import '../../utils/app_navigation.dart';
 import '../ai_bot_identity.dart';
 import '../cached_avatar.dart';
 import '../emoji/sticker_catalog.dart';
@@ -170,7 +171,7 @@ class PostReplyItem extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (reply.author != null) ...[
+                    if (reply.author != null && !reply.author!.isAiBot) ...[
                       const SizedBox(width: 4),
                       _ReplyLevelBadge(user: reply.author!),
                     ],
@@ -250,6 +251,11 @@ class PostReplyItem extends StatelessWidget {
 }
 
 class _ReplyContent extends StatelessWidget {
+  void _openMention(BuildContext context, String term) {
+    final userId = reply.mentionUserId(term);
+    if (userId != null) AppNavigation.openUserHome(context, userId: userId);
+  }
+
   const _ReplyContent({
     required this.reply,
     this.onStickerLongPress,
@@ -270,6 +276,8 @@ class _ReplyContent extends StatelessWidget {
       content.add(
         PostContentLinkText(
           text: reply.displayContent,
+          highlightTerms: reply.mentionTerms,
+          onHighlightTap: (term) => _openMention(context, term),
           leadingTextEnd: reply.replyTargetPrefix.length,
           leadingTextStyle:
               TextStyle(color: Theme.of(context).colorScheme.primary),
@@ -337,6 +345,8 @@ class _ReplyContent extends StatelessWidget {
     if (content.isEmpty) {
       return PostContentLinkText(
         text: reply.displayContent,
+        highlightTerms: reply.mentionTerms,
+        onHighlightTap: (term) => _openMention(context, term),
         selectable: true,
         onPlainTextTap: onTextTap,
         style: TextStyle(

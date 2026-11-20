@@ -108,7 +108,8 @@ void main() {
           ThemeContrast.parseColor(hex).withValues(alpha: 0.45),
           bg,
         );
-        expect(ThemeContrast.ratio(courseText, composed), greaterThanOrEqualTo(4.5));
+        expect(ThemeContrast.ratio(courseText, composed),
+            greaterThanOrEqualTo(4.5));
       }
     }
 
@@ -128,7 +129,8 @@ void main() {
     expect(hueDiff, lessThan(2.0));
   });
 
-  test('规范包导出与草稿持久化：1080×2340 预览、超 2560 壁纸缩小且原图不烘焙 adjustments、对比度门禁', () async {
+  test('规范包导出与草稿持久化：1080×2340 预览、超 2560 壁纸缩小且原图不烘焙 adjustments、对比度门禁',
+      () async {
     final draftStore = ThemeWorkshopDraftStore(
       themesDirectory: Directory(path.join(temp.path, 'themes')),
     );
@@ -183,13 +185,13 @@ void main() {
       appVersion: '9.0.0',
     );
     expect(decoded.manifest.name, '海盐蓝工坊测试');
-    final lightPreview = img.decodeImage(decoded.contents['preview/light.png']!)!;
+    final lightPreview =
+        img.decodeImage(decoded.contents['preview/light.png']!)!;
     expect(lightPreview.width, 1080);
     expect(lightPreview.height, 2340);
 
-    final wallKey =
-        decoded.manifest.data['light']['wallpapers']['global']['portrait']
-            as String;
+    final wallKey = decoded.manifest.data['light']['wallpapers']['global']
+        ['portrait'] as String;
     expect(wallKey.endsWith('.jpg'), isTrue);
     final exportedWall = img.decodeImage(decoded.contents[wallKey]!)!;
     expect(exportedWall.width, 2560);
@@ -331,8 +333,8 @@ void main() {
       ('cards', 'layout'),
       ('cards', 'decoration'),
       ('navigation', null),
-      ('typography', 'launcherIcon'),
-      ('typography', 'widgets'),
+      ('desktop', 'launcherIcon'),
+      ('desktop', 'widgets'),
       ('packages', null),
     ]) {
       await category(name, tab);
@@ -360,17 +362,19 @@ void main() {
         find.byKey(const ValueKey('workshop-editor-layout')), findsOneWidget);
 
     await category('wallpapers');
-    final chooseWallpaper = find.widgetWithText(OutlinedButton, '更换竖屏图');
+    final chooseWallpaper =
+        find.byKey(const ValueKey('workshop-wallpaper-portrait'));
     await tester.ensureVisible(chooseWallpaper);
     await tester.tap(chooseWallpaper);
     await tester.pumpAndSettle();
     expect(find.text('无法选取文件，请检查文件权限后重试。'), findsOneWidget);
     expect(initial.light.wallpapers['global']!['portrait'], wallFile.path);
-    final darkMode = find.widgetWithText(ChoiceChip, '深色');
+    final darkMode = find.byKey(const ValueKey('workshop-brightness-dark'));
     await tester.ensureVisible(darkMode);
     await tester.tap(darkMode);
     await tester.pumpAndSettle();
-    final copyBtn = find.byKey(const ValueKey('workshop-copy-light-wallpapers'));
+    final copyBtn =
+        find.byKey(const ValueKey('workshop-copy-light-wallpapers'));
     await tester.ensureVisible(copyBtn);
     await tester.tap(copyBtn);
     await tester.pump();
@@ -379,7 +383,7 @@ void main() {
     expect(initial.light.wallpapers['global']!['blur'], 2.0);
 
     // 5. 切回浅色“装饰”Tab：调整贴纸前后层次，重置贴纸 1 不影响贴纸 2
-    final lightMode = find.widgetWithText(ChoiceChip, '浅色');
+    final lightMode = find.byKey(const ValueKey('workshop-brightness-light'));
     await tester.ensureVisible(lightMode);
     await tester.tap(lightMode);
     await tester.pumpAndSettle();
@@ -464,7 +468,7 @@ void main() {
     );
     final apply = find.byKey(const ValueKey('workshop-apply'));
     expect(tester.widget<FilledButton>(apply).onPressed, isNull);
-    final preset = find.widgetWithText(ActionChip, '海盐蓝');
+    final preset = find.byKey(const ValueKey('workshop-seed-海盐蓝'));
     await tester.ensureVisible(preset);
     await tester.tap(preset);
     await tester.pump();

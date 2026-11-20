@@ -13,7 +13,7 @@ for (const theme of ["light", "dark"]) {
     await expect(page.locator(".tool-tile")).toHaveCount(12);
     await expect(page.locator(".tool-icon .svg-icon").first()).toHaveCSS("width", "24px");
     await expect(page.locator(".nav-icon .svg-icon").first()).toHaveCSS("width", "20px");
-    await expect(page.locator(".tool-icon [data-tone]").first()).toHaveCSS("fill-opacity", "0.14");
+    await expect(page.locator(".tool-icon [data-tone]").first()).toHaveCSS("fill-opacity", "0.12");
     await page.screenshot({ path: `.codex-captures/icons-ui/toolbox-${theme}.png` });
 
     const gpa = page.locator(".tool-tile").filter({ hasText: "GPA 计算" });
@@ -48,7 +48,7 @@ test("全部图标轮廓在 24px 画布内，预览覆盖整套资源", async ({
     main { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
     figure { display: grid; justify-items: center; gap: 10px; margin: 0; padding: 18px; border: 1px solid #dce1e9; border-radius: 12px; }
     svg { width: 32px; height: 32px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-    [data-tone] { fill: currentColor; fill-opacity: .14; stroke: none; }
+    [data-tone] { fill: currentColor; fill-opacity: .12; stroke: none; }
     figcaption { color: #69717e; }
   </style><main>${Object.entries(paths).map(([name, markup]) => `<figure><svg data-icon="${name}" viewBox="0 0 24 24">${markup}</svg><figcaption>${name}</figcaption></figure>`).join("")}</main>`);
   const invalid = await page.locator("svg").evaluateAll(icons => icons.flatMap(icon => {

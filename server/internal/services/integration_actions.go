@@ -284,6 +284,11 @@ func (s *IntegrationActionService) Decide(ctx context.Context, owner uint, id st
 func (s *IntegrationActionService) decide(ctx context.Context, owner uint, id string, d IntegrationActionDecision, automatic *models.IntegrationBinding) (models.IntegrationAction, error) {
 	var result models.IntegrationAction
 	var notification *models.Notification
+	var botExp struct {
+		actor uint
+		kind  string
+		ref   uint
+	}
 	err := s.Auth.ownerTx(ctx, owner, func(tx *gorm.DB, user models.User) error {
 		a, p, err := s.load(tx, owner, id)
 		if err != nil {
@@ -391,6 +396,9 @@ func (s *IntegrationActionService) decide(ctx context.Context, owner uint, id st
 					}
 				}
 				a.PostID = &created.ID
+				if automatic != nil {
+					botExp.actor, botExp.kind, botExp.ref = actor, "post", created.ID
+				}
 			} else {
 				reply := models.Reply{AuthorID: actor, PostID: post.ID, Content: text, Status: models.ReplyStatusNormal, ContentOrigin: "assistant"}
 				if p.StickerID != "" {
@@ -435,6 +443,9 @@ func (s *IntegrationActionService) decide(ctx context.Context, owner uint, id st
 				}
 				a.PostID = &post.ID
 				a.ReplyID = &reply.ID
+				if automatic != nil {
+					botExp.actor, botExp.kind, botExp.ref = actor, "reply", reply.ID
+				}
 			}
 			a.State = "published"
 		}
@@ -454,6 +465,9 @@ func (s *IntegrationActionService) decide(ctx context.Context, owner uint, id st
 	})
 	if err == nil && notification != nil && s.AfterReplyCommit != nil {
 		s.AfterReplyCommit(*notification)
+	}
+	if err == nil && botExp.actor != 0 {
+		AwardManagedBotPublishExp(s.Auth.DB.WithContext(ctx), botExp.actor, botExp.kind, botExp.ref)
 	}
 	return result, err
 }

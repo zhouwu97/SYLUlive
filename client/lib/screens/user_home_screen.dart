@@ -1182,29 +1182,28 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-              decoration: BoxDecoration(
-                color: Color(user.levelColorValue),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                user.levelLabel,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+            if (!user.isAiBot) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Color(user.levelColorValue),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  user.levelLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
 
-        AiBotIdentity(
-          user: user,
-          style: const TextStyle(color: Colors.white, fontSize: 12),
-        ),
+        AiBotIdentity(user: user),
         // 第三行：性别和公开用户 ID
         const SizedBox(height: 8),
         Row(

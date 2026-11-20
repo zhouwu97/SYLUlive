@@ -1,6 +1,19 @@
 import 'user.dart';
 import 'post.dart';
 
+/// 评论中真实被 @ 的用户：服务端发布时落库的快照，正文里手打的 @ 不在其中。
+class ReplyMention {
+  const ReplyMention({required this.userId, required this.nickname});
+
+  factory ReplyMention.fromJson(Map<String, dynamic> json) => ReplyMention(
+        userId: (json['user_id'] as num?)?.toInt() ?? 0,
+        nickname: json['nickname']?.toString() ?? '',
+      );
+
+  final int userId;
+  final String nickname;
+}
+
 // 回复模型
 class Reply {
   final int id;
@@ -26,6 +39,8 @@ class Reply {
   /// 仅根评论：真实子回复总数（列表可能只携带前 N 条，其余懒加载）。
   final int childReplyCount;
 
+  final List<ReplyMention> mentions;
+
   Reply({
     required this.id,
     required this.postId,
@@ -47,11 +62,14 @@ class Reply {
     this.author,
     required this.createdAt,
     this.childReplyCount = 0,
+    this.mentions = const [],
   });
 
   bool get isDeleted => status == 'deleted';
 
   factory Reply.fromJson(Map<String, dynamic> json) {
+    final author =
+        json['author'] != null ? User.fromJson(json['author']) : null;
     return Reply(
       id: json['id'] ?? 0,
       postId: json['post_id'] ?? 0,
@@ -60,7 +78,7 @@ class Reply {
       replyToReplyId: json['reply_to_reply_id'],
       replyToName: json['reply_to_name']?.toString() ?? '',
       authorId: json['author_id'] ?? 0,
-      content: json['content'] ?? '',
+      content: User.aiBotDisplayContent(json['content'] ?? '', author),
       stickerId: json['sticker_id']?.toString(),
       assetKey: json['asset_key']?.toString(),
       packId: json['pack_id']?.toString(),
@@ -78,10 +96,29 @@ class Reply {
               ?.map((e) => ReplyImage.fromJson(e))
               .toList() ??
           [],
-      author: json['author'] != null ? User.fromJson(json['author']) : null,
+      author: author,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       childReplyCount: (json['child_reply_count'] as num?)?.toInt() ?? 0,
+      mentions: (json['mentions'] as List<dynamic>?)
+              ?.map((e) =>
+                  ReplyMention.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList() ??
+          const [],
     );
+  }
+
+  /// 正文中需要高亮的 `@昵称`。
+  List<String> get mentionTerms => [
+        for (final mention in mentions)
+          if (mention.nickname.isNotEmpty) '@${mention.nickname}',
+      ];
+
+  /// 高亮片段 `@昵称` 对应的用户。
+  int? mentionUserId(String term) {
+    for (final mention in mentions) {
+      if ('@${mention.nickname}' == term) return mention.userId;
+    }
+    return null;
   }
 
   bool get hasSticker => stickerId?.trim().isNotEmpty == true;
@@ -144,6 +181,7 @@ class Reply {
     User? author,
     DateTime? createdAt,
     int? childReplyCount,
+    List<ReplyMention>? mentions,
   }) {
     return Reply(
       id: id ?? this.id,
@@ -166,6 +204,7 @@ class Reply {
       author: author ?? this.author,
       createdAt: createdAt ?? this.createdAt,
       childReplyCount: childReplyCount ?? this.childReplyCount,
+      mentions: mentions ?? this.mentions,
     );
   }
 }

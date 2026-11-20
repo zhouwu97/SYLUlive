@@ -227,6 +227,7 @@ class _PostReplyThreadSheetState extends State<PostReplyThreadSheet> {
               emojiPanelMaxHeight: 280,
               onSubmit: _sendReply,
               onNeedLogin: widget.onNeedLogin,
+              mentionReplies: [widget.parentReply, ..._replies],
             )
           : const SizedBox.shrink(),
     );

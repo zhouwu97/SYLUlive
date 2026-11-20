@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -76,6 +77,36 @@ void main() {
     ]);
     expect(
         extractPostContentLinks('ftp://example.com javascript://bad'), isEmpty);
+  });
+
+  testWidgets('只高亮传入的 @昵称，点击高亮回调该昵称，手打的 @ 保持普通文字', (tester) async {
+    final tapped = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PostContentLinkText(
+            text: '@芹菜虾仁 @路人 来看 @芹菜虾仁',
+            highlightTerms: const ['@芹菜虾仁'],
+            onHighlightTap: tapped.add,
+          ),
+        ),
+      ),
+    );
+
+    final rich = tester.widget<RichText>(_postContentTextFinder('@路人'));
+    final highlighted = <String>[];
+    rich.text.visitChildren((span) {
+      if (span is TextSpan &&
+          span.text != null &&
+          span.style?.fontWeight == FontWeight.w500) {
+        highlighted.add(span.text!);
+        (span.recognizer! as TapGestureRecognizer).onTap!();
+      }
+      return true;
+    });
+    expect(highlighted, ['@芹菜虾仁', '@芹菜虾仁']);
+    expect(tapped, ['@芹菜虾仁', '@芹菜虾仁']);
+    expect(rich.text.toPlainText(), '@芹菜虾仁 @路人 来看 @芹菜虾仁');
   });
 
   testWidgets('点击网址先询问，取消时不跳转', (tester) async {

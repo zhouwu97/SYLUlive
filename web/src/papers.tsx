@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ApiError, query, requestBlob, rows, useApi, write, type Entity } from "./api";
-import { Empty, Form, Head, Pagination, QueryState, Tabs, useUI } from "./ui";
+import { Empty, Form, Pagination, QueryState, useUI } from "./ui";
 import { useAuth } from "./auth";
+import { displayName } from "./user-level";
 
 const semesterLabels: Record<string, string> = { first: "第一学期", second: "第二学期", other: "其他" };
 const examLabels: Record<string, string> = { final: "期末", midterm: "期中", makeup: "补考", retake: "重修", other: "其他" };
@@ -16,18 +17,23 @@ export const paperFields = (paper: Entity = {}) => [
   { name: "exam_type", label: "考试类型", value: paper.exam_type, options: [["final", "期末"], ["midterm", "期中"], ["makeup", "补考"], ["retake", "重修"], ["other", "其他"]] as [string, string][] },
 ];
 
+export function PaperUploadButton() {
+  const ui = useUI(), auth = useAuth();
+  return <button className="btn primary" onClick={() => auth.requireUser() && ui.open("上传试卷", <PaperUpload />)}>上传 PDF</button>;
+}
+
 export function PaperLibrary() {
   const [params, setParams] = useSearchParams();
   const ui = useUI(), auth = useAuth();
-  const mine = params.get("papers") === "mine";
+  const mine = params.get("tab") === "mine" || params.get("papers") === "mine";
   const page = Number(params.get("paper_page")) || 1;
   const path = mine ? "/api/exam-papers/my-submissions" : "/api/exam-papers";
-  const q = useApi(query(path, { page, page_size: 20, keyword: params.get("keyword"), academic_year: params.get("academic_year"), semester: params.get("semester"), exam_type: params.get("exam_type"), status: mine ? params.get("paper_status") : undefined, sort: params.get("sort") }));
+  const guestBlocked = !auth.loading && !auth.user;
+  const q = useApi(guestBlocked ? null : query(path, { page, page_size: 20, keyword: params.get("keyword"), academic_year: params.get("academic_year"), semester: params.get("semester"), exam_type: params.get("exam_type"), status: mine ? params.get("paper_status") : undefined, sort: params.get("sort") }));
   const update = (values: Record<string, string>) => { const next = new URLSearchParams(params); Object.entries(values).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key)); setParams(next); };
   const academicYears = Array.isArray(q.data?.academic_years) ? q.data.academic_years : [];
   const papers = rows(q.data);
-  return <section className="panel panel-pad paper-library"><Head title="试卷库" description="经授权访问的历史试卷与本人投稿"><button className="btn primary" onClick={() => auth.requireUser() && ui.open("上传试卷", <PaperUpload />)}>上传 PDF</button></Head>
-    <Tabs value={mine ? "mine" : "library"} tabs={[["library", "试卷搜索"], ["mine", "我的投稿"]]} onChange={(value) => update({ papers: value === "mine" ? "mine" : "", paper_page: "1" })} />
+  return <section className="panel panel-pad paper-library" aria-label={mine ? "我的投稿" : "试卷检索"}>
     <form className="paper-filters" onSubmit={(event) => { event.preventDefault(); update({ keyword: String(new FormData(event.currentTarget).get("keyword") || ""), paper_page: "1" }); }}>
       <input name="keyword" aria-label="搜索试卷" placeholder="搜索课程名称" defaultValue={params.get("keyword") || ""} />
       <select aria-label="学年" value={params.get("academic_year") || ""} onChange={(event) => update({ academic_year: event.target.value, paper_page: "1" })}><option value="">全部学年</option>{academicYears.map((year: string) => <option key={year} value={year}>{year}</option>)}</select>
@@ -37,26 +43,49 @@ export function PaperLibrary() {
       {!mine && <select aria-label="排序" value={params.get("sort") || "latest"} onChange={(event) => update({ sort: event.target.value, paper_page: "1" })}><option value="latest">最新发布</option><option value="downloads">下载最多</option></select>}
       <button className="btn">搜索</button>
     </form>
-    <QueryState query={q}>
-      <div className="paper-stats"><span>共 {q.data?.total || papers.length} 份</span>{q.data?.status_counts && Object.entries(q.data.status_counts).map(([key, value]) => <span key={key}>{statusLabels[key] || key} {String(value)}</span>)}</div>
-      <div className="paper-list">{papers.map((paper) => <PaperRow key={paper.id} paper={paper} mine={mine} onOpen={() => ui.open(paper.title || "试卷详情", <PaperDetail paper={paper} />)} onWithdraw={() => ui.open("撤回投稿", <WithdrawPaper id={Number(paper.id)} />)} />)}</div>
-      {!papers.length && <Empty title="暂无符合条件的试卷" description="可以换一个课程、学年或考试类型试试" />}
-      <Pagination page={page} hasMore={page * 20 < Number(q.data?.total || 0)} onChange={(nextPage) => update({ paper_page: String(nextPage) })} />
-    </QueryState>
+    {guestBlocked ? (
+      <Empty icon="lock" title={mine ? "登录后查看我的提交" : "登录后访问试卷库"} description="历史试卷经授权向登录同学开放，登录后可检索、预览与上传投稿。">
+        <button className="btn primary" onClick={auth.login}>登录</button>
+      </Empty>
+    ) : (
+      <QueryState query={q}>
+        <div className="paper-stats"><span>共 {q.data?.total || papers.length} 份</span>{mine && q.data?.status_counts && Object.entries(q.data.status_counts).filter(([key]) => key !== "all").map(([key, value]) => <span key={key}>{statusLabels[key] || key} {String(value)}</span>)}</div>
+        <div className="paper-list">{papers.map((paper) => <PaperRow key={paper.id} paper={paper} mine={mine} onOpen={() => ui.open(paper.course_name || paper.title || "试卷详情", <PaperDetail paper={paper} mine={mine} />)} onWithdraw={() => ui.open("撤回投稿", <WithdrawPaper id={Number(paper.id)} />)} />)}</div>
+        {!papers.length && <Empty title="暂无符合条件的试卷" description="可以换一个课程、学年或考试类型试试" />}
+        {(papers.length > 0 || page > 1) && <Pagination page={page} hasMore={page * 20 < Number(q.data?.total || 0)} onChange={(nextPage) => update({ paper_page: String(nextPage) })} />}
+      </QueryState>
+    )}
   </section>;
 }
 
+function moderationNote(paper: Entity, mine: boolean): { prefix: string; text: string } | null {
+  if (!mine) return null;
+  if (paper.status === "unpublished" && paper.unpublish_reason) return { prefix: "下架原因：", text: String(paper.unpublish_reason) };
+  if (paper.status === "rejected" && paper.approval_reason) return { prefix: "未通过原因：", text: String(paper.approval_reason) };
+  if (paper.approval_reason && paper.approval_reason !== "快捷审核通过") return { prefix: "审核说明：", text: String(paper.approval_reason) };
+  return null;
+}
+
 function PaperRow({ paper, mine, onOpen, onWithdraw }: { paper: Entity; mine: boolean; onOpen: () => void; onWithdraw: () => void }) {
-  const reason = paper.approval_reason || paper.unpublish_reason;
-  return <article className="paper-row"><div className="paper-row-icon"><span>PDF</span></div><div className="paper-row-main"><div className="paper-row-title"><b>{paper.title || paper.course_name || "未命名试卷"}</b><span className={`tag ${paper.status === "published" ? "brand" : ""}`}>{statusLabels[paper.status] || paper.status || "未知状态"}</span></div><p>{paper.course_name || "未填写课程"} · {paper.academic_year || "未知学年"} · {semesterLabels[paper.semester] || paper.semester || "未知学期"} · {examLabels[paper.exam_type] || paper.exam_type || "其他"}</p><small>{formatSize(paper.file_size)} · 下载 {paper.download_count || 0} 次 · {paper.contributor?.nickname || "校园同学"}</small>{reason && <div className="paper-reason">{paper.status === "unpublished" ? "下架原因：" : "审核说明："}{reason}</div>}</div><div className="paper-row-actions"><button className="btn" onClick={onOpen}>查看</button>{mine && paper.status === "pending" && <button className="btn danger" onClick={onWithdraw}>撤回投稿</button>}</div></article>;
+  const note = moderationNote(paper, mine);
+  const examLabel = examLabels[paper.exam_type] || paper.exam_type;
+  const metaParts = [
+    paper.academic_year && `${paper.academic_year} 学年`,
+    semesterLabels[paper.semester] || paper.semester,
+    formatSize(paper.file_size),
+    `下载 ${paper.download_count || 0} 次`,
+    displayName(paper.contributor?.nickname),
+  ].filter(Boolean);
+  return <article className="paper-row"><div className="paper-row-icon"><span>PDF</span></div><div className="paper-row-main"><div className="paper-row-title"><b>{paper.course_name || paper.title || "未命名试卷"}</b>{examLabel && <span className="tag">{examLabel}</span>}{mine && <span className={`tag ${paper.status === "published" ? "brand" : ""}`}>{statusLabels[paper.status] || paper.status || "未知状态"}</span>}</div><p>{metaParts.join(" · ")}</p>{note && <div className="paper-reason">{note.prefix}{note.text}</div>}</div><div className="paper-row-actions"><button className="btn" onClick={onOpen}>查看</button>{mine && paper.status === "pending" && <button className="btn danger" onClick={onWithdraw}>撤回投稿</button>}</div></article>;
 }
 
 function WithdrawPaper({ id }: { id: number }) { const ui = useUI(); return <div><p>撤回后文件及奖励按服务端规则处理，确认撤回这份投稿？</p><button className="btn danger" onClick={async () => { if (await ui.act(() => write(`/api/exam-papers/my-submissions/${id}`, {}, "DELETE"), "投稿已撤回")) ui.close(); }}>确认撤回</button></div>; }
 
-function PaperDetail({ paper }: { paper: Entity }) {
+function PaperDetail({ paper, mine = false }: { paper: Entity; mine?: boolean }) {
   const [showPreview, setShowPreview] = useState(false);
   const published = paper.status === "published";
-  return <div className="paper-detail"><div className="paper-detail-meta"><span className={`tag ${published ? "brand" : ""}`}>{statusLabels[paper.status] || paper.status}</span><b>{paper.course_name || "未填写课程"}</b><span>{paper.academic_year} · {semesterLabels[paper.semester] || paper.semester} · {examLabels[paper.exam_type] || paper.exam_type}</span><span>{formatSize(paper.file_size)} · 下载 {paper.download_count || 0} 次</span></div>{paper.approval_reason && <div className="info-box">审核说明：{paper.approval_reason}</div>}{paper.unpublish_reason && <div className="info-box">下架原因：{paper.unpublish_reason}</div>}{published ? <><div className="paper-preview-frame">{showPreview ? <PaperPreview id={Number(paper.id)} /> : <div className="paper-preview-placeholder"><div className="paper-preview-icon">PDF</div><b>PDF 预览</b><p>在当前页面查看试卷内容，保留原始 PDF 下载入口。</p><button className="btn primary" onClick={() => setShowPreview(true)}>打开预览</button></div>}</div><div className="form-actions"><a className="btn" href={`/api/exam-papers/${paper.id}/preview`} target="_blank" rel="noreferrer">新窗口打开</a><a className="btn primary" href={`/api/exam-papers/${paper.id}/download`}>下载试卷</a></div></> : <div className="empty-state"><b>试卷尚未发布</b><p>审核完成后才会开放预览和下载。</p></div>}</div>;
+  const note = moderationNote(paper, mine || !published);
+  return <div className="paper-detail"><div className="paper-detail-meta">{(mine || !published) && <span className={`tag ${published ? "brand" : ""}`}>{statusLabels[paper.status] || paper.status}</span>}<b>{paper.course_name || "未填写课程"}</b><span>{paper.academic_year} · {semesterLabels[paper.semester] || paper.semester} · {examLabels[paper.exam_type] || paper.exam_type}</span><span>{formatSize(paper.file_size)} · 下载 {paper.download_count || 0} 次</span></div>{note && <div className="info-box">{note.prefix}{note.text}</div>}{published ? <><div className="paper-preview-frame">{showPreview ? <PaperPreview id={Number(paper.id)} /> : <div className="paper-preview-placeholder"><div className="paper-preview-icon">PDF</div><b>PDF 预览</b><p>在当前页面查看试卷内容，保留原始 PDF 下载入口。</p><button className="btn primary" onClick={() => setShowPreview(true)}>打开预览</button></div>}</div><div className="form-actions"><a className="btn" href={`/api/exam-papers/${paper.id}/preview`} target="_blank" rel="noreferrer">新窗口打开</a><a className="btn primary" href={`/api/exam-papers/${paper.id}/download`}>下载试卷</a></div></> : <div className="empty-state"><b>试卷尚未发布</b><p>审核完成后才会开放预览和下载。</p></div>}</div>;
 }
 
 function PaperPreview({ id }: { id: number }) { const [url, setUrl] = useState(""), [error, setError] = useState(""); useEffect(() => { let objectURL = ""; setError(""); requestBlob(`/api/exam-papers/${id}/preview`).then((blob) => { objectURL = URL.createObjectURL(blob); setUrl(objectURL); }).catch((reason) => setError(reason instanceof Error ? reason.message : "预览加载失败")); return () => { if (objectURL) URL.revokeObjectURL(objectURL); }; }, [id]); if (error) return <div className="paper-preview-error"><b>预览加载失败</b><p>{error}</p><a className="btn" href={`/api/exam-papers/${id}/preview`} target="_blank" rel="noreferrer">新窗口打开</a></div>; if (!url) return <div className="loading-state">正在准备 PDF 预览…</div>; return <iframe title="试卷 PDF 预览" src={url} />; }

@@ -92,6 +92,26 @@ func TestManagedBotHTTPCreatePausedEditRecentPauseAndReadPolicy(t *testing.T) {
 	require.Contains(t, w.Body.String(), `"public_read_enabled":true`)
 	require.NotContains(t, w.Body.String(), "公开创建者")
 	require.NotContains(t, w.Body.String(), "student")
+	addressed := models.Reply{PostID: botPost.ID, AuthorID: owner, Content: "直接给机器人的合成评论", Status: models.ReplyStatusNormal}
+	require.NoError(t, db.Create(&addressed).Error)
+	policyWithReplies := policy
+	policyWithReplies.ReplyEnabled = true
+	raw, err := json.Marshal(policyWithReplies)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&bot).Update("policy_json", string(raw)).Error)
+	w = send("GET", "/api/integrations/v1/bot/policy?reply_targets=1", token, nil)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"reply_targets":[]`)
+	require.NoError(t, db.Model(&binding).Update("scopes", binding.Scopes+" "+services.IntegrationAutoReplyScope).Error)
+	w = send("GET", "/api/integrations/v1/bot/policy?reply_targets=1", token, nil)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var pending struct {
+		Targets []services.ManagedBotReplyTarget `json:"reply_targets"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &pending))
+	require.Len(t, pending.Targets, 1)
+	require.Equal(t, addressed.ID, pending.Targets[0].ReplyID)
+	require.NotContains(t, w.Body.String(), addressed.Content)
 	var ids []uint
 	for _, slug := range []string{"campus_life", "complaint"} {
 		p := models.Post{BoardID: models.BoardShuitie, AuthorID: owner, PostType: slug, Status: models.PostStatusNormal, ContentKind: models.PostContentKindNormal, Content: slug}

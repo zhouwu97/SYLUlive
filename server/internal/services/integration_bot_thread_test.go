@@ -13,6 +13,60 @@ import (
 	"time"
 )
 
+func TestIntegrationBotDiscoversAddressedPublicReplies(t *testing.T) {
+	db, s, binding, post := integrationActionFixture(t)
+	require.NoError(t, db.AutoMigrate(&models.ManagedBot{}))
+	ctx := context.Background()
+	bot, err := s.ManageBot(ctx, binding.OwnerID, "大肥鱼", true)
+	require.NoError(t, err)
+	grantBotParticipation(t, db, bot)
+	require.NoError(t, db.First(&bot).Error)
+	binding.Scopes += " " + IntegrationReadScope + " " + IntegrationAutoReplyScope
+	now := time.Now()
+	s.Auth.Now = func() time.Time { return now }
+	botPost := post
+	botPost.ID, botPost.AuthorID = 0, bot.UserID
+	require.NoError(t, db.Create(&botPost).Error)
+	hidden := post
+	hidden.ID, hidden.Status = 0, models.PostStatus("deleted")
+	require.NoError(t, db.Create(&hidden).Error)
+
+	create := func(postID, author uint, content string, target *uint, status models.ReplyStatus, at time.Time) models.Reply {
+		t.Helper()
+		reply := models.Reply{PostID: postID, AuthorID: author, Content: content, ReplyToUserID: target, Status: status, CreatedAt: at}
+		require.NoError(t, db.Create(&reply).Error)
+		return reply
+	}
+	normal := models.ReplyStatusNormal
+	direct := create(post.ID, 1, "接着说这个", &bot.UserID, normal, now)
+	mention := create(post.ID, 1, "请问 @大肥鱼，这个怎么做？", nil, normal, now)
+	underBot := create(botPost.ID, 1, "这篇里想问个问题", nil, normal, now)
+	create(post.ID, 1, "@大肥鱼小号 你怎么看", nil, normal, now)
+	create(post.ID, 1, "普通讨论", nil, normal, now)
+	create(hidden.ID, 1, "@大肥鱼 这个已不可见", nil, normal, now)
+	create(post.ID, 1, "@大肥鱼 删除前", nil, models.ReplyStatusDeleted, now)
+	create(post.ID, 1, "@大肥鱼 历史消息", nil, normal, now.Add(-25*time.Hour))
+	create(post.ID, bot.UserID, "@大肥鱼 AI 自己的评论", nil, normal, now.Add(-time.Hour))
+	answered := create(post.ID, 1, "已经答过", &bot.UserID, normal, now)
+	oldAnswer := create(post.ID, bot.UserID, "之前的答复", nil, models.ReplyStatusDeleted, now.Add(-time.Hour))
+	require.NoError(t, db.Model(&oldAnswer).Update("reply_to_reply_id", answered.ID).Error)
+	targets, err := s.BotReplyTargets(ctx, binding, bot)
+	require.NoError(t, err)
+	require.Len(t, targets, 3)
+	for i, expected := range []models.Reply{underBot, mention, direct} {
+		require.Equal(t, ManagedBotReplyTarget{PostID: expected.PostID, PostType: "campus_life", ReplyID: expected.ID, SourceVersion: community.ReplyDTO(expected).SourceVersion}, targets[i])
+	}
+	// A recent reply fills the shared cooldown for both interactive and proactive replies.
+	require.NoError(t, db.Model(&oldAnswer).Update("created_at", now.Add(-time.Minute)).Error)
+	targets, err = s.BotReplyTargets(ctx, binding, bot)
+	require.NoError(t, err)
+	require.Empty(t, targets)
+	binding.Scopes = IntegrationReadScope
+	targets, err = s.BotReplyTargets(ctx, binding, bot)
+	require.NoError(t, err)
+	require.Empty(t, targets)
+}
+
 func TestIntegrationBotRepliesToHumanTargetsOnItsOwnPost(t *testing.T) {
 	db, s, b, post := integrationActionFixture(t)
 	require.NoError(t, db.AutoMigrate(&models.ManagedBot{}))

@@ -509,7 +509,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     final rawPostId = notification['post_id'] as int?;
     final postId = (rawPostId != null && rawPostId > 0) ? rawPostId : null;
     final relatedId = _parseInt(notification['related_id']);
-    final content = notification['content']?.toString() ?? '';
+    var content = notification['content']?.toString() ?? '';
     final createdAt =
         DateTime.tryParse(notification['created_at'] ?? '') ?? DateTime.now();
     final fromUser = notification['from_user'] as Map<String, dynamic>?;
@@ -518,7 +518,11 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     String actionText = '';
     String titleText = '系统通知';
     if (type == 'reply') {
-      actionText = '回复了您的帖子';
+      // 服务端给被 @ 的人发 reply 通知，正文以固定前缀标识。
+      const mentionPrefix = '@了你：';
+      final isMention = content.startsWith(mentionPrefix);
+      actionText = isMention ? '@了你' : '回复了您的帖子';
+      if (isMention) content = content.substring(mentionPrefix.length);
       titleText = fromUser?['nickname'] ?? '匿名用户';
     } else if (type == 'featured_application') {
       actionText = '精华申请通知';

@@ -24,6 +24,7 @@ class Client:
         self.binding, self.calls, self.published = str(uuid.uuid4()), [], []
         self.supported, self.busy = True, False
         self.reply_service = True
+        self.reply_targets, self.reply_context = [], {}
 
     async def refresh_scope(self):
         return self.tokens["scope"]
@@ -35,7 +36,10 @@ class Client:
         await asyncio.sleep(0)
         self.calls.append((method, path, copy.deepcopy(kwargs)))
         if path == "/bot/policy":
-            return {"runtime_supported": self.supported, "bot": copy.deepcopy(self.bot), "binding": {"binding_id": self.binding, "epoch": 1}, "auto_reply_server_enabled": self.reply_service, "auto_reply_authorized": True}
+            result = {"runtime_supported": self.supported, "bot": copy.deepcopy(self.bot), "binding": {"binding_id": self.binding, "epoch": 1}, "auto_reply_server_enabled": self.reply_service, "auto_reply_authorized": True}
+            if kwargs.get("params") == {"reply_targets": "1"}:
+                result["reply_targets"] = self.reply_targets
+            return result
         if path == "/bot/runtime":
             if self.busy:
                 raise IntegrationProblem("bot_runtime_busy")
@@ -43,6 +47,8 @@ class Client:
         post = {"post_id": self.ident, "title": "合成公开帖", "content": f"public-source-{self.ident}", "post_type": "campus_life", "status": "normal", "source_version": "a" * 64, "created_at": "2026-01-01T00:00:00Z"}
         if path == "/community/posts":
             return {"data": {"items": [post]}}
+        if path.startswith("/community/replies/") and path.endswith("/context"):
+            return {"data": self.reply_context}
         if path.startswith("/community/") and path.endswith("/replies"):
             return {"data": {"items": [], "next_after_id": 0}}
         if path.startswith("/community/posts/"):
@@ -84,6 +90,51 @@ async def act(**request):
     assert "error" not in json.loads(await replies.handler(request["event"], ident))
     result = await tools.get_tool("comment_public_post").handler(request["event"], ident, "合成公开评论")
     assert json.loads(result)["state"] == "published"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("publish", [True, False])
+async def test_addressed_comment_is_processed_without_waiting_for_or_resetting_browse(tmp_path, publish):
+    pytest.importorskip("astrbot.api")
+    now = [1000]
+    client = Client(10)
+    target = {"post_id": 10, "post_type": "campus_life", "reply_id": 13, "source_version": "b" * 64}
+    client.reply_targets = [{**target, "post_id": 9, "post_type": "blocked"}, target]
+    client.reply_context = {"reply": {**target, "status": "normal", "content": "请问这个怎么做？"}}
+    model_calls = []
+
+    async def model(**request):
+        model_calls.append(request)
+        assert request["contexts"] == [] and "请问这个怎么做？" in request["prompt"]
+        tool, = request["tools"].tools
+        assert tool.name == "answer_addressed_comment"
+        if publish:
+            result = json.loads(await tool.handler(request["event"], "先按帖子里这一步试试。"))
+            assert result["state"] == "published"
+
+    manager = runtime(tmp_path, [client], now=now, context=SimpleNamespace(tool_loop_agent=model))
+    try:
+        await manager.discover(start_workers=False)
+        worker = manager.workers[client]
+        await manager.sync(worker, schedule=False)
+        worker.agent.next_run = 2000
+        with worker.agent.memory.db:
+            worker.agent.memory.db.execute("UPDATE runtime_schedule SET next_at=2000")
+        await manager.sync(worker)
+        result = await worker.round_task
+        assert result["state"] == "completed" and len(model_calls) == 1
+        assert not any(path == "/community/posts" for _, path, _ in client.calls)
+        assert worker.agent.next_run == 2000
+        assert worker.agent.memory.db.execute("SELECT next_at FROM runtime_schedule").fetchone() == (2000,)
+        if publish:
+            outgoing, = client.published
+            assert outgoing["reply_to_reply_id"] == 13 and outgoing["reply_source_version"] == "b" * 64
+        else:
+            assert not client.published
+        await manager.sync(worker)
+        assert worker.round_task is None and len(model_calls) == 1
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio

@@ -16,18 +16,53 @@ from test_multiuser_group_checkin import multiuser_group
 
 
 @pytest.mark.asyncio
-async def test_private_member_can_start_own_binding_in_community_mode():
+@pytest.mark.parametrize("private,mode,failed_actions,expected_routes", [
+    (True, "auto", (), ["private"]),
+    (False, "group", (), ["group"]),
+    (False, "auto", (), ["private"]),
+    (False, "auto", ("private",), ["private", "group"]),
+    (False, "private", ("private",), ["private"]),
+    (False, "group", ("group",), ["group"]),
+])
+async def test_qq_member_binding_links_are_sent_only_inside_forward_cards(private, mode, failed_actions, expected_routes):
     from astrbot.core.platform.message_type import MessageType
+
     plugin, event, owner, own = multiuser_group()
     plugin.origin = "https://fixture.invalid"
-    event.message_obj.type, event.message_obj.group_id = MessageType.FRIEND_MESSAGE, ""
-    plugin.config["access_rules"] = []
-    own.begin = AsyncMock(return_value={"user_code": "SYNTHETIC", "verification_uri":
-        "https://fixture.invalid/web/connected-apps?user_code=SYNTHETIC"})
-    plugin.track_binding_result = lambda *args: "授权结果会通知本人"
+    plugin.config["binding_link_delivery"] = mode
+    event.message_obj.self_id = "111111"
+    if private:
+        event.message_obj.type, event.message_obj.group_id = MessageType.FRIEND_MESSAGE, ""
+        plugin.config["access_rules"] = []
+    url = "https://fixture.invalid/web/connected-apps?user_code=SYNTHETIC"
+    own.begin = AsyncMock(return_value={"user_code": "SYNTHETIC", "verification_uri": url})
+
+    async def send_forward(action, **params):
+        if any(action == f"send_{route}_forward_msg" for route in failed_actions):
+            raise TimeoutError
+        return {"message_id": 123}
+
+    event.bot = SimpleNamespace(call_action=AsyncMock(side_effect=send_forward), send_private_msg=AsyncMock())
+    deliveries = []
+    plugin.track_binding_result = lambda _, __, delivery: deliveries.append(delivery) or "授权结果待通知"
     replies = [r async for r in plugin.connect(event)]
-    text = "".join(part.text for reply in replies for part in reply.chain if hasattr(part, "text"))
-    assert len(replies) == 1 and "SYNTHETIC" in text and "222222" in text
+    assert len(replies) == 1 and "SYNTHETIC" not in replies[0].chain[0].text
+    calls = event.bot.call_action.await_args_list
+    assert [call.args[0] for call in calls] == [f"send_{route}_forward_msg" for route in expected_routes]
+    for route, call in zip(expected_routes, calls, strict=True):
+        params = dict(call.kwargs)
+        nodes = params.pop("messages")
+        assert params.get("user_id" if route == "private" else "group_id") == (222222 if route == "private" else 666666)
+        assert ("group_id" if route == "private" else "user_id") not in params
+        assert params["self_id"] == "111111" and "SYNTHETIC" not in str(params)
+        node, = nodes
+        assert node["type"] == "node" and node["data"]["user_id"] == "111111"
+        assert url in node["data"]["content"][0]["data"]["text"]
+    assert deliveries[0].used_fallback is (expected_routes == ["private", "group"])
+    assert deliveries[0].private_confirmed is (not private and expected_routes == ["private"] and not failed_actions)
+    if expected_routes[-1] in failed_actions:
+        assert "未能确认" in replies[0].chain[0].text
+    event.bot.send_private_msg.assert_not_called()
     own.begin.assert_awaited_once()
     assert own.begin.call_args.args[0] == "own-installation"
     assert own.begin.call_args.kwargs["checkin"] is True

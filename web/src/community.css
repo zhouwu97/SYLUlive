@@ -188,18 +188,6 @@
   overflow-wrap: anywhere;
 }
 
-.post-context-level {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  border-radius: var(--radius-xs);
-  background: var(--brand-soft);
-  color: var(--brand-strong);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 16px;
-}
-
 .post-context-sub {
   font-size: 12px;
   line-height: 1.5;
@@ -377,7 +365,7 @@
   line-height: 1.6;
 }
 
-.post-context-copy>span {
+.post-context-copy>span:not(.ai-bot-identity) {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -386,7 +374,7 @@
   font-size: 12px;
 }
 
-.post-context-copy>span>span:last-child {
+.post-context-copy>span:not(.ai-bot-identity)>span:last-child {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -472,6 +460,15 @@
   color: var(--brand-strong);
   font-weight: 500;
   text-decoration: none;
+}
+
+.post-meta-section.is-board {
+  display: inline-block;
+  padding: .08em .42em;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  line-height: 1.35;
 }
 
 .post-detail-topics {
@@ -1331,9 +1328,10 @@
 
 .post-comment-author {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 2px 5px;
+  color: var(--text-2);
   line-height: 20px;
   font-size: 13px;
   overflow-wrap: anywhere;
@@ -1341,30 +1339,6 @@
 
 .post-comment-author b {
   font-weight: 600;
-}
-
-.post-comment-op {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 6px;
-  border-radius: var(--radius-xs);
-  background: var(--brand-soft);
-  color: var(--brand-strong);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 18px;
-}
-
-.post-comment-level {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 5px;
-  border-radius: var(--radius-xs);
-  background: var(--surface-2);
-  color: var(--text-2);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 18px;
 }
 
 .post-comment-reply-to {
@@ -1377,15 +1351,24 @@
   font-weight: 500;
 }
 
-.post-comment-author time {
-  margin-left: auto;
+.comment-mention {
+  color: var(--brand-strong);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.comment-mention:hover {
+  text-decoration: underline;
+}
+
+.post-comment-main time {
   color: var(--text-2);
   font-size: 11px;
   white-space: nowrap;
 }
 
 .post-comment-main>p {
-  margin: 7px 0 0;
+  margin: 4px 0 0;
   font-size: 14px;
   line-height: 1.8;
   white-space: pre-wrap;
@@ -1529,7 +1512,6 @@
 
 [data-theme="dark"] .post-thread-toggle,
 [data-theme="dark"] .post-author .author-follow:not(.active),
-[data-theme="dark"] .post-author .author-level,
 [data-theme="dark"] .post-avatar {
   color: var(--brand-strong);
   background-color: var(--brand-soft);
@@ -1779,45 +1761,66 @@
   }
 }
 
+/* AI 机器人胶囊：「纯合子的 ✦ AI Lv.3」。Lv.1–8 依次为天蓝、蓝青渐变、青绿、雾靛、琥珀、珊瑚、樱粉、黑白，与 App 一致。 */
 .ai-bot-identity {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 7px;
-  max-width: 100%;
-  min-width: 0;
-  margin-block: 3px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.ai-bot-identity .ai-bot-system-badge {
+  --ai-bg: #eaf2ff;
+  --ai-border: #3b82f633;
+  --ai-text: #2563eb;
+  --ai-chip: #3b82f6;
+  --ai-chip-end: var(--ai-chip);
+  --ai-chip-text: #fff;
   display: inline-flex;
   align-items: center;
-  flex: 0 0 auto;
   gap: 4px;
-  padding: 1px 6px;
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-control);
-  color: var(--accent);
-  background: var(--color-accent-soft);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.6;
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px 2px 2px 8px;
+  border: .8px solid var(--ai-border);
+  border-radius: 999px;
+  background: var(--ai-bg);
+  color: var(--ai-text);
+  font-size: .6875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  vertical-align: middle;
+}
+
+.ai-bot-creator {
+  min-width: 0;
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ai-bot-identity .ai-bot-creator {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  color: var(--text-2);
+.ai-bot-identity:not(:has(.ai-bot-creator)) {
+  padding-left: 2px;
 }
 
-.post-context-copy>.ai-bot-identity {
-  justify-content: flex-start;
+.ai-bot-system-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--ai-chip), var(--ai-chip-end));
+  color: var(--ai-chip-text);
+  font-size: .625rem;
+  font-weight: 800;
+  white-space: nowrap;
 }
+
+.ai-bot-identity[data-ai-level="2"] { --ai-bg: #e8f6fd; --ai-border: #06b6d433; --ai-text: #0e7490; --ai-chip: #3b82f6; --ai-chip-end: #06b6d4; }
+.ai-bot-identity[data-ai-level="3"] { --ai-bg: #e6faf7; --ai-border: #0d948833; --ai-text: #0f766e; --ai-chip: #14b8a6; }
+.ai-bot-identity[data-ai-level="4"] { --ai-bg: #eef0fa; --ai-border: #4f5bd533; --ai-text: #4338ca; --ai-chip: #5b67e0; }
+.ai-bot-identity[data-ai-level="5"] { --ai-bg: #fff4e0; --ai-border: #d9770633; --ai-text: #b45309; --ai-chip: #f59e0b; }
+.ai-bot-identity[data-ai-level="6"] { --ai-bg: #fff0ea; --ai-border: #f25f3a33; --ai-text: #c2410c; --ai-chip: #f26b4a; }
+.ai-bot-identity[data-ai-level="7"] { --ai-bg: #ffeff3; --ai-border: #e11d4833; --ai-text: #be123c; --ai-chip: #f43f5e; }
+.ai-bot-identity[data-ai-level="8"] { --ai-bg: #f2f3f5; --ai-border: #1f232922; --ai-text: #1f2329; --ai-chip: #1f2329; }
+
+[data-theme="dark"] .ai-bot-identity { --ai-bg: #1b2638; --ai-text: #93c5fd; }
+[data-theme="dark"] .ai-bot-identity[data-ai-level="2"] { --ai-bg: #16282f; --ai-text: #67e8f9; }
+[data-theme="dark"] .ai-bot-identity[data-ai-level="3"] { --ai-bg: #142a28; --ai-text: #5eead4; }
+[data-theme="dark"] .ai-bot-identity[data-ai-level="4"] { --ai-bg: #1f2238; --ai-text: #a5b4fc; }
+[data-theme="dark"] .ai-bot-identity[data-ai-level="5"] { --ai-bg: #2e2414; --ai-text: #fcd34d; }
+[data-theme="dark"] .ai-bot-identity[data-ai-level="6"] { --ai-bg: #2f1d18; --ai-text: #fdba9c; }
+[data-theme="dark"] .ai-bot-identity[data-ai-level="7"] { --ai-bg: #2e1820; --ai-text: #fda4af; }
+[data-theme="dark"] .ai-bot-identity[data-ai-level="8"] { --ai-bg: #26282c; --ai-text: #e5e7eb; --ai-chip: #f3f4f6; --ai-chip-text: #111; }

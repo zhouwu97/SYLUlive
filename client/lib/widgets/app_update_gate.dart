@@ -1,4 +1,3 @@
-import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -6,8 +5,10 @@ import 'package:provider/provider.dart';
 
 import '../models/app_update_info.dart';
 import '../platform/contracts/external_navigator.dart';
+import '../platform/platform_capabilities.dart';
 import '../platform/update_download_bridge.dart';
 import '../services/app_update_coordinator.dart';
+import 'app_dialog.dart';
 
 const _githubReleasesUrl = 'https://github.com/zhouwu97/SYLUlive/releases';
 
@@ -33,17 +34,26 @@ class _AppUpdateGateState extends State<AppUpdateGate>
   int? _presentedOptionalVersion;
   int? _presentedRequiredVersion;
   int? _presentedFailedVersion;
+  late bool _isForeground;
+  Timer? _foregroundCheckTimer;
   Timer? _retryTimer;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    final binding = WidgetsBinding.instance;
+    binding.addObserver(this);
+    final state = binding.lifecycleState;
+    _isForeground = state == null ||
+        state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
+    if (_isForeground) _startForegroundChecks();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _foregroundCheckTimer?.cancel();
     _retryTimer?.cancel();
     super.dispose();
   }
@@ -51,20 +61,36 @@ class _AppUpdateGateState extends State<AppUpdateGate>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      context.read<AppUpdateCoordinator>().onAppResumed();
-    } else if (state == AppLifecycleState.paused) {
-      context.read<AppUpdateCoordinator>().onAppBackgrounded();
+      setState(() => _isForeground = true);
+      _startForegroundChecks();
+      unawaited(context.read<AppUpdateCoordinator>().onAppResumed());
+    } else if (state != AppLifecycleState.inactive) {
+      _isForeground = false;
+      _foregroundCheckTimer?.cancel();
+      _foregroundCheckTimer = null;
+      if (state == AppLifecycleState.paused) {
+        unawaited(context.read<AppUpdateCoordinator>().onAppBackgrounded());
+      }
     }
+  }
+
+  void _startForegroundChecks() {
+    if (!PlatformCapabilities.current.supportsInAppPackageInstall) return;
+    _foregroundCheckTimer ??= Timer.periodic(
+      AppUpdateCoordinator.foregroundCheckInterval,
+      (_) => unawaited(context.read<AppUpdateCoordinator>().check(force: true)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final coordinator = context.watch<AppUpdateCoordinator>();
     final info = coordinator.info;
-    if (info != null &&
+    if (_isForeground &&
+        !_optionalDialogVisible &&
+        info != null &&
         coordinator.shouldPromptOptional &&
         _presentedOptionalVersion != info.latestVersionCode) {
-      _presentedOptionalVersion = info.latestVersionCode;
       WidgetsBinding.instance
           .addPostFrameCallback((_) => _showOptionalDialog());
     }
@@ -96,37 +122,55 @@ class _AppUpdateGateState extends State<AppUpdateGate>
       widget.navigatorKey.currentState?.overlay?.context;
 
   Future<void> _showOptionalDialog() async {
-    if (!mounted || _optionalDialogVisible) return;
+    if (!mounted || !_isForeground || _optionalDialogVisible) return;
     final coordinator = context.read<AppUpdateCoordinator>();
     final info = coordinator.info;
-    if (info == null || !coordinator.shouldPromptOptional) return;
+    if (info == null ||
+        !coordinator.shouldPromptOptional ||
+        _presentedOptionalVersion == info.latestVersionCode) {
+      return;
+    }
     final dialogContext = _dialogContext;
     if (dialogContext == null) return _retryLater(_showOptionalDialog);
 
+    _presentedOptionalVersion = info.latestVersionCode;
     _optionalDialogVisible = true;
-    final action = await showAppDialog<_UpdateDialogAction>(
-      context: dialogContext,
-      builder: (_) => _UpdateDialog(
-        info: info,
-        required: false,
-        downloadStatus: coordinator.downloadStatus,
-      ),
-    );
-    _optionalDialogVisible = false;
-    if (!mounted) return;
-    switch (action) {
-      case _UpdateDialogAction.download:
-        await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
-      case _UpdateDialogAction.currentNetwork:
-        await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
-      case _UpdateDialogAction.install:
-        await coordinator.installPreparedUpdate();
-      case _UpdateDialogAction.github:
-        await _openGithub();
-        await coordinator.deferOptionalUpdate();
-      case _UpdateDialogAction.later:
-      case null:
-        await coordinator.deferOptionalUpdate();
+    final initialStatus = coordinator.downloadStatus;
+    try {
+      final action = await showAppDialog<_UpdateDialogAction>(
+        context: dialogContext,
+        builder: (context) {
+          final current = context.watch<AppUpdateCoordinator>();
+          return _UpdateDialog(
+            info: info,
+            required: false,
+            downloadStatus:
+                current.info?.latestVersionCode == info.latestVersionCode
+                    ? current.downloadStatus
+                    : initialStatus,
+          );
+        },
+      );
+      if (!mounted ||
+          coordinator.info?.latestVersionCode != info.latestVersionCode) {
+        return;
+      }
+      switch (action) {
+        case _UpdateDialogAction.download:
+        case _UpdateDialogAction.currentNetwork:
+          await coordinator.enqueueDownload(
+              wifiOnly: false, userInitiated: true);
+        case _UpdateDialogAction.install:
+          await coordinator.installPreparedUpdate();
+        case _UpdateDialogAction.github:
+          await coordinator.deferOptionalUpdate();
+          await _openGithub();
+        case _UpdateDialogAction.later:
+        case null:
+          await coordinator.deferOptionalUpdate();
+      }
+    } finally {
+      if (mounted) setState(() => _optionalDialogVisible = false);
     }
   }
 

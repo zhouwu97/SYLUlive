@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -572,15 +573,20 @@ func (h *SecurityAdminHandler) ListBlocks(c *gin.Context) {
 		h.securityDatabaseError(c)
 		return
 	}
+	// 管理员也能查看和解除封禁，但来源指纹原值仍只给超级管理员。
+	isSuper := c.GetString("role") == string(models.RoleSuperAdmin)
 	items := make([]gin.H, 0, len(blocks))
 	for _, block := range blocks {
 		items = append(items, gin.H{
 			"id": block.ID, "group_id": block.GroupID, "scope_type": block.ScopeType,
 			"source_fingerprint": services.MaskSecurityFingerprint(block.ScopeValue),
-			"source_key":         block.ScopeValue, "route_prefix": block.RoutePrefix,
-			"reason": block.Reason, "expires_at": block.ExpiresAt, "created_at": block.CreatedAt,
+			"route_prefix":       block.RoutePrefix,
+			"reason":             block.Reason, "expires_at": block.ExpiresAt, "created_at": block.CreatedAt,
 			"created_by": block.CreatedBy,
 		})
+		if isSuper {
+			items[len(items)-1]["source_key"] = block.ScopeValue
+		}
 	}
 	c.JSON(http.StatusOK, items)
 }
@@ -600,18 +606,27 @@ func (h *SecurityAdminHandler) CreateBlock(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "来源指纹无效"})
 		return
 	}
+	if body, ok := h.createSourceBlock(c, key, input, nil); ok {
+		c.JSON(http.StatusCreated, body)
+	}
+}
+
+// createSourceBlock 校验来源归因并在一个事务里写入同一操作组的全部封禁；
+// inTx 让“从事件封禁”在同一事务里结案事件，两者要么都生效、要么都不生效。
+// 出错时已写好响应并返回 false。
+func (h *SecurityAdminHandler) createSourceBlock(c *gin.Context, key string, input securityBlockInput, inTx func(tx *gorm.DB) error) (gin.H, bool) {
 	var sourceEvent models.SecurityEvent
 	if err := h.db.Where("source_ip_hash = ?", key).Order("last_seen_at DESC").First(&sourceEvent).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusConflict, gin.H{"code": "security_source_not_found", "error": "来源指纹没有可核验的安全事件"})
-			return
+			return nil, false
 		}
 		h.securityDatabaseError(c)
-		return
+		return nil, false
 	}
 	if !sourceEvent.SourceAttributionValid || (!h.attributionCutoff.IsZero() && sourceEvent.FirstSeenAt.Before(h.attributionCutoff)) {
 		c.JSON(http.StatusConflict, gin.H{"code": "security_source_attribution_invalid", "error": "历史来源归因不可信，不能创建封禁"})
-		return
+		return nil, false
 	}
 	scopes, err := resolveBlockScopes(input)
 	if err != nil {
@@ -623,7 +638,7 @@ func (h *SecurityAdminHandler) CreateBlock(c *gin.Context) {
 			code = "security_block_global_confirm_required"
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"code": code, "error": err.Error()})
-		return
+		return nil, false
 	}
 	now := time.Now()
 	expiresAt := now.Add(time.Duration(input.DurationMin) * time.Minute)
@@ -657,14 +672,17 @@ func (h *SecurityAdminHandler) CreateBlock(c *gin.Context) {
 			}
 			blocks = append(blocks, block)
 		}
+		if inTx != nil {
+			return inTx(tx)
+		}
 		return nil
 	}); err != nil {
 		if errors.Is(err, errSecurityBlockAlreadyActive) {
 			c.JSON(http.StatusConflict, gin.H{"code": "security_block_already_active", "error": "该来源和作用域已有生效封禁，请先查看当前封禁"})
-			return
+			return nil, false
 		}
 		h.securityDatabaseError(c)
-		return
+		return nil, false
 	}
 	ids := make([]uint, 0, len(blocks))
 	prefixes := make([]string, 0, len(blocks))
@@ -672,11 +690,112 @@ func (h *SecurityAdminHandler) CreateBlock(c *gin.Context) {
 		ids = append(ids, block.ID)
 		prefixes = append(prefixes, block.RoutePrefix)
 	}
-	h.writeSecurityAdminLog(c, "security_block_created", services.MaskSecurityFingerprint(key), reason)
-	c.JSON(http.StatusCreated, gin.H{
+	h.writeSecurityAdminLog(c, "security_block_created", services.MaskSecurityFingerprint(key), fmt.Sprintf("%s · %s · %d 分钟", reason, strings.Join(prefixes, ","), input.DurationMin))
+	return gin.H{
 		"id": blocks[0].ID, "group_id": groupID, "ids": ids, "route_prefixes": prefixes,
 		"expires_at": expiresAt,
+	}, true
+}
+
+type securityEventBlockInput struct {
+	Scope       string `json:"scope"`
+	DurationMin int    `json:"duration_minutes"`
+	Reason      string `json:"reason"`
+}
+
+// BlockEventSource 从一条安全事件直接封禁它的来源，并在同一事务里把仍待处置的事件结案。
+// 管理员不需要拿到来源指纹原值（source_key 仍只给超级管理员）；作用域限 route／account，
+// 全站封禁只能由超级管理员经 /api/super/security/blocks 显式确认。
+func (h *SecurityAdminHandler) BlockEventSource(c *gin.Context) {
+	if !h.securityBlockEnabled {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "security_block_disabled", "error": "来源封禁功能当前未启用"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的安全事件 ID"})
+		return
+	}
+	var input securityEventBlockInput
+	if err := c.ShouldBindJSON(&input); err != nil || !isAllowedBlockDuration(input.DurationMin) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "封禁时长只能是 15 分钟、1 小时或 24 小时"})
+		return
+	}
+	scope := strings.ToLower(strings.TrimSpace(input.Scope))
+	if scope != securityBlockScopeRoute && scope != securityBlockScopeAccount {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "security_block_scope_invalid", "error": "只能封禁当前接口或账号相关接口"})
+		return
+	}
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写封禁原因"})
+		return
+	}
+	var event models.SecurityEvent
+	if err := h.db.WithContext(c.Request.Context()).First(&event, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "安全事件不存在"})
+		} else {
+			h.securityDatabaseError(c)
+		}
+		return
+	}
+	if len(event.SourceIPHash) != 64 {
+		c.JSON(http.StatusConflict, gin.H{"code": "security_source_not_found", "error": "该事件没有记录可封禁的来源"})
+		return
+	}
+	blockInput := securityBlockInput{Scope: scope, DurationMin: input.DurationMin, Reason: reason}
+	if scope == securityBlockScopeRoute {
+		blockInput.RoutePrefix = event.Route
+	}
+	note := truncateSecurityNote(fmt.Sprintf("已封禁来源 %s：%s", securityDurationLabel(input.DurationMin), reason))
+	resolved := false
+	body, ok := h.createSourceBlock(c, event.SourceIPHash, blockInput, func(tx *gorm.DB) error {
+		result := tx.Model(&models.SecurityEvent{}).Where("id = ? AND status = ?", event.ID, models.SecurityEventStatusActive).Updates(map[string]interface{}{
+			"status": models.SecurityEventStatusResolved, "resolved_at": time.Now(), "resolved_by": c.GetUint("user_id"), "resolution_note": note,
+		})
+		resolved = result.RowsAffected > 0
+		return result.Error
 	})
+	if !ok {
+		return
+	}
+	if resolved {
+		h.writeSecurityAdminLog(c, "security_event_"+models.SecurityEventStatusResolved, strconv.FormatUint(id, 10), note)
+	}
+	body["event_resolved"] = resolved
+	c.JSON(http.StatusCreated, body)
+}
+
+func securityDurationLabel(minutes int) string {
+	switch minutes {
+	case 1440:
+		return "1 天"
+	case 60:
+		return "1 小时"
+	default:
+		return strconv.Itoa(minutes) + " 分钟"
+	}
+}
+
+// ListSecurityLogs 只返回安全中心产生的管理员操作日志（结案、误报、封禁、解封），
+// 普通管理员也可查看；完整操作日志仍只对超级管理员开放。
+func (h *SecurityAdminHandler) ListSecurityLogs(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 || page > 10000 {
+		page = 1
+	}
+	const limit = 30
+	var logs []models.AdminLog
+	if err := h.db.WithContext(c.Request.Context()).Where("action LIKE ?", "security_%").Order("created_at DESC, id DESC").Offset((page - 1) * limit).Limit(limit).Find(&logs).Error; err != nil {
+		h.securityDatabaseError(c)
+		return
+	}
+	items := make([]gin.H, 0, len(logs))
+	for _, log := range logs {
+		items = append(items, gin.H{"id": log.ID, "admin_id": log.AdminID, "admin_name": log.AdminName, "action": log.Action, "target": log.Target, "detail": log.Detail, "created_at": log.CreatedAt})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "limit": limit})
 }
 
 func (h *SecurityAdminHandler) RevokeBlock(c *gin.Context) {

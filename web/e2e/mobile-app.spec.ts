@@ -195,7 +195,7 @@ test("游客手机发布与个人入口先登录，桌面恢复既有三栏与�
   await page.goto("./");
   await expect(page.locator(".campus-composer")).toBeVisible();
   await expect(page.locator(".mobile-bottom-nav, .mobile-header, .mobile-app-feed")).toHaveCount(0);
-  await expect(page.locator(".sidebar")).toHaveCSS("width", "214px");
+  await expect(page.getByRole("complementary", { name: "主导航" })).toHaveCSS("width", "208px");
   await expect(page.locator(".right-rail")).toBeVisible();
   // 热榜、集市和首页会并发读取，不能用最后一个响应判断桌面信息流协议。
   const desktopFeed = () => state.queries.slice(desktopStart).find(url => url.searchParams.get('board') === '1' && url.searchParams.get('sort') === 'all' && url.searchParams.get('limit') === '20');

@@ -14,6 +14,7 @@ import '../../widgets/settings/settings_tile.dart';
 import 'installed_themes_screen.dart';
 import 'launcher_icon_service.dart';
 import 'theme_appearance_exporter.dart';
+import 'theme_beta_notice.dart';
 import 'theme_import_screen.dart';
 import 'theme_layout_decoration_screen.dart';
 import 'theme_store_screen.dart';
@@ -54,6 +55,14 @@ class _ThemeSectionState extends State<ThemeSection> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 内置默认主题的构建回到首次启动载入的主题，而不是清空成无主题外观。
+  Future<void> _restoreDefaultAppearance(ThemeProvider provider) async {
+    if (!ThemeBetaNotice.enabled) return provider.restoreManualAppearance();
+    final pack = await ThemeBetaNotice.loadPack(DefaultAssetBundle.of(context));
+    final installed = await provider.installTheme(pack, reuseExisting: true);
+    await provider.restoreManualAppearance(defaultTheme: installed);
   }
 
   Future<String> _currentAppVersion() async {
@@ -306,12 +315,11 @@ class _ThemeSectionState extends State<ThemeSection> {
                 _actionButton(
                   context: context,
                   icon: Icons.settings_backup_restore,
-                  label: '恢复手动外观',
+                  label: ThemeBetaNotice.enabled ? '恢复默认外观' : '恢复手动外观',
                   onPressed: !_busy &&
                           (theme.persistedAppearance.data.isNotEmpty ||
                               theme.isInTrial)
-                      ? () =>
-                          _change((provider) => provider.restoreManualAppearance())
+                      ? () => _change(_restoreDefaultAppearance)
                       : null,
                 ),
               ],

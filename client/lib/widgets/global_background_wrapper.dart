@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
 import '../features/theme_pack/theme_hero_layer.dart';
+import '../features/theme_pack/theme_presentation.dart';
 import '../features/theme_pack/themed_wallpaper_layer.dart';
 import '../theme/app_theme_tokens.dart';
 import '../services/wallpaper_prefetch_service.dart';
@@ -87,6 +88,17 @@ class CustomBackgroundLayer extends StatelessWidget {
             : _buildCleanBackground(isDark);
     final canvas = canvasSize;
     if (canvas == null) return layer;
+    // 主壳一次性预解码各页签壁纸、二级页壁纸和沉浸页头图，切页时首帧即可画出。
+    ThemedWallpaperLayer.precache(context, themeProvider.themeWallpaperSlots);
+    for (final slot in const ['home', 'campus', 'me']) {
+      if (!themeProvider.hasImmersiveHero(slot)) continue;
+      final resolved = ThemeHeaderResolved.of(context, slot);
+      final path = resolved.background?['image'] as String?;
+      final provider = path == null ? null : resolved.assetResolver(path);
+      if (provider != null) {
+        unawaited(precacheImage(provider, context, onError: (_, __) {}));
+      }
+    }
     // 只有主壳（首页传入 canvasSize）承载沉浸页头的 hero 图。
     return ClipRect(
       child: OverflowBox(

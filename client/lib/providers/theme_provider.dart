@@ -1255,6 +1255,17 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     return (slots[slot] ?? slots['global']) as Map<String, dynamic>?;
   }
 
+  /// 当前明暗模式下所有已设置的壁纸槽位，供主壳预解码。
+  Iterable<Map<String, dynamic>> get themeWallpaperSlots {
+    if (!usesThemeWallpapers) return const [];
+    final slots = _wallpaperGroup![_appearanceMode] as Map;
+    return [
+      for (final slot in const ['global', 'home', 'schedule', 'me', 'secondary'])
+        if (slots[slot] is Map<String, dynamic>)
+          slots[slot] as Map<String, dynamic>,
+    ];
+  }
+
   ThemeData buildAppTheme(Brightness brightness) =>
       appearance.buildTheme(brightness);
 
@@ -1730,13 +1741,30 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         await _cleanupThemeFiles();
       });
 
-  Future<void> restoreManualAppearance() =>
+  /// 内置默认主题自动应用的分组：桌面图标和桌面小部件不随默认外观改动。
+  static final Set<ThemeGroup> builtInDefaultGroups =
+      ThemeGroup.applicable.difference({
+    ThemeGroup.launcherIcon,
+    ThemeGroup.widgets,
+  });
+
+  /// 恢复默认外观。随包内置默认主题的构建传入 [defaultTheme]，默认外观就是首次启动
+  /// 载入的那套主题；其余构建回到不带主题的手动外观。
+  Future<void> restoreManualAppearance({InstalledTheme? defaultTheme}) =>
       _queueAppearanceOperation((prefs) async {
         final oldTrialStaging = _trial?.stagingDirectory;
         final hadThemeWidgets = _appearance.group(ThemeGroup.widgets) != null;
         _trialGeneration++;
         _trial = null;
-        const cleared = ThemeAppearance.empty();
+        final cleared = defaultTheme == null
+            ? const ThemeAppearance.empty()
+            : const ThemeAppearance.empty().apply(
+                defaultTheme.manifest,
+                builtInDefaultGroups
+                    .intersection(defaultTheme.manifest.groups),
+                defaultTheme.directory,
+              );
+        await ThemeFontRegistry.ensureLoaded(cleared.group(ThemeGroup.font));
         await _commitAppearance(prefs, cleared, _snapshotAppearance(prefs));
         String? courseOverride;
         String? examOverride;

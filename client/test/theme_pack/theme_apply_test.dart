@@ -209,6 +209,24 @@ void main() {
     expect(await Directory(first.directory).exists(), isTrue);
   });
 
+  test('内置默认主题时恢复默认外观回到该主题，且可撤回到商城主题', () async {
+    final builtIn = await provider.installTheme(_pack(wallpaper: true));
+    await provider.applyInstalledTheme(
+        builtIn, ThemeProvider.builtInDefaultGroups);
+    final store = await provider
+        .installTheme(_pack(suffix: '3', color: '#2277AA', material: true));
+    await provider.applyInstalledTheme(store, ThemeGroup.applicable);
+    await provider.restoreManualAppearance(defaultTheme: builtIn);
+    expect(provider.buildAppTheme(Brightness.light).colorScheme.primary,
+        const Color(0xffa02080));
+    expect(provider.backgroundImage, contains(builtIn.directory));
+    // 默认外观只含内置主题自带的分组，商城主题的材质不残留。
+    expect(provider.appearance.group(ThemeGroup.material), isNull);
+    await provider.restorePreviousAppearance();
+    expect(provider.appearance.group(ThemeGroup.colors)!['source']['themeId'],
+        store.manifest.id);
+  });
+
   test('撤回快照不读取后来的手动偏好；恢复手动外观使用最新手动值', () async {
     await provider.setBackgroundImage('before.jpg');
     await provider.setComponentOpacity(.9);
@@ -869,7 +887,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('ThemeSection 导出当前外观保存文件与壁纸槽位淡入切换及减少动态效果兼容', (tester) async {
+  testWidgets('ThemeSection 导出当前外观保存文件与壁纸槽位同帧切换', (tester) async {
     final savedPath = path.join(temp.path, 'exported-mixed.sltheme');
     await tester.runAsync(() async {
       final installed =
@@ -913,13 +931,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(await tester.runAsync(() => File(savedPath).exists()), isTrue);
 
-    // 验证壁纸槽位切换 AnimatedSwitcher 与 disableAnimations
+    // 壁纸槽位与页面组件同帧切换，不再淡入淡出。
     await tester.pumpWidget(
-      MediaQuery(
-        data: const MediaQueryData(disableAnimations: true),
-        child: host(
-          const Scaffold(body: CustomBackgroundLayer(canvasSize: Size(360, 800))),
-        ),
+      host(
+        const Scaffold(body: CustomBackgroundLayer(canvasSize: Size(360, 800))),
       ),
     );
     await settleEmojiQAImages(
@@ -928,9 +943,7 @@ void main() {
       tester.widgetList<Image>(find.byType(Image)).map((image) => image.image),
     );
     await tester.pump();
-    final switcher =
-        tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher));
-    expect(switcher.duration, Duration.zero);
+    expect(find.byType(AnimatedSwitcher), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester

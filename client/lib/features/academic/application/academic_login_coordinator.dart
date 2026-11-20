@@ -527,6 +527,8 @@ final class AcademicLoginCoordinator {
         return null;
       } on AcademicIdentityApiException catch (error) {
         if (!current()) return null;
+        // 协议确认后即可补交，不能当成需要重新登录学校才解除的终止错误。
+        if (error.code == 'LEGAL_CONSENT_REQUIRED') return error.message;
         if (!error.isRetryable ||
             (error.statusCode != null &&
                 error.statusCode! >= 400 &&

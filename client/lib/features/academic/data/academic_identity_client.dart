@@ -808,6 +808,8 @@ final class AcademicIdentityClient {
       'ACADEMIC_IDENTITY_ALREADY_BOUND' => '该学号已绑定其他账号，请使用原账号或联系管理员处理',
       'ACADEMIC_IDENTITY_IMMUTABLE' => '该教务类型已有其他认证身份，请先在教务设置核对，不能直接覆盖',
       'ACADEMIC_BINDING_CHANGED' => '学生身份状态已变化，请刷新后重试',
+      'LEGAL_CONSENT_REQUIRED' =>
+          '请先在「设置 → 隐私与数据」确认用户协议和隐私政策，再重试学生认证',
       'ACADEMIC_SESSION_INVALID' => '学校会话格式无效，请在原教务入口重新连接',
       'ACADEMIC_IDENTITY_UNVERIFIED' => '学校尚未确认该教务身份，请重新绑定',
       'ACADEMIC_CHALLENGE_REPLAYED' => '教务挑战已使用，请刷新后重试',

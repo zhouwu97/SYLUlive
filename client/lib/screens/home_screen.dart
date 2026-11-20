@@ -48,6 +48,7 @@ import 'poll/poll_composer_screen.dart';
 import 'publish/publish_type_sheet.dart';
 import 'image_viewer_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/widgets/student_verification_prompt.dart';
 
 /// 首页首屏请求结束后再检查更新，避免更新状态覆盖开屏与帖子加载过程。
 Future<void> loadInitialFeedBeforeUpdateCheck({
@@ -402,6 +403,11 @@ class _HomeScreenState extends State<HomeScreen>
       if (auth.isLoggedIn && auth.user?.isAdmin == true) {
         _checkAdminTasks(auth);
       }
+    });
+
+    // 4. 未完成学生认证的账号提醒一次；排在首屏、协议和更新检查之后。
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) unawaited(StudentVerificationPrompt.maybeShow(context));
     });
   }
 

@@ -389,6 +389,7 @@ class _LoggedInAuthProvider extends ChangeNotifier implements AuthProvider {
         id: 1,
         studentId: 'app-user-1',
         nickname: '测试用户',
+        studentVerified: true,
         createdAt: DateTime(2026),
       );
 

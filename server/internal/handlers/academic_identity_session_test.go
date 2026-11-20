@@ -196,6 +196,17 @@ func TestSessionBindingCannotResurrectAfterRevocationOrConfigChange(t *testing.T
 	}
 }
 
+func TestSessionBindingRequiresActiveLegalConsentBeforeSchoolRequest(t *testing.T) {
+	_, db, p, user, request := sessionFixture(t)
+	require.NoError(t, db.Model(&models.User{}).Where("id = ?", user.ID).Update("legal_consent_revoked_at", time.Now()).Error)
+	w := request(sessionBody, "")
+	require.Equal(t, http.StatusConflict, w.Code)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
+	require.Equal(t, "LEGAL_CONSENT_REQUIRED", payload["code"])
+	require.Zero(t, p.calls)
+}
+
 func TestSessionBindingDoesNotStealAnotherUsersTrustedIdentity(t *testing.T) {
 	h, db, _, _, request := sessionFixture(t)
 	other := models.User{PasswordHash: "fixture"}

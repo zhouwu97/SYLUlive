@@ -546,11 +546,11 @@ final class AcademicLoginCoordinator {
               DateTime.now().add(const Duration(minutes: 10));
         }
         _scheduleBindingRetry(identity, generation);
-        return '教务已在本机连接，学生身份尚未同步；联网后会重试';
+        return '教务已在本机连接，认证状态尚未同步；联网后会重试';
       } catch (_) {
         if (!current()) return null;
         _scheduleBindingRetry(identity, generation);
-        return '教务已在本机连接，学生身份尚未同步；联网后会重试';
+        return '教务已在本机连接，认证状态尚未同步；联网后会重试';
       }
     }();
     _bindingSyncs[identity] = operation;

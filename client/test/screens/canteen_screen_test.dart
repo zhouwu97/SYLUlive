@@ -100,7 +100,7 @@ class FakeAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
-/// 已登录且完成学生认证的账号，用于覆盖首页“去评价”入口。
+/// 已登录且完成教务认证的账号，用于覆盖首页“去评价”入口。
 class _VerifiedAuthProvider extends Fake
     with ChangeNotifier
     implements AuthProvider {
@@ -115,6 +115,7 @@ class _VerifiedAuthProvider extends Fake
         avatar: '',
         createdAt: DateTime(2026, 1, 1),
         studentVerified: true,
+        eduAuthorized: true,
         eduBound: true,
       );
 }

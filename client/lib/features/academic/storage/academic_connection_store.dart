@@ -48,7 +48,7 @@ final class AcademicConnectionStore {
 
   Future<void> setBindingSyncState(String state) async {
     if (!await preferences.setString('${_prefix}_binding_sync', state)) {
-      throw StateError('保存学生身份同步状态失败');
+      throw StateError('保存教务认证同步状态失败');
     }
   }
 

@@ -113,6 +113,7 @@ func createVerifiedUser(t *testing.T, db *gorm.DB, id uint, nickname string) mod
 		StudentID:         fmt.Sprintf("stu-%d", id),
 		Nickname:          nickname,
 		StudentVerifiedAt: &now,
+		EduAuthorized:     true,
 		EduBound:          true,
 	}
 	if err := db.Create(&u).Error; err != nil {

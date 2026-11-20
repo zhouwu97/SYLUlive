@@ -112,10 +112,10 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final useCustomBackground = themeProvider.needsPhotoContrast;
-    // 试卷库只对完成学生认证的账号和管理员开放；其他人不显示入口，认证提醒由首页弹窗负责。
+    // 试卷库只对完成教务认证的账号和管理员开放。
     final user = context.watch<AuthProvider?>()?.user;
     final canOpenExamPapers =
-        user != null && (user.isAdmin || user.studentVerified);
+        user != null && (user.isAdmin || user.hasEduAccess);
     final cleanLightMode = !useCustomBackground && !isDark;
     final foregroundColor = useCustomBackground
         ? Colors.white // theme: fixed 壁纸覆盖层对比前景

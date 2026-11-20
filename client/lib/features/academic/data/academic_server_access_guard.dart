@@ -15,7 +15,7 @@ final class AcademicServerAccessGuard extends Interceptor {
       handler.reject(DioException(
           requestOptions: options,
           type: DioExceptionType.cancel,
-          message: '旧教务服务器接口已退役，请通过学生身份验证后在本机连接教务'));
+          message: '旧教务服务器接口已退役，请通过教务认证后在本机连接教务'));
       return;
     }
     handler.next(options);

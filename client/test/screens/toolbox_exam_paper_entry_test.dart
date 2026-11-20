@@ -18,8 +18,8 @@ class _Auth extends AuthProvider {
 
 void main() {
   for (final (label, verified, role, visible) in [
-    ('未完成学生认证时不显示试卷库入口', false, 'user', false),
-    ('完成学生认证后显示试卷库入口', true, 'user', true),
+    ('未完成教务认证时不显示试卷库入口', false, 'user', false),
+    ('完成教务认证后显示试卷库入口', true, 'user', true),
     ('管理员未认证也显示试卷库入口', false, 'admin', true),
   ]) {
     testWidgets(label, (tester) async {
@@ -36,6 +36,8 @@ void main() {
                 nickname: '测试',
                 role: role,
                 studentVerified: verified,
+                eduAuthorized: verified,
+                eduBound: verified,
                 createdAt: DateTime(2026),
               )),
             ),

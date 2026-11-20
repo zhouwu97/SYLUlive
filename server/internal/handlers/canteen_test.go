@@ -72,6 +72,29 @@ func createCanteenTestUser(t *testing.T, db *gorm.DB, id uint, nickname string) 
 	return user
 }
 
+func TestCanteenRateUsesEduAuthorizationWithoutStudentProjection(t *testing.T) {
+	db := newCanteenTestDB(t)
+	createCanteenTestUser(t, db, 1, "EduOnly")
+	if err := db.Model(&models.User{}).Where("id = ?", 1).Updates(map[string]interface{}{
+		"edu_authorized": true,
+		"edu_bound":      true,
+	}).Error; err != nil {
+		t.Fatalf("写入教务授权状态失败: %v", err)
+	}
+	canteen := models.Canteen{Name: "第一食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
+	if err := db.Create(&canteen).Error; err != nil {
+		t.Fatalf("创建食堂失败: %v", err)
+	}
+
+	response := performCanteenRequest(t, NewCanteenHandler(db).Rate, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/rate", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}}, 1,
+		`{"star":5,"comment":"教务认证用户评价"}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("仅有教务授权的用户应可评价食堂: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func performCanteenRequest(
 	t *testing.T,
 	handler gin.HandlerFunc,

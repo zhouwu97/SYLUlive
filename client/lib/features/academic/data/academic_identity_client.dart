@@ -75,13 +75,13 @@ String academicIdentityStandingLabel(
       (readStatus == AcademicIdentityReadStatus.unknown ||
           readStatus == AcademicIdentityReadStatus.loading ||
           readStatus == AcademicIdentityReadStatus.error)) {
-    return '本机已配置，学生认证状态暂未确认';
+    return '本机已配置，教务认证状态暂未确认';
   }
   final label = binding.isSchoolVerified
-      ? '已完成学生认证'
+      ? '教务认证已完成'
       : binding.verificationMethod == academicVerificationMethodLegacyMigration
-          ? (binding.verified ? '继承历史服务器认证状态' : '历史身份待重新认证')
-          : '仅本机连接，未完成学生认证';
+          ? (binding.verified ? '已继承历史教务认证' : '历史教务认证待重新确认')
+          : '仅本机连接，未完成教务认证';
   return readStatus == AcademicIdentityReadStatus.error && hasServerBinding
       ? '上次成功确认：$label'
       : label;
@@ -296,7 +296,7 @@ final class AcademicIdentityClient {
     } on AcademicIdentityApiException {
       rethrow;
     } on DioException catch (error) {
-      throw _networkError(error, '同步学生身份失败');
+      throw _networkError(error, '同步教务认证失败');
     }
   }
 
@@ -563,7 +563,7 @@ final class AcademicIdentityClient {
           academicVerificationMethodSchoolProfile) {
         throw const AcademicIdentityApiException(
           'ACADEMIC_BINDING_CONTRACT_ERROR',
-          '学生身份验证回执缺少学校核验依据，请更新服务器后重试',
+          '教务认证回执缺少学校核验依据，请更新服务器后重试',
         );
       }
       return AcademicIdentityBinding(
@@ -692,14 +692,14 @@ final class AcademicIdentityClient {
     if (method != academicVerificationMethodLocalDeclaration) {
       throw const AcademicIdentityApiException(
         'ACADEMIC_BINDING_CONTRACT_ERROR',
-        '学生身份同步回执不符合本机声明契约，请更新客户端后重试',
+        '教务认证同步回执不符合本机声明契约，请更新客户端后重试',
       );
     }
     final assurance = data['assurance_level']?.toString();
     if (assurance != null && assurance != academicAssuranceLocalDeclaration) {
       throw const AcademicIdentityApiException(
         'ACADEMIC_BINDING_CONTRACT_ERROR',
-        '学生身份同步回执的依据强度不符合本机声明契约，请更新客户端后重试',
+        '教务认证同步回执的依据强度不符合本机声明契约，请更新客户端后重试',
       );
     }
     return AcademicIdentityBinding(
@@ -739,14 +739,14 @@ final class AcademicIdentityClient {
     if (method != academicVerificationMethodSchoolProfile) {
       throw const AcademicIdentityApiException(
         'ACADEMIC_BINDING_CONTRACT_ERROR',
-        '学生身份验证回执缺少学校核验依据，请更新服务器后重试',
+        '教务认证回执缺少学校核验依据，请更新服务器后重试',
       );
     }
     final assurance = data['assurance_level']?.toString();
     if (assurance != null && assurance != academicAssuranceSchoolVerified) {
       throw const AcademicIdentityApiException(
         'ACADEMIC_BINDING_CONTRACT_ERROR',
-        '学生身份验证回执的依据强度不符合学校核验契约，请更新服务器后重试',
+        '教务认证回执的依据强度不符合学校核验契约，请更新服务器后重试',
       );
     }
     return AcademicIdentityBinding(
@@ -771,7 +771,7 @@ final class AcademicIdentityClient {
     if (status == 404) {
       return const AcademicIdentityApiException(
         'ACADEMIC_IDENTITY_ROUTE_UNAVAILABLE',
-        '服务器暂未开放学生身份验证接口，请联系管理员更新服务后重试，无需修改教务密码',
+        '服务器暂未开放教务认证接口，请联系管理员更新服务后重试，无需修改教务密码',
         statusCode: 404,
       );
     }
@@ -807,15 +807,15 @@ final class AcademicIdentityClient {
       'ACADEMIC_IDENTITY_MISMATCH' => '学校返回的学生身份与当前绑定不一致',
       'ACADEMIC_IDENTITY_ALREADY_BOUND' => '该学号已绑定其他账号，请使用原账号或联系管理员处理',
       'ACADEMIC_IDENTITY_IMMUTABLE' => '该教务类型已有其他认证身份，请先在教务设置核对，不能直接覆盖',
-      'ACADEMIC_BINDING_CHANGED' => '学生身份状态已变化，请刷新后重试',
+      'ACADEMIC_BINDING_CHANGED' => '教务认证状态已变化，请刷新后重试',
       'LEGAL_CONSENT_REQUIRED' =>
-          '请先在「设置 → 隐私与数据」确认用户协议和隐私政策，再重试学生认证',
+          '请先在「设置 → 隐私与数据」确认用户协议和隐私政策，再重试教务认证',
       'ACADEMIC_SESSION_INVALID' => '学校会话格式无效，请在原教务入口重新连接',
       'ACADEMIC_IDENTITY_UNVERIFIED' => '学校尚未确认该教务身份，请重新绑定',
       'ACADEMIC_CHALLENGE_REPLAYED' => '教务挑战已使用，请刷新后重试',
       'ACADEMIC_RATE_LIMITED' || 'ACADEMIC_RATE_LIMIT' => '教务请求过于频繁，请稍后再试',
       'ACADEMIC_PROVIDER_UNAVAILABLE' => '教务身份验证暂不可用，请稍后重试',
-      'ACADEMIC_IDENTITY_FROZEN' => '服务器暂未开放学生认证；本机连接教务不构成学生认证，请留意公告，无需反复重新绑定',
+      'ACADEMIC_IDENTITY_FROZEN' => '服务器暂未开放教务认证；本机连接教务尚未完成服务器认证，请留意公告，无需反复重新绑定',
       _ => '$operation失败，请稍后重试',
     };
   }

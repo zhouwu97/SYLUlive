@@ -17,29 +17,25 @@ const (
 	MarketPublishAllowed MarketPublishDenial = ""
 	// MarketPublishAccountRestricted 账号本身受限（封禁、注销等）。
 	MarketPublishAccountRestricted MarketPublishDenial = "account_restricted"
-	// MarketPublishStudentUnverified 缺少当前服务端准入白名单中的学生身份。
-	// 历史回填身份仍按兼容策略准入，但 API 会标明其继承状态。
+	// MarketPublishStudentUnverified 缺少当前服务端准入所需的教务认证。
+	// 错误码保留旧名称，兼容既有客户端与审计记录。
 	MarketPublishStudentUnverified MarketPublishDenial = "student_unverified"
 )
 
-// MarketPublishPolicy 集中解释历史准入资格；教务账号配置不构成认证凭证。
+// MarketPublishPolicy 集中解释教务认证准入资格。
 // 版块禁言及账号限制继续由原有发布事务和认证中间件执行。
 type MarketPublishPolicy struct{ DB *gorm.DB }
 
-// Evaluate 返回准入结论与被拒原因，供接口区分"账号受限"和"尚未完成学生认证"。
+// Evaluate 返回准入结论与被拒原因，供接口区分账号受限和未完成教务认证。
 func (p MarketPublishPolicy) Evaluate(userID uint) (MarketPublishDenial, error) {
 	var user models.User
-	if err := p.DB.Select("id", "account_status").First(&user, userID).Error; err != nil {
+	if err := p.DB.Select("id", "account_status", "edu_authorized", "edu_bound").First(&user, userID).Error; err != nil {
 		return MarketPublishStudentUnverified, err
 	}
 	if user.AccountStatus != "" && user.AccountStatus != "active" {
 		return MarketPublishAccountRestricted, nil
 	}
-	verified, err := models.HasVerifiedAcademicIdentity(p.DB, userID)
-	if err != nil {
-		return MarketPublishStudentUnverified, err
-	}
-	if !verified {
+	if !user.HasEduAccess() {
 		return MarketPublishStudentUnverified, nil
 	}
 	return MarketPublishAllowed, nil

@@ -203,7 +203,7 @@ func revokeExamPaperReward(tx *gorm.DB, paper *models.ExamPaper, now time.Time) 
 	return true, nil
 }
 
-const examPaperLocalDeclarationMessage = "已在手机上连接教务，但服务器尚未核验学号。请将 App 更新到最新版本后打开一次，会自动完成核验，无需解绑重绑"
+const examPaperLocalDeclarationMessage = "已在手机上连接教务，但服务器尚未完成教务认证。请将 App 更新到最新版本后打开一次，会自动完成认证，无需解绑重绑"
 
 func writeExamPaperError(c *gin.Context, status int, code, message string) {
 	c.JSON(status, gin.H{"error": message, "code": code})
@@ -230,22 +230,17 @@ func (h *ExamPaperHandler) currentExamPaperUser(c *gin.Context) (models.User, bo
 		return models.User{}, false
 	}
 	var user models.User
-	if err := h.db.Select("id", "role", "student_verified_at", "edu_bound", "nickname", "avatar", "exp").First(&user, userID).Error; err != nil {
+	if err := h.db.Select("id", "role", "student_verified_at", "edu_authorized", "edu_bound", "nickname", "avatar", "exp").First(&user, userID).Error; err != nil {
 		writeExamPaperError(c, http.StatusUnauthorized, "authentication_required", "登录用户不存在")
 		return models.User{}, false
 	}
 	verified := isExamPaperAdmin(user)
 	if !verified {
-		var identityErr error
-		verified, identityErr = models.HasVerifiedAcademicIdentity(h.db, userID)
-		if identityErr != nil {
-			writeExamPaperError(c, http.StatusInternalServerError, "identity_lookup_failed", "读取学生身份失败")
-			return models.User{}, false
-		}
+		verified = user.HasEduAccess()
 	}
 	if !verified {
-		// 旧版 App 只上报本机声明，服务器无法据此核验学号；提示升级后自动补交，
-		// 避免学生误以为需要反复解绑重绑。错误码保持不变，客户端判断不受影响。
+		// 旧版 App 只上报本机声明，服务器无法据此完成教务认证；提示升级后自动补交，
+		// 避免用户误以为需要反复解绑重绑。错误码保持不变，客户端判断不受影响。
 		message := "完成教务认证后才能使用试卷库"
 		if declared, err := models.HasLocalAcademicDeclaration(h.db, userID); err == nil && declared {
 			message = examPaperLocalDeclarationMessage

@@ -126,7 +126,7 @@ class User {
           ? ownerId.toInt()
           : null,
       botOwnerNickname: ownerNickname is String ? ownerNickname.trim() : '',
-      // 学校连接与学生认证独立，缺少认证字段时不能由连接状态推断资格。
+      // student_verified 是旧版本兼容字段，校内功能统一由教务授权判断。
       studentVerified: json['student_verified'] == true,
       emailMasked: json['email_masked']?.toString() ?? '',
       emailBound: json['email_bound'] == true,
@@ -203,6 +203,9 @@ class User {
       author?.isAiBot == true ? content.replaceFirst('[AI机器人] ', '') : content;
 
   bool get isAdmin => role == 'admin' || role == 'super_admin';
+  /// 教务认证完成后即可使用校内受限功能。
+  /// 旧版本的 edu_bound 作为等价投影兼容，避免升级后已绑定账号被误拦截。
+  bool get hasEduAccess => eduAuthorized || eduBound;
   bool get isSuperAdmin => role == 'super_admin';
   String get publicIdLabel => 'ID $id';
   String get aiBotLabel => botOwnerNickname.trim().isEmpty

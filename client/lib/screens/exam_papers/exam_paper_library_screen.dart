@@ -97,7 +97,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
       _error = null;
     }
     final canAccess = auth.isLoggedIn &&
-        (auth.user?.isAdmin == true || auth.user?.studentVerified == true);
+        (auth.user?.isAdmin == true || auth.user?.hasEduAccess == true);
     // 资料刷新会递增 sessionGeneration；资格补交只绑定登录会话代次。
     final accessScope = '${auth.accountSessionEpoch}:${auth.user?.id}';
     if (auth.isInitialized &&
@@ -255,7 +255,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     await auth.refreshUser();
     if (!mounted) return;
     _loadScheduled = false;
-    if (auth.user?.studentVerified == true || auth.user?.isAdmin == true) {
+    if (auth.user?.hasEduAccess == true || auth.user?.isAdmin == true) {
       await _load(refresh: true);
     }
   }
@@ -277,7 +277,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     try {
       await auth.refreshUser();
       if (!current()) return;
-      if (auth.user?.studentVerified != true && auth.user?.isAdmin != true) {
+      if (auth.user?.hasEduAccess != true && auth.user?.isAdmin != true) {
         final sync = widget.synchronizeAcademicBinding;
         if (sync != null) {
           final message = await sync();
@@ -299,7 +299,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
         await auth.refreshUser();
       }
       if (!current()) return;
-      if ((auth.user?.studentVerified == true || auth.user?.isAdmin == true) &&
+      if ((auth.user?.hasEduAccess == true || auth.user?.isAdmin == true) &&
           !_loadScheduled) {
         _loadScheduled = true;
         await _load(refresh: true);
@@ -393,7 +393,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
     final canAccess = auth.isLoggedIn &&
-        (user?.isAdmin == true || user?.studentVerified == true);
+        (user?.isAdmin == true || user?.hasEduAccess == true);
 
     return GlobalBackgroundWrapper(
       child: Scaffold(

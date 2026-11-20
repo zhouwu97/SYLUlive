@@ -489,6 +489,7 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
   }
   const moreActions = (
     <PostMore>
+      {auth.user && p.board_id === 1 && !isPoll && <SectionPostActions post={p} userId={auth.user.id} />}
       {p.images?.[0] && (
         <button type="button" onClick={async () => { if (!auth.requireUser()) return; const path = mediaURL(p.images[0], "origin"); if (!path) return; await ui.act(() => favoritePublicImage(path), "图片已收藏为表情"); }}>
           收藏首图为表情
@@ -922,9 +923,57 @@ function PostDetailRail({
   </aside>;
 }
 
-function PostMore({ children }: { children: ReactNode }) {
+function SectionPostActions({ post, userId }: { post: Entity; userId: number }) {
+  const ui = useUI(), qc = useQueryClient();
+  const section = post.post_type ? `/api/water/sections/${encodeURIComponent(post.post_type)}` : "";
+  const permission = useQuery({
+    queryKey: ["api", "water-permission", section, userId],
+    enabled: !!section,
+    queryFn: ({ signal }) => request<Entity>(`${section}/my-permission`, { signal }),
+    retry: false,
+  });
+  const application = useApi(post.is_featured ? null : `/api/posts/${post.id}/featured-application-status`);
+  const perm = permission.data?.permission;
+  const canModerate = !permission.isError && (perm?.is_moderator || perm?.is_global_admin);
+  const base = `${section}/posts/${post.id}`;
+  function action(title: string, path: string, method = "POST", kind: "moderation" | "mute" | "application" = "moderation") {
+    const current = captureAuthSession();
+    return <button type="button" onClick={() => ui.open(title, <Form
+      fields={[
+        { name: "reason", label: kind === "application" ? "推荐/自荐加精理由" : "操作原因", type: "textarea", required: true },
+        ...(kind === "mute" ? [{ name: "days", label: "禁言时长", options: [["1", "1 天"], ["3", "3 天"], ["7", "7 天"]] as [string, string][] }] : []),
+      ]}
+      submit={kind === "application" ? "提交精华申请" : `确认${title}`}
+      onSubmit={async values => {
+        if (!current()) throw new Error("账号已切换，请重新打开菜单");
+        const body = { reason: values.reason, ...(kind === "mute" && { until: new Date(Date.now() + Number(values.days) * 86400000).toISOString() }) };
+        await write(path, body, method);
+        await qc.invalidateQueries({ queryKey: ["api"] });
+        if (current()) { ui.close(); ui.notify("操作已完成"); }
+      }}
+    />)}>{title}</button>;
+  }
+  return <>
+    {canModerate && perm.can_pin_post && <>
+      {action(post.water_section_pinned ? "取消版块置顶" : "设为版块置顶", `${base}/pin`, post.water_section_pinned ? "DELETE" : "POST")}
+      {action(post.water_section_featured ? "取消版块精华" : "设为版块精华", `${base}/feature`, post.water_section_featured ? "DELETE" : "POST")}
+    </>}
+    {canModerate && perm.can_delete_post && action("版主删除", `${base}/moderate`, "DELETE")}
+    {canModerate && perm.can_mute_user && !post.is_anonymous && post.author_id > 0 && post.author_id !== userId &&
+      action("禁言作者", `${section}/users/${post.author_id}/mute`, "POST", "mute")}
+    {!post.is_featured && !application.isError && application.data && (application.data.has_pending
+      ? <button type="button" disabled>精华申请待审核</button>
+      : action("申请精华", `/api/posts/${post.id}/featured-applications`, "POST", "application"))}
+    {application.isError && <button type="button" onClick={event => { event.stopPropagation(); void application.refetch(); }}>重试读取精华申请状态</button>}
+    {permission.isError && <button type="button" onClick={event => { event.stopPropagation(); void permission.refetch(); }}>重试读取版块权限</button>}
+  </>;
+}
+
+function PostMore({ children, className = "" }: { children: ReactNode; className?: string }) {
+  const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
+    if (!open) return;
     const dismiss = (event: PointerEvent) => { if (!ref.current?.contains(event.target as Node)) ref.current?.removeAttribute("open"); };
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape" && ref.current?.open) { ref.current.open = false; ref.current.querySelector("summary")?.focus(); }
@@ -932,8 +981,8 @@ function PostMore({ children }: { children: ReactNode }) {
     document.addEventListener("pointerdown", dismiss);
     document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
-  }, []);
-  return <details className="post-more" ref={ref}><summary aria-label="更多操作"><Icon name="more" size={20} /><span className="post-more-label">更多</span></summary><div className="post-more-menu" onClick={(event) => { if ((event.target as HTMLElement).closest("button") && ref.current) { ref.current.open = false; ref.current.querySelector("summary")?.focus(); } }}>{children}</div></details>;
+  }, [open]);
+  return <details className={`post-more ${className}`} ref={ref} onToggle={event => setOpen(event.currentTarget.open)}><summary aria-label="更多操作"><Icon name="more" size={20} /><span className="post-more-label">更多</span></summary><div className="post-more-menu" onClick={(event) => { if ((event.target as HTMLElement).closest("button") && ref.current) { ref.current.open = false; ref.current.querySelector("summary")?.focus(); } }}>{open && children}</div></details>;
 }
 
 function uniqueReplies(replies: Entity[]) {
@@ -970,6 +1019,7 @@ function CommentRow({ postId, postAuthorId, reply, onReply }: { postId: number; 
   const content = aiBotDisplayContent(reply.content, author);
   const authorHref = deleted || reply.is_anonymous ? null : userHref(reply.author_id || author?.id, auth.user?.id, author?.nickname);
   const backState = { from: location.pathname + location.search };
+  const canDelete = auth.user && (reply.author_id === auth.user.id || ["admin", "super_admin"].includes(auth.user.role));
   const isPostAuthor = !deleted && !!postAuthorId && Number(reply.author_id) === postAuthorId;
   const hasLevel = !deleted && (author?.exp != null || author?.level != null);
   return <article className="post-comment" aria-label={`${authorName}的评论`}>
@@ -1008,6 +1058,13 @@ function CommentRow({ postId, postAuthorId, reply, onReply }: { postId: number; 
             if (!auth.requireUser()) return;
             setReplyStarted(true); setReplying((value) => !value);
           }}><Icon name="community" size={16} />回复</button>
+          {canDelete && <PostMore className="post-comment-more"><button type="button" onClick={() => {
+            const current = captureAuthSession();
+            ui.open("删除评论", <Form fields={[]} submit="确认删除" onSubmit={async () => {
+              if (!current()) throw new Error("账号已切换，请重新确认删除");
+              if (await ui.act(() => request(`/api/replies/${reply.id}`, { method: "DELETE" }), "评论已删除") && current()) ui.close();
+            }}><p>确认删除这条评论？</p></Form>);
+          }}>删除评论</button></PostMore>}
         </div>
       </div>}
       {!mobile && replyStarted && <div className="post-thread-composer" hidden={!replying}><ReplyComposer inline active={replying} postId={postId} parentReplyId={Number(reply.parent_reply_id || reply.id)} replyToReplyId={reply.parent_reply_id ? Number(reply.id) : undefined} replyToUserId={reply.parent_reply_id ? Number(reply.author_id) : undefined} replyToName={authorName} onCancel={() => { setReplying(false); replyButton.current?.focus({ preventScroll: true }); }} onSent={() => { setReplying(false); setReplyStarted(false); }} /></div>}

@@ -23,7 +23,7 @@ test('个人主页整图展示封面；宽屏为左列资料海报、右列内�
     await expect(page.getByRole('heading', { name: '纯合子', exact: true })).toBeVisible();
     await expect(page.getByRole('complementary', { name: '主导航', exact: true })).toHaveCount(0);
     await expect(page.locator('.topbar')).toBeVisible();
-    await expect(page.getByRole('region', { name: '个人资料' }).getByLabel('等级 7', { exact: true })).toHaveText('Lv.7');
+    await expect(page.getByRole('region', { name: '个人资料', exact: true }).getByLabel('等级 7', { exact: true })).toHaveText('Lv.7');
     await expect(page.locator('.profile-description')).toHaveText(person.bio);
     await expect(page.locator('.profile-social')).toContainText('142获赞');
     await expect(page.locator('.profile-content-region')).toContainText('把校园日常留在这里');

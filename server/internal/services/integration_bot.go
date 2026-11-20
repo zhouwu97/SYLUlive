@@ -27,6 +27,7 @@ type ManagedBotUpdate struct {
 
 const ManagedBotMaxDailyReplies = 100
 const ManagedBotMinReplyIntervalMinutes = 1
+const ManagedBotDefaultHourlyReplies = 15
 
 type ManagedBotReplyTarget struct {
 	PostID        uint   `json:"post_id"`
@@ -155,6 +156,9 @@ func normalizeBotSpeech(value string) string {
 }
 
 func validateManagedBotPolicy(tx *gorm.DB, policy *models.ManagedBotPolicy) error {
+	if limit := policy.HourlyReplyLimit; limit != nil && (*limit < 0 || *limit > 60) {
+		return integrationError("invalid_bot_policy", 422)
+	}
 	if len(policy.AllowedPostTypes) > 100 || len(policy.BlockedTerms) > 20 || policy.DailyReplyLimit < 1 || policy.DailyReplyLimit > ManagedBotMaxDailyReplies || policy.MinReplyIntervalMinutes < ManagedBotMinReplyIntervalMinutes || policy.MinReplyIntervalMinutes > 1440 {
 		return integrationError("invalid_bot_policy", 422)
 	}
@@ -264,13 +268,26 @@ func (s *IntegrationActionService) UpdateManagedBot(ctx context.Context, owner u
 			policy = ManagedBotPolicy(bot)
 		}
 		if input.Policy != nil {
-			policy = *input.Policy
+			requested := *input.Policy
+			if requested.HourlyReplyLimit == nil &&
+				requested.DailyReplyLimit == policy.DailyReplyLimit &&
+				requested.MinReplyIntervalMinutes == policy.MinReplyIntervalMinutes {
+				requested.HourlyReplyLimit = policy.HourlyReplyLimit
+			}
+			policy = requested
 			if err := validateManagedBotPolicy(tx, &policy); err != nil {
 				return err
 			}
 		}
 		avatar := ""
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if policy.HourlyReplyLimit == nil && policy.DailyReplyLimit == 3 && policy.MinReplyIntervalMinutes == 30 {
+				hourly := ManagedBotDefaultHourlyReplies
+				policy.HourlyReplyLimit = &hourly
+				// Released clients submit the previous preset when creating a bot.
+				policy.DailyReplyLimit = ManagedBotMaxDailyReplies
+				policy.MinReplyIntervalMinutes = ManagedBotMinReplyIntervalMinutes
+			}
 			if input.Name == nil {
 				return integrationError("invalid_bot_name", 422)
 			}
@@ -440,6 +457,14 @@ func managedBotReplyQuota(db *gorm.DB, actor uint, now time.Time, policy models.
 	}
 	if count >= int64(limit) {
 		return integrationError("bot_daily_quota", 429)
+	}
+	if hourly := policy.HourlyReplyLimit; hourly != nil && *hourly > 0 {
+		if err := db.Model(&models.Reply{}).Where("author_id = ? AND created_at > ?", actor, now.Add(-time.Hour)).Count(&count).Error; err != nil {
+			return err
+		}
+		if count >= int64(*hourly) {
+			return integrationError("bot_hourly_quota", 429)
+		}
 	}
 	cutoff := now.Add(-time.Duration(interval) * time.Minute)
 	query := db.Model(&models.Reply{}).Where("author_id = ?", actor)

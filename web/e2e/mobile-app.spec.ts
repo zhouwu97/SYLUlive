@@ -118,7 +118,7 @@ test("手机后续加载失败保留已读内容，快照与最新游标继续�
   await expect(page.locator(".mobile-app-feed > article")).toHaveCount(4);
   await page.getByRole("tab", { name: "最新", exact: true }).click();
   await page.getByRole("button", { name: "加载更多", exact: true }).click();
-  expect(state.queries.at(-1)?.searchParams.get("cursor")).toBe("latest-cursor");
+  await expect.poll(() => state.queries.at(-1)?.searchParams.get("cursor")).toBe("latest-cursor");
   expect(state.errors).toEqual([]);
 });
 

@@ -12,7 +12,7 @@ void main() {
       'credit_score': 95,
       'report_count': 1,
       'edu_bound': true,
-      'student_verified': true,
+      'student_verified': false,
     });
 
     expect(user.id, 123);
@@ -21,7 +21,7 @@ void main() {
     expect(user.isSuperAdmin, isFalse);
     expect(user.publicIdLabel, '用户 ID：123');
     expect(user.accountLabel, '学号/账号：20260001');
-    expect(user.studentVerified, isTrue);
+    expect(user.academicStatusLabel, contains('教务认证：已认证'));
   });
 
   test('管理员用户摘要为缺失字段提供安全默认值', () {
@@ -41,8 +41,8 @@ void main() {
     });
 
     expect(user.accountLabel, '学号/账号：configured-901');
-    expect(user.academicStatusLabel, '教务配置：已登记\n学生身份：未验证');
+    expect(user.academicStatusLabel, '教务配置：已登记\n教务认证：未认证');
     expect(user.eduBound, isFalse);
-    expect(user.studentVerified, isFalse);
+    expect(AdminUserSummary.fromJson({'student_verified': true}).academicStatusLabel, contains('教务认证：未认证'));
   });
 }

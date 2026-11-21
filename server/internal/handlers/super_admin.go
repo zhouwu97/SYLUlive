@@ -59,7 +59,7 @@ func (h *SuperAdminHandler) GetUsers(c *gin.Context) {
 
 	var users []models.User
 	if err := query.
-		Select("id", "student_id", "student_verified_at", "nickname", "avatar", "role", "credit_score", "report_count", "edu_authorized", "created_at").
+		Select("id", "student_id", "student_verified_at", "nickname", "avatar", "role", "credit_score", "report_count", "edu_authorized", "edu_bound", "created_at").
 		Order("created_at DESC").
 		Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户列表失败"})

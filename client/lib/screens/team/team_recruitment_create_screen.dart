@@ -1637,23 +1637,25 @@ class _TeamRecruitmentCreateScreenState
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: CampusTheme.primary.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            '✓ 校园认证',
-                            style: TextStyle(
-                              color: CampusTheme.primary,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
+                        if (user?.hasEduAccess == true) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: CampusTheme.primary.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              '教务已认证',
+                              style: TextStyle(
+                                color: CampusTheme.primary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 2),

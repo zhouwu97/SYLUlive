@@ -46,13 +46,13 @@ jobs:
           test -f "$extension/Info.plist"
           test ! -e "$app/embedded.mobileprovision"
           test ! -e "$extension/embedded.mobileprovision"
-          xcrun lipo -verify_arch arm64 "$app/Runner"
-          xcrun lipo -verify_arch arm64 "$extension/CourseScheduleWidget"
+          xcrun lipo "$app/Runner" -verify_arch arm64
+          xcrun lipo "$extension/CourseScheduleWidget" -verify_arch arm64
           for key in CFBundleShortVersionString CFBundleVersion; do
             app_value=$(plutil -extract "$key" raw "$app/Info.plist")
             extension_value=$(plutil -extract "$key" raw "$extension/Info.plist")
+            printf '%s: app=%s extension=%s\n' "$key" "$app_value" "$extension_value"
             test "$app_value" = "$extension_value"
-            printf '%s=%s\n' "$key" "$app_value"
           done
 
           mkdir -p build/ios/ipa "$RUNNER_TEMP/Payload"

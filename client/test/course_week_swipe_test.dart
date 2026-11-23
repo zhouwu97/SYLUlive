@@ -10,6 +10,8 @@ import 'package:shenliyuan/providers/course_schedule_provider.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/course_schedule_screen.dart';
+import 'package:shenliyuan/theme/app_palette.dart';
+import 'package:shenliyuan/theme/app_theme.dart';
 import 'package:shenliyuan/features/academic/storage/academic_persistence_gate.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
@@ -199,6 +201,53 @@ void main() {
     expect(tester.takeException(), isNull);
     await _disposeCourse(tester, page);
   });
+
+  for (final customColor in [null, Colors.indigo]) {
+    testWidgets('本周课程恢复白字并支持主题覆盖 custom=$customColor', (tester) async {
+      final palette = AppPalette.defaults(Brightness.light);
+      final page = await _pumpCourse(
+        tester,
+        lightTheme: AppTheme.build(
+          brightness: Brightness.light,
+          palette: customColor == null
+              ? null
+              : palette.copyWith(courseCardText: customColor),
+        ),
+        seededCourses: [
+          {
+            'id': 1,
+            'name': '高等数学',
+            'teacher': '张老师',
+            'location': 'A101',
+            'weekday': 1,
+            'start_section': 1,
+            'end_section': 2,
+            'weeks': [1],
+          },
+          {
+            'id': 2,
+            'name': '后期开课',
+            'weekday': 2,
+            'start_section': 1,
+            'end_section': 2,
+            'weeks': [2],
+          },
+        ],
+      );
+
+      final activeColor = customColor ?? Colors.white;
+      for (final label in ['高等数学', 'A101']) {
+        expect(tester.widget<Text>(find.text(label)).style!.color, activeColor);
+      }
+      expect(tester.widget<Text>(find.text('张老师')).style!.color,
+          activeColor.withValues(alpha: 0.6));
+      expect(tester.widget<Text>(find.text('后期开课')).style!.color,
+          palette.textPrimary);
+      expect(find.text('后期'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _disposeCourse(tester, page);
+    });
+  }
 
   testWidgets('课表中部横滑切周', (tester) async {
     final page = await _pumpCourse(tester);
@@ -559,6 +608,7 @@ Future<_CourseTestPage> _pumpCourse(
   List<Map<String, dynamic>>? seededCourses,
   Size physicalSize = const Size(400, 800),
   ThemeMode themeMode = ThemeMode.light,
+  ThemeData? lightTheme,
   double textScaleFactor = 1,
   Map<String, Object> initialPreferences = const <String, Object>{},
   _MemorySnapshotStore? memoryStore,
@@ -649,7 +699,7 @@ Future<_CourseTestPage> _pumpCourse(
     ],
     child: MaterialApp(
       themeMode: themeMode,
-      theme: ThemeData.light(),
+      theme: lightTheme ?? ThemeData.light(),
       darkTheme: ThemeData.dark(),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(

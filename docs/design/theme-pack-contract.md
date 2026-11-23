@@ -292,7 +292,7 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 | `feedSectionSurface` | 首页版块角标 | `#E8F5F1` | `#162B28` | |
 | `feedFeaturedSurface` | 精华角标底色 | `#FFF3E0` | `#3A2A18` | |
 | `feedFeaturedText` | 精华角标文字 | `#D97706` | `#F2B15A` | |
-| `courseCardText` | 课表卡片文字 | `#1F2328` | `#FFFFFF` | |
+| `courseCardText` | 本周课程卡片文字 | `#FFFFFF` | `#FFFFFF` | |
 | `timetableGrid` | 课表网格线 | `#0D000000` | `#33FFFFFF` | ✓ |
 | `timetableToday` | 课表"今天"列 | `#00000000` | `#00000000` | ✓ |
 
@@ -300,8 +300,8 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 
 **默认值与对比度规则的关系**：默认的 `textSecondary` 亮色值 `#747B82`，在 `card`（`#FFFFFF`）上的对比度为 4.29，在 `background`（`#FFFAF4`）上为 4.13；默认的 `tagText` 亮色值 `#147C72` 在 `tagBackground`（`#EEF2F0`）上的对比度为 4.47，均达不到第 5 节要求的 4.5。
 
-- 内置默认外观保持这些现值，P0 要求像素不变，并且内置默认外观不经过商城的对比度检查。
-- 官方主题"沈理青"把亮色 `textSecondary` 改为 `#6E757C`（在 `card` 上为 4.67，在 `background` 上为 4.5），亮色 `tagText` 改为 `#107A70`（原值对比度 4.47），其余颜色沿用默认值。
+- 内置默认外观保留既有显示效果。本周课程卡片沿用白字，默认外观不经过商城的对比度检查。
+- 官方主题"沈理青"把亮色 `textSecondary` 改为 `#6E757C`（在 `card` 上为 4.67，在 `background` 上为 4.5），亮色 `tagText` 改为 `#107A70`（原值对比度 4.47），亮色 `courseCardText` 保留 `#1F2328`。
 
 **默认课程色板**：`#448AFF`、`#00C853`、`#9C27B0`、`#FF5252`、`#FF9800`，即 `courseColors` 的现值。课程卡片的颜色等于 `色板[hash % 长度]` 以 0.45 的不透明度显示，这个规则保持不变。
 

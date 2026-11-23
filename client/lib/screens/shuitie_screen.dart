@@ -1728,23 +1728,27 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
-  Widget _buildFeedTabs(double tabWidth) {
+  Widget _buildFeedTabs(double tabWidth, {required bool immersive}) {
     final tokens = AppThemeTokens.of(context);
+    final height = immersive ? 44.0 : _homeTopBarHeight;
+    final indicatorInsetX = immersive ? 2.0 : 4.0;
+    final indicatorInsetY = immersive ? 4.0 : 12.0;
 
     return SizedBox(
       width: tabWidth * kFeedModes.length,
-      height: 44,
+      height: height,
       child: ValueListenableBuilder<double>(
         valueListenable: _feedVisualIndexListenable,
         builder: (context, visualIndex, child) {
           return Stack(
             children: [
               Positioned(
-                left: visualIndex * tabWidth + 2,
-                top: 4,
-                bottom: 4,
-                width: tabWidth - 4,
+                left: visualIndex * tabWidth + indicatorInsetX,
+                top: indicatorInsetY,
+                bottom: indicatorInsetY,
+                width: tabWidth - 2 * indicatorInsetX,
                 child: DecoratedBox(
+                  key: const ValueKey('home-feed-tab-indicator'),
                   decoration: BoxDecoration(
                     color: tokens.primaryContainer,
                     borderRadius: BorderRadius.circular(
@@ -1771,7 +1775,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
                     return SizedBox(
                       width: tabWidth,
-                      height: 44,
+                      height: height,
                       child: Semantics(
                         selected: _feedMode == config.key,
                         button: true,
@@ -1784,8 +1788,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                           },
                           child: Center(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
+                              padding: EdgeInsets.symmetric(
+                                horizontal: indicatorInsetX + 2,
                               ),
                               child: FittedBox(
                                 fit: BoxFit.scaleDown,
@@ -1816,10 +1820,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   // ---- 顶部导航栏 ----
-  Widget _buildHomeTopBar(bool isDark) {
+  Widget _buildHomeTopBar(bool isDark, {required bool immersive}) {
     final foreground = AppThemeTokens.of(context).appBarForeground;
     return SizedBox(
-      height: 56,
+      key: const ValueKey('home-feed-top-bar'),
+      height: _homeTopBarHeight,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -1870,7 +1875,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       8.0,
                       60.0,
                     );
-                return _buildFeedTabs(tabWidth);
+                return _buildFeedTabs(tabWidth, immersive: immersive);
               },
             ),
           ),
@@ -1924,19 +1929,43 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   // ---- Mobile Layout ----
   Widget _buildMobileLayout(bool isDark) {
+    final immersive = HomeThemedHeaderBanner.isImmersive(context);
+    final photoBackground = context.watch<ThemeProvider>().needsPhotoContrast;
     final tokens = AppThemeTokens.of(context);
     final bar = Color.alphaBlend(tokens.appBarBackground, tokens.background);
-    final statusStyle =
-        ThemeData.estimateBrightnessForColor(bar) == Brightness.dark
+    final lightStatusIcons = (!immersive && photoBackground) ||
+        ThemeData.estimateBrightnessForColor(bar) == Brightness.dark;
+    final statusStyle = lightStatusIcons
         ? SystemUiOverlayStyle.light
         : SystemUiOverlayStyle.dark;
-    // 状态栏条、顶栏和搜索框都在信息流滚动视图里吸顶，沉浸主题的 hero 才能从屏幕顶端铺到它们背后。
-    return SafeArea(
-      top: false,
-      bottom: false,
-      child: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: statusStyle.copyWith(statusBarColor: Colors.transparent),
-        child: _buildFeedContent(isDark),
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusStyle.copyWith(statusBarColor: Colors.transparent),
+      child: SafeArea(
+        top: !immersive,
+        bottom: false,
+        child: Column(
+          children: [
+            // 普通首页让信息流从搜索框下方开始滚动，避免帖子在搜索框边缘透出。
+            if (!immersive) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: _buildHomeTopBar(isDark, immersive: false),
+              ),
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: _homeFeedMaxWidth),
+                  child: Padding(
+                    key: const ValueKey('home-feed-search'),
+                    padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+                    child: _buildSearchBar(),
+                  ),
+                ),
+              ),
+            ],
+            Expanded(child: _buildFeedContent(isDark, immersive: immersive)),
+          ],
+        ),
       ),
     );
   }
@@ -2368,27 +2397,32 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
+  static const double _homeFeedMaxWidth = 680;
   static const double _homeTopBarHeight = 56;
-  static const double _homeSearchHeight = 50;
+  static const double _immersiveSearchHeight = 50;
   static const double _homeControlsHeight =
-      _homeTopBarHeight + _homeSearchHeight;
+      _homeTopBarHeight + _immersiveSearchHeight;
 
-  /// 信息流顶部：状态栏条（吸顶）、沉浸标题区、顶栏 + 搜索框（吸顶）、非沉浸页头。
   List<Widget> _buildHomeHeaderSlivers(
     bool isDark,
-    String mode,
-    FeedModeConfig config,
-  ) {
-    final scroll = _feedScrollControllers[mode]!;
+    FeedModeConfig config, {
+    required bool immersive,
+  }) {
+    if (!immersive) {
+      return [
+        SliverToBoxAdapter(
+          child: HomeThemedHeaderBanner(feedModeLabel: config.label),
+        ),
+      ];
+    }
+
+    final scroll = _feedScrollControllers[config.key]!;
     final topInset = MediaQuery.paddingOf(context).top;
-    final immersive = HomeThemedHeaderBanner.isImmersive(context);
-    // 沉浸：hero 区滚走前保持透明，最后 48 像素内压上底色。
-    final heroHeight =
-        immersive ? HomeThemedHeaderBanner.immersiveHeight(context) : 0.0;
-    // 吸顶后 hero 横幅仍在背后，顶栏只压半透明底色。
-    double immersiveSolid(double offset) =>
+    final heroHeight = HomeThemedHeaderBanner.immersiveHeight(context);
+    // 沉浸页头滚过最后 48 像素时压上半透明底色，继续露出 hero。
+    double backdropOpacity(double offset) =>
         ((offset - (heroHeight - 48)) / 48).clamp(0.0, 1.0) * 0.55;
-    double searchSolid(double offset) => offset >= 8 ? 1 : 0;
+
     return [
       SliverPersistentHeader(
         key: const ValueKey('home-status-strip'),
@@ -2396,46 +2430,40 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         delegate: _HomePinnedBarDelegate(
           height: topInset,
           scroll: scroll,
-          solidAt: immersive ? immersiveSolid : (_) => 1,
-          backdrop: immersive
-              ? (offset) => ThemeHeroSlice(
-                    slot: 'home',
-                    top: 0,
-                    scrollOffset: offset,
-                  )
-              : null,
+          solidAt: backdropOpacity,
+          backdrop: (offset) => ThemeHeroSlice(
+            slot: 'home',
+            top: 0,
+            scrollOffset: offset,
+          ),
           child: const SizedBox.shrink(),
         ),
       ),
-      if (immersive)
-        SliverToBoxAdapter(
-          child: HomeThemedHeaderBanner(
-            feedModeLabel: config.label,
-            heroExtend: _homeControlsHeight,
-          ),
+      SliverToBoxAdapter(
+        child: HomeThemedHeaderBanner(
+          feedModeLabel: config.label,
+          heroExtend: _homeControlsHeight,
         ),
+      ),
       SliverPersistentHeader(
         key: const ValueKey('home-feed-controls'),
         pinned: true,
         delegate: _HomePinnedBarDelegate(
           height: _homeControlsHeight,
           scroll: scroll,
-          solidAt: immersive ? immersiveSolid : searchSolid,
-          solidHeight: immersive ? null : _homeTopBarHeight,
+          solidAt: backdropOpacity,
           divider: true,
-          backdrop: immersive
-              ? (offset) => ThemeHeroSlice(
-                    slot: 'home',
-                    top: topInset + math.max(0.0, heroHeight - offset),
-                    scrollOffset: offset,
-                  )
-              : null,
+          backdrop: (offset) => ThemeHeroSlice(
+            slot: 'home',
+            top: topInset + math.max(0.0, heroHeight - offset),
+            scrollOffset: offset,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: _buildHomeTopBar(isDark),
+                child: _buildHomeTopBar(isDark, immersive: true),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 2, 16, 2),
@@ -2445,15 +2473,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           ),
         ),
       ),
-      if (!immersive)
-        SliverToBoxAdapter(
-          child: HomeThemedHeaderBanner(feedModeLabel: config.label),
-        ),
     ];
   }
 
-  // ---- 普通信息流内容（含搜索框折叠） ----
-  Widget _buildFeedContent(bool isDark) {
+  Widget _buildFeedContent(bool isDark, {required bool immersive}) {
+    _scheduleRestoredScroll();
+    final config = _currentConfig;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onHorizontalDragStart: _handleFeedSwipeStart,
@@ -2467,35 +2492,36 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         ));
       },
       child: RefreshIndicator(
-        edgeOffset: MediaQuery.paddingOf(context).top + _homeControlsHeight,
+        edgeOffset: immersive
+            ? MediaQuery.paddingOf(context).top + _homeControlsHeight
+            : 0,
         onRefresh: () async {
           await _refresh();
           await _loadAnnouncements();
         },
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 680),
-            child: _buildFeedModePage(isDark, _feedMode),
+            constraints: const BoxConstraints(maxWidth: _homeFeedMaxWidth),
+            child: _buildFeedModeList(
+              isDark,
+              config.key,
+              config,
+              config.remoteSort ?? 'all',
+              immersive: immersive,
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildFeedModePage(bool isDark, String mode) {
-    _scheduleRestoredScroll();
-    final config = kFeedModes.firstWhere((m) => m.key == mode);
-    final sort = config.remoteSort ?? 'all';
-
-    return _buildFeedModeList(isDark, mode, config, sort);
-  }
-
   Widget _buildFeedModeList(
     bool isDark,
     String mode,
     FeedModeConfig config,
-    String sort,
-  ) {
+    String sort, {
+    required bool immersive,
+  }) {
     final feedList = Selector<
         PostProvider,
         ({
@@ -2586,7 +2612,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   parent: BouncingScrollPhysics(),
                 ),
                 slivers: [
-                  ..._buildHomeHeaderSlivers(isDark, mode, config),
+                  ..._buildHomeHeaderSlivers(
+                    isDark,
+                    config,
+                    immersive: immersive,
+                  ),
                   // 未读回复属于当前账号的跨排序提醒，不应因用户停留在“综合”而消失。
                   if (_unreadReplyNotifications.isNotEmpty)
                     SliverToBoxAdapter(
@@ -3018,17 +3048,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 }
 
-// ---- 首页吸顶条：状态栏条与「顶栏 + 搜索框」两段 ----
-/// [solidAt] 返回当前滚动下各段底色的不透明度（0 透明露出 hero，1 实色顶栏）。
+// ---- 沉浸页头吸顶条：状态栏条与「顶栏 + 搜索框」两段 ----
+/// [solidAt] 返回当前滚动下各段底色的不透明度（0 透明露出背景，1 实色顶栏）。
 class _HomePinnedBarDelegate extends SliverPersistentHeaderDelegate {
   _HomePinnedBarDelegate({
     required this.height,
     required this.scroll,
     required this.solidAt,
     required this.child,
-    this.solidHeight,
+    required this.backdrop,
     this.divider = false,
-    this.backdrop,
   });
 
   final double height;
@@ -3036,12 +3065,10 @@ class _HomePinnedBarDelegate extends SliverPersistentHeaderDelegate {
   final double Function(double offset) solidAt;
   final Widget child;
 
-  /// 不随滚动变化、始终实色的顶部高度（非沉浸主题的顶栏）；null 表示整段跟随 [solidAt]。
-  final double? solidHeight;
   final bool divider;
 
-  /// 底色下面的背景（沉浸主题的 hero 切片），按当前滚动偏移构建。
-  final Widget Function(double offset)? backdrop;
+  /// 底色下面的 hero 切片，按当前滚动偏移构建。
+  final Widget Function(double offset) backdrop;
 
   @override
   double get maxExtent => height;
@@ -3063,24 +3090,12 @@ class _HomePinnedBarDelegate extends SliverPersistentHeaderDelegate {
       builder: (context, child) {
         final offset = scroll.hasClients ? scroll.offset : 0.0;
         final t = solidAt(offset).clamp(0.0, 1.0);
-        final fixed = solidHeight;
         return Stack(
           fit: StackFit.expand,
           children: [
-            if (backdrop != null) backdrop!(offset),
-            if (fixed != null)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: fixed,
-                child: ColoredBox(color: bar),
-              ),
+            backdrop(offset),
             if (t > 0)
-              Positioned.fill(
-                top: fixed ?? 0,
-                child: ColoredBox(color: bar.withValues(alpha: bar.a * t)),
-              ),
+              ColoredBox(color: bar.withValues(alpha: bar.a * t)),
             if (divider)
               Positioned(
                 left: 0,
@@ -3102,7 +3117,7 @@ class _HomePinnedBarDelegate extends SliverPersistentHeaderDelegate {
   bool shouldRebuild(covariant _HomePinnedBarDelegate oldDelegate) {
     return oldDelegate.height != height ||
         oldDelegate.scroll != scroll ||
-        oldDelegate.solidHeight != solidHeight ||
+        oldDelegate.solidAt != solidAt ||
         oldDelegate.divider != divider ||
         oldDelegate.backdrop != backdrop ||
         oldDelegate.child != child;

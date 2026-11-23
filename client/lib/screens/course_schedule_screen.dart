@@ -4372,7 +4372,10 @@ $classFilterRule
     int? wn,
     double slotHeight,
   ) {
+    final tokens = AppThemeTokens.of(context);
     final cardOpacity = isActive ? _scheduleCardOpacity : 0.2;
+    // 非本周课程使用半透明灰底，文字跟随页面前景色。
+    final textColor = isActive ? tokens.courseCardText : tokens.textPrimary;
     final top = (c.startSection - 1) * slotHeight;
     final h = c.span * slotHeight - 2;
     String? inactiveLabel;
@@ -4381,7 +4384,7 @@ $classFilterRule
     }
     final base = getCourseColor(
       c.name,
-      palette: AppThemeTokens.of(context).coursePalette,
+      palette: tokens.coursePalette,
       isActive: isActive,
       courseCode: c.courseCode,
       location: c.location,
@@ -4430,16 +4433,14 @@ $classFilterRule
                   style: TextStyle(
                     fontSize: 8 * scale,
                     fontWeight: FontWeight.w700,
-                    color: AppThemeTokens.of(context)
-                        .courseCardText
-                        .withValues(alpha: Colors.white54.a),
+                    color: textColor.withValues(alpha: Colors.white54.a),
                   ),
                 ),
               Flexible(
                 child: Text(
                   c.name.isNotEmpty ? c.name : '未知课名',
                   style: TextStyle(
-                    color: AppThemeTokens.of(context).courseCardText,
+                    color: textColor,
                     fontSize: (isCompact ? 11 : 13) * scale,
                     fontWeight: FontWeight.bold,
                     height: 1.15,
@@ -4454,7 +4455,7 @@ $classFilterRule
                 Text(
                   c.location!,
                   style: TextStyle(
-                    color: AppThemeTokens.of(context).courseCardText,
+                    color: textColor,
                     fontSize: (isCompact ? 9 : 11) * scale,
                     fontWeight: FontWeight.w600,
                     height: 1.15,
@@ -4472,9 +4473,7 @@ $classFilterRule
                 Text(
                   c.teacher!,
                   style: TextStyle(
-                      color: AppThemeTokens.of(context)
-                          .courseCardText
-                          .withValues(alpha: 0.6),
+                      color: textColor.withValues(alpha: 0.6),
                       fontSize: 10 * scale),
                   textAlign: TextAlign.left,
                   maxLines: 1,

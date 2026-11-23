@@ -17,6 +17,7 @@ class _AnnouncementAdapter implements HttpClientAdapter {
   bool failRead = false;
   bool empty = false;
   bool failLoad = false;
+  bool legacyRoutes = false;
   Completer<void>? pendingLoad;
 
   @override
@@ -33,6 +34,10 @@ class _AnnouncementAdapter implements HttpClientAdapter {
     if (key == 'GET:/notices') await pendingLoad?.future;
 
     final (status, body) = switch (key) {
+      'GET:/notices' || 'GET:/notices/unread' when legacyRoutes => (404, '{}'),
+      'GET:/announcements' when legacyRoutes => (200, _allAnnouncements),
+      'GET:/announcements/unread' when legacyRoutes =>
+        (200, _unreadAnnouncements),
       'GET:/notices' => failLoad
           ? (500, '{"error":"test failure"}')
           : (200, empty ? '[]' : _allAnnouncements),
@@ -57,6 +62,9 @@ class _TestAuthProvider extends AuthProvider {
       : super(loadStoredAuth: false);
 
   final bool loggedIn;
+
+  @override
+  int sessionGeneration = 0;
 
   @override
   bool get isLoggedIn => loggedIn;
@@ -127,8 +135,42 @@ void main() {
       if (state != 'leave-loading') {
         expect(find.text('暂无公告'), findsOneWidget);
       }
-      expect(adapter.requests, isNot(contains('GET:/notices/unread')));
+      expect(adapter.requests, ['GET:/notices']);
       expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final switchAccount in [false, true]) {
+    testWidgets('旧公告接口回退及在途会话隔离，切号=$switchAccount', (tester) async {
+      final adapter = _AnnouncementAdapter()
+        ..legacyRoutes = true
+        ..pendingLoad = Completer<void>();
+      final dio = Dio(BaseOptions(baseUrl: 'http://test.local'))
+        ..httpClientAdapter = adapter;
+      final auth = _TestAuthProvider(dio, loggedIn: true);
+      addTearDown(auth.dispose);
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider(create: (_) => ThemeProvider(loadOnStart: false)),
+        ],
+        child: const MaterialApp(home: AnnouncementScreen()),
+      ));
+      for (var i = 0;
+          i < 10 && !adapter.requests.contains('GET:/announcements/unread');
+          i++) {
+        await tester.pump(const Duration(milliseconds: 1));
+      }
+      expect(adapter.requests, contains('GET:/announcements/unread'));
+      if (switchAccount) auth.sessionGeneration++;
+      adapter.pendingLoad!.complete();
+      await tester.pumpAndSettle();
+      expect(adapter.requests, unorderedEquals([
+        'GET:/notices', 'GET:/notices/unread',
+        'GET:/announcements', 'GET:/announcements/unread',
+      ]));
+      expect(find.text('已读历史公告'), findsOneWidget);
+      expect(find.text('未读公告'), switchAccount ? findsNothing : findsOneWidget);
     });
   }
 

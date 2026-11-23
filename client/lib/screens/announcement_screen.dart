@@ -8,6 +8,7 @@ import '../platform/contracts/external_navigator.dart';
 import '../config/api_constants.dart';
 import '../models/announcement.dart' as model;
 import '../providers/auth_provider.dart';
+import '../services/announcement_reader.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
@@ -42,13 +43,9 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> {
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
     final sessionGeneration = authProvider.sessionGeneration;
-    final unreadFuture = _loadUnreadAnnouncements(authProvider);
+    final unreadFuture = readUnreadAnnouncements(authProvider);
     try {
-      final response = await _getAnnouncements(
-        authProvider,
-        unreadOnly: false,
-      );
-      final all = _parseAnnouncements(response);
+      final all = await readAnnouncements(authProvider.dio);
       final loadedUnread = await unreadFuture;
       final unread = authProvider.isLoggedIn &&
               authProvider.sessionGeneration == sessionGeneration
@@ -68,49 +65,6 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> {
         });
       }
     }
-  }
-
-  Future<List<model.Announcement>> _loadUnreadAnnouncements(
-    AuthProvider authProvider,
-  ) async {
-    if (!authProvider.isLoggedIn) return [];
-    try {
-      final response = await _getAnnouncements(
-        authProvider,
-        unreadOnly: true,
-      );
-      return _parseAnnouncements(response);
-    } catch (e) {
-      debugPrint('加载未读公告失败: $e');
-      return [];
-    }
-  }
-
-  Future<Response<dynamic>> _getAnnouncements(
-    AuthProvider authProvider, {
-    required bool unreadOnly,
-  }) async {
-    final primaryPath = unreadOnly
-        ? '${ApiConstants.noticesPath}/unread'
-        : ApiConstants.noticesPath;
-    final fallbackPath =
-        unreadOnly ? '/announcements/unread' : '/announcements';
-    try {
-      return await authProvider.dio.get(primaryPath);
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 404) {
-        return authProvider.dio.get(fallbackPath);
-      }
-      rethrow;
-    }
-  }
-
-  List<model.Announcement> _parseAnnouncements(Response<dynamic> response) {
-    if (response.statusCode != 200 || response.data is! List) return [];
-    return (response.data as List)
-        .map((item) => model.Announcement.fromJson(item))
-        .toList()
-      ..sort(model.Announcement.compareForDisplay);
   }
 
   Future<void> _markAnnouncementRead(model.Announcement announcement) async {

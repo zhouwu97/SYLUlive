@@ -4,13 +4,13 @@ import { useAuth } from "./auth";
 
 type FeedPage = { page: number; session?: string; offset?: number; cursor?: string };
 
-export function useDesktopHomeFeed(sort: string) {
+export function useHomeFeed(sort: string, endpoint = "/api/posts") {
   const auth = useAuth();
   return useInfiniteQuery({
-    queryKey: ["api", "desktop-home", sort, auth.user?.id],
+    queryKey: ["api", "home-feed", endpoint, sort, auth.user?.id],
     initialPageParam: { page: 1 } as FeedPage,
     enabled: !auth.loading && (sort !== "following" || !!auth.user),
-    queryFn: ({ pageParam, signal }) => request<Entity>(query("/api/posts", {
+    queryFn: ({ pageParam, signal }) => request<Entity>(query(endpoint, {
       board: 1, limit: 20, sort, page: pageParam.page,
       capabilities: "feed_pagination_meta_v1,poll_v1",
       // 与 App 一致走新版首页信息流（综合、最新），投票作为帖子混排

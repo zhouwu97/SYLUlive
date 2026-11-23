@@ -19,6 +19,36 @@ test("校园资讯按真实 item 封装进入详情并完整显示正文与官�
   await expect(page).toHaveURL(/\/campus$/);
 });
 
+for (const [path, api, key, action] of [
+  ["competition/81", "competitions/events/81", "event", "加入计划"],
+  ["ratings/81", "teachers/81", "teacher", "发表评价"],
+  ["ratings/81?tab=majors", "majors/81", "major", "发表评价"],
+] as const) {
+  test(`目录详情 ${key} 使用对应接口与操作`, async ({ page }) => {
+    await fixture(page);
+    const dishRequests: string[] = [];
+    page.on("request", request => {
+      if (new URL(request.url()).pathname.endsWith("/dishes")) dishRequests.push(request.url());
+    });
+    await page.route(`**/api/${api}`, route => route.fulfill({
+      json: { [key]: { id: 81, name: `详情 ${key}`, description: "测试正文" } },
+    }));
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: `详情 ${key}`, exact: true })).toBeVisible();
+    const button = page.getByRole("button", { name: action, exact: true });
+    if (key === "event") {
+      const sent = page.waitForRequest(request => request.method() === "POST" &&
+        new URL(request.url()).pathname === "/api/user/competition-calendar/items/copy-from-official/81");
+      await button.click();
+      await sent;
+    } else {
+      await button.click();
+      await expect(page.getByLabel("具体体验")).toBeVisible();
+    }
+    expect(dishRequests).toEqual([]);
+  });
+}
+
 test("经验字段在桌面资料、作者、详情侧栏与手机资料显示同一 App 等级", async ({ page }) => {
   await fixture(page);
   await page.goto("./");

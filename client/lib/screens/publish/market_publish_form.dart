@@ -294,8 +294,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     }
   }
 
-  Future<bool> _uploadLocalImages(
-    PostProvider postProvider, {
+  Future<bool> _uploadLocalImages({
     required AuthProvider auth,
     required PublishSessionScope scope,
   }) async {
@@ -346,21 +345,6 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   void _retryImage(String id) {
     if (_isLoading) return;
     _preuploadImages(retryId: id);
-  }
-
-  /// 按 UI 顺序组装 file_ids（上传完成后调用；未成功上传的 local 返回 null）。
-  List<int>? _orderedFileIds() {
-    final fileIds = <int>[];
-    for (final item in _images) {
-      switch (item.source) {
-        case PublishImageSource.existing:
-          fileIds.add(item.existingImage!.fileId);
-        case PublishImageSource.local:
-          if (item.fileId == null) return null;
-          fileIds.add(item.fileId!);
-      }
-    }
-    return fileIds;
   }
 
   // ---------------------------------------------------------------------------
@@ -688,7 +672,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       final postProvider = context.read<PostProvider>();
 
       // 复用选图时的预上传任务；仅等待未完成项，失败项由图片上的重试恢复。
-      if (!await _uploadLocalImages(postProvider, auth: auth, scope: scope)) {
+      if (!await _uploadLocalImages(auth: auth, scope: scope)) {
         if (mounted) {
           AppFeedback.error(
             _lastUploadError?.message ?? '图片上传失败，请点击图片重试',
@@ -704,7 +688,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       }
 
       // C-2：file_ids 严格等于 UI 图片顺序（existing + local 混合）。
-      final fileIds = _orderedFileIds();
+      final fileIds = uploadedFileIdsInOrder(_images);
       if (fileIds == null) {
         if (mounted) {
           AppFeedback.error(

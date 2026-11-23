@@ -83,6 +83,20 @@ class PublishImageItem {
   UploadImageResult? uploadError;
 }
 
+/// 提交时按界面顺序读取编号；本地图片尚未完成预上传时不能提交。
+List<int>? uploadedFileIdsInOrder(List<PublishImageItem> images) {
+  final fileIds = <int>[];
+  for (final item in images) {
+    final fileId = switch (item.source) {
+      PublishImageSource.existing => item.existingImage!.fileId,
+      PublishImageSource.local => item.fileId,
+    };
+    if (fileId == null) return null;
+    fileIds.add(fileId);
+  }
+  return fileIds;
+}
+
 /// 按 UI 顺序解析 file_ids（C-2 数据正确性核心）。
 ///
 /// existing 直接取 fileId；local 逐张调用 [upload] 上传取 fileId。

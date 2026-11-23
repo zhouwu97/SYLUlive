@@ -719,7 +719,10 @@ void main() {
       const Color(0xff1e88e5),
     );
     expect(
-      cleanProvider.buildAppTheme(Brightness.light).extension<AppShape>()!.preset,
+      cleanProvider
+          .buildAppTheme(Brightness.light)
+          .extension<AppShape>()!
+          .preset,
       AppShapePreset.rounded,
     );
     expect(cleanProvider.effectiveComponentOpacity, .86);
@@ -922,14 +925,17 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
       await tester.pump(const Duration(milliseconds: 400));
-      for (var i = 0;
-          i < 60 && !await File(savedPath).exists();
-          i++) {
+      final exportFinished = find.textContaining('已导出 ');
+      final deadline = DateTime.now().add(const Duration(seconds: 30));
+      while (exportFinished.evaluate().isEmpty &&
+          DateTime.now().isBefore(deadline)) {
         await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
       }
     });
-    await tester.pumpAndSettle();
-    expect(await tester.runAsync(() => File(savedPath).exists()), isTrue);
+    expect(find.textContaining('已导出 '), findsOneWidget);
+    expect(
+        await tester.runAsync(() => File(savedPath).length()), greaterThan(0));
 
     // 壁纸槽位与页面组件同帧切换，不再淡入淡出。
     await tester.pumpWidget(
@@ -1115,7 +1121,8 @@ void main() {
     expect(decoded.manifest.data['layout']['home']['preset'], 'compact');
     expect(decoded.manifest.data['light']['cardStyle']['shadow'], 'soft');
     expect(
-      (decoded.manifest.data['light']['decorations']['home']['stickers'] as List)
+      (decoded.manifest.data['light']['decorations']['home']['stickers']
+              as List)
           .length,
       5,
     );
@@ -1238,17 +1245,23 @@ void main() {
       await settleEmojiQAImages(
         tester,
         tester.element(find.byType(HomeThemedHeaderBanner)),
-        tester.widgetList<Image>(find.byType(Image)).map((image) => image.image),
+        tester
+            .widgetList<Image>(find.byType(Image))
+            .map((image) => image.image),
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
 
       // 沉浸模板在正式页面里只留锚点和叠在 hero 上的标题，hero 图由主壳背景层绘制。
       if (preset == 'immersive') {
-        expect(find.byKey(const ValueKey('theme-hero-anchor-home')), findsOneWidget);
-        expect(find.byKey(const ValueKey('home-themed-header-immersive')), findsOneWidget);
-        expect(find.byKey(const ValueKey('home-themed-header-info')), findsNothing);
-        expect(find.byKey(const ValueKey('theme-header-decoration-home')), findsNothing);
+        expect(find.byKey(const ValueKey('theme-hero-anchor-home')),
+            findsOneWidget);
+        expect(find.byKey(const ValueKey('home-themed-header-immersive')),
+            findsOneWidget);
+        expect(find.byKey(const ValueKey('home-themed-header-info')),
+            findsNothing);
+        expect(find.byKey(const ValueKey('theme-header-decoration-home')),
+            findsNothing);
         await tester.ensureVisible(find.text('卡片按钮'));
         await tester.tap(find.text('卡片按钮'));
         await tester.pump();
@@ -1339,7 +1352,8 @@ void main() {
 
     // 设置编辑页在 360px + 1.5x 字号下无溢出渲染
     await tester.binding.setSurfaceSize(const Size(360, 800));
-    await tester.pumpWidget(host(const ThemeLayoutDecorationScreen(), scale: 1.5));
+    await tester
+        .pumpWidget(host(const ThemeLayoutDecorationScreen(), scale: 1.5));
     await settleEmojiQAImages(
       tester,
       tester.element(find.byType(ThemeLayoutDecorationScreen)),

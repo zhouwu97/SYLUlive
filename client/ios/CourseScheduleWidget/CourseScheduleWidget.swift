@@ -71,6 +71,27 @@ struct WidgetPalette {
     }
 }
 
+private struct ScheduleWidgetBackground: ViewModifier {
+    let palette: WidgetPalette
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .containerBackground(for: .widget) {
+                    palette.background
+                }
+        } else {
+            content
+                .padding(12)
+                .background(palette.background)
+                .cornerRadius(16)
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(palette.divider, lineWidth: 0.5))
+        }
+    }
+}
+
 // ── 数据模型 ──
 // 与 Flutter 端 HomeWidgetService 的 key 保持一致
 
@@ -312,13 +333,7 @@ struct CourseScheduleWidgetEntryView: View {
                 }
             }
         }
-        .padding(12)
-        .background(palette.background)
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(palette.divider, lineWidth: 0.5)
-        )
+        .modifier(ScheduleWidgetBackground(palette: palette))
         .widgetURL(URL(string: "sylulive://schedule"))
     }
 }
@@ -440,10 +455,7 @@ struct ExamScheduleWidgetEntryView: View {
                 }
             }
         }
-        .padding(12)
-        .background(palette.background)
-        .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(palette.divider, lineWidth: 0.5))
+        .modifier(ScheduleWidgetBackground(palette: palette))
         .widgetURL(URL(string: "sylulive://exam"))
     }
 }

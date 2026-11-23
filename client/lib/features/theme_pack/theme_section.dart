@@ -93,23 +93,26 @@ class _ThemeSectionState extends State<ThemeSection> {
             color: colors.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           ),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.share_outlined),
-                  title: const Text('系统分享'),
-                  subtitle: const Text('通过聊天或系统分享面板发送 .sltheme'),
-                  onTap: () => Navigator.of(sheetContext).pop('share'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.save_alt_outlined),
-                  title: const Text('保存到文件'),
-                  subtitle: const Text('将当前混搭外观保存为本机 .sltheme 文件'),
-                  onTap: () => Navigator.of(sheetContext).pop('save'),
-                ),
-              ],
+          child: Material(
+            type: MaterialType.transparency,
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.share_outlined),
+                    title: const Text('系统分享'),
+                    subtitle: const Text('通过聊天或系统分享面板发送 .sltheme'),
+                    onTap: () => Navigator.of(sheetContext).pop('share'),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.save_alt_outlined),
+                    title: const Text('保存到文件'),
+                    subtitle: const Text('将当前混搭外观保存为本机 .sltheme 文件'),
+                    onTap: () => Navigator.of(sheetContext).pop('save'),
+                  ),
+                ],
+              ),
             ),
           ),
         );

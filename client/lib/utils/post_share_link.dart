@@ -3,6 +3,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/post.dart';
 import 'app_feedback.dart';
+import 'share_position.dart';
 import 'team_share_link.dart';
 
 Future<void> sharePostLink(BuildContext context, Post post) async {
@@ -10,11 +11,10 @@ Future<void> sharePostLink(BuildContext context, Post post) async {
   final pollId = post.pollMeta?.id ?? 0;
   final path = pollId > 0 ? '/web/polls/$pollId' : '/web/post/${post.id}';
   final link = Uri.https(TeamShareLink.domain, path);
-  final box = context.findRenderObject() as RenderBox;
   try {
     await Share.share(
       link.toString(),
-      sharePositionOrigin: box.localToGlobal(Offset.zero) & box.size,
+      sharePositionOrigin: sharePosition(context),
     );
   } catch (_) {
     if (context.mounted) {

@@ -23,6 +23,7 @@
 - 本机课表刷新传递学校真实学期 ID；本科兼容学期码保留 `3/12`，研究生使用学校返回的 ID。
 - 用户点击课表“保存当前课表为新存档”时，同时保存 App 内存档和公共 JSON 副本；已有 App 内存档可点击导出补写公共副本。
 - Android 10 及以上通过 MediaStore 保存到 `Download/沈理校园/课表存档/` 或 `Download/沈理校园/考试存档/`；Android 9 及以下由系统文件选择器选择保存位置。
+- iPhone 和 iPad 通过系统「文件」选择器选择位置。取消后可从课表存档或考试页重新导出。
 - 公共文件导出失败会明确提示重试，已保存的 App 内课表仍保留。公共副本由用户在文件管理器删除，卸载、退出账号或删除 App 内存档不会自动清理它。
 - 考试日程页面维护本地考试安排，支持手动添加和 JSON 导入/导出；该页当前不提供从学校获取考试安排的入口。
 
@@ -102,6 +103,23 @@ Windows 可从仓库根运行 `./scripts/verify-emoji-chain.ps1`，联调真实 
 - Dart（版本约束以 `pubspec.yaml` 为准）
 - Android Studio 或 VS Code
 - Android SDK；iOS 构建需要 macOS 与 Xcode
+
+### iOS 本地验证
+
+在装有 CocoaPods 的 macOS 上，从 `client/` 执行以下命令。模拟器构建完成后，通过 `ios/Runner.xcworkspace` 打开 Runner scheme，选择 iPhone 或 iPad 模拟器进行测试。
+
+```bash
+flutter pub get
+flutter build ios --simulator --debug
+```
+
+真机签名使用维护者的 Apple Developer Team。Runner 和 CourseScheduleWidget 目标需要启用同一个 `group.com.sylu.sylulive` App Group，Runner 同时需要 Push Notifications 和 Associated Domains。APNs 在 Debug 和 Profile 使用开发环境，在 Release 使用生产环境。Universal Links 依赖域名提供与签名应用匹配的 `/.well-known/apple-app-site-association`。
+
+iOS 客户端从 `/api/app/update` 查询 `ios/stable` 版本。管理端创建 iOS 版本时填写 App Store 或 TestFlight 链接，服务端若配置了 `APP_RELEASE_MARKET_HOST_ALLOWLIST`，需包含对应 Apple 域名。App 检出新版后打开商店。
+
+### iOS 真机测试包
+
+GitHub Actions 的 [Build iOS IPA](../.github/workflows/ios.yml) 在 macOS runner 上构建未签名的 arm64 IPA，包含课表与考试小组件。到对应运行的 Artifacts 下载 `sylulive-ios-unsigned`，解压后用 Windows 签名工具安装到测试设备。免费 Apple 账号的签名有效期为 7 天，远程推送和 Universal Links 需用支持对应能力的签名另行测试。小组件依赖主 App 和扩展共享同一 App Group。
 
 ## 运行
 

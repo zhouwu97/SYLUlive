@@ -6,12 +6,13 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart'
-    show kDebugMode, kIsWeb, visibleForTesting;
+    show kDebugMode, kIsWeb, kReleaseMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'package:hive_flutter/hive_flutter.dart';
+import 'platform/app_platform.dart';
 import 'platform/contracts/push_client.dart';
 import 'platform/contracts/system_notification_client.dart';
 import 'platform/contracts/external_navigator.dart';
@@ -935,10 +936,11 @@ Future<RemotePushEnableResult> setupPush(AuthProvider authProvider) async {
   pushClient.setup(
     appKey: ApiConstants.jpushAppKey,
     channel: 'developer-default',
-    production: const bool.fromEnvironment(
-      'JPUSH_PRODUCTION',
-      defaultValue: !kDebugMode,
-    ),
+    production: AppPlatforms.current.isIOS
+        ? const bool.fromEnvironment('JPUSH_PRODUCTION',
+            defaultValue: kReleaseMode)
+        : const bool.fromEnvironment('JPUSH_PRODUCTION',
+            defaultValue: !kDebugMode),
     debug: kDebugMode,
   );
 

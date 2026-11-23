@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import '../utils/share_position.dart';
 
 import '../platform/contracts/external_navigator.dart';
 import '../platform/contracts/text_boundary_resolver.dart';
@@ -482,7 +483,8 @@ class _PostContentLinkTextState extends State<PostContentLinkText> {
       if (widget.onShare != null) {
         await widget.onShare!(selected);
       } else {
-        await Share.share(selected, subject: 'SYLUlive 文本');
+        await Share.share(selected,
+            subject: 'SYLUlive 文本', sharePositionOrigin: sharePosition(context));
       }
     } catch (_) {
       if (mounted) AppFeedback.info('暂时无法分享选中文本', context: context);

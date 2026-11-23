@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../utils/share_position.dart';
 
 import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
@@ -58,15 +59,19 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
   Future<void> _exportData() async {
     if (_exporting) return;
     setState(() => _exporting = true);
+    final auth = context.read<AuthProvider>();
+    final session = auth.sessionGeneration;
     try {
-      final response =
-          await context.read<AuthProvider>().dio.get('/user/privacy/export');
+      final response = await auth.dio.get('/user/privacy/export');
+      if (!mounted || auth.sessionGeneration != session) return;
       final directory = await getTemporaryDirectory();
       final file = File('${directory.path}/shenliyuan-personal-data.json');
       await file.writeAsString(
         const JsonEncoder.withIndent('  ').convert(response.data),
       );
-      await Share.shareXFiles([XFile(file.path)], text: '我的个人信息导出文件');
+      if (!mounted || auth.sessionGeneration != session) return;
+      await Share.shareXFiles([XFile(file.path)],
+          text: '我的个人信息导出文件', sharePositionOrigin: sharePosition(context));
     } on DioException catch (error) {
       _showMessage(_errorMessage(error));
     } catch (_) {
@@ -683,7 +688,9 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
       await file.writeAsString(
         const JsonEncoder.withIndent('  ').convert(widget.data),
       );
-      await Share.shareXFiles([XFile(file.path)], text: '我的个人信息副本');
+      if (!mounted) return;
+      await Share.shareXFiles([XFile(file.path)],
+          text: '我的个人信息副本', sharePositionOrigin: sharePosition(context));
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

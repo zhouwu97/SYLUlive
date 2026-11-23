@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../utils/share_position.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -999,7 +1000,8 @@ class _ThemeDetailScreenState extends State<ThemeDetailScreen> {
       await widget.onShareLink!(link);
       return;
     }
-    await Share.share('来看看这套沈理校园主题《${item.name}》：$link');
+    await Share.share('来看看这套沈理校园主题《${item.name}》：$link',
+        sharePositionOrigin: sharePosition(context));
   }
 
   void _openFullScreenPreview(List<String> urls, int initialIndex) {

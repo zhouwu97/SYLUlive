@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Shenliyuan</string>
+	<string>沈理校园</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -26,6 +26,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -80,7 +82,9 @@
 		</dict>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>用于拍摄头像、帖子、评论等需要上传的图片</string>
+	<string>用于扫描教务同步二维码，以及拍摄头像、帖子和评论图片</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>用于将你选择的考试安排添加到系统日历</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>用于从相册选择头像、帖子及评论图片</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

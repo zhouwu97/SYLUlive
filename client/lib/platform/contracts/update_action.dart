@@ -153,11 +153,11 @@ class IOSAppStoreUpdateAction implements AppUpdateAction {
     void Function(AppDownloadProgress)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    final target = info.actionUrl.trim().isNotEmpty
-        ? info.actionUrl.trim()
-        : info.downloadUrl.trim();
-    final uri = Uri.tryParse(target);
-    if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+    final uri = Uri.tryParse(info.actionUrl.trim());
+    if (info.deliveryMode != AppUpdateDeliveryMode.externalMarket ||
+        uri == null ||
+        uri.scheme != 'https' ||
+        !uri.hasAuthority) {
       throw StateError('App Store 更新链接无效');
     }
     final opened = await ExternalNavigator.current().open(uri);

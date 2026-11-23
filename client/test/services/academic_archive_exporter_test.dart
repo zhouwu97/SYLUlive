@@ -58,7 +58,7 @@ void main() {
         throwsStateError);
   });
   test('旧版 Android 使用系统保存选择器，取消时不误报保存成功', () async {
-    final picker = _LegacySavePicker();
+    final picker = _SavePicker();
     FilePicker.platform = picker;
     messenger.setMockMethodCallHandler(
         AcademicArchiveExporter.channel, (_) async => {'legacy': true});
@@ -69,10 +69,25 @@ void main() {
     expect((await save()).savedPath, picker.destination);
     expect(utf8.decode(picker.bytes!), '["数学"]');
   });
+  test('iOS 通过系统文件选择器导出，取消后可重新保存', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    final picker = _SavePicker();
+    FilePicker.platform = picker;
+    Future<AcademicArchiveExport> save() => AcademicArchiveExporter.save(
+        fileName: '考试/存档.json', content: '["数学"]', folder: '考试存档');
+    await expectLater(save(), throwsStateError);
+    expect(picker.fileName, '考试_存档.json');
+    picker.destination = '/Files/考试_存档.json';
+    final exported = await save();
+    expect(exported.savedPath, picker.destination);
+    expect(utf8.decode(picker.bytes!), '["数学"]');
+    expect(await exported.shareFile.readAsString(), '["数学"]');
+  });
 }
 
-class _LegacySavePicker extends FilePicker {
+class _SavePicker extends FilePicker {
   String? destination;
+  String? fileName;
   Uint8List? bytes;
   @override
   Future<String?> saveFile(
@@ -84,6 +99,7 @@ class _LegacySavePicker extends FilePicker {
       Uint8List? bytes,
       bool lockParentWindow = false}) async {
     this.bytes = bytes;
+    this.fileName = fileName;
     return destination;
   }
 }

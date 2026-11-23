@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../utils/share_position.dart';
 
 import '../../widgets/app_page_background.dart';
 import '../../config/api_constants.dart';
@@ -713,6 +714,7 @@ class _TeamRecruitmentCreateScreenState
                     await Share.share(
                       '【沈理校园组队邀请】${created.title}\n\n查看招募详情并快速入队：$webUrl',
                       subject: '沈理校园组队邀请',
+                      sharePositionOrigin: sharePosition(ctx),
                     );
                   },
                 ),

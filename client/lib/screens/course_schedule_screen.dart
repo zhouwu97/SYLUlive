@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../utils/share_position.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/academic_archive_exporter.dart';
 import '../providers/auth_provider.dart';
@@ -1837,7 +1838,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       ).showSnackBar(const SnackBar(content: Text('当前周暂无可分享的课程')));
       return;
     }
-    await Share.share(text, subject: '沈理校园课表');
+    await Share.share(text,
+        subject: '沈理校园课表', sharePositionOrigin: sharePosition(context));
   }
 
   String? _buildScheduleShareText(CourseScheduleProvider sc) {
@@ -2987,7 +2989,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           }),
                         const SizedBox(height: 10),
                         Text(
-                          '存档数据保存在本地，导出按钮会写入下载目录并显示实际路径。',
+                          '存档数据保存在本地，导出按钮会保存 JSON 文件并显示实际路径。',
                           style: TextStyle(
                             fontSize: 12,
                             color: AppThemeTokens.of(context).textTertiary,
@@ -3085,7 +3087,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               onPressed: () {
                 unawaited(Share.shareXFiles([
                   XFile(file.shareFile.path),
-                ], text: '这是我的沈理校园课表存档，可以在App的"从文件导入"功能中恢复。'));
+                ],
+                    text: '这是我的沈理校园课表存档，可以在App的"从文件导入"功能中恢复。',
+                    sharePositionOrigin: sharePosition(this.context)));
               },
             ),
           ),
@@ -4605,7 +4609,7 @@ class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
                     scaffoldMessenger.showSnackBar(
                       SnackBar(
                           content: Text(exported == null
-                              ? 'App 内存档已保存，但下载目录写入失败；请点击存档右侧导出重试。'
+                              ? 'App 内存档已保存，文件未导出。请点击存档右侧导出重试。'
                               : '存档已保存至：${exported.savedPath}')),
                     );
                   } catch (error) {

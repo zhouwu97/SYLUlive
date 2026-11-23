@@ -641,7 +641,7 @@ void main() {
               'total': 0,
               'profile_ready': false,
               'reason_code': 'profile_incomplete',
-              'missing_fields': ['major'],
+              'missing_fields': ['major', 'academic_identity'],
               'catalog': const {'dataset_version': 'catalog-2026-07'},
               'groups': const [],
             });
@@ -666,7 +666,7 @@ void main() {
       );
       expect(chip.selected, isTrue);
       expect(find.text('先补齐竞赛匹配条件'), findsOneWidget);
-      expect(find.text('还需要：专业。'), findsOneWidget);
+      expect(find.text('还需要：专业、教务认证。'), findsOneWidget);
       expect(find.text('填写匹配画像'), findsOneWidget);
     });
 

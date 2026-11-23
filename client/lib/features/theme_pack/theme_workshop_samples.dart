@@ -388,7 +388,7 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
         ),
       WorkshopSampleState.permission => (
           Icons.lock_outline_rounded,
-          '需要完成学生身份或权限确认',
+          '请先完成教务认证',
           '权限提示不被任何主题装饰遮挡，按钮保持明确可点击',
           '前往授权',
         ),

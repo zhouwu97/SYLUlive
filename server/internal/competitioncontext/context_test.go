@@ -58,6 +58,45 @@ func readyContextUser(t *testing.T, db *gorm.DB) models.User {
 	return user
 }
 
+func TestCompetitionProfileNeedsEduAccessAndCompleteFields(t *testing.T) {
+	for _, tc := range []struct {
+		name                                                   string
+		authorized, legacyBound, identity, missingMajor, ready bool
+	}{
+		{name: "教务认证", authorized: true, ready: true},
+		{name: "旧教务绑定", legacyBound: true, ready: true},
+		{name: "仅旧身份", identity: true},
+		{name: "缺少专业", authorized: true, missingMajor: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newContextTestDB(t)
+			user := readyContextUser(t, db)
+			if !tc.identity {
+				if err := db.Where("user_id = ?", user.ID).Delete(&models.AcademicIdentityBinding{}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			changes := map[string]any{"edu_authorized": tc.authorized, "edu_bound": tc.legacyBound, "student_verified_at": nil}
+			if tc.missingMajor {
+				changes["edu_major"] = ""
+			}
+			if err := db.Model(&user).Updates(changes).Error; err != nil {
+				t.Fatal(err)
+			}
+			profile, err := NewBuilder(db).BuildCompetitionUserContext(context.Background(), user.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if profile.ProfileReady != tc.ready {
+				t.Fatalf("ProfileReady = %v, want %v", profile.ProfileReady, tc.ready)
+			}
+			if !tc.identity && profile.ProfileProvenance == "school_verified" {
+				t.Fatal("缺少学校核验记录的资料不能标为学校核验")
+			}
+		})
+	}
+}
+
 func TestBuildCompetitionUserContextUsesProfileEntryYearForGradeAndVersion(t *testing.T) {
 	db := newContextTestDB(t)
 	user := readyContextUser(t, db)

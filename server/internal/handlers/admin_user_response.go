@@ -12,6 +12,7 @@ import (
 
 // AdminUserBriefResponse 是管理员列表使用的最小用户资料，包含管理所需的账号标识。
 type AdminUserBriefResponse struct {
+	EduBound           bool        `json:"edu_bound"`
 	ID                 uint        `json:"id"`
 	StudentID          string      `json:"student_id"`
 	StudentVerified    bool        `json:"student_verified"`
@@ -190,6 +191,7 @@ func withAdminAcademicAccounts(db *gorm.DB) *gorm.DB {
 
 func adminUserBriefResponse(user models.User, studentID string, studentVerified bool, academicConfigured bool) AdminUserBriefResponse {
 	return AdminUserBriefResponse{
+		EduBound:           user.HasEduAccess(),
 		ID:                 user.ID,
 		StudentID:          studentID,
 		StudentVerified:    studentVerified,
@@ -209,7 +211,7 @@ func adminUserResponse(user models.User, studentID string, studentVerified bool,
 		Role:               user.Role,
 		CreditScore:        user.CreditScore,
 		ReportCount:        user.ReportCount,
-		EduBound:           user.IsEduAuthorized(),
+		EduBound:           user.HasEduAccess(),
 		StudentVerified:    studentVerified,
 		AcademicConfigured: academicConfigured,
 		CreatedAt:          user.CreatedAt,

@@ -10,7 +10,6 @@ class AdminUserSummary {
   final int creditScore;
   final int reportCount;
   final bool eduBound;
-  final bool studentVerified;
   final bool academicConfigured;
 
   const AdminUserSummary({
@@ -22,7 +21,6 @@ class AdminUserSummary {
     required this.creditScore,
     required this.reportCount,
     required this.eduBound,
-    required this.studentVerified,
     required this.academicConfigured,
   });
 
@@ -35,8 +33,7 @@ class AdminUserSummary {
       role: json['role']?.toString() ?? 'user',
       creditScore: (json['credit_score'] as num?)?.toInt() ?? 100,
       reportCount: (json['report_count'] as num?)?.toInt() ?? 0,
-      eduBound: json['edu_bound'] == true,
-      studentVerified: json['student_verified'] == true,
+      eduBound: json['edu_authorized'] == true || json['edu_bound'] == true,
       academicConfigured: json['academic_configured'] == true,
     );
   }
@@ -49,5 +46,5 @@ class AdminUserSummary {
   String get academicConfigLabel =>
       academicConfigured ? '教务配置：已登记' : '教务配置：未登记';
   String get academicStatusLabel =>
-      '$academicConfigLabel\n学生身份：${studentVerified ? '已验证' : '未验证'}';
+      '$academicConfigLabel\n教务认证：${eduBound ? '已认证' : '未认证'}';
 }

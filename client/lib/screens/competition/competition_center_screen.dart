@@ -1002,20 +1002,20 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       onActionTap = _switchToAllEvents;
     } else if (!_profileReady) {
       warning = false;
-      title = '完善竞赛画像与身份核验后生成候选';
+      title = '完成教务认证并补齐竞赛资料';
       final missing = _candidateMissingFields
           .map(_profileFieldLabel)
           .where((label) => label.isNotEmpty)
           .toList();
       message = missing.isEmpty
-          ? '竞赛匹配需要你确认的年级、学院和专业，以及单独完成的学生身份核验。'
+          ? '请完成教务认证，并确认入学年份、学院和专业。'
           : '还需要：${missing.join('、')}。竞赛画像只用于资格和方向匹配。';
       actionText = _candidateMissingFields.any(
         (field) =>
             field == 'entry_year' || field == 'college' || field == 'major',
       )
           ? '填写匹配画像'
-          : '去身份设置';
+          : '去教务认证';
       onActionTap = _openMissingCompetitionPrerequisite;
     } else if (_eventTotal > 0) {
       warning = false;
@@ -1103,7 +1103,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       case 'major':
         return '专业';
       case 'academic_identity':
-        return '学生身份核验';
+        return '教务认证';
       default:
         return '';
     }
@@ -1252,7 +1252,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           return CompetitionEmptyState(
             title: '先补齐竞赛匹配条件',
             message: _candidateMissingFields.isEmpty
-                ? '确认年级、学院和专业，并完成学生身份核验后即可生成候选。'
+                ? '确认年级、学院和专业，并完成教务认证后即可生成候选。'
                 : '还需要：${_candidateMissingFields.map(_profileFieldLabel).where((label) => label.isNotEmpty).join('、')}。',
             primaryText: _candidateMissingFields.any(
               (field) =>
@@ -1261,7 +1261,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                   field == 'major',
             )
                 ? '填写匹配画像'
-                : '去身份设置',
+                : '去教务认证',
             onPrimaryTap: _openMissingCompetitionPrerequisite,
             secondaryText: '浏览全部比赛',
             onSecondaryTap: _switchToAllEvents,

@@ -68,3 +68,19 @@ test('malformed release content uses plain text and invalid metadata has a fallb
   const f=fixture({fetcher:async()=>({ok:true,json:async()=>({...valid,file_size:'bad',published_at:'bad',sha256:'bad',changelog:'<img src=x onerror=alert(1)>'})})});await flush();
   assert.equal(f.el.fileSize.textContent,'—');assert.equal(f.el.publishedAt.textContent,'—');assert.equal(f.el.shaText.textContent,'当前版本未提供校验值。');assert.equal(f.el.changelog.textContent,'<img src=x onerror=alert(1)>');
 });
+
+test('the public GitHub release replaces an older stable build and yields to current or newer builds',async()=>{
+  for(const code of [1712,1726,1730]){
+    const f=fixture({fetcher:async()=>({ok:true,json:async()=>({...valid,latest_version_code:code})})});
+    await flush();
+    f.el.downloadBtn.click();
+    if(code===1712){
+      assert.equal(f.el.versionName.textContent,'v1.7.15');
+      assert.match(f.el.changelog.textContent,/统一教务认证/);
+      assert.match(f.navigations[0],/^https:\/\/github\.com\/.+v1\.7\.15.+\.apk$/);
+    }else{
+      assert.equal(f.el.versionName.textContent,'v2.4.1');
+      assert.equal(f.navigations[0],'https://sylulive.online/api/app/releases/1/download');
+    }
+  }
+});

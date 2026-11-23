@@ -67,7 +67,7 @@ func TestGetMembersReturnsAdminFieldsWithoutUsingUserMarshalJSON(t *testing.T) {
 		ID: 1, StudentID: "admin-001", Nickname: "管理员", Role: models.RoleAdmin, Avatar: "admin.png",
 	})
 	createInvitationResponseTestUser(t, db, models.User{
-		ID: 2, StudentID: "super-001", Nickname: "超级管理员", Role: models.RoleSuperAdmin, Avatar: "super.png",
+		ID: 2, EduAuthorized: true, StudentID: "super-001", Nickname: "超级管理员", Role: models.RoleSuperAdmin, Avatar: "super.png",
 	})
 	createInvitationResponseTestUser(t, db, models.User{
 		ID: 3, StudentID: "user-001", Nickname: "普通用户", Role: models.RoleUser,
@@ -94,6 +94,9 @@ func TestGetMembersReturnsAdminFieldsWithoutUsingUserMarshalJSON(t *testing.T) {
 		}
 		if member["role"] != string(models.RoleAdmin) && member["role"] != string(models.RoleSuperAdmin) {
 			t.Fatalf("管理员角色不正确: %s", recorder.Body.String())
+		}
+		if member["edu_bound"] != (member["id"] == float64(2)) {
+			t.Fatalf("成员教务认证状态错误: %v", member["edu_bound"])
 		}
 		if member["academic_configured"] != (member["id"] == float64(1)) || member["student_verified"] != false {
 			t.Fatalf("管理员配置状态与身份认证混淆: %s", recorder.Body.String())

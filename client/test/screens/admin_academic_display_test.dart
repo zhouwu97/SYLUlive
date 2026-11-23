@@ -124,7 +124,7 @@ void main() {
       expect(find.text('教务有记录'), findsOneWidget);
       expect(find.text('暂无记录'), findsOneWidget);
       expect(find.text('学号/账号：configured-901'), findsOneWidget);
-      expect(find.text('教务配置：已登记\n学生身份：未验证'), findsOneWidget);
+      expect(find.text('教务配置：已登记\n教务认证：未认证'), findsOneWidget);
       expect(find.text('其他'), findsNothing);
       expect(tester.takeException(), isNull);
       await _capture(
@@ -149,7 +149,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('学号/账号：configured-901'), findsOneWidget);
-      expect(find.text('教务配置：已登记\n学生身份：未验证'), findsOneWidget);
+      expect(find.text('教务配置：已登记\n教务认证：未认证'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await _capture(
           tester, screen is AdminMembersScreen ? 'members' : 'super-users');

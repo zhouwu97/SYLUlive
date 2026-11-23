@@ -3,7 +3,7 @@ const emojiPresentation = /\p{Emoji_Presentation}/u;
 const pictograph = /\p{Extended_Pictographic}/u;
 
 export function graphemes(text: string): string[] {
-  return segmenter ? Array.from(segmenter.segment(text), part => part.segment) : [text];
+  return segmenter ? Array.from(segmenter.segment(text), part => part.segment) : Array.from(text);
 }
 
 /** 只给 Emoji 单独指定字体，数字、标点和中文继续使用正文文字字体。 */

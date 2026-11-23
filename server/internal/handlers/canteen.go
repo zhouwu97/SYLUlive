@@ -1331,21 +1331,16 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		return
 	}
 	var user models.User
-	if err := h.db.Select("id", "student_verified_at", "edu_bound").First(&user, userID).Error; err != nil {
+	if err := h.db.Select("id", "student_verified_at", "edu_authorized", "edu_bound").First(&user, userID).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "登录状态无效，请重新登录",
 			"code":  "authentication_required",
 		})
 		return
 	}
-	verified, identityErr := models.HasVerifiedAcademicIdentity(h.db, userID)
-	if identityErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取学生身份失败"})
-		return
-	}
-	if !verified {
+	if !user.HasEduAccess() {
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "请先完成学生身份认证后评价",
+			"error": "请先完成教务认证后评价",
 			"code":  "edu_binding_required",
 		})
 		return

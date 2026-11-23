@@ -184,7 +184,7 @@ export function PollCard({ post, compact = false, linked = compact, feedSource }
     <article className={`panel poll-card ${compact ? "mobile-feed-poll" : ""} ${linked ? "poll-card-linked" : ""} ${active ? "poll-card-active" : "poll-card-closed"}`} aria-labelledby={titleId} aria-busy={busy} onClick={openDetail}>
       <div className="participation-heading">
         <div className="poll-author">
-          {authorHref ? <Link className="poll-avatar" to={authorHref} state={detailState} aria-label={`查看 ${authorName} 的主页`}><ServerAvatar src={post.author?.avatar} name={authorName} /></Link> : <span className="poll-avatar"><ServerAvatar src={post.author?.avatar} name={authorName} /></span>}
+          {authorHref ? <Link className="poll-avatar" to={authorHref} state={detailState} aria-label={`查看 ${authorName} 的主页`}><ServerAvatar src={post.is_anonymous ? undefined : post.author?.avatar} name={authorName} /></Link> : <span className="poll-avatar"><ServerAvatar src={post.is_anonymous ? undefined : post.author?.avatar} name={authorName} /></span>}
           <div className="poll-author-copy">{authorHref ? <Link className="author-name-link" to={authorHref} state={detailState}><b>{authorName}</b></Link> : <b>{authorName}</b>}{post.created_at && <time dateTime={post.created_at} title={time(post.created_at)}>{compact || mobile ? mobilePostTime(post.created_at) : time(post.created_at)}</time>}</div>
           <span className="poll-type-label">校园投票</span>
           {compact && <PostCardMenu post={post} feedSource={feedSource} />}

@@ -132,6 +132,24 @@ func TestManagedBotLinkRulesRecognizeBroadLinksWithoutBlockingNormalText(t *test
 	}
 }
 
+func TestManagedBotDefaultHourlyQuota(t *testing.T) {
+	db, s, b, post := integrationActionFixture(t)
+	require.NoError(t, db.AutoMigrate(&models.ManagedBot{}))
+	bot, err := s.ManageBot(context.Background(), b.OwnerID, "鱼", true)
+	require.NoError(t, err)
+	policy := ManagedBotPolicy(bot)
+	require.Equal(t, 15, *policy.HourlyReplyLimit)
+	require.Equal(t, 100, policy.DailyReplyLimit)
+	require.Equal(t, 1, policy.MinReplyIntervalMinutes)
+	now := time.Now()
+	for i := 1; i <= 15; i++ {
+		reply := models.Reply{PostID: post.ID, AuthorID: bot.UserID, CreatedAt: now.Add(-time.Duration(i*3) * time.Minute)}
+		require.NoError(t, db.Create(&reply).Error)
+	}
+	require.EqualError(t, managedBotReplyQuota(db, bot.UserID, now, policy, 0), "bot_hourly_quota")
+	require.NoError(t, managedBotReplyQuota(db, bot.UserID, now.Add(15*time.Minute), policy, 0))
+}
+
 func TestManagedBotPolicyValidationAndCustomQuota(t *testing.T) {
 	db, s, b, source := integrationActionFixture(t)
 	require.NoError(t, db.AutoMigrate(&models.ManagedBot{}))

@@ -2,6 +2,19 @@
 (() => {
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) || location.protocol === 'file:';
   const api = '/api/app/update?platform=android&channel=stable&version_name=0.0.0&version_code=1';
+  // Keep the public download on the GitHub release while the in-app channel catches up.
+  const githubRelease = {
+    latest_version_name: '1.7.15',
+    latest_version_code: 1726,
+    download_url: 'https://github.com/zhouwu97/SYLUlive/releases/download/v1.7.15/SYLUlive-1.7.15-1726-android-arm64.apk',
+    file_size: 104186180,
+    published_at: '2026-11-21T05:05:21Z',
+    sha256: 'd5af178c42751bee146a1e007d8d0c39508563e3c69d1b29694346c665cb70ef',
+    changelog: [
+      '1. 统一教务认证，完善课表和考试存档体验。',
+      '2. 完善主题相关体验。',
+    ].join('\n'),
+  };
   const ids = ['versionName', 'fileSize', 'publishedAt', 'changelog', 'downloadBtn', 'downloadText', 'downloadHint', 'shaText', 'retryBtn', 'releaseState', 'releaseCard'];
   const el = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
   if (!el.releaseCard) return;
@@ -56,10 +69,12 @@
     try {
       const response = await fetch(api, {headers:{Accept:'application/json'},cache:'no-store',signal:controller.signal});
       if (!response.ok) throw new Error('release request failed');
-      const data = await response.json();
+      const stable = await response.json();
       if (current !== generation) return;
-      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('invalid release');
-      if (!data.latest_version_name && data.update_available === false) { unavailable(true); return; }
+      if (!stable || typeof stable !== 'object' || Array.isArray(stable)) throw new Error('invalid release');
+      if (!stable.latest_version_name && stable.update_available === false) { unavailable(true); return; }
+      const useGitHub = Number.isInteger(stable.latest_version_code) && stable.latest_version_code < githubRelease.latest_version_code;
+      const data = useGitHub ? githubRelease : stable;
       const market = data.delivery_mode === 'external_market';
       targetUrl = safeUrl(market ? data.action_url : data.download_url);
       if (!targetUrl) throw new Error('unavailable download');
@@ -71,6 +86,9 @@
       el.releaseState.textContent = '已就绪';
       el.downloadText.textContent = market ? '前往应用市场' : '下载 Android APK';
       el.downloadHint.textContent = market ? '将打开当前稳定版指定的应用市场页面。' : '点击后开始获取当前稳定版安装包。';
+      if (useGitHub) {
+        el.downloadHint.textContent = 'GitHub 正式签名包，支持 Android 7.0 及以上的 ARM64 设备。';
+      }
       el.downloadBtn.disabled = false;
     } catch { if (current === generation) unavailable(); }
     finally {

@@ -71,6 +71,8 @@ async def test_group_readonly_checkin_connect_approve_then_checkin_uses_only_sen
     plugin.accounts = SimpleNamespace(get=lambda *args, **kwargs: (client, "synthetic-installation"))
     plugin.track_binding_result = lambda *args: "合成通知"
     plugin.config["binding_link_delivery"] = "group"
+    event.message_obj.self_id = "111111"
+    event.bot = SimpleNamespace(call_action=AsyncMock(return_value={"message_id": 123}))
     try:
         assert "没有签到权限" in await plugin.checkin_result(event, submit=True)
         # 本地缺 scope 时只向服务端核对一次最新授权，核对期间不得代发签到请求。
@@ -78,7 +80,8 @@ async def test_group_readonly_checkin_connect_approve_then_checkin_uses_only_sen
         assert not any(r.url.path.endswith("/me/checkin") for r in requests)
         replies = [r async for r in plugin.connect(event)]
         text = "".join(part.text for reply in replies for part in reply.chain if hasattr(part, "text"))
-        assert "UPGD-1234" in text and "权限更新" in text
+        assert "权限更新" in text
+        assert "UPGD-1234" in str(event.bot.call_action.await_args.kwargs["messages"])
         assert "checkin:write" not in client.tokens["scope"]
         assert not any(r.url.path.endswith("/me/checkin") for r in requests)
         granted[0] = "community:read checkin:write"  # 官网批准后的服务端授权状态

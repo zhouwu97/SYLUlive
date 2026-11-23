@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -45,103 +46,97 @@ class ThemedWallpaperLayer extends StatelessWidget {
     return brightness == 0 && contrast == 100 && saturation == 100;
   }
 
+  /// 壁纸图片的解码尺寸按显示物理宽度缩放；预解码与正式绘制必须用同一个 provider 才能命中缓存。
+  static ImageProvider providerFor(
+      BuildContext context, Map<String, dynamic> config) {
+    final landscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final file = (landscape ? config['landscape'] : null) ?? config['portrait'];
+    final physicalWidth = (MediaQuery.sizeOf(context).width *
+            MediaQuery.devicePixelRatioOf(context))
+        .round()
+        .clamp(100, 4096);
+    return ResizeImage(
+      FileImage(File(file as String)),
+      width: physicalWidth,
+      policy: ResizeImagePolicy.fit,
+      allowUpscaling: false,
+    );
+  }
+
+  /// 预先解码各页签与二级页面的壁纸。切页时图片已在缓存里，新页面首帧就能画出壁纸，
+  /// 不会先露出底色再出现图片。
+  static void precache(
+      BuildContext context, Iterable<Map<String, dynamic>> configs) {
+    for (final config in configs) {
+      unawaited(precacheImage(
+        providerFor(context, config),
+        context,
+        onError: (_, __) {},
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final config = settings;
     final background = AppThemeTokens.of(context).background;
-    final disableAnimations = MediaQuery.disableAnimationsOf(context);
-    final duration =
-        disableAnimations ? Duration.zero : const Duration(milliseconds: 200);
-    Widget content;
     if (config == null) {
-      // AnimatedSwitcher 用宽松约束摆放子项，纯色层必须显式铺满，否则尺寸为 0。
-      content = SizedBox.expand(
-        key: ValueKey(('solid', background, backdrop)),
+      return SizedBox.expand(
         child: backdrop == null
             ? ColoredBox(color: background)
             : ThemeBackdropLayer(backdrop: backdrop!, background: background),
       );
-    } else {
-      final landscape =
-          MediaQuery.orientationOf(context) == Orientation.landscape;
-      final file =
-          (landscape ? config['landscape'] : null) ?? config['portrait'];
-      final adjustment = config['adjustments'] as Map?;
-      final brightness = (adjustment?['brightness'] as num? ?? 0).toDouble();
-      final contrast = (adjustment?['contrast'] as num? ?? 100).toDouble();
-      final saturation = (adjustment?['saturation'] as num? ?? 100).toDouble();
-      final physicalWidth =
-          (MediaQuery.sizeOf(context).width *
-                  MediaQuery.devicePixelRatioOf(context))
-              .round()
-              .clamp(100, 4096);
-      final fit = config['fit'] == 'contain' ? BoxFit.contain : BoxFit.cover;
-      final focalX = (config['focalX'] as num? ?? 0.5).toDouble();
-      final focalY = (config['focalY'] as num? ?? 0.5).toDouble();
-      final blur = (config['blur'] as num? ?? 0.0).toDouble();
-      final scrim = (config['scrim'] as num? ?? 0.0).toDouble();
-      Widget image = Image(
-        key: ValueKey(file),
-        image: imageProvider ??
-            ResizeImage(
-              FileImage(File(file as String)),
-              width: physicalWidth,
-              policy: ResizeImagePolicy.fit,
-              allowUpscaling: false,
-            ),
-        fit: fit,
-        gaplessPlayback: true,
-        alignment: Alignment(focalX * 2 - 1, focalY * 2 - 1),
-        errorBuilder: (_, __, ___) => Center(
-          child: Semantics(
-            label: '主题壁纸无法读取，请重新导入主题',
-            child: const Icon(Icons.broken_image_outlined),
+    }
+    final adjustment = config['adjustments'] as Map?;
+    final brightness = (adjustment?['brightness'] as num? ?? 0).toDouble();
+    final contrast = (adjustment?['contrast'] as num? ?? 100).toDouble();
+    final saturation = (adjustment?['saturation'] as num? ?? 100).toDouble();
+    final fit = config['fit'] == 'contain' ? BoxFit.contain : BoxFit.cover;
+    final focalX = (config['focalX'] as num? ?? 0.5).toDouble();
+    final focalY = (config['focalY'] as num? ?? 0.5).toDouble();
+    final blur = (config['blur'] as num? ?? 0.0).toDouble();
+    final scrim = (config['scrim'] as num? ?? 0.0).toDouble();
+    // 槽位切换与页面组件同帧完成，不做淡入淡出；不加 key 让 gaplessPlayback 在
+    // 新图尚未解码时继续显示上一张，而不是闪出底色。
+    Widget image = Image(
+      image: imageProvider ?? providerFor(context, config),
+      fit: fit,
+      gaplessPlayback: true,
+      alignment: Alignment(focalX * 2 - 1, focalY * 2 - 1),
+      errorBuilder: (_, __, ___) => Center(
+        child: Semantics(
+          label: '主题壁纸无法读取，请重新导入主题',
+          child: const Icon(Icons.broken_image_outlined),
+        ),
+      ),
+    );
+    if (!isNeutralAdjustments(adjustment)) {
+      image = ColorFiltered(
+        colorFilter: ColorFilter.matrix(
+          buildColorMatrix(
+            brightness: brightness,
+            contrast: contrast,
+            saturation: saturation,
           ),
         ),
-      );
-      if (!isNeutralAdjustments(adjustment)) {
-        image = ColorFiltered(
-          colorFilter: ColorFilter.matrix(
-            buildColorMatrix(
-              brightness: brightness,
-              contrast: contrast,
-              saturation: saturation,
-            ),
-          ),
-          child: image,
-        );
-      }
-      if (blur > 0) {
-        image = ImageFiltered(
-          imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-          child: image,
-        );
-      }
-      content = ClipRect(
-        key: ValueKey((
-          file,
-          fit,
-          focalX,
-          focalY,
-          blur,
-          scrim,
-          brightness,
-          contrast,
-          saturation,
-        )),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            ColoredBox(color: background, child: image),
-            if (scrim > 0)
-              ColoredBox(color: background.withValues(alpha: scrim)),
-          ],
-        ),
+        child: image,
       );
     }
-    return AnimatedSwitcher(
-      duration: duration,
-      child: content,
+    if (blur > 0) {
+      image = ImageFiltered(
+        imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: image,
+      );
+    }
+    return ClipRect(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(color: background, child: image),
+          if (scrim > 0) ColoredBox(color: background.withValues(alpha: scrim)),
+        ],
+      ),
     );
   }
 }

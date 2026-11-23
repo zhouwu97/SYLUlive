@@ -527,6 +527,8 @@ final class AcademicLoginCoordinator {
         return null;
       } on AcademicIdentityApiException catch (error) {
         if (!current()) return null;
+        // 协议确认后即可补交，不能当成需要重新登录学校才解除的终止错误。
+        if (error.code == 'LEGAL_CONSENT_REQUIRED') return error.message;
         if (!error.isRetryable ||
             (error.statusCode != null &&
                 error.statusCode! >= 400 &&
@@ -544,11 +546,11 @@ final class AcademicLoginCoordinator {
               DateTime.now().add(const Duration(minutes: 10));
         }
         _scheduleBindingRetry(identity, generation);
-        return '教务已在本机连接，学生身份尚未同步；联网后会重试';
+        return '教务已在本机连接，认证状态尚未同步；联网后会重试';
       } catch (_) {
         if (!current()) return null;
         _scheduleBindingRetry(identity, generation);
-        return '教务已在本机连接，学生身份尚未同步；联网后会重试';
+        return '教务已在本机连接，认证状态尚未同步；联网后会重试';
       }
     }();
     _bindingSyncs[identity] = operation;

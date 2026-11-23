@@ -267,6 +267,22 @@ func TestExamPaperDeniedLocalDeclarationGetsUpgradeHint(t *testing.T) {
 	}
 }
 
+func TestExamPaperUsesEduAuthorizationWithoutStudentProjection(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	user := createExamPaperTestUser(t, env.db, "edu-only", models.RoleUser, false, 0)
+	if err := env.db.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
+		"edu_authorized": true,
+		"edu_bound":      true,
+	}).Error; err != nil {
+		t.Fatalf("写入教务授权状态失败: %v", err)
+	}
+
+	response := performExamPaperRequest(env.handler.List, http.MethodGet, "/api/exam-papers", nil, user.ID, nil, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("仅有教务授权的用户应可访问试卷库: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestExamPaperListRequiresEduVerificationAndHidesPrivateFields(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	unverified := createExamPaperTestUser(t, env.db, "unverified", models.RoleUser, false, 0)

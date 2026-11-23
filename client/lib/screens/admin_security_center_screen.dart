@@ -13,6 +13,7 @@ import '../services/admin_security_service.dart';
 import '../services/publish_session_scope.dart';
 import '../widgets/security_session_guard.dart';
 import 'admin_security_blocks_screen.dart';
+import 'admin_security_logs_screen.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
@@ -343,7 +344,9 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                             style: TextStyle(color: AppColors.info)),
                       ),
                     if (event.installationSeen) const Text('安装标识：已记录（仅用于关联判断）'),
-                    if (event.actionable && isSuper && event.sourceKey.isNotEmpty)
+                    if (event.actionable &&
+                        isSuper &&
+                        event.sourceKey.isNotEmpty)
                       Text('超级管理员来源键：${event.sourceKey}',
                           style: const TextStyle(fontSize: 12)),
                     const SizedBox(height: AppSpacing.lg),
@@ -372,6 +375,26 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                             child: const Text('误报'),
                           ),
                         if (event.actionable &&
+                            event.sourceAttributionValid &&
+                            event.sourceFingerprint.isNotEmpty)
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.danger,
+                                foregroundColor: Colors.white),
+                            onPressed: _actionBusy || blockDisabled
+                                ? null
+                                : () {
+                                    Navigator.pop(sheetContext);
+                                    _blockFromEvent(event, session);
+                                  },
+                            icon: const Icon(Icons.block_outlined),
+                            label: Text(blockDisabled
+                                ? '来源封禁未启用'
+                                : event.status == 'active'
+                                    ? '封禁来源并结案'
+                                    : '封禁来源'),
+                          ),
+                        if (event.actionable &&
                             isSuper &&
                             event.sourceKey.isNotEmpty &&
                             event.sourceAttributionValid)
@@ -382,8 +405,8 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                                     Navigator.pop(sheetContext);
                                     _createBlock(event, session);
                                   },
-                            icon: const Icon(Icons.block_outlined),
-                            label: Text(blockDisabled ? '来源封禁未启用' : '临时封禁来源'),
+                            icon: const Icon(Icons.tune_outlined),
+                            label: const Text('自定义封禁（含全站）'),
                           ),
                       ],
                     ),
@@ -400,7 +423,137 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
         child: Text('$label：$value'),
       );
 
-  /// 临时封禁来源。
+  /// 管理员按事件封禁来源：服务端用事件记录的来源封禁，并在同一事务里结案。
+  ///
+  /// 时长只提供 1 小时／1 天，作用域只有账号与凭据链路或当前接口；
+  /// 全站封禁仍只能由超级管理员走「自定义封禁」显式确认。
+  Future<void> _blockFromEvent(
+      SecurityEvent event, PublishSessionScope session) async {
+    if (_actionBusy || !_owns(session)) return;
+    setState(() => _actionBusy = true);
+    final routePrefix = event.route.startsWith('/api/') ? event.route : '';
+    var duration = 1440;
+    var scope = 'account';
+    var reason =
+        '${securityEventTitle(event)}（${securityEventSourceIPLabel(event)}）';
+    try {
+      final confirmed = await showAppDialog<bool>(
+        context: context,
+        builder: (dialogContext) => SecuritySessionGuard(
+            auth: context.read<AuthProvider>(),
+            session: session,
+            requireAdmin: true,
+            child: StatefulBuilder(
+              builder: (context, setDialogState) => AppAlertDialog(
+                title: const Text('封禁这个来源'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('预警 IP：${securityEventSourceIPLabel(event)}',
+                          style: Theme.of(context).textTheme.bodySmall),
+                      Text('归属地：${securityEventSourceRegionLabel(event)}',
+                          style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(height: AppSpacing.md),
+                      const Text('封禁时长',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: AppSpacing.xs),
+                      Wrap(spacing: AppSpacing.sm, children: [
+                        for (final option in const [
+                          (60, '1 小时'),
+                          (1440, '1 天')
+                        ])
+                          ChoiceChip(
+                            label: Text(option.$2),
+                            selected: duration == option.$1,
+                            onSelected: (_) =>
+                                setDialogState(() => duration = option.$1),
+                          ),
+                      ]),
+                      const SizedBox(height: AppSpacing.md),
+                      const Text('封禁范围',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: AppSpacing.xs),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.xs,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('账号与凭据链路'),
+                            selected: scope == 'account',
+                            onSelected: (_) =>
+                                setDialogState(() => scope = 'account'),
+                          ),
+                          if (routePrefix.isNotEmpty)
+                            ChoiceChip(
+                              label: Text('仅当前接口 $routePrefix'),
+                              selected: scope == 'route',
+                              onSelected: (_) =>
+                                  setDialogState(() => scope = 'route'),
+                            ),
+                        ],
+                      ),
+                      if (scope == 'account')
+                        Padding(
+                          padding: const EdgeInsets.only(top: AppSpacing.xs),
+                          child: Text(
+                            securityBlockScopeDescription(
+                                _overview?.protection['security_block_scopes']
+                                    as Map<String, dynamic>?,
+                                scope),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      const SizedBox(height: AppSpacing.md),
+                      TextFormField(
+                        initialValue: reason,
+                        onChanged: (value) =>
+                            setDialogState(() => reason = value),
+                        maxLength: 200,
+                        decoration: const InputDecoration(labelText: '封禁原因'),
+                      ),
+                      const Text('校园网、宿舍和运营商出口可能由多人共用，误封时可在“当前生效封禁”里提前解除。',
+                          style: TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      child: const Text('取消')),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.danger,
+                        foregroundColor: Colors.white),
+                    onPressed: reason.trim().isEmpty
+                        ? null
+                        : () => Navigator.pop(dialogContext, true),
+                    child: Text('确认封禁 ${duration == 1440 ? '1 天' : '1 小时'}'),
+                  ),
+                ],
+              ),
+            )),
+      );
+      if (confirmed != true || !_owns(session)) return;
+      final resolved = await _service.blockEventSource(event.id,
+          scope: scope,
+          durationMinutes: duration,
+          reason: reason.trim(),
+          session: session);
+      if (!_owns(session)) return;
+      _showMessage(resolved ? '已封禁来源，事件已结案' : '已封禁来源');
+      await _load();
+    } catch (error) {
+      if (_owns(session)) {
+        _showMessage(_actionErrorMessage(error, '封禁失败'));
+      }
+    } finally {
+      if (_owns(session)) setState(() => _actionBusy = false);
+    }
+  }
+
+  /// 临时封禁来源（超级管理员，按来源键，可选全站）。
   ///
   /// 默认作用域是**当前接口**，不再是空路由前缀。空前缀在服务端等价于对全部高风险
   /// 接口生效，校园网/宿舍/运营商共享出口一点就可能连坐一批正常同学；
@@ -599,7 +752,22 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
           systemNavigationBarColor: Colors.transparent,
         ),
         actions: [
-          if (context.read<AuthProvider>().user?.isSuperAdmin == true)
+          IconButton(
+            tooltip: '操作记录',
+            style: IconButton.styleFrom(
+                visualDensity: VisualDensity.standard,
+                minimumSize: const Size(44, 44)),
+            icon: const Icon(Icons.receipt_long_outlined),
+            onPressed: _session == null
+                ? null
+                : () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminSecurityLogsScreen(),
+                      ),
+                    ),
+          ),
+          if (context.read<AuthProvider>().user?.isAdmin == true)
             IconButton(
               tooltip: '当前生效封禁',
               style: IconButton.styleFrom(
@@ -649,16 +817,17 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                   Padding(
                     padding: const EdgeInsets.all(AppSpacing.xxl),
                     child: Center(
-                        child: AppContentSurface.reading(child: Text(_emptyMessage()))),
+                        child: AppContentSurface.reading(
+                            child: Text(_emptyMessage()))),
                   )
                 else
                   ..._events.map(_buildEventCard),
                 if (!_loading && _error == null && _events.isNotEmpty)
                   Text(
-                          _total == null
-                              ? '已加载 ${_events.length} 条'
-                              : '已加载 ${_events.length} 条，共 $_total 条',
-                          textAlign: TextAlign.center),
+                      _total == null
+                          ? '已加载 ${_events.length} 条'
+                          : '已加载 ${_events.length} 条，共 $_total 条',
+                      textAlign: TextAlign.center),
                 if (!_loading && _error == null && _hasMore) ...[
                   if (_moreError != null)
                     AppContentSurface.reading(

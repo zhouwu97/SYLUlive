@@ -14,6 +14,8 @@ import (
 
 var errAcademicBindingChanged = errors.New("原学生身份版本已变化")
 
+var errAcademicLegalConsentRequired = errors.New("基础协议未确认或授权已撤销")
+
 // 换绑沿用短期学校挑战协议，但 operation 和旧绑定版本必须由服务端签名。
 func (h *AcademicIdentityHandler) CreateChangeChallenge(c *gin.Context) {
 	c.Set("academic_change", true)

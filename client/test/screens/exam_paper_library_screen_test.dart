@@ -253,7 +253,8 @@ void main() {
       studentId: '20260001',
       nickname: '测试用户',
       studentVerified: verified,
-      eduBound: false,
+      eduAuthorized: verified,
+      eduBound: verified,
       createdAt: DateTime(2026));
 
   Future<void> openAccessCheck(WidgetTester tester, AuthProvider auth,

@@ -554,7 +554,7 @@ func (h *AcademicIdentityHandler) Verify(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"code": "ACADEMIC_IDENTITY_IMMUTABLE", "error": "该 Provider 的学生身份已绑定，不能直接更换"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": "ACADEMIC_IDENTITY_STORE_FAILED", "error": "保存学生身份失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "ACADEMIC_IDENTITY_STORE_FAILED", "error": "保存教务认证失败"})
 		return
 	}
 	h.writeVerifiedBinding(c, userID, claims.ProviderID, claims.StudentID)
@@ -620,7 +620,7 @@ func (h *AcademicIdentityHandler) verifyUndergraduate(c *gin.Context, userID uin
 			c.JSON(http.StatusConflict, gin.H{"code": "ACADEMIC_IDENTITY_IMMUTABLE", "error": "该 Provider 的学生身份已绑定，不能直接更换"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": "ACADEMIC_IDENTITY_STORE_FAILED", "error": "保存学生身份失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "ACADEMIC_IDENTITY_STORE_FAILED", "error": "保存教务认证失败"})
 		return
 	}
 	h.writeVerifiedBinding(c, userID, models.AcademicProviderUndergraduate, studentID)
@@ -630,7 +630,7 @@ func (h *AcademicIdentityHandler) verifyUndergraduate(c *gin.Context, userID uin
 func (h *AcademicIdentityHandler) writeVerifiedBinding(c *gin.Context, userID uint, providerID, studentID string) {
 	var binding models.AcademicIdentityBinding
 	if err := h.db.Where("user_id = ? AND provider_id = ? AND student_id = ?", userID, providerID, studentID).First(&binding).Error; err != nil {
-		c.JSON(http.StatusConflict, gin.H{"code": "ACADEMIC_BINDING_CHANGED", "error": "学生身份状态已变化，请刷新后重试"})
+		c.JSON(http.StatusConflict, gin.H{"code": "ACADEMIC_BINDING_CHANGED", "error": "教务认证状态已变化，请刷新后重试"})
 		return
 	}
 	c.JSON(http.StatusOK, academicBindingPayload(binding))
@@ -691,7 +691,7 @@ func (h *AcademicIdentityHandler) List(c *gin.Context) {
 	}
 	var bindings []models.AcademicIdentityBinding
 	if err := h.db.Where("user_id = ?", userID).Order("provider_id ASC, student_id ASC").Find(&bindings).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": "ACADEMIC_IDENTITY_READ_FAILED", "error": "读取学生身份失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "ACADEMIC_IDENTITY_READ_FAILED", "error": "读取教务认证失败"})
 		return
 	}
 	response := make([]gin.H, 0, len(bindings)+1)

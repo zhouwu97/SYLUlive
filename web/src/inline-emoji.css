@@ -8,12 +8,15 @@
 }
 .inline-emoji {
   font-family: "SYLU Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
-  font-size: 1.1em;
+  font-size: 1em;
   font-weight: 400;
   font-style: normal;
   font-synthesis: none;
   font-variant-emoji: emoji;
   letter-spacing: 0;
   line-height: 1;
-  vertical-align: -.06em;
+  vertical-align: -.04em;
+}
+@media (min-width: 601px) {
+  .inline-emoji.emoji-only { display: inline-block; font-size: 2em; line-height: 1.25; vertical-align: middle; }
 }

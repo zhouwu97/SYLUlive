@@ -10,6 +10,16 @@ const ONE_PIXEL_PNG = Buffer.from(
   "base64",
 );
 
+const themeQaDir = process.env.THEME_UI_QA_DIR;
+
+async function captureThemeUi(page: Page, name: string) {
+  if (!themeQaDir) return;
+  await page.locator(".theme-artwork img").evaluateAll((images) =>
+    Promise.all(images.map((image) => (image as HTMLImageElement).decode())),
+  );
+  await page.screenshot({ path: `${themeQaDir}/${name}.png`, animations: "disabled" });
+}
+
 /** 在内存中拼出合法 ZIP（Deflate 方法 8），不向仓库提交任何二进制夹具。 */
 function createZipBuffer(files: Record<string, Buffer>): Buffer {
   const localParts: Buffer[] = [];
@@ -154,6 +164,7 @@ function buildThemeZip(opts: {
       },
       coursePalette: ["#2F7FD8", "#1E9BB8", "#1AA69C", "#2E8BC0", "#3B6FD8"],
       wallpapers: {
+        schedule: { portrait: "wallpapers/schedule.png", fit: "contain" },
         global: {
           portrait: "wallpapers/sea.png",
           fit: "cover",
@@ -219,6 +230,7 @@ function buildThemeZip(opts: {
     "preview/light.png": ONE_PIXEL_PNG,
     "preview/dark.png": ONE_PIXEL_PNG,
     "wallpapers/sea.png": ONE_PIXEL_PNG,
+    "wallpapers/schedule.png": ONE_PIXEL_PNG,
     ...(opts.withFont ? { "fonts/regular.ttf": opts.fontBytesOverride || MINIMAL_TTF } : {}),
   });
 }
@@ -377,10 +389,12 @@ async function setupThemeApi(page: Page) {
       return route.fulfill({ json: sakuraItem });
     }
     if (url.pathname.endsWith("/preview/light") || url.pathname.endsWith("/preview/dark")) {
+      const mode = url.pathname.endsWith("/light") ? "light" : "dark";
+      const preview = new URL(`../../client/build/theme-p1-qa/preview-${mode}.png`, import.meta.url);
       return route.fulfill({
         status: 200,
         contentType: "image/png",
-        body: ONE_PIXEL_PNG,
+        body: themeQaDir && fs.existsSync(preview) ? fs.readFileSync(preview) : ONE_PIXEL_PNG,
       });
     }
     if (url.pathname === `/api/themes/${SEA_ID}/versions/1/package`) {
@@ -465,19 +479,12 @@ test("移动网页主题：应用海盐蓝、首帧无闪烁恢复、离线保�
     cardBg: await page.locator(".feed-card").first().evaluate((el) => getComputedStyle(el).backgroundColor),
   };
 
-  // 切换到 390×844 手机视口并记录应用前默认颜色
+  // 切换到 390×844 手机视口。
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("./");
   const dock = page.getByRole("navigation", { name: "底部导航" });
-  await dock.getByRole("link", { name: "首页", exact: true }).click();
   await expect(dock.getByRole("link", { name: "首页", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".mobile-app-feed .feed-card").first()).toBeVisible();
-  const mobileDefaultColors = {
-    cardBg: await page.locator(".mobile-app-feed .feed-card").first().evaluate((el) => getComputedStyle(el).backgroundColor),
-    bodyColor: await page.locator("body").evaluate((el) => getComputedStyle(el).color),
-    navBg: await page.locator(".mobile-bottom-nav").evaluate((el) => getComputedStyle(el).backgroundColor),
-    navActiveColor: await dock.getByRole("link", { name: "首页", exact: true }).evaluate((el) => getComputedStyle(el).color),
-  };
 
   // 从“我 → 外观与主题”进入商城，打开 /theme/<familyId> 验证双操作按钮
   await dock.getByRole("link", { name: "我", exact: true }).click();
@@ -522,6 +529,32 @@ test("移动网页主题：应用海盐蓝、首帧无闪烁恢复、离线保�
   expect(appliedSeaStyles.wallFilter).toContain("blur(2px)");
   expect(appliedSeaStyles.bodyFont).toContain("sylulive_web_theme_");
 
+  // 走站内导航，两个页面共用全局壁纸时应复用已解码的图片。
+  await dock.getByRole("link", { name: "集市", exact: true }).click();
+  await expect(dock.getByRole("link", { name: "集市", exact: true })).toHaveAttribute("aria-current", "page");
+  const wallpaper = page.locator(".mobile-theme-wallpaper img");
+  await expect(wallpaper).toHaveAttribute("src", appliedSeaStyles.wallSrc);
+  await dock.getByRole("link", { name: "课表", exact: true }).click();
+  await expect(wallpaper).not.toHaveAttribute("src", appliedSeaStyles.wallSrc);
+  await expect(wallpaper).toHaveCSS("object-fit", "contain");
+  const scheduleWallSrc = await wallpaper.getAttribute("src");
+  await dock.getByRole("link", { name: "首页", exact: true }).click();
+  await expect(wallpaper).toHaveAttribute("src", appliedSeaStyles.wallSrc);
+  await dock.getByRole("link", { name: "课表", exact: true }).click();
+  await expect(wallpaper).toHaveAttribute("src", scheduleWallSrc!);
+  await dock.getByRole("link", { name: "首页", exact: true }).click();
+
+  await page.getByRole("button", { name: "打开导航", exact: true }).click();
+  const colorMode = page.getByRole("complementary", { name: "主导航" })
+    .getByRole("button", { name: "切换主题", exact: true });
+  await colorMode.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await colorMode.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  const drawerBackdrop = page.getByRole("button", { name: "收起导航", exact: true });
+  await drawerBackdrop.click({ position: { x: 380, y: 100 } });
+  await expect(drawerBackdrop).toBeHidden();
+
   // 刷新后验证首帧之前已同步恢复主题配色，随后壁纸出现
   await page.reload();
   const earlyPaint = await page.evaluate(
@@ -565,50 +598,41 @@ test("移动网页主题：应用海盐蓝、首帧无闪烁恢复、离线保�
   };
   expect(desktopAfterApply).toEqual(desktopBaseline);
 
-  // 切回 390×844：验证释放旧 object URL 与恢复默认回到原值
+  // 切回手机视口，换一套主题后恢复首次应用的海盐蓝。
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`theme/${SEA_ID}`);
-  await page.getByRole("button", { name: "恢复默认", exact: true }).click();
-  const revokedAfterReset = await page.evaluate(
-    () => ((window as unknown as Record<string, any>).__revokedUrls as string[]).length,
-  );
-  expect(revokedAfterReset).toBeGreaterThan(0);
-
-  await page.goto("./");
-  await dock.getByRole("link", { name: "首页", exact: true }).click();
-  await expect(page.locator(".mobile-app-feed .feed-card").first()).toBeVisible();
-  const restoredColors = {
-    cardBg: await page.locator(".mobile-app-feed .feed-card").first().evaluate((el) => getComputedStyle(el).backgroundColor),
-    bodyColor: await page.locator("body").evaluate((el) => getComputedStyle(el).color),
-    navBg: await page.locator(".mobile-bottom-nav").evaluate((el) => getComputedStyle(el).backgroundColor),
-    navActiveColor: await dock.getByRole("link", { name: "首页", exact: true }).evaluate((el) => getComputedStyle(el).color),
-  };
-  expect(restoredColors).toEqual(mobileDefaultColors);
-
-  // 竞态验证：先点海盐蓝（挂起包下载），立即切换到樱粉并应用，随后放行海盐蓝旧响应 -> 樱粉保持生效不被覆盖
-  let releaseSeaPackage!: () => void;
-  state.holdSeaPackage = new Promise<void>((r) => {
-    releaseSeaPackage = r;
-  });
-  await page.goto(`theme/${SEA_ID}`);
-  await page.getByRole("button", { name: "在网页上应用", exact: true }).click();
   await page.goto(`theme/${SAKURA_ID}`);
   await page.getByRole("button", { name: "在网页上应用", exact: true }).click();
   await expect(page.getByRole("button", { name: "已在网页上应用", exact: true })).toBeVisible();
-  state.holdSeaPackage = null;
-  releaseSeaPackage();
-  await page.waitForTimeout(80);
+  await page.reload();
+  await expect(page.locator("html")).toHaveCSS("--theme-card", "#FFF0F3");
+  const sakuraUrl = await wallpaper.getAttribute("src");
 
-  await page.goto("./");
-  await expect(page.locator(".mobile-app-feed .feed-card").first()).toBeVisible();
-  const sakuraCardBg = await page
-    .locator(".mobile-app-feed .feed-card")
-    .first()
-    .evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(sakuraCardBg).toBe("rgb(255, 240, 243)"); // 樱粉 #FFF0F3，未被迟到的海盐蓝覆盖
+  // 下载失败期间继续使用当前主题，恢复入口可重试。
+  const restore = page.getByRole("button", { name: "恢复默认", exact: true });
+  state.failPackage = true;
+  await restore.click();
+  await expect(page.getByText(/初始主题资源未加载/)).toBeVisible();
+  await expect(wallpaper).toHaveAttribute("src", sakuraUrl!);
+
+  state.failPackage = false;
+  await page.getByRole("button", { name: "重试资源", exact: true }).click();
+  await expect(page.locator("html")).toHaveCSS("--theme-card", "#FAFCFF");
+  await expect.poll(() => page.evaluate(() => {
+    const image = document.querySelector<HTMLImageElement>(".mobile-theme-wallpaper img");
+    return !!image?.complete && image.naturalWidth > 0;
+  })).toBe(true);
+  const revoked = await page.evaluate(
+    () => (window as unknown as Record<string, any>).__revokedUrls as string[],
+  );
+  expect(revoked).toContain(sakuraUrl);
+  await captureThemeUi(page, "restored-initial-theme");
+
+  await page.reload();
+  await expect(page.locator("html")).toHaveCSS("--theme-card", "#FAFCFF");
+  await expect(page.getByTestId("mobile-theme-wallpaper")).toBeVisible();
 
   // localStorage 写入抛错时：当前会话仍生效并展示存储受限提示
-  await page.goto(`theme/${SEA_ID}`);
+  await page.goto(`theme/${SAKURA_ID}`);
   await page.evaluate(() => {
     Storage.prototype.setItem = () => {
       throw new DOMException("QuotaExceededError", "QuotaExceededError");
@@ -643,6 +667,7 @@ test("移动网页主题：目录分页与筛选取消旧请求、详情按 ID �
   await page.getByRole("button", { name: "加载更多", exact: true }).click();
   await expect(page.getByText("樱粉")).toBeVisible();
   await expect(page.getByRole("button", { name: "加载更多", exact: true })).toHaveCount(0);
+  await captureThemeUi(page, "web-mobile-store");
 
   let releasePopularCatalog!: () => void;
   state.holdPopularCatalog = new Promise<void>((r) => {
@@ -680,6 +705,25 @@ test("移动网页主题：目录分页与筛选取消旧请求、详情按 ID �
 
   // 4. 落地页主题变量仅在 ≤600px 生效：手机端应用海盐蓝后，390px 落地页标签变色，1280px 落地页完全不变
   await page.goto(`theme/${SEA_ID}`);
+  await expect(page.getByRole("heading", { name: "海盐蓝", exact: true })).toBeVisible();
+  await captureThemeUi(page, "web-mobile-detail");
+
+  let releaseSeaPackage!: () => void;
+  state.holdSeaPackage = new Promise<void>((resolve) => { releaseSeaPackage = resolve; });
+  const seaRequest = page.waitForRequest((request) => request.url().includes(`${SEA_ID}/versions/1/package`));
+  await page.getByRole("button", { name: "在网页上应用", exact: true }).click();
+  await seaRequest;
+  await page.locator(".theme-back-link").click();
+  await page.locator(".mobile-theme-card").filter({ hasText: "樱粉" }).click();
+  await page.getByRole("button", { name: "在网页上应用", exact: true }).click();
+  await expect(page.locator("html")).toHaveCSS("--theme-card", "#FFF0F3");
+  state.holdSeaPackage = null;
+  releaseSeaPackage();
+  await expect.poll(() => state.abortedCatalogUrls.some((url) => url.includes(`${SEA_ID}/versions/1/package`))).toBe(true);
+  await expect(page.locator("html")).toHaveCSS("--theme-card", "#FFF0F3");
+
+  await page.locator(".theme-back-link").click();
+  await page.locator(".mobile-theme-card").filter({ hasText: "海盐蓝" }).click();
   await page.getByRole("button", { name: "在网页上应用", exact: true }).click();
   await expect(page.getByRole("button", { name: "已在网页上应用", exact: true })).toBeVisible();
   const mobileTagStyles = {
@@ -697,6 +741,31 @@ test("移动网页主题：目录分页与筛选取消旧请求、详情按 ID �
     tagColor: await page.locator(".theme-landing-tags span").first().evaluate((el) => getComputedStyle(el).color),
   };
   expect(landingDesktopAfter).toEqual(landingDesktopBaseline);
+  await expect(page.getByRole("link", { name: "在 App 中打开" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /在网页上应用/ })).toHaveCount(0);
+  await captureThemeUi(page, "web-desktop-detail");
+  await page.getByRole("button", { name: "外观设置", exact: true }).click();
+  await page.getByRole("dialog", { name: "外观设置" })
+    .getByRole("link", { name: "主题商城" }).click();
+  await expect(page.getByRole("heading", { name: "主题商城" })).toBeVisible();
+  const covers = page.locator(".mobile-theme-card");
+  await expect(covers).toHaveCount(2);
+  expect((await covers.nth(0).boundingBox())?.y).toBe((await covers.nth(1).boundingBox())?.y);
+  await captureThemeUi(page, "web-desktop-store");
+  if (themeQaDir) {
+    const colorMode = page.getByRole("button", { name: "切换主题", exact: true });
+    await colorMode.click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await captureThemeUi(page, "web-desktop-store-dark");
+    await colorMode.click();
+  }
+  const searchRequest = page.waitForRequest((request) => {
+    const query = new URL(request.url());
+    return query.pathname === "/api/themes" && query.searchParams.get("q") === "海盐";
+  });
+  await page.getByRole("textbox", { name: "搜索主题" }).fill("海盐");
+  await page.getByRole("button", { name: "搜索", exact: true }).click();
+  await searchRequest;
 
   // 5. 字体重试的缓存与错误处理：刷新遇到损坏字体时不产生未捕获异常、保留配色、不注入坏字体；修复后重试重新拉包恢复字体与壁纸
   await page.setViewportSize({ width: 390, height: 844 });

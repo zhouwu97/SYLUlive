@@ -23,7 +23,7 @@ func prepareReviewV2DB(t *testing.T) (*CanteenHandler, models.Canteen, models.Us
 		t.Fatalf("migrate review v2: %v", err)
 	}
 	verifiedAt := time.Now()
-	user := models.User{ID: 88, StudentID: "student-88", PasswordHash: "test", Nickname: "评价同学", CreditScore: 80, StudentVerifiedAt: &verifiedAt}
+	user := models.User{ID: 88, StudentID: "student-88", PasswordHash: "test", Nickname: "评价同学", CreditScore: 80, StudentVerifiedAt: &verifiedAt, EduAuthorized: true, EduBound: true}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -671,7 +671,7 @@ func TestEnsureLegacyReviewEventDoesNotResurrectHiddenRating(t *testing.T) {
 func TestGetReviewsDeduplicatesBeforeBestSortAndUsesStableCursor(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
 	verifiedAt := time.Now()
-	secondUser := models.User{ID: 89, StudentID: "student-89", PasswordHash: "test", Nickname: "第二位", CreditScore: 80, StudentVerifiedAt: &verifiedAt}
+	secondUser := models.User{ID: 89, StudentID: "student-89", PasswordHash: "test", Nickname: "第二位", CreditScore: 80, StudentVerifiedAt: &verifiedAt, EduAuthorized: true, EduBound: true}
 	if err := h.db.Create(&secondUser).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -729,7 +729,7 @@ func TestGetReviewsDeduplicatesBeforeBestSortAndUsesStableCursor(t *testing.T) {
 
 func TestCreateDishReviewValidatesParentEventOwnershipAndCanteen(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
-	otherUser := models.User{ID: 90, StudentID: "student-90", PasswordHash: "test", Nickname: "其他", StudentVerifiedAt: user.StudentVerifiedAt}
+	otherUser := models.User{ID: 90, StudentID: "student-90", PasswordHash: "test", Nickname: "其他", StudentVerifiedAt: user.StudentVerifiedAt, EduAuthorized: true, EduBound: true}
 	if err := h.db.Create(&otherUser).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -1179,7 +1179,7 @@ func TestDeleteReviewKeepsDishReferencedByAnotherActiveReview(t *testing.T) {
 		t.Fatalf("review event missing: %v", err)
 	}
 
-	other := models.User{ID: 91, StudentID: "student-91", PasswordHash: "test", Nickname: "另一位同学"}
+	other := models.User{ID: 91, StudentID: "student-91", PasswordHash: "test", Nickname: "另一位同学", EduAuthorized: true, EduBound: true}
 	if err := h.db.Create(&other).Error; err != nil {
 		t.Fatal(err)
 	}

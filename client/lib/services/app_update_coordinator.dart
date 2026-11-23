@@ -80,6 +80,8 @@ class AppVersionHeaders {
 
 /// 根级更新提示协调器。它从不绘制全屏门禁；服务端 426 仍负责收紧业务 API。
 class AppUpdateCoordinator extends ChangeNotifier {
+  static const foregroundCheckInterval = Duration(minutes: 5);
+
   AppUpdateCoordinator({
     AppUpdateApi? api,
     AppUpdateCache? cache,
@@ -108,7 +110,8 @@ class AppUpdateCoordinator extends ChangeNotifier {
   bool _requiredByApi426 = false;
   bool _requiredByCache = false;
   bool _optionalDeferred = false;
-  Future<void>? _deferredInitialCheck;
+  Future<void>? _initialCheck;
+  Future<void>? _activeCheck;
   Timer? _downloadPollingTimer;
 
   AppUpdateRequirement get requirement =>
@@ -124,8 +127,8 @@ class AppUpdateCoordinator extends ChangeNotifier {
   bool get isBlocking => false;
   bool get shouldPromptOptional =>
       requirement == AppUpdateRequirement.optional &&
-      !_optionalDeferred &&
-      _downloadStatus.state == AppUpdateDownloadState.idle;
+      !_checking &&
+      !_optionalDeferred;
 
   /// 旧界面与测试的兼容投影；它不再决定任何全屏渲染。
   AppUpdatePhase get phase {
@@ -144,12 +147,11 @@ class AppUpdateCoordinator extends ChangeNotifier {
     };
   }
 
-  Future<void> startDeferredInitialCheck() =>
-      _deferredInitialCheck ??= initialize();
+  Future<void> startDeferredInitialCheck() => initialize();
 
-  Future<void> initialize() async {
-    if (_initialized) return;
-    _initialized = true;
+  Future<void> initialize() => _initialCheck ??= _initialize();
+
+  Future<void> _initialize() async {
     try {
       final headers = await _versionHeadersLoader();
       final cached = await _cache.read();
@@ -165,22 +167,25 @@ class AppUpdateCoordinator extends ChangeNotifier {
     } catch (error) {
       _errorMessage = '读取本机版本信息失败: $error';
     }
-    notifyListeners();
-    await check(force: true, initial: true);
+    _initialized = true;
+    await check(force: true);
   }
 
   Future<void> check({
     bool force = false,
     bool manual = false,
     bool initial = false,
-  }) async {
-    if (_checking) return;
-    if (!_initialized) {
-      await initialize();
-      return;
-    }
-    if (!force && !_shouldCheckNow()) return;
+  }) {
+    if (!_initialized) return initialize();
+    final activeCheck = _activeCheck;
+    if (activeCheck != null) return activeCheck;
+    if (!force && !_shouldCheckNow()) return Future.value();
+    return _activeCheck = _check(manual: manual).whenComplete(() {
+      _activeCheck = null;
+    });
+  }
 
+  Future<void> _check({required bool manual}) async {
     _checking = true;
     _errorMessage = null;
     notifyListeners();
@@ -209,6 +214,7 @@ class AppUpdateCoordinator extends ChangeNotifier {
 
       // 静默只对普通更新生效；手动检查必须让用户先确认下载。
       if (!manual &&
+          PlatformCapabilities.current.supportsInAppPackageInstall &&
           next.updateType == AppUpdateType.optional &&
           next.deliveryMode == AppUpdateDeliveryMode.directPackage &&
           _downloadStatus.state == AppUpdateDownloadState.idle) {
@@ -340,13 +346,16 @@ class AppUpdateCoordinator extends ChangeNotifier {
       _downloadStatus = NativeUpdateDownloadStatus.idle;
       return;
     }
+    NativeUpdateDownloadStatus status;
     try {
-      _downloadStatus = await _downloadBridge.query(release);
-      if (_downloadStatus.isActive) _startDownloadPolling();
+      status = await _downloadBridge.query(release);
     } catch (_) {
       // 原生桥接不可用不能阻断版本检查；下次进入 Android 前台会重新读取。
-      _downloadStatus = NativeUpdateDownloadStatus.idle;
+      status = NativeUpdateDownloadStatus.idle;
     }
+    if (!identical(_info, release)) return;
+    _downloadStatus = status;
+    if (status.isActive) _startDownloadPolling();
   }
 
   void _startDownloadPolling() {
@@ -374,9 +383,10 @@ class AppUpdateCoordinator extends ChangeNotifier {
   bool _shouldCheckNow() {
     final checkedAt = _lastSuccessfulCheckAt;
     if (checkedAt == null) return true;
-    final seconds = _info?.checkAfterSeconds ?? 300;
+    final maxSeconds = foregroundCheckInterval.inSeconds;
+    final seconds = _info?.checkAfterSeconds ?? maxSeconds;
     return DateTime.now().toUtc().difference(checkedAt) >=
-        Duration(seconds: seconds.clamp(60, 86400));
+        Duration(seconds: seconds.clamp(60, maxSeconds));
   }
 
   String _errorText(Object error) {

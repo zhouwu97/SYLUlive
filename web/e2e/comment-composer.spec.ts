@@ -6,7 +6,7 @@ const sticker = readFileSync("server/internal/handlers/sticker_assets/catalog.js
 const pack = JSON.parse(sticker)[0];
 const post = { id: 936, board_id: 1, title: "周末一起去图书馆吗", content: "期末复习开始啦，准备周六上午去图书馆。\n有没有同学一起？可以互相分享复习资料。", author_id: 7, author: { id: 7, nickname: "林同学", followers_count: 12 }, like_count: 3, reply_count: 2, created_at: "2026-11-16T07:28:00+08:00", viewer_permissions: {} };
 const root = { id: 101, author_id: 8, author: { nickname: "小雨" }, content: "我也准备去！几点集合？", like_count: 1, child_reply_count: 1, created_at: "2026-11-16T07:38:00+08:00" };
-const child = { id: 102, parent_reply_id: 101, author_id: 7, author: { nickname: "林同学" }, content: "九点在一楼门口见～", created_at: "2026-11-16T08:15:00+08:00" };
+const child = { id: 102, parent_reply_id: 101, author_id: 7, author: { nickname: "林同学" }, content: "@小雨 @路人 九点在一楼门口见～", mentions: [{ user_id: 8, nickname: "小雨" }], created_at: "2026-11-16T08:15:00+08:00" };
 
 async function setup(page: Page) {
   const state = { userId: 3 as number | null, failReply: false, rulesRequired: false, failUpload: false, holdReply: false, holdUpload: false, release: () => {}, writes: [] as { path: string; body: string }[], errors: [] as string[] };
@@ -46,6 +46,16 @@ async function open(page: Page) {
   await page.getByRole("button", { name: "说说你的想法，一起聊聊…", exact: true }).click();
   return page.locator(".post-comment-input .reply-inline-composer");
 }
+
+test("评论只把真实被 @ 的昵称渲染成主页链接", async ({ page }) => {
+  const state = await setup(page);
+  await page.goto("post/936");
+  const comment = page.getByRole("article", { name: "林同学的评论" });
+  await expect(comment.locator(".comment-mention")).toHaveCount(1);
+  await expect(comment.getByRole("link", { name: "@小雨", exact: true })).toHaveAttribute("href", /\/user\/8$/);
+  await expect(comment.getByText("@路人", { exact: false })).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
 
 test("桌面评论原地展开，收起保留草稿与焦点，快捷键只发送一次", async ({ page }) => {
   const state = await setup(page);

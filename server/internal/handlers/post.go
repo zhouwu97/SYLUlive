@@ -222,11 +222,10 @@ var (
 )
 
 // marketPublishDenialBody 把准入拒绝表达成用户当下能执行的事实。
-// 认证入口以「账号安全 - 教务身份与本机连接」为准；本机声明、教务账号配置
-// 都不构成学生认证，不能在这里暗示重绑就能解决。
+// 认证入口以「账号安全 - 教务身份与本机连接」为准；本机声明不能替代服务端教务认证。
 func marketPublishDenialBody(action string) (string, string) {
 	return "market_student_unverified",
-		action + "集市帖子需要完成学生认证；本机连接教务不构成学生认证。" +
+		action + "集市帖子需要完成教务认证；仅本机连接教务尚未完成服务器认证。" +
 			"请到「账号安全 - 教务身份与本机连接」查看可用的认证方式。"
 }
 

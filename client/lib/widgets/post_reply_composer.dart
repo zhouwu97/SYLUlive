@@ -1,8 +1,13 @@
+import 'dart:async';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+import '../config/api_constants.dart';
 import '../controllers/post_reply_composer_controller.dart';
+import '../models/reply.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
@@ -12,6 +17,7 @@ import '../utils/app_feedback.dart';
 import '../utils/text_editing_helper.dart';
 import 'app_composer_bar.dart';
 import 'app_card.dart';
+import 'cached_avatar.dart';
 import 'emoji/app_emoji_panel.dart';
 import 'emoji/favorite_image_composer_preview.dart';
 import 'emoji/local_image_composer_preview.dart';
@@ -33,6 +39,7 @@ class PostReplyComposer extends StatefulWidget {
     this.emojiPanelFallbackHeight,
     this.emojiPanelMaxHeight,
     this.embedded = false,
+    this.mentionReplies = const [],
   });
 
   final PostReplyComposerController controller;
@@ -47,6 +54,9 @@ class PostReplyComposer extends StatefulWidget {
   /// 弹层已有统一材质时，输入栏沿用父表面，避免叠加两次不透明度。
   final bool embedded;
 
+  /// 已加载的评论：输入 `@` 时优先推荐这些作者，再补全站用户搜索结果。
+  final List<Reply> mentionReplies;
+
   @override
   State<PostReplyComposer> createState() => _PostReplyComposerState();
 }
@@ -54,6 +64,9 @@ class PostReplyComposer extends StatefulWidget {
 class _PostReplyComposerState extends State<PostReplyComposer>
     with WidgetsBindingObserver {
   bool _pickingImage = false;
+  Timer? _mentionSearchTimer;
+  String _pendingMentionQuery = '';
+  List<ReplyMentionUser> _searchedMentionUsers = const [];
 
   PostReplyComposerController get controller => widget.controller;
 
@@ -61,10 +74,23 @@ class _PostReplyComposerState extends State<PostReplyComposer>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    controller.textController.addListener(_scheduleMentionSearch);
+  }
+
+  @override
+  void didUpdateWidget(covariant PostReplyComposer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.textController
+          .removeListener(_scheduleMentionSearch);
+      widget.controller.textController.addListener(_scheduleMentionSearch);
+    }
   }
 
   @override
   void dispose() {
+    _mentionSearchTimer?.cancel();
+    controller.textController.removeListener(_scheduleMentionSearch);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -168,6 +194,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
               onRemove: controller.removeLocalImage,
               enabled: !widget.sending,
             ),
+          _buildMentionSuggestions(),
           AppComposerBar(
             composerKey: const ValueKey('post-reply-composer'),
             leadingKey: const ValueKey('post-reply-image-button'),
@@ -267,6 +294,116 @@ class _PostReplyComposerState extends State<PostReplyComposer>
           }),
         ],
       ),
+    );
+  }
+
+  /// `@` 后的关键字稳定 250ms 再搜全站用户；拼音输入未上屏时不搜。
+  void _scheduleMentionSearch() {
+    final value = controller.textController.value;
+    final query = controller.activeMention?.query ?? '';
+    if (query == _pendingMentionQuery ||
+        (value.composing.isValid && !value.composing.isCollapsed)) {
+      return;
+    }
+    _pendingMentionQuery = query;
+    _mentionSearchTimer?.cancel();
+    if (query.isEmpty) return;
+    _mentionSearchTimer = Timer(
+      const Duration(milliseconds: 250),
+      () => _searchMentionUsers(query),
+    );
+  }
+
+  Future<void> _searchMentionUsers(String query) async {
+    final dio = context.read<AuthProvider?>()?.dio;
+    if (dio == null) return;
+    try {
+      final response = await dio.get(
+        '/search',
+        queryParameters: {
+          'q': query,
+          'type': 'users',
+          'limit': replyMentionLimit,
+        },
+      );
+      if (!mounted || query != _pendingMentionQuery) return;
+      final items = (response.data['items'] as List?) ?? const [];
+      setState(() {
+        _searchedMentionUsers = [
+          for (final item in items)
+            ReplyMentionUser.fromJson(Map<String, dynamic>.from(item as Map)),
+        ];
+      });
+    } on DioException catch (error) {
+      // 搜索失败只影响候选补全，仍可从本帖评论者中选择。
+      debugPrint('搜索 @ 用户失败: $error');
+    }
+  }
+
+  Widget _buildMentionSuggestions() {
+    return ListenableBuilder(
+      listenable: Listenable.merge(
+        [controller.textController, controller.focusNode],
+      ),
+      builder: (context, _) {
+        final mention = controller.activeMention;
+        if (mention == null ||
+            !controller.focusNode.hasFocus ||
+            !widget.enabled ||
+            widget.sending) {
+          return const SizedBox.shrink();
+        }
+        final candidates = replyMentionCandidates(
+          widget.mentionReplies,
+          query: mention.query,
+          searched: _searchedMentionUsers,
+          viewerId: context.read<AuthProvider?>()?.user?.id,
+        );
+        if (candidates.isEmpty) return const SizedBox.shrink();
+        final theme = Theme.of(context);
+        // 归入输入框的点击区域，点选候选时不让输入框失焦收起键盘。
+        return TextFieldTapRegion(
+          child: Column(
+            key: const ValueKey('post-reply-mention-list'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final user in candidates)
+                InkWell(
+                  key: ValueKey('post-reply-mention-${user.id}'),
+                  onTap: () => controller.applyMention(user),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Row(
+                      children: [
+                        CachedAvatar(
+                          radius: 14,
+                          imageUrl: user.avatar.isNotEmpty
+                              ? ApiConstants.fullUrl(user.avatar)
+                              : null,
+                          fallbackText: user.nickname,
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            user.nickname,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 

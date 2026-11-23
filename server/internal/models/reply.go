@@ -13,6 +13,12 @@ const (
 	ReplyStatusDeleted ReplyStatus = "deleted"
 )
 
+// ReplyMention 评论中被 @ 的用户；昵称取发布时的公开昵称，与正文中的 @昵称 对应。
+type ReplyMention struct {
+	UserID   uint   `json:"user_id"`
+	Nickname string `json:"nickname"`
+}
+
 // Reply 回复模型（支持一层嵌套）
 type Reply struct {
 	ContentOrigin string `gorm:"size:20;not null;default:''" json:"content_origin,omitempty"`
@@ -23,15 +29,17 @@ type Reply struct {
 	// 通知必须发给该用户，而不是根评论作者。
 	ReplyToUserID *uint `gorm:"index" json:"reply_to_user_id,omitempty"`
 	// ReplyToReplyID 精确回复对象（被回复的那条回复 ID）；必须与 ParentReplyID 同线程。
-	ReplyToReplyID *uint       `gorm:"index" json:"reply_to_reply_id,omitempty"`
-	AuthorID       uint        `gorm:"not null" json:"author_id"`
-	Content        string      `gorm:"type:text" json:"content"`
-	StickerID      *string     `gorm:"size:64;index" json:"sticker_id,omitempty"`
-	AssetKey       *string     `gorm:"size:512" json:"asset_key,omitempty"`
-	PackID         *string     `gorm:"size:128" json:"pack_id,omitempty"`
-	Status         ReplyStatus `gorm:"default:normal;index:idx_replies_post_status_created,priority:2" json:"status"`
-	LikeCount      int         `gorm:"default:0" json:"like_count"`
-	IsLiked        bool        `gorm:"-" json:"is_liked"`
+	ReplyToReplyID *uint `gorm:"index" json:"reply_to_reply_id,omitempty"`
+	// Mentions 发布时被 @ 的用户快照；客户端只高亮这里列出的 @昵称，正文里手打的 @ 不算提及。
+	Mentions  []ReplyMention `gorm:"type:text;serializer:json" json:"mentions,omitempty"`
+	AuthorID  uint           `gorm:"not null" json:"author_id"`
+	Content   string         `gorm:"type:text" json:"content"`
+	StickerID *string        `gorm:"size:64;index" json:"sticker_id,omitempty"`
+	AssetKey  *string        `gorm:"size:512" json:"asset_key,omitempty"`
+	PackID    *string        `gorm:"size:128" json:"pack_id,omitempty"`
+	Status    ReplyStatus    `gorm:"default:normal;index:idx_replies_post_status_created,priority:2" json:"status"`
+	LikeCount int            `gorm:"default:0" json:"like_count"`
+	IsLiked   bool           `gorm:"-" json:"is_liked"`
 	// ChildReplyCount 仅根评论返回：真实子回复总数（列表可能只携带前 N 条，其余懒加载）。
 	ChildReplyCount int `gorm:"-" json:"child_reply_count,omitempty"`
 	// 统一经验返回字段

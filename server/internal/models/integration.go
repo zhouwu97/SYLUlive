@@ -74,6 +74,7 @@ type ManagedBotPolicy struct {
 	BlockedTerms            []string `json:"blocked_terms"`
 	BlockLinks              bool     `json:"block_links"`
 	DailyReplyLimit         int      `json:"daily_reply_limit"`
+	HourlyReplyLimit        *int     `json:"hourly_reply_limit,omitempty"`
 	MinReplyIntervalMinutes int      `json:"min_reply_interval_minutes"`
 }
 

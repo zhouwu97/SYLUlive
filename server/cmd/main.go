@@ -2164,6 +2164,11 @@ func main() {
 		admin.GET("/security/events/:id", securityAdminHandler.GetEvent)
 		admin.POST("/security/events/:id/resolve", securityAdminHandler.Resolve)
 		admin.POST("/security/events/:id/false-positive", securityAdminHandler.FalsePositive)
+		// 管理员可从事件直接封禁来源（限当前接口／账号接口，最长 1 天）并查看、解除封禁；全站封禁仍仅超级管理员。
+		admin.POST("/security/events/:id/block", securityAdminHandler.BlockEventSource)
+		admin.GET("/security/blocks", securityAdminHandler.ListBlocks)
+		admin.DELETE("/security/blocks/:id", securityAdminHandler.RevokeBlock)
+		admin.GET("/security/logs", securityAdminHandler.ListSecurityLogs)
 
 		admin.POST("/posts/:id/restore", postGovernanceHandler.AdminRestorePost)
 		admin.GET("/rectification", postGovernanceHandler.ListRectification)

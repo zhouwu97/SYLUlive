@@ -206,6 +206,63 @@ func TestMakeupCheckInRequiresCardAndCurrentMonthPastDate(t *testing.T) {
 	require.ErrorIs(t, err, ErrMakeupDateNotAllowed)
 }
 
+func TestMakeupCheckInAccountsForExperienceAlreadyCredited(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		credited   int
+		wantMakeup int
+	}{
+		{name: "full difference", credited: 1, wantMakeup: 59},
+		{name: "partial difference", credited: 20, wantMakeup: 40},
+		{name: "already fully credited", credited: 30, wantMakeup: 30},
+		{name: "preserve higher historical reward", credited: 35, wantMakeup: 30},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newCheckInTestDB(t)
+			user := createCheckInTestUser(t, db, "checkin-makeup-already-credited")
+			service := NewCheckInService(db)
+			now := time.Date(2026, 11, 18, 9, 0, 0, 0, time.FixedZone("CST", 8*3600))
+			for offset := -50; offset <= -2; offset++ {
+				_, err := service.CheckIn(user.ID, now.AddDate(0, 0, offset))
+				require.NoError(t, err)
+			}
+			status, err := service.Status(user.ID, now)
+			require.NoError(t, err)
+
+			// 还原漏签仍存在、但今天已按历史签到记录发过经验的状态。
+			signed := models.CheckIn{
+				UserID: user.ID, CheckInDate: checkInDateOnly(now), StreakDays: 1, ExpEarned: tt.credited,
+			}
+			require.NoError(t, db.Create(&signed).Error)
+			ledger := models.UserExperienceLedger{
+				UserID: user.ID, SourceType: "checkin", SourceID: signed.ID, Delta: tt.credited,
+			}
+			require.NoError(t, db.Create(&ledger).Error)
+			require.NoError(t, db.Model(&user).Update("exp", status.TotalExp+tt.credited).Error)
+
+			makeupDate := now.AddDate(0, 0, -1)
+			result, err := service.Makeup(user.ID, makeupDate, now)
+			require.NoError(t, err)
+			require.Equal(t, 30, result.CheckInExp)
+			require.Equal(t, tt.wantMakeup, result.ExpEarned)
+			require.Equal(t, status.TotalExp+tt.credited+tt.wantMakeup, result.TotalExp)
+
+			require.NoError(t, db.First(&signed, signed.ID).Error)
+			require.NoError(t, db.First(&ledger, ledger.ID).Error)
+			require.Equal(t, 51, signed.StreakDays)
+			require.Equal(t, max(30, tt.credited), signed.ExpEarned)
+			require.Equal(t, signed.ExpEarned, ledger.Delta)
+
+			retry, err := service.Makeup(user.ID, makeupDate, now)
+			require.NoError(t, err)
+			require.True(t, retry.Already)
+			require.Zero(t, retry.ExpEarned)
+			require.Equal(t, result.TotalExp, retry.TotalExp)
+			require.Equal(t, result.MakeupCards, retry.MakeupCards)
+		})
+	}
+}
+
 func TestMakeupCardsExpireOnNextMonthDate(t *testing.T) {
 	for _, tc := range []struct {
 		name                    string

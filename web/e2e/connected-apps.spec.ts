@@ -615,7 +615,8 @@ test("设备授权刷新实际条件时保留未保存的机器人草稿", async
 
 async function renderedBotContrast(page: Page) {
   await page.evaluate(() => scrollTo(0, 0));
-  const screenshot = await page.screenshot({ fullPage: true, scale: "css", style: ".topbar { visibility: hidden !important; }" });
+  // 等入场动画结束，截图底色与后续读取的文字颜色处于同一稳定状态。
+  const screenshot = await page.screenshot({ fullPage: true, scale: "css", animations: "disabled", style: ".topbar { visibility: hidden !important; }" });
   return page.evaluate(async (data) => {
     const image = new Image();
     image.src = data;

@@ -41,7 +41,7 @@ func (h *AcademicIdentityHandler) BindLocal(c *gin.Context) {
 	}
 	var user models.User
 	if err := h.db.Select("id", "account_status").First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "BINDING_UNAVAILABLE", "error": "学生身份暂未同步，请稍后重试"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "BINDING_UNAVAILABLE", "error": "教务认证暂未同步，请稍后重试"})
 		return
 	}
 	if user.AccountStatus != "" && user.AccountStatus != "active" {
@@ -54,6 +54,6 @@ func (h *AcademicIdentityHandler) BindLocal(c *gin.Context) {
 		"provider_id": input.ProviderID, "student_id": input.StudentID,
 		"verified": false, "assurance_level": models.AcademicAssuranceLocalDeclaration,
 		"verification_method": models.AcademicVerificationMethodLocalDeclaration,
-		"message":             "本机连接声明已接收，不构成服务器可信学生认证",
+		"message":             "本机连接声明已接收，尚未完成服务器教务认证",
 	})
 }

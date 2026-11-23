@@ -14,12 +14,12 @@ func TestMarketPublishPolicySurvivesIdentityMigration(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.User{}, &models.AcademicIdentityBinding{}, &models.AcademicAccountConfig{}))
 	now := time.Now()
-	u := models.User{StudentID: "U-1", StudentVerifiedAt: &now, PasswordHash: "test"}
+	u := models.User{StudentID: "U-1", StudentVerifiedAt: &now, EduAuthorized: true, EduBound: true, PasswordHash: "test"}
 	require.NoError(t, db.Create(&u).Error)
 	p := MarketPublishPolicy{DB: db}
 	allowed, err := p.CanPublish(u.ID)
 	require.NoError(t, err)
-	require.False(t, allowed)
+	require.True(t, allowed)
 	require.NoError(t, MigrateAcademicIdentities(db))
 	allowed, err = p.CanPublish(u.ID)
 	require.NoError(t, err)

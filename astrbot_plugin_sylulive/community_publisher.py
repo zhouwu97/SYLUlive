@@ -40,6 +40,10 @@ class CommunityPublisher:
     def target_attempted(self, reply_id):
         return self.db.execute("SELECT 1 FROM reply_outbox WHERE reply_id=?", (reply_id,)).fetchone() is not None
 
+    def skip_target(self, reply_id, post_id):
+        with self.db:
+            self.db.execute("INSERT OR IGNORE INTO reply_outbox VALUES (?, ?, '', '', 'skipped')", (reply_id, post_id))
+
     def conversation_post_ids(self):
         # Only previously published public conversations, never private activity or guessed IDs.
         own = [r[0] for r in self.db.execute("SELECT post_id FROM post_outbox WHERE state='published' AND post_id IS NOT NULL ORDER BY created DESC LIMIT 10")]

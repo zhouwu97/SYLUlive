@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/app_update_info.dart';
 import 'package:shenliyuan/services/app_update_api.dart';
@@ -16,6 +18,7 @@ class _MemoryUpdateCache extends AppUpdateCache {
 
 class _FakeUpdateApi extends AppUpdateApi {
   AppUpdateInfo? response;
+  Future<AppUpdateInfo>? pendingResponse;
   Object? failure;
 
   @override
@@ -27,6 +30,8 @@ class _FakeUpdateApi extends AppUpdateApi {
   }) async {
     final error = failure;
     if (error != null) throw error;
+    final pending = pendingResponse;
+    if (pending != null) return pending;
     return response!;
   }
 }
@@ -86,6 +91,29 @@ AppUpdateCoordinator _buildCoordinator(
 }
 
 void main() {
+  test('手动检查等待正在进行的自动检查结果', () async {
+    final api = _FakeUpdateApi()..response = _noneInfo();
+    final coordinator = _buildCoordinator(api);
+    addTearDown(coordinator.dispose);
+    await coordinator.initialize();
+
+    final response = Completer<AppUpdateInfo>();
+    api.pendingResponse = response.future;
+    final automatic = coordinator.check(force: true);
+    var manualFinished = false;
+    final manual = coordinator.check(force: true, manual: true).then((_) {
+      manualFinished = true;
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(manualFinished, isFalse);
+
+    response.complete(_requiredInfo());
+    await manual;
+    expect(coordinator.info?.latestVersionCode, 1604);
+    expect(coordinator.isRequired, isTrue);
+    await automatic;
+  });
+
   test('426 在初始化前发生且更新接口失败时仍保持强制门禁', () async {
     final api = _FakeUpdateApi()
       ..failure = const AppUpdateApiException('offline');

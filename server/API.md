@@ -102,6 +102,8 @@ AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人�
 
 每段连续签到第 7 天获得首张补签卡，此后每隔 14 天再获得 1 张。补签或补偿接续连续天数时按同一规则计发新增奖励。已发出的卡沿原期限使用。
 
+补签响应中的 `check_in_exp` 为补签日经验，`exp_earned` 为本次总入账经验，包含补签日及后续受影响日期的连续签到补差。每个受影响日期用重算奖励减去原连签规则奖励与已入账经验中的较高值，差额最低为 0。
+
 补签日期限上海时间本月今天之前的未签到日期。每张卡从实际发放之日起，到次月对应日期零点失效。次月没有对应日时，在次月最后一天零点失效。例如 1 月 31 日发放的卡在平年 2 月 28 日零点失效。接口的 `makeup_cards` 仅统计可用卡，每次补签优先消耗最早到期的一张，重复请求不重复发卡或扣卡。
 
 运维与超级管理员管理接口：
@@ -141,7 +143,7 @@ AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人�
 
 教务返回的空辅助 Cookie 和同名同值项可与有效凭据一起提交。同名非空值冲突时返回 400。研究生学校仅使用 URL 会话段时可提交空 Cookie 列表，仍须通过学校本人资料核验。
 
-配置变化或解绑返回 409。学校拒绝或学号不一致时不授予资格。学校资料接口限流返回 429，暂不可用返回 503，客户端按退避策略补交。解绑原子撤销匹配身份、配置及在途尝试。旧 `/student-identity/bind` 仍只是低保证声明，不能作为学生权限依据。
+请求学校前协议未确认或授权已撤销返回409 `LEGAL_CONSENT_REQUIRED`，不消耗尝试次数；客户端提示到「设置 → 隐私与数据」确认，确认后直接重试，无需重新登录教务。配置变化或解绑返回409 `ACADEMIC_BINDING_CHANGED`，学校拒绝／身份不一致不授予资格，学校资料接口限流返回429，暂不可用返回503；客户端仅对临时故障退避重试。解绑原子撤销匹配身份、配置及在途尝试。旧 `/student-identity/bind` 仍只是低保证声明，不能作为学生权限依据。
 
 ### Active：已授权二课快照
 
@@ -203,6 +205,8 @@ AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人�
 | `POST` | `/api/replies/:id/like`| 点赞回复 |
 
 楼中楼请求传 `parent_reply_id`（线程根）与 `reply_to_reply_id`（实际点击的评论）。服务端校验两者属于同一线程并推导 `reply_to_user_id`，回复通知仅发给实际对象；客户端传入的用户 ID 不作为通知依据。回复响应中的 `reply_to_name` 为对象的公开昵称，列表、子回复分页、定位和创建响应均携带；客户端持续展示“回复 @昵称”，不要求把昵称写入正文。
+
+评论可选传 `mention_user_ids`（逗号分隔用户 ID，去重后最多 10 个，格式非法或超量返回 400）。服务端把其中真实存在的用户按 `[{user_id, nickname}]` 快照写入评论的 `mentions`（创建响应、列表、楼中楼预览均返回，客户端只高亮这些 `@昵称`），并给他们发 `type=reply` 通知，内容以固定前缀“@了你：”开头，客户端据此把标题显示为“@了你”；通知按（用户, 评论）去重，已作为回复对象收到通知的人和作者本人不会重复收到。客户端只提交正文中仍保留 `@昵称` 的用户，候选来自本帖评论者与 `GET /api/search?type=users`。
 
 ## 4.1 Feed 推荐用户控制 (Feed) — FEED-1
 
@@ -440,7 +444,7 @@ FEED-H1 加固：
 | `POST`| `/api/super/users/:id/reset_password`| 强制重置密码 |
 | `GET` | `/api/super/stats` | 获取系统整体统计大盘数据 |
 
-管理用户摘要中的 `student_id` 依次取可信身份学号、最近更新的有效云端配置学号、旧登录账号字段。`academic_configured` 仅表示存在有效配置，`student_verified` 仍按可信身份独立判断；登记配置不授予学生权限。搜索包含所有有效云端配置学号，已删除配置不用于搜索或展示。本机连接尚未同步时服务端无法据此登记；管理接口不返回学校密码、Cookie 或会话，公开用户接口也不增加学号。
+管理用户摘要中的 `student_id` 依次取可信身份学号、最近更新的有效云端配置学号、旧登录账号字段。`academic_configured` 仅表示存在有效配置，`student_verified` 在管理摘要中保留为历史身份投影，不能作为业务准入依据；食堂评价、集市发布和试卷库统一按 `edu_authorized`（兼容旧 `edu_bound`）判断教务认证准入，登记配置或仅本机连接不授予权限。搜索包含所有有效云端配置学号，已删除配置不用于搜索或展示。本机连接尚未同步时服务端无法据此登记；管理接口不返回学校密码、Cookie 或会话，公开用户接口也不增加学号。
 
 ### 安全中心
 
@@ -451,11 +455,17 @@ FEED-H1 加固：
 | `GET` | `/api/admin/security/events/:id` | 管理员；单条事件详情 |
 | `POST` | `/api/admin/security/events/:id/resolve` | 管理员；仅从 `active` 标记为已处理，备注可选，最多 500 个 Unicode 字符 |
 | `POST` | `/api/admin/security/events/:id/false-positive` | 管理员；仅从 `active` 标记为误报，备注规则同上 |
+| `POST` | `/api/admin/security/events/:id/block` | 管理员；用该事件记录的来源封禁 `{"scope":"route|account","duration_minutes":15|60|1440,"reason":"必填"}`，`route` 取事件所在接口；同一事务内把仍为 `active` 的事件结案（备注“已封禁来源 …：原因”），返回 `event_resolved`；不接受 `all`，来源缺失或归因不可信返回 `409` |
+| `GET` | `/api/admin/security/blocks?page=1` | 管理员；生效封禁列表，`source_key` 原值仅超级管理员可见 |
+| `DELETE` | `/api/admin/security/blocks/:id` | 管理员；一次解除同一操作组全部封禁 |
+| `GET` | `/api/admin/security/logs?page=1` | 管理员；安全中心操作记录（`security_*`：结案、误报、封禁、解除），每页 30 条，按时间倒序；完整管理日志仍为 `/api/super/admin_logs` |
 | `GET` | `/api/super/security/blocks?page=1` | 超级管理员；每页 200 条生效封禁，同一操作按 `group_id` 归组 |
-| `POST` | `/api/super/security/blocks` | 超级管理员；`route/account/all` 作用域，`all` 必须 `confirm_global=true`；时长 15/60/1440 分钟；原因最多 200 个 Unicode 字符 |
+| `POST` | `/api/super/security/blocks` | 超级管理员；按来源指纹封禁，`route/account/all` 作用域，`all` 必须 `confirm_global=true`；时长 15/60/1440 分钟；原因最多 200 个 Unicode 字符 |
 | `DELETE` | `/api/super/security/blocks/:id` | 超级管理员；一次解除同一操作组全部封禁 |
 
 事件列表默认每页 50 条，最多 100 条；事件和封禁页码最多 10000。事件按最后发生时间、ID 倒序稳定排序。普通登录失败、自动冷却、验证码额度及搜索／内容限流等通过 `actionable=false` 区分，默认待办使用 `actionable=true&status=active`。`severity` 是当前分类解释后的等级，历史严重程度筛选与 DTO 一致；普通记录即使原始等级为 high/critical，也只显示信息／提示且不外发高危邮件。`active_high_count` 与 `actionable_high_count` 均排除普通记录。多账号登录异常按同一可信来源在 10 分钟区间至少 20 个目标、100 次实际失败判定，证据见 `metadata_json.distinct_targets/failure_count/window`，冷却重复请求不参与；具体边界见 [安全运维](../docs/ops/auth-security.md#安全中心降噪与异常核查)。普通管理员只取得脱敏来源指纹，完整来源键仅返回给超级管理员。
+
+结案、误报、封禁和解除都会写入管理员操作日志（`security_event_resolved`、`security_event_false_positive`、`security_block_created`、`security_block_revoked`），封禁日志记录原因、作用域前缀和时长。
 
 事件处置请求接受 `{"note":"处理说明"}`，兼容空请求体；非法 JSON 返回 `400`，不存在返回 `404`，已被其他请求处置返回 `409/security_event_already_handled`，保留第一次处理结论和审计。数据库故障返回 `500`。客户端收到冲突后刷新列表。防护数据加载失败时不沿用旧的健康状态；缺失的运行态保持“未验证”。
 
@@ -593,9 +603,13 @@ FEED-H1 加固：
 
 机器人 `policy` 字段包括 `public_read_enabled`、`reply_enabled`、`sticker_enabled`、`post_enabled`、`image_enabled`、`allowed_post_types`、`blocked_terms`、`block_links`、`daily_reply_limit`（1–100）和 `min_reply_interval_minutes`（1–1440）。默认只读，新增发帖与配图字段缺省为 false，旧评论权限不扩大为发帖权限。允许板块为校园生活／课程学习，禁链接，默认评论日限3条且至少30分钟，已有设置保持不变；本人可保存更高频率，平台最高100条／滚动24小时、至少间隔1分钟；投诉、迎新求助、敏感或停用板块不可授权。屏蔽词最多20个，每个1–24字，按全角ASCII、零宽及空白规范化后匹配；不是语义审核。认证社区读取受机器人启停与白名单约束，最终自动发布事务复核规则、scope、信誉、社区禁言和平台开关。发帖来源版本重新核验，图片只接受 bot 自有或获上传授权的有效文件，发布与图片绑定原子提交。普通人工确认路径拒绝 bot 来源/配图载荷。公开用户 `ai_bot` 只返回创建者公开ID与昵称，普通用户昵称不会产生系统标记。
 
+**AI 等级**：机器人账号的 `exp` 与公开用户 `exp` 字段同源，`GET /api/connected-apps/bot` 也返回 `exp`。机器人与用户一样获得每日首帖 10、首评 3 经验；他人点赞机器人帖子或评论每次 +2，取消对称扣回且不低于 0，创建者本人点赞不计。客户端对带 `ai_bot` 的作者使用独立阈值 0/30/100/250/600/1200/2500/5000 计算 AI Lv.1–8，并以「创建者昵称创建的 ✦ AI Lv.N」胶囊代替普通等级徽章。
+
 自动评论在同一事务复核当前授权、独立身份、来源版本、版块、禁言、规则和额度；同一操作幂等；顶层评论同帖只参与一次，精确回复按真实目标评论去重，含删除后的历史回复，不因删内容重置。精确目标需同帖、正常且版本一致；拒绝自己或其他托管 AI 的评论及对AI帖的顶层自评；AI帖下人类的具体评论仍可跟进，根线程及通知对象由服务端推导。顶层、楼中楼和表情共用本人设置的滚动24小时额度和间隔（平台最高100条、最短1分钟）。自动机器人不受人工确认代发的20次发布上限阻挡；自动提案仍受每24小时130次尝试上限约束。读取在返回前再次核验暂停和范围变化；权限变化返回稳定错误，不返回已读取的旧正文。
 
 运行状态协议：管理响应新增 `runtime_supported:true` 与 `runtime`；`/bot/policy` 同时返回本人 binding 的不透明ID／代次及 bot `revision`。资料、权限或启停保存递增版本。心跳只接受 `session_id`（UUID）、`sequence`（递增正整数）、`revision`、`state`、`error_code`、`round_id`（可空UUID）、`read_count`（0–5）与 `next_run_in_seconds`（0–86400），拒绝额外字段／查询参数；每绑定每分钟最多12次。状态限定 idle/waiting/loading/completed/empty/error/paused/disabled/scope_required/cooldown/stopped，错误码限定为空或固定的执行／网络／模型配置错误，不接受正文、账号参数或客户端发布结果。
+
+`GET /bot/policy?reply_targets=1` 可为已启用文字自动评论的本人机器人返回最近24小时内最多8条待处理的公开评论。每项目仅包含 `post_id`、`post_type`、`reply_id` 和 `source_version`。候选来自对机器人评论的明确回复、机器人帖子下的顶层评论，以及公开评论中以空格或标点分隔的唯一机器人昵称 `@名称`。排除已答复、已删除、AI 发送和当前不可读的来源。未获得 `community:bot_reply` 或仍处于发言额度限制时无候选。执行端沿用公开上下文与原发布接口复核来源。
 
 同一有效 binding 的不同执行会话在两分钟占用内返回 `bot_runtime_busy`；旧序号返回 `stale_bot_runtime`，旧规则版本返回 `bot_policy_changed`。正常 stopped 释放占用，异常退出等待过期。首次加入运行协议后，自动评论／发帖必须携带当前 `runtime_session_id` 和 `bot_revision`，最终事务验证 binding、会话、占用和版本；旧插件省略这些字段返回 `bot_runtime_required`，普通本人确认发布拒绝这些机器人载荷。历史未加入的安装保留兼容入口，不自动获得新 scope。
 

@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
@@ -18,11 +19,12 @@ import '../helpers/golden_viewport.dart';
 import '../helpers/load_test_fonts.dart';
 
 class _CheckInAdapter implements HttpClientAdapter {
-  _CheckInAdapter({this.checkedIn = true});
+  _CheckInAdapter({this.checkedIn = true, this.makeupTotalExp = 30});
 
   String? makeupDate;
   String? compensationDate;
   bool checkedIn;
+  final int makeupTotalExp;
   int checkInRequestCount = 0;
   final Map<String, int> calendarRequestCounts = {};
   bool failCalendar = false;
@@ -58,8 +60,8 @@ class _CheckInAdapter implements HttpClientAdapter {
         'already': false,
         'check_in_date': makeupDate,
         'streak_days': 17,
-        'check_in_exp': 16,
-        'exp_earned': 16,
+        'check_in_exp': 30,
+        'exp_earned': makeupTotalExp,
         'total_exp': 100,
         'makeup_cards': 0,
         'makeup_cards_awarded': 0,
@@ -108,7 +110,7 @@ class _CheckInAdapter implements HttpClientAdapter {
               {
                 'check_in_date': makeupDate,
                 'streak_days': 16,
-                'exp_earned': 16,
+                'exp_earned': 30,
                 'is_makeup': true,
               },
             if (requestedMonth == '2026-07' && checkedIn)
@@ -541,63 +543,72 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('选择漏签日期后确认使用补签卡', (tester) async {
-    final semantics = tester.ensureSemantics();
-    final adapter = _CheckInAdapter();
-    final dio = Dio()..httpClientAdapter = adapter;
-    final auth = AuthProvider(dio, loadStoredAuth: false);
+  for (final (totalExp, message) in [
+    (30, '补签成功，补签日 +30'),
+    (59, '补签成功，补签日 +30，连续签到补差 +29'),
+  ]) {
+    testWidgets('选择漏签日期后确认使用补签卡，显示 $totalExp 经验的明细', (tester) async {
+      await setGoldenViewport(tester, GoldenViewports.phone360x800);
+      final adapter = _CheckInAdapter(makeupTotalExp: totalExp);
+      final dio = Dio()..httpClientAdapter = adapter;
+      final auth = AuthProvider(dio, loadStoredAuth: false);
+      addTearDown(auth.dispose);
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AuthProvider>.value(
-        value: auth,
-        child: MaterialApp(
-          home: CheckInCalendarScreen(
-            now: () => DateTime(2026, 7, 16),
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AuthProvider>.value(
+          value: auth,
+          child: GoldenTestApp(
+            textScaler: const TextScaler.linear(1.3),
+            home: CheckInCalendarScreen(
+              now: () => DateTime(2026, 7, 16),
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.bySemanticsLabel('补签卡 1 张'), findsOneWidget);
-    final missedDay = find.bySemanticsLabel('7月16日，未签到');
-    await tester.ensureVisible(missedDay);
-    await tester.pumpAndSettle();
-    await tester.tap(missedDay);
-    await tester.pump();
-    expect(find.text('使用补签卡补签 7 月 16 日'), findsOneWidget);
-    final actionDecoration = tester.widget<DecoratedBox>(
-      find.byKey(const ValueKey('check-in-primary-action-gradient')),
-    );
-    final actionGradient = (actionDecoration.decoration as BoxDecoration)
-        .gradient! as LinearGradient;
-    expect(
-      actionGradient.colors,
-      const [Color(0xFF666666), Color(0xFF292929)],
-    );
+      expect(find.bySemanticsLabel('补签卡 1 张'), findsOneWidget);
+      final missedDay = find.bySemanticsLabel('7月16日，未签到');
+      await tester.ensureVisible(missedDay);
+      await tester.pumpAndSettle();
+      await tester.tap(missedDay);
+      await tester.pump();
+      expect(find.text('使用补签卡补签 7 月 16 日'), findsOneWidget);
+      final actionDecoration = tester.widget<DecoratedBox>(
+        find.byKey(const ValueKey('check-in-primary-action-gradient')),
+      );
+      final actionGradient = (actionDecoration.decoration as BoxDecoration)
+          .gradient! as LinearGradient;
+      expect(
+        actionGradient.colors,
+        const [Color(0xFF666666), Color(0xFF292929)],
+      );
 
-    await tester.tap(find.text('使用补签卡补签 7 月 16 日'));
-    await tester.pumpAndSettle();
-    expect(find.text('使用补签卡'), findsOneWidget);
-    expect(find.textContaining('补签卡到账满一个月自动过期'), findsOneWidget);
-    final confirmButton = tester.widget<FilledButton>(
-      find.ancestor(
-        of: find.text('确认补签'),
-        matching: find.byType(FilledButton),
-      ),
-    );
-    expect(
-      confirmButton.style?.backgroundColor?.resolve(<WidgetState>{}),
-      const Color(0xFF363636),
-    );
-    await tester.tap(find.text('确认补签'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('使用补签卡补签 7 月 16 日'));
+      await tester.pumpAndSettle();
+      expect(find.text('使用补签卡'), findsOneWidget);
+      expect(find.textContaining('补签卡到账满一个月自动过期'), findsOneWidget);
+      final confirmButton = tester.widget<FilledButton>(
+        find.ancestor(
+          of: find.text('确认补签'),
+          matching: find.byType(FilledButton),
+        ),
+      );
+      expect(
+        confirmButton.style?.backgroundColor?.resolve(<WidgetState>{}),
+        const Color(0xFF363636),
+      );
+      await tester.tap(find.text('确认补签'));
+      await tester.pumpAndSettle();
 
-    expect(adapter.makeupDate, '2026-07-16');
-    expect(find.bySemanticsLabel('7月16日，已补签'), findsOneWidget);
-    expect(find.bySemanticsLabel('补签卡 0 张'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-    auth.dispose();
-    semantics.dispose();
-  });
+      expect(adapter.makeupDate, '2026-07-16');
+      expect(find.bySemanticsLabel('7月16日，已补签'), findsOneWidget);
+      expect(find.bySemanticsLabel('补签卡 0 张'), findsOneWidget);
+      final feedback = find.text(message);
+      expect(feedback, findsOneWidget);
+      expect(tester.renderObject<RenderParagraph>(feedback).didExceedMaxLines,
+          isFalse);
+      expect(tester.takeException(), isNull);
+    });
+  }
 }

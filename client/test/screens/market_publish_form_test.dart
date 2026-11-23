@@ -29,6 +29,7 @@ class _FakeAuthProvider extends Fake
         avatar: '',
         createdAt: DateTime(2026, 1, 1),
         studentVerified: true,
+        eduAuthorized: true,
         eduBound: true,
       );
 
@@ -592,6 +593,8 @@ void main() {
         avatar: '',
         createdAt: DateTime(2026, 1, 1),
         studentVerified: false,
+        eduAuthorized: false,
+        eduBound: false,
       ),
     );
     final postProvider = _FakePostProvider();

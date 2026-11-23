@@ -680,12 +680,7 @@ func (h *CompetitionHandler) GetUserCompetitionState(c *gin.Context) {
 		return
 	}
 	_, profileReady := profileFromUser(user, time.Now())
-	verified, identityErr := models.HasVerifiedAcademicIdentity(h.db, userID)
-	if identityErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取学生身份失败"})
-		return
-	}
-	profileReady = profileReady && verified
+	profileReady = profileReady && user.HasEduAccess()
 	c.JSON(http.StatusOK, gin.H{
 		"calendar_count": calendarCount, "joined_event_ids": joinedIDs, "profile_ready": profileReady,
 	})
@@ -698,7 +693,7 @@ func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
 func (h *CompetitionHandler) AdminCompetitionAudienceOptions(c *gin.Context) {
 	var users []models.User
 	if err := h.db.Select("edu_grade", "edu_college", "edu_major").
-		Where("id IN (?)", models.TrustedAcademicBindingScope(h.db.Model(&models.AcademicIdentityBinding{}).Select("user_id").Where("verified_at > ?", time.Time{}))).
+		Where("edu_authorized = ? OR edu_bound = ?", true, true).
 		Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取画像选项失败"})
 		return

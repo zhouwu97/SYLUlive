@@ -322,7 +322,7 @@ void main() {
         saveCredentials: true,
         saveAcademicData: false);
     expect(result.isSuccess, true);
-    expect(result.message, contains('学生身份尚未同步'));
+    expect(result.message, contains('认证状态尚未同步'));
     expect(h.session.isAuthenticated, true);
     expect((await h.credentials.readForIdentity(h.session.identity!))?.password,
         'password-secret');
@@ -516,6 +516,44 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 80));
     // 定时器不再排：契约错误被当成临时故障重试，只会反复打扰用户。
     expect(calls, 2);
+  });
+
+  test('协议未确认时提示去确认协议，确认后无需重新登录即可补交', () async {
+    final h = await setup();
+    final api = Dio();
+    addTearDown(() => api.close(force: true));
+    var consentActive = false;
+    var verifications = 0;
+    api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      if (r.method == 'GET') {
+        handler.resolve(Response(
+            requestOptions: r, statusCode: 200, data: {'identities': []}));
+        return;
+      }
+      verifications++;
+      handler.resolve(Response(
+          requestOptions: r,
+          statusCode: consentActive ? 200 : 409,
+          data: consentActive
+              ? receipt(AcademicProviderId.syluUndergraduate)
+              : {'code': 'LEGAL_CONSENT_REQUIRED'}));
+    }));
+    final coordinator = withIdentity(h, api);
+    addTearDown(coordinator.dispose);
+    final result = await coordinator.login(
+        studentId: 'A',
+        password: 'fixture',
+        providerId: AcademicProviderId.syluUndergraduate,
+        saveCredentials: true,
+        saveAcademicData: false);
+    expect(result.isSuccess, true);
+    expect(result.message, contains('隐私与数据'));
+    expect(await coordinator.bindingSyncState(), isNot('rejected'));
+
+    consentActive = true;
+    expect(await coordinator.synchronizeIdentityBinding(), isNull);
+    expect(verifications, 2);
+    expect(await coordinator.bindingSyncState(), 'verified');
   });
 
   test('身份登记被拒后手动重新连接可重新核验，不沿用旧错误', () async {

@@ -403,6 +403,7 @@ class _HomeScreenState extends State<HomeScreen>
         _checkAdminTasks(auth);
       }
     });
+
   }
 
   void _onWidgetTabSwitch() {
@@ -1251,6 +1252,7 @@ class _HomeScreenState extends State<HomeScreen>
     _mainTabController.stop();
     _contentTabController.stop();
     _mainTabLedger.cancel(resetVisual: false);
+    currentHomeTabIndex.value = _currentIndex;
     _mainVisualIndex = visualPosition;
     _mainVisualIndexListenable.value = visualPosition;
     _updateBackgroundForTab(_currentIndex);
@@ -1339,6 +1341,7 @@ class _HomeScreenState extends State<HomeScreen>
   }) async {
     if (targetIndex == null || targetIndex == _currentIndex) {
       _mainTabLedger.cancel();
+      currentHomeTabIndex.value = _currentIndex;
       _mainTabController.stop();
       _contentTabController.stop();
       if (mounted) {
@@ -1382,6 +1385,9 @@ class _HomeScreenState extends State<HomeScreen>
     });
 
     if (commit) {
+      // 页面在这一帧就换成目标页签，主题壁纸、页头 hero 跟随这个值，必须同帧发布，
+      // 等转场结束再发布会让主题比组件慢一拍。
+      currentHomeTabIndex.value = _currentIndex;
       _updateBackgroundForTab(target);
     }
 

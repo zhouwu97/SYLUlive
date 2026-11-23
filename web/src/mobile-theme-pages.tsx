@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Empty, Head, Icon } from "./ui";
+import { Empty, Icon } from "./ui";
+import { useMobile } from "./mobile";
 import {
   applyMobileThemeFromCatalog,
   restoreDefaultMobileTheme,
@@ -8,6 +9,7 @@ import {
   useMobileThemeRuntime,
   type CatalogThemeItem,
 } from "./mobile-theme";
+import "./theme-gallery.css";
 
 const ALLOWED_TAGS = [
   "浅色",
@@ -70,8 +72,41 @@ export function MobileThemeBackdrop() {
   );
 }
 
-export function MobileThemesPage() {
+function ThemeArtwork({ src, alt }: { src?: string; alt: string }) {
+  const [failed, setFailed] = useState<string>();
+  return (
+    <div className="theme-artwork">
+      <Icon name="palette" size={28} />
+      {src && src !== failed && (
+        <img src={src} alt={alt} loading="lazy" onError={() => setFailed(src)} />
+      )}
+    </div>
+  );
+}
+
+function ThemeResourceNotice({
+  storageWarning,
+  resourceError,
+}: {
+  storageWarning: string | null;
+  resourceError: string | null;
+}) {
+  return (
+    <>
+      {storageWarning && <p className="theme-notice theme-notice-error" role="alert">{storageWarning}</p>}
+      {resourceError && (
+        <div className="theme-notice" role="status">
+          <span>{resourceError}</span>
+          <button type="button" className="btn" onClick={retryMobileThemeResources}>重试资源</button>
+        </div>
+      )}
+    </>
+  );
+}
+
+export function MobileThemesPage({ dark }: { dark: boolean }) {
   const runtime = useMobileThemeRuntime();
+  const mobile = useMobile();
   const [sort, setSort] = useState<"latest" | "popular">("latest");
   const [selectedTag, setSelectedTag] = useState<string>("");
   const [searchInput, setSearchInput] = useState("");
@@ -159,88 +194,74 @@ export function MobileThemesPage() {
     setAppliedQuery(searchInput.trim());
   };
 
+  const clearSearch = () => {
+    setSearchInput("");
+    setAppliedQuery("");
+  };
+
   return (
     <div className="mobile-themes-page">
-      <Head title="外观与主题" description="浏览并应用移动网页主题配色、壁纸与字体" />
-      <section className="panel" style={{ padding: 14, marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-          <div>
-            <b>当前移动网页主题</b>
-            <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-2)" }}>
-              {runtime.saved
-                ? `${runtime.saved.name} · v${runtime.saved.version}`
-                : "默认外观（沈理青）"}
-            </p>
+      <header className="theme-gallery-heading">
+        <h1>主题商城</h1>
+        {mobile && (
+          <div className="theme-current">
+            <span className="theme-current-icon"><Icon name="palette" size={20} /></span>
+            <div>
+              <span>当前外观</span>
+              <strong>{runtime.saved?.name || "沈理青"}</strong>
+            </div>
+            {runtime.saved && (
+              <button type="button" className="btn" disabled={runtime.loading} onClick={restoreDefaultMobileTheme}>恢复默认</button>
+            )}
           </div>
-          {runtime.saved && (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => restoreDefaultMobileTheme()}
-            >
-              恢复默认
+        )}
+      </header>
+      {mobile && (
+        <ThemeResourceNotice
+          storageWarning={runtime.storageWarning}
+          resourceError={runtime.saved ? runtime.resourceError : null}
+        />
+      )}
+
+      <div className="theme-catalog-toolbar">
+        <form onSubmit={onSearchSubmit} className="theme-search" role="search">
+          <Icon name="search" size={18} />
+          <input
+            aria-label="搜索主题"
+            placeholder="搜索主题…"
+            enterKeyHint="search"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+          {appliedQuery && (
+            <button type="button" className="theme-search-action" aria-label="清除搜索" onClick={clearSearch}>
+              <Icon name="close" size={15} />
             </button>
           )}
-        </div>
-        {runtime.storageWarning && (
-          <p role="alert" style={{ margin: "8px 0 0", fontSize: 12, color: "var(--danger)" }}>
-            {runtime.storageWarning}
-          </p>
-        )}
-        {runtime.resourceError && (
-          <div role="status" style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-            <span>{runtime.resourceError}</span>
-            <button type="button" className="btn" onClick={() => retryMobileThemeResources()}>
-              重试资源
+          <button type="submit" className="theme-search-action">搜索</button>
+        </form>
+        <div className="theme-sort" role="tablist" aria-label="主题排序">
+          {([
+            ["latest", "最新"],
+            ["popular", "热门"],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={sort === key}
+              onClick={() => setSort(key)}
+            >
+              {label}
             </button>
-          </div>
-        )}
-      </section>
-
-      <form onSubmit={onSearchSubmit} className="mobile-feed-search" style={{ marginInline: 0 }}>
-        <Icon name="search" size={18} />
-        <input
-          aria-label="搜索主题"
-          placeholder="搜索主题名称或描述…"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-        />
-        {appliedQuery && (
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              setSearchInput("");
-              setAppliedQuery("");
-            }}
-          >
-            清除
-          </button>
-        )}
-      </form>
-
-      <div role="tablist" aria-label="主题排序" style={{ display: "flex", gap: 8, margin: "8px 0" }}>
-        {([
-          ["latest", "最新"],
-          ["popular", "热门"],
-        ] as const).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={sort === key}
-            className={`btn ${sort === key ? "primary" : ""}`}
-            onClick={() => setSort(key)}
-          >
-            {label}
-          </button>
-        ))}
+          ))}
+        </div>
       </div>
 
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 6 }}>
+      <div className="theme-filters" role="group" aria-label="主题标签">
         <button
           type="button"
-          className={`btn ${selectedTag === "" ? "primary" : ""}`}
+          aria-pressed={selectedTag === ""}
           onClick={() => setSelectedTag("")}
         >
           全部
@@ -249,7 +270,7 @@ export function MobileThemesPage() {
           <button
             key={tag}
             type="button"
-            className={`btn ${selectedTag === tag ? "primary" : ""}`}
+            aria-pressed={selectedTag === tag}
             onClick={() => setSelectedTag(selectedTag === tag ? "" : tag)}
           >
             {tag}
@@ -258,7 +279,12 @@ export function MobileThemesPage() {
       </div>
 
       {loading ? (
-        <div className="loading-state" role="status">正在加载主题列表…</div>
+        <div className="theme-catalog-loading" role="status">
+          <span>正在加载主题列表…</span>
+          <div className="mobile-theme-grid" aria-hidden="true">
+            {[0, 1, 2].map((index) => <div key={index} className="theme-card-placeholder" />)}
+          </div>
+        </div>
       ) : error ? (
         <Empty title="无法加载主题商城" description={error}>
           <button type="button" className="btn primary" onClick={() => setReloadTick((v) => v + 1)}>
@@ -266,13 +292,20 @@ export function MobileThemesPage() {
           </button>
         </Empty>
       ) : items.length === 0 ? (
-        <Empty title="暂无符合条件的主题" description="可切换分类或清空搜索词后查看。" />
+        <Empty icon="palette" title="暂无符合条件的主题">
+          {(appliedQuery || selectedTag) && (
+            <button type="button" className="btn" onClick={() => {
+              clearSearch();
+              setSelectedTag("");
+            }}>清除筛选</button>
+          )}
+        </Empty>
       ) : (
         <>
           <div className="mobile-theme-grid">
             {items.map((item) => {
               const isCurrent =
-                runtime.saved?.familyId === item.familyId &&
+                mobile && runtime.saved?.familyId === item.familyId &&
                 runtime.saved?.version === item.version;
               return (
                 <Link
@@ -281,9 +314,10 @@ export function MobileThemesPage() {
                   className="mobile-theme-card"
                 >
                   <div className="mobile-theme-card-cover">
-                    {item.previewLight ? (
-                      <img src={item.previewLight} alt={`${item.name} 预览`} loading="lazy" />
-                    ) : null}
+                    <ThemeArtwork
+                      src={dark ? item.previewDark || item.previewLight : item.previewLight || item.previewDark}
+                      alt=""
+                    />
                     {isCurrent ? (
                       <span className="mobile-theme-badge">使用中</span>
                     ) : item.source === "official" ? (
@@ -293,15 +327,16 @@ export function MobileThemesPage() {
                   <div className="mobile-theme-card-body">
                     <b>{item.name}</b>
                     <small>{item.author?.nickname || "创作者"} · v{item.version}</small>
+                    <span className="theme-card-arrow"><Icon name="chevron" size={16} /></span>
                   </div>
                 </Link>
               );
             })}
           </div>
           {(nextCursor || loadMoreError) && (
-            <div className="mobile-feed-end" style={{ marginTop: 12, textAlign: "center" }}>
+            <div className="theme-catalog-more">
               {loadMoreError && (
-                <p role="alert" style={{ margin: "0 0 8px", fontSize: 13, color: "var(--danger)" }}>
+                <p role="alert" className="theme-notice-error">
                   {loadMoreError}
                 </p>
               )}
@@ -332,6 +367,7 @@ interface BoundThemeDetailState {
 export function ThemeLandingPage() {
   const { id = "" } = useParams();
   const runtime = useMobileThemeRuntime();
+  const mobile = useMobile();
   const [detailState, setDetailState] = useState<BoundThemeDetailState>({
     boundId: id,
     item: null,
@@ -424,79 +460,74 @@ export function ThemeLandingPage() {
 
   return (
     <div className="theme-landing-page">
-      <Head title={`${item.name} · 主题详情`} description={item.description || "沈理校园主题包"} />
-      <div className="panel" style={{ padding: 16 }}>
+      <Link className="theme-back-link" to="/themes"><Icon name="arrow" size={16} />主题商城</Link>
+      <section className="panel theme-landing-layout">
+        <header className="theme-detail-intro">
+          <h1>{item.name}</h1>
+          <p>{item.author?.nickname || "创作者"} <span>·</span> v{item.version}</p>
+        </header>
+
         <div className="theme-landing-previews">
-          <div className="theme-landing-preview-box">
-            {item.previewLight && <img src={item.previewLight} alt={`${item.name} 浅色预览`} />}
-          </div>
-          <div className="theme-landing-preview-box">
-            {item.previewDark && <img src={item.previewDark} alt={`${item.name} 深色预览`} />}
-          </div>
+          <figure className="theme-landing-preview-box">
+            <ThemeArtwork src={item.previewLight} alt={`${item.name} 浅色预览`} />
+            <figcaption><Icon name="sun" size={15} />浅色</figcaption>
+          </figure>
+          <figure className="theme-landing-preview-box">
+            <ThemeArtwork src={item.previewDark} alt={`${item.name} 深色预览`} />
+            <figcaption><Icon name="moon" size={15} />深色</figcaption>
+          </figure>
         </div>
 
-        <h1 style={{ margin: "14px 0 6px", fontSize: 22 }}>{item.name}</h1>
-        <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)" }}>
-          作者：{item.author?.nickname || "创作者"} · 版本 v{item.version} · 许可 {item.license} · 下载 {item.downloads}
-        </p>
-
-        {item.tags?.length > 0 && (
-          <div className="theme-landing-tags">
-            {item.tags.map((tag) => (
-              <span key={tag}>{tag}</span>
-            ))}
-          </div>
-        )}
-
-        {item.description && (
-          <p style={{ margin: "12px 0 0", fontSize: 14, lineHeight: 1.6 }}>{item.description}</p>
-        )}
-
-        {currentApplyError && (
-          <p role="alert" style={{ margin: "10px 0 0", color: "var(--danger)", fontSize: 13 }}>
-            {currentApplyError}
-          </p>
-        )}
-        {runtime.storageWarning && (
-          <p role="alert" style={{ margin: "10px 0 0", color: "var(--danger)", fontSize: 13 }}>
-            {runtime.storageWarning}
-          </p>
-        )}
-        {runtime.resourceError && (
-          <div role="status" style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-            <span>{runtime.resourceError}</span>
-            <button type="button" className="btn" onClick={() => retryMobileThemeResources()}>
-              重试资源
-            </button>
-          </div>
-        )}
+        <div className="theme-detail-info">
+          {item.tags?.length > 0 && (
+            <div className="theme-landing-tags">
+              {item.tags.map((tag) => <span key={tag}>{tag}</span>)}
+            </div>
+          )}
+          {item.description && <p className="theme-detail-description">{item.description}</p>}
+          <dl className="theme-detail-facts">
+            <div><dt>下载次数</dt><dd>{item.downloads}</dd></div>
+            <div><dt>许可</dt><dd>{item.license}</dd></div>
+          </dl>
+        </div>
 
         <div className="theme-landing-actions">
-          <a
-            className="btn"
-            href={`sylulive://theme/${encodeURIComponent(item.familyId)}`}
-          >
-            在 App 中打开
-          </a>
-          <button
-            type="button"
-            className="btn primary"
-            disabled={isApplyingThis}
-            onClick={() => void handleApplyOnWeb()}
-          >
-            {isApplyingThis ? "正在应用…" : isApplied ? "已在网页上应用" : "在网页上应用"}
-          </button>
-          {isApplied && (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => restoreDefaultMobileTheme()}
-            >
-              恢复默认
-            </button>
+          {currentApplyError && (
+            <p role="alert" className="theme-notice theme-notice-error">{currentApplyError}</p>
           )}
+          {mobile && (
+            <ThemeResourceNotice
+              storageWarning={runtime.storageWarning}
+              resourceError={runtime.saved && runtime.resourceError !== currentApplyError ? runtime.resourceError : null}
+            />
+          )}
+          <div className="theme-detail-buttons">
+            {mobile && (
+              <button
+                type="button"
+                className="btn primary"
+                disabled={isApplyingThis || isApplied}
+                onClick={() => void handleApplyOnWeb()}
+              >
+                {isApplied && <Icon name="check" size={16} />}
+                {isApplyingThis ? "正在应用…" : isApplied ? "已在网页上应用" : "在网页上应用"}
+              </button>
+            )}
+            <a
+              className={`btn${mobile ? "" : " primary"}`}
+              href={`sylulive://theme/${encodeURIComponent(item.familyId)}`}
+            >
+              在 App 中打开
+            </a>
+            {mobile && isApplied && (
+              <button type="button" className="btn" disabled={runtime.loading} onClick={restoreDefaultMobileTheme}>
+                恢复默认
+              </button>
+            )}
+          </div>
+          {!mobile && <p className="theme-device-hint">用手机浏览器打开此页，即可应用到移动网页。</p>}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

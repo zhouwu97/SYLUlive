@@ -2,9 +2,74 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/app_update_info.dart';
+import 'package:shenliyuan/platform/app_platform.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/platform/update_download_bridge.dart';
+import 'package:shenliyuan/services/app_update_api.dart';
 import 'package:shenliyuan/services/app_update_coordinator.dart';
 import 'package:shenliyuan/widgets/app_update_gate.dart';
+
+class _PublishedUpdateApi extends AppUpdateApi {
+  int? latestVersionCode;
+  int requests = 0;
+  bool offline = false;
+
+  @override
+  Future<AppUpdateInfo> checkUpdate({
+    required String platform,
+    required String channel,
+    required String versionName,
+    required int versionCode,
+  }) async {
+    requests++;
+    if (offline) throw const AppUpdateApiException('offline');
+    final latest = latestVersionCode;
+    return AppUpdateInfo.fromJson({
+      'update_available': latest != null,
+      'update_type': latest == null ? 'none' : 'optional',
+      'current_version_name': versionName,
+      'current_version_code': versionCode,
+      'latest_version_name':
+          latest == null ? versionName : '1.7.${latest - 1702}',
+      'latest_version_code': latest ?? versionCode,
+      'minimum_supported_version_code': versionCode,
+      'changelog': '修复课表',
+      'file_size': 1024,
+      'sha256': 'a' * 64,
+      'download_url': 'https://example.com/app.apk',
+      'check_after_seconds': 21600,
+    });
+  }
+}
+
+class _QueuedUpdateBridge extends UpdateDownloadBridge {
+  var state = AppUpdateDownloadState.idle;
+  int? installedVersion;
+
+  @override
+  Future<void> enqueue(
+    AppUpdateInfo info, {
+    required bool wifiOnly,
+    required bool allowBackground,
+    required bool userInitiated,
+  }) async {
+    state = AppUpdateDownloadState.queued;
+  }
+
+  @override
+  Future<NativeUpdateDownloadStatus> query(AppUpdateInfo info) async =>
+      NativeUpdateDownloadStatus(
+        state: state,
+        receivedBytes: 0,
+        totalBytes: info.fileSize,
+        bytesPerSecond: 0,
+      );
+
+  @override
+  Future<void> installPrepared(AppUpdateInfo info) async {
+    installedVersion = info.latestVersionCode;
+  }
+}
 
 class _NoopAppUpdateCoordinator extends AppUpdateCoordinator {
   int initializeCalls = 0;
@@ -120,6 +185,93 @@ Future<void> _pumpGate(
 }
 
 void main() {
+  AppUpdateCoordinator androidCoordinator(
+    _PublishedUpdateApi api,
+    _QueuedUpdateBridge bridge,
+  ) {
+    AppPlatforms.currentOverrides = AppPlatform.android;
+    addTearDown(() => AppPlatforms.currentOverrides = null);
+    AppPreferencesStore.setMockInitialValues({});
+    final coordinator = AppUpdateCoordinator(
+      api: api,
+      downloadBridge: bridge,
+      versionHeadersLoader: () async => AppVersionHeaders.forTesting(
+        versionName: '1.7.6',
+        versionCode: 1711,
+      ),
+    );
+    addTearDown(coordinator.dispose);
+    return coordinator;
+  }
+
+  testWidgets('默认静默下载排队时仍显示新版，并可在下载完成后安装', (tester) async {
+    final api = _PublishedUpdateApi()..latestVersionCode = 1712;
+    final bridge = _QueuedUpdateBridge();
+    final coordinator = androidCoordinator(api, bridge);
+    await _pumpGate(tester, coordinator);
+
+    await coordinator.startDeferredInitialCheck();
+    await tester.pumpAndSettle();
+
+    expect(coordinator.downloadState, AppUpdateDownloadState.queued);
+    expect(find.text('发现新版本 1.7.10'), findsOneWidget);
+    expect(find.text('使用当前网络下载'), findsOneWidget);
+
+    bridge.state = AppUpdateDownloadState.ready;
+    await tester.pump(const Duration(milliseconds: 750));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('立即安装'));
+    await tester.pumpAndSettle();
+    expect(bridge.installedVersion, 1712);
+  });
+
+  testWidgets('前台自动检查失败后恢复，新版弹出且稍后处理不重复提醒', (tester) async {
+    final api = _PublishedUpdateApi()..offline = true;
+    final bridge = _QueuedUpdateBridge();
+    final coordinator = androidCoordinator(api, bridge);
+    await _pumpGate(tester, coordinator);
+    await coordinator.startDeferredInitialCheck();
+    await tester.pumpAndSettle();
+    expect(find.text('首页'), findsOneWidget);
+    expect(coordinator.errorMessage, isNotNull);
+    expect(api.requests, 1);
+
+    api.offline = false;
+    api.latestVersionCode = 1712;
+    await tester.pump(const Duration(minutes: 5));
+    await tester.pumpAndSettle();
+    expect(find.text('发现新版本 1.7.10'), findsOneWidget);
+
+    await tester.tap(find.text('稍后'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(minutes: 5));
+    await tester.pumpAndSettle();
+    expect(find.text('发现新版本 1.7.10'), findsNothing);
+
+    api.latestVersionCode = 1713;
+    await tester.pump(const Duration(minutes: 5));
+    await tester.pumpAndSettle();
+    expect(find.text('发现新版本 1.7.11'), findsOneWidget);
+
+    api.latestVersionCode = 1714;
+    await coordinator.check(force: true);
+    await tester.pumpAndSettle();
+    expect(find.text('发现新版本 1.7.11'), findsOneWidget);
+    expect(find.text('发现新版本 1.7.12'), findsNothing);
+    await tester.tap(find.text('稍后'));
+    await tester.pumpAndSettle();
+    expect(find.text('发现新版本 1.7.12'), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    final requests = api.requests;
+    bridge.state = AppUpdateDownloadState.ready;
+    await tester.pump(const Duration(minutes: 10));
+    expect(api.requests, requests);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('更新门禁位于 MaterialApp 内时启动不触发 Directionality 错误', (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     final coordinator = _NoopAppUpdateCoordinator();

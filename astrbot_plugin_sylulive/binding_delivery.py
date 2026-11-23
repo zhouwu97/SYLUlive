@@ -83,50 +83,69 @@ async def deliver_binding_link(
     delivery: str = "auto",
     send_private: Callable[[Any, str], Awaitable[Any]] | None = None,
 ) -> BindingDelivery:
-    """返回给当前事件的文字；private/auto至多提交一次私信，不自行向群发消息。
-
-    main 将 group_text 作为当前事件回复。auto 表示部署者允许私信未确认后在
-    当前群展示同一临时链接；它不会产生第二个授权请求或重试私信。
-    """
+    """按投递策略发送 QQ 卡片，并返回当前会话的提示。"""
     if delivery not in ("private", "group", "auto"):
         raise IntegrationProblem("invalid_binding_delivery")
     if not isinstance(result, Mapping):
         raise IntegrationProblem("invalid_binding_link")
     actor, group, bot, private = _event_identity(event)
     text = _binding_text(actor, result, origin)
-    if private or delivery == "group":
-        return BindingDelivery(text)
-
-    accepted = False
-    native = getattr(getattr(event, "bot", None), "send_private_msg", None)
-    try:
-        if callable(native):
-            if not actor.isdigit() or not group.isdigit():
-                raise IntegrationProblem("invalid_message_context")
-            sent = await native(
-                user_id=int(actor), group_id=int(group), self_id=bot,
-                message=[{"type": "text", "data": {"text": text}}],
+    qq = event.get_platform_name() == "aiocqhttp"
+    fallback = not private and delivery == "auto"
+    if not private and delivery != "group":
+        if qq:
+            accepted = await _send_qq_binding_card(event, bot, actor, text)
+        else:
+            accepted = False
+            if send_private is not None:
+                try:
+                    accepted = _accepted(await send_private(event, text), allow_bool=True)
+                except Exception:
+                    # 投递不确定时不重复提交私信。
+                    pass
+        if accepted:
+            return BindingDelivery(
+                "绑定链接已提交私信发送，请本次发起人查看机器人私聊并在官网核对授权。"
+                "若未收到，可添加机器人好友后联系管理员调整链接投递方式；/sylu-status 查看状态。",
+                private_confirmed=True,
             )
-            accepted = _accepted(sent)
-        elif send_private is not None:
-            accepted = _accepted(await send_private(event, text), allow_bool=True)
-    except Exception:
-        # 超时可能是已提交但未收到回包；不能切换私信通道重复提交。
-        accepted = False
+        if delivery == "private":
+            return BindingDelivery(
+                "未能确认绑定链接私信发送。请查看机器人私聊，必要时添加好友；"
+                "本次请求已创建，可在官网处理后用 /sylu-status 检查，或 /sylu-disconnect 取消。"
+                "管理员可在后台把链接投递方式改为“群内显示”或“自动回退群内”。"
+            )
 
-    if accepted:
-        return BindingDelivery(
-            "绑定链接已提交私信发送，请本次发起人查看机器人私聊并在官网核对授权。"
-            "若未收到，可添加机器人好友后联系管理员调整链接投递方式；/sylu-status 查看状态。",
-            private_confirmed=True,
-        )
-    if delivery == "auto":
-        return BindingDelivery(
-            "私信发送未获确认，按管理员设置在本群提供同一份临时授权链接。\n" + text,
-            used_fallback=True,
-        )
-    return BindingDelivery(
-        "未能确认绑定链接私信发送。请查看机器人私聊，必要时添加好友；"
-        "本次请求已创建，可在官网处理后用 /sylu-status 检查，或 /sylu-disconnect 取消。"
-        "管理员可在后台把链接投递方式改为“群内显示”或“自动回退群内”。"
-    )
+    if qq:
+        if await _send_qq_binding_card(event, bot, actor, text, group=group):
+            text = "请本次发起人打开合并转发卡片，在官网核对并完成授权。"
+        else:
+            text = "未能确认绑定卡片发送。若当前聊天没有卡片，请等本次申请到期后发送 /sylu-connect 重新申请。"
+        if fallback:
+            text = "私信发送未获确认。" + text
+    elif fallback:
+        text = "私信发送未获确认，按管理员设置在本群提供同一份临时授权链接。\n" + text
+    return BindingDelivery(text, used_fallback=fallback)
+
+
+async def _send_qq_binding_card(event: Any, bot: str, actor: str, text: str, *, group: str = "") -> bool:
+    from astrbot.api.message_components import Node, Nodes, Plain
+
+    native = getattr(getattr(event, "bot", None), "call_action", None)
+    target = group or actor
+    if not callable(native) or not target.isdigit() or not bot.isdigit():
+        return False
+    if group:
+        action, route = "send_group_forward_msg", {"group_id": int(target)}
+    else:
+        action, route = "send_private_forward_msg", {"user_id": int(target)}
+    nodes = Nodes([Node(uin=bot, name="SYLUlive 绑定助手", content=[Plain(text)])])
+    try:
+        return _accepted(await native(
+            action, **route, self_id=bot, **(await nodes.to_dict()),
+            source="SYLUlive 校园绑定", prompt="[SYLUlive 校园绑定]",
+            news=[{"text": "请本次发起人打开卡片完成授权"}], summary="查看绑定说明",
+        ))
+    except Exception:
+        # 超时后不重试同一投递，也不把链接降级为普通 QQ 消息。
+        return False

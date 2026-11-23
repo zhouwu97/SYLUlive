@@ -89,9 +89,10 @@ func selfUserResponse(user models.User, consentState models.LegalConsentState) S
 		loginMethods = append(loginMethods, "email")
 	}
 	response := SelfUserResponse{
-		ID:              user.ID,
-		StudentID:       user.StudentID,
-		StudentVerified: user.IsStudentVerified(),
+		ID:        user.ID,
+		StudentID: user.StudentID,
+		// 旧字段保留为兼容投影，产品上的校内准入统一由教务认证决定。
+		StudentVerified: user.HasEduAccess(),
 		EmailMasked:     maskEmail(user.Email), EmailBound: user.EmailVerifiedAt != nil && user.Email != "",
 		LoginMethods: loginMethods, CanResetViaEmail: user.EmailVerifiedAt != nil && user.Email != "",
 		CanResetViaEdu: false, Nickname: user.Nickname, Gender: user.Gender,
@@ -151,7 +152,7 @@ func selfUserResponseForDB(db *gorm.DB, user models.User) (SelfUserResponse, err
 		}
 		response.AcademicIdentities = bindings
 		response.StudentID = ""
-		response.StudentVerified = len(bindings) > 0 || user.IsStudentVerified()
+		response.StudentVerified = user.HasEduAccess()
 		response.LoginMethods = filterNonSchoolLoginMethods(response.LoginMethods)
 		response.CanResetViaEdu = false
 		if len(bindings) > 0 {

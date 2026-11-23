@@ -29,7 +29,7 @@ python -m http.server 8000 --bind 127.0.0.1 --directory sylulive_site_v5
 
 ## 下载状态与验证
 
-`assets/release.js` 沿用 `/api/app/update` 的 Android stable 契约，保留 APK 和应用市场两种交付方式，包含加载、空版本、失败、12 秒超时和手动重试。旧响应不能覆盖新请求；下载地址只接受不含用户凭据的 HTTPS URL。localhost、127.0.0.1、IPv6 回环和本地文件预览不请求线上版本，也不提供伪造的下载地址。
+`assets/release.js` 沿用 `/api/app/update` 的 Android stable 契约，保留 APK 和应用市场两种交付方式，包含加载、空版本、失败、12 秒超时和手动重试。稳定通道版本低于官网已公开的 GitHub 正式版时，下载卡片使用 GitHub 正式版信息和 APK。旧响应不能覆盖新请求；下载地址只接受不含用户凭据的 HTTPS URL。localhost、127.0.0.1、IPv6 回环和本地文件预览不请求线上版本，也不提供伪造的下载地址。
 
 ```powershell
 node --test sylulive_site_v5/tests/*.test.cjs

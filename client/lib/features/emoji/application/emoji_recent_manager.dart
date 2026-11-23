@@ -203,6 +203,8 @@ class EmojiRecentManager extends ChangeNotifier {
   }
 
   static final _emojiPattern = RegExp(
+      // Unicode 属性转义由 Dart 运行时在 unicode 模式下解析。
+      // ignore: valid_regexps
       r'\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3',
       unicode: true);
 

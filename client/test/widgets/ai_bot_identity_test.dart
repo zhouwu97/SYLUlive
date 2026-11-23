@@ -36,6 +36,43 @@ void main() {
     expect(User.fromJson({'ai_bot': {}}).aiBotLabel, '独立 AI 机器人');
   });
 
+  test('系统机器人只保留一个AI标签：昵称与正文前缀不重复显示', () {
+    final bot = {
+      'nickname': '[AI] 大肥鱼',
+      'ai_bot': {'owner_id': 7, 'owner_nickname': '纯合子'},
+    };
+    final reply = Reply.fromJson({'content': '[AI机器人] 在呢', 'author': bot});
+    expect(reply.author!.nickname, '大肥鱼');
+    expect(reply.content, '在呢');
+    final human = Reply.fromJson({
+      'content': '[AI机器人] 人类原文',
+      'author': {'nickname': '[AI] 普通昵称'},
+    });
+    expect(human.author!.nickname, '[AI] 普通昵称');
+    expect(human.content, '[AI机器人] 人类原文');
+  });
+
+  test('AI 机器人使用独立经验阈值，普通用户阈值不变', () {
+    User bot(int exp) => User.fromJson({
+          'exp': exp,
+          'ai_bot': {'owner_nickname': '纯合子'},
+        });
+    expect(
+        [0, 29, 30, 100, 250, 600, 1200, 2500, 5000, 99999]
+            .map((e) => bot(e).level),
+        [1, 1, 2, 3, 4, 5, 6, 7, 8, 8]);
+    expect(bot(120).levelLabel, 'AI Lv.3');
+    expect(bot(120).expToNextLevel, 250);
+    expect(bot(175).levelProgress, closeTo(0.5, 1e-9));
+    expect(bot(6000).expToNextLevel, 0);
+    expect(bot(-5).level, 1);
+    expect(bot(30).levelColorValue, User.aiLevelColorValues[1]);
+    final human = User.fromJson({'exp': 120});
+    expect(human.level, 2);
+    expect(human.levelLabel, 'Lv.2');
+    expect(human.expToNextLevel, 150);
+  });
+
   test('损坏或缺失创建者字段不能冒充身份，也不应使公共页面崩溃', () {
     for (final metadata in [true, 'AI', []]) {
       expect(User.fromJson({'nickname': '[AI] 模仿', 'ai_bot': metadata}).isAiBot,
@@ -111,10 +148,10 @@ void main() {
             )),
       ));
       await tester.pumpAndSettle();
-      expect(find.text('AI机器人'), findsNWidgets(2));
-      expect(find.text('由校园创建者创建'), findsNWidgets(2));
+      expect(find.text('AI Lv.1'), findsNWidgets(2));
+      expect(find.text('校园创建者创建的'), findsNWidgets(2));
       expect(find.byType(AiBotIdentity), findsNWidgets(2));
-      expect(find.byIcon(Icons.smart_toy_outlined), findsNWidgets(2));
+      expect(find.byIcon(Icons.auto_awesome), findsNWidgets(2));
       expect(tester.takeException(), isNull);
       await tester.runAsync(() async {
         final boundary =
@@ -162,9 +199,10 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle();
-      expect(find.text('AI机器人'), findsNWidgets(2));
-      expect(find.text('创建者未公开'), findsOneWidget);
-      expect(find.bySemanticsLabel('系统AI机器人，由$owner创建'), findsOneWidget);
+      expect(find.text('AI Lv.1'), findsNWidgets(2));
+      expect(find.textContaining('创建的'), findsOneWidget);
+      expect(
+          find.bySemanticsLabel('系统AI机器人，AI 等级 1，由$owner创建'), findsOneWidget);
       expect(tester.takeException(), isNull);
     } finally {
       semantics.dispose();

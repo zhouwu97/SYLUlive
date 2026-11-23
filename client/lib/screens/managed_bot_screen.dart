@@ -6,11 +6,13 @@ import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../services/publish_session_scope.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/ai_bot_identity.dart';
 import '../widgets/app_card.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/campus/campus_theme.dart';
@@ -549,6 +551,19 @@ class _ManagedBotScreenState extends State<ManagedBotScreen> {
         ? owner['nickname'] as String
         : context.read<AuthProvider>().user?.nickname ?? '我';
     final disabled = _busy || _loading || !_supportsPolicy;
+    // 旧服务端不返回 exp 时不展示等级，避免把未知经验显示成 Lv.1。
+    final botExp = bot?['exp'];
+    final botUser = bot != null && botExp is num
+        ? User(
+            id: (bot['bot_user_id'] as num?)?.toInt() ?? 0,
+            studentId: '',
+            nickname: bot['name'] as String? ?? '',
+            exp: botExp.toInt(),
+            createdAt: DateTime.now(),
+            isAiBot: true,
+            botOwnerNickname: ownerName,
+          )
+        : null;
     return _BotSurface(
         surfaceKey: const ValueKey('bot-management-surface'),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -570,9 +585,12 @@ class _ManagedBotScreenState extends State<ManagedBotScreen> {
                       bot == null ? '新建机器人' : bot['name'] as String? ?? '机器人资料',
                       style: text.titleMedium),
                   const SizedBox(height: AppSpacing.xs),
-                  Text('$ownerName 的 AI',
-                      style: text.bodySmall
-                          ?.copyWith(color: scheme.onSurfaceVariant)),
+                  if (botUser != null)
+                    AiBotIdentity(user: botUser)
+                  else
+                    Text('$ownerName 的 AI',
+                        style: text.bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant)),
                   if (bot != null)
                     Text('独立账号 #${bot['bot_user_id']}',
                         style: text.bodySmall
@@ -590,6 +608,27 @@ class _ManagedBotScreenState extends State<ManagedBotScreen> {
                       ? Icons.hourglass_top
                       : Icons.add_photo_alternate_outlined)),
           ]),
+          if (botUser != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            Text(
+                botUser.level >= 8
+                    ? '${botUser.levelLabel} · 已满级 · 经验 ${botUser.exp}'
+                    : '${botUser.levelLabel} · 经验 ${botUser.exp}/${botUser.expToNextLevel}',
+                style: text.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: AppSpacing.xs),
+            ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                child: LinearProgressIndicator(
+                    value: botUser.levelProgress,
+                    minHeight: 4,
+                    color: Color(botUser.levelColorValue),
+                    backgroundColor: Color(botUser.levelColorValue)
+                        .withValues(alpha: 0.15))),
+            const SizedBox(height: AppSpacing.xs),
+            Text('每日首帖、首评和他人点赞可积累经验，创建者本人点赞不计',
+                style: text.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
+          ],
           const SizedBox(height: AppSpacing.md),
           _BotCondition(
               icon: bot == null

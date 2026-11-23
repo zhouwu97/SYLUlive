@@ -1,43 +1,6 @@
 /* 首页与社区共用的组件细节。保留原有三栏、卡片边界和手机布局。 */
 .follow-sign { display: none; }
 @media (min-width: 601px) {
-  /* 小面积标签区分作者资料和正文，不添加额外图章。 */
-  .social-shell .post-author .author-level {
-    display: inline-flex;
-    align-items: center;
-    flex: 0 0 auto;
-    height: 19px;
-    padding: 0 6px;
-    border: 0;
-    border-radius: 4px;
-    background: var(--surface-2);
-    box-shadow: none;
-    color: var(--text-2);
-    font-size: 11px;
-    font-weight: 600;
-    line-height: 18px;
-    letter-spacing: 0;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .social-shell .profile-rail-card .profile-rail-head .profile-level {
-    display: inline-flex;
-    align-items: center;
-    flex: 0 0 auto;
-    height: 20px;
-    padding: 0 7px;
-    border: 1px solid var(--color-accent-border);
-    border-radius: 999px;
-    background: var(--brand-soft);
-    box-shadow: none;
-    color: var(--brand-strong);
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 18px;
-    letter-spacing: .01em;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
   /* 信息流按列表排：同一列帖子连成一块面板，条目之间只留一条分隔线，不再每条单独成卡。 */
   .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) { gap: 0; }
   .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > :is(.feed-card, .poll-card, .feed-dismissed) {
@@ -66,11 +29,10 @@
   .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-meta { display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; min-width: 0; line-height: 20px; }
   .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-name-line { flex: 0 1 auto; flex-wrap: nowrap; column-gap: 6px; min-width: 0; }
   /* 长昵称在一行内截断，不把作者行撑成多行。 */
-  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-name-line b { min-width: 0; overflow: hidden; font-size: var(--text-base); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-name-line .author-name-link { min-width: 0; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-name-line b { display: block; min-width: 0; overflow: hidden; font-size: var(--text-base); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
   .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-meta > span:last-child { margin: 0; color: var(--text-3); font-size: var(--text-caption); }
   .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-meta > span:last-child::before { content: "·"; margin-right: 6px; }
-  /* 等级在作者行里只做弱标签，品牌色留给关注和当前状态。 */
-  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .author-level { height: 18px; padding: 0 5px; border-radius: 4px; background: var(--surface-2); color: var(--text-2); line-height: 18px; }
   .social-shell .post-author .author-name-line { column-gap: 8px; row-gap: 4px; align-items: center; }
   .social-shell .post-author .author-name-line b { font-size: var(--text-base); font-weight: 600; }
   .social-shell .post-author .author-meta > span { display: block; margin-top: 3px; color: var(--text-3); }
@@ -231,7 +193,6 @@
     font-weight: 500;
     line-height: 14px;
   }
-  :root[data-theme="dark"] .social-shell .profile-rail-card .profile-rail-head .profile-level { color: var(--brand-strong); }
 }
 
 @media (min-width: 601px) and (hover: hover) and (pointer: fine) {
@@ -252,4 +213,108 @@
   .social-shell .post-author .author-follow:active .follow-control,
   .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction:active:not(:disabled) { transform: none; }
   .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .post-interaction[aria-pressed="true"]:focus .social-action-icon { animation: none; }
+}
+
+/* ===== 桌面设计收口（≥601px）：排版层级、容器层级与小组件 =====
+ * 原则：
+ * 1. 字重只分两档。中文落到微软雅黑时 500 与 400 同形、600 即粗体，所以粗体只给
+ *    标题、昵称、帖子标题和当前选中项；按钮、筛选、链接、元信息一律常规字重，靠颜色区分。
+ * 2. 一块内容只有一层容器。问候区、快捷入口、空状态直接落在页面底色上，不再层层套白卡和描边小方块。
+ * 3. 图标是辅助：不再给每个图标垫一块带框底色，统一用次级文字色，悬停才出主题色。
+ * 手机网页（≤600px）对照 App，由 mobile-app.css 维护，本段不写手机规则。 */
+@media (min-width: 601px) {
+  body { font-size: var(--text-sm); line-height: 1.6; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  .social-shell :is(time, .price, .event-day, .stat-value, .profile-stats b, .rail-stats b) { font-variant-numeric: tabular-nums; }
+
+  /* 页面标题：更大更紧，副标题拉开一档，和下面内容之间留出呼吸。 */
+  .social-shell .page-head { align-items: flex-end; margin-bottom: 20px; }
+  .social-shell .page-title h1 { margin-bottom: 4px; font-size: 26px; font-weight: 700; line-height: 1.25; letter-spacing: .01em; }
+  .social-shell .page-title p { color: var(--text-3); font-size: var(--text-sm); }
+
+  /* 按钮与筛选：常规字重，主按钮去掉描边，次按钮更轻。 */
+  :is(.social-shell, .modal) .btn { font-weight: 500; }
+  :is(.social-shell, .modal) .btn.primary { border-color: transparent; }
+  :is(.social-shell, .modal) .btn:not(.primary, .danger) { border-color: var(--line); }
+  .social-shell .tabs .tab:not(.active),
+  .social-shell .market-types button:not([aria-pressed="true"], .active) { font-weight: 400; }
+  .social-shell .nav-item { font-weight: 400; }
+  .social-shell .nav-item.active { font-weight: 600; }
+  .social-shell .desktop-top-nav a { font-weight: 400; }
+  .social-shell .desktop-top-nav a:is(.active, [aria-current="page"]) { font-weight: 600; }
+
+  /* 首页问候区：去掉外框，标题与入口直接落在页面上；入口是图标+文字，不再是六个描边胶囊。 */
+  .home-hero { padding: 6px 2px 2px; border: 0; border-radius: 0; background: transparent; }
+  .home-hero h1 { font-size: 22px; font-weight: 700; letter-spacing: .01em; }
+  .home-week { min-height: 26px; padding: 0; border: 0; background: transparent; color: var(--text-3); font-weight: 400; }
+  .home-week:hover { border: 0; background: transparent; color: var(--brand-strong); }
+  .home-quick { gap: 10px; margin-top: 14px; }
+  .home-quick a { min-height: 44px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); font-size: var(--text-sm); font-weight: 400; }
+  .home-quick a:hover { border-color: var(--color-accent-border); background: var(--surface); color: var(--brand-strong); }
+  .home-quick-icon { width: 18px; height: 18px; color: var(--text-3); }
+  .home-brief-pill { border-color: var(--line); box-shadow: none; }
+
+  /* 校园页入口：与首页快捷入口同一形态，图标不垫底块，文字紧跟图标。 */
+  .campus-page .campus-services .quick { gap: 8px; min-height: 44px; padding: 0 8px; border-radius: 12px; box-shadow: none; }
+  .campus-page .campus-services .quick:hover { box-shadow: none; transform: none; }
+  .campus-page .campus-services .quick > i { width: 18px; height: 18px; flex-basis: 18px; border-radius: 0; background: transparent; color: var(--text-3); }
+  .campus-page .campus-services .quick:hover > i { background: transparent; }
+  .campus-page .campus-services .quick > span { flex: 0 1 auto; font-size: var(--text-sm); font-weight: 400; }
+
+  /* 发帖框：输入区去描边，只留浅底。 */
+  .campus-composer .composer-trigger { border-color: transparent; background: var(--surface-2); }
+  .campus-composer .composer-trigger:hover { border-color: var(--line); }
+  .campus-composer .composer-tools button { font-weight: 400; }
+
+  /* 动态排序：分段槽去外框，选中块只用一条细边，不再投影。 */
+  .home-feed-heading { margin-top: 6px; }
+  .home-feed-heading h2 { font-size: 18px; font-weight: 700; }
+  .home-feed-heading .tabs { padding: 2px; border: 0; background: transparent; }
+  .home-feed-heading .tab.active { background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
+  .home-feed-heading .has-nav-ind > .nav-ind { background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
+  .home-feed-more { font-size: var(--text-caption); }
+
+  /* 信息流正文：阅读字号与行高再松一点，元信息更淡。 */
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .post-title { font-size: 16px; font-weight: 700; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) .feed-card .post-body { color: var(--text-2); line-height: 1.75; }
+  .social-shell .post-read-more { color: var(--brand-strong); }
+
+  /* 侧栏小组件：标题不再配图标块；“全部”类入口是安静的次级文字。 */
+  .social-shell .rail-title :is(b, h2) { font-size: 15px; font-weight: 700; }
+  .social-shell .rail-heading-icon { display: none; }
+  .social-shell .right-rail .rail-title { margin-bottom: 4px; border-bottom: 0; }
+  .social-shell .rail-title a { color: var(--text-3); font-weight: 400; }
+  .social-shell .rail-title a:hover { color: var(--brand-strong); }
+  .social-shell .today-card .btn { justify-content: center; }
+
+  /* 通知日期：去掉带阴影的小台历外框，只保留月份和日期两行数字。 */
+  .campus-event .event-date { flex-basis: 36px; height: auto; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  .campus-event .event-month { padding: 0; border: 0; background: transparent; font-size: 11px; }
+  .campus-event .event-day { padding: 0; font-size: 20px; line-height: 24px; }
+  .campus-event b { color: var(--text); font-weight: 400; }
+  .campus-event.is-today .event-month { background: transparent; }
+
+  /* 帖子详情“关于作者”：两个操作同一行等高，抵消通用按钮间距造成的错位。 */
+  .post-context-actions > .btn { margin: 0; }
+
+  /* 空状态与加载：不再把图标装进带框方块，标题降一档。 */
+  .social-shell .empty-state > .svg-icon { width: 30px; height: 30px; padding: 0; margin-bottom: 2px; border: 0; border-radius: 0; background: transparent; color: var(--text-3); }
+  .social-shell .empty-state h3 { font-size: 16px; }
+
+  /* 工具箱：同组工具收进一块面板，磁贴本身不再描边；图标不垫色块。 */
+  .tool-group-title { margin-bottom: 10px; color: var(--text-3); font-size: var(--text-caption); font-weight: 400; letter-spacing: .04em; }
+  .tool-grid { gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
+  .tool-tile { min-height: 72px; border: 0; border-radius: 12px; background: transparent; box-shadow: none; }
+  .tool-tile:hover { background: var(--surface-2); }
+  .tool-tile .tool-icon { flex-basis: 32px; width: 32px; height: 32px; border: 0; background: transparent; color: var(--tool-tone); }
+  .tool-tile:hover .tool-icon { transform: none; }
+  .tool-tile-copy b { font-weight: 600; }
+  .tool-tile-copy small { color: var(--text-3); }
+  .tool-tile > .svg-icon:last-child { color: var(--text-3); opacity: 0; transition: opacity var(--dur-micro) ease-out; }
+  .tool-tile:is(:hover, :focus-visible) > .svg-icon:last-child { opacity: 1; }
+
+  /* 集市卡片：价格是唯一的强调，“价格待议”降为普通说明；无图占位不用主题色。 */
+  .market-card .price { font-weight: 700; }
+  .market-card .price.is-note { color: var(--text-2); font-size: var(--text-sm); font-weight: 400; }
+  .market-card h3 { font-weight: 500; }
+  .market-card .market-cover .svg-icon { color: var(--text-3); }
 }

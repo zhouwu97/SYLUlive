@@ -1334,7 +1334,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           .showSnackBar(const SnackBar(content: Text('请先登录后评价')));
       return false;
     }
-    if (auth.user?.studentVerified != true) {
+    if (auth.user?.hasEduAccess != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先绑定教务账号后再评价')),
       );

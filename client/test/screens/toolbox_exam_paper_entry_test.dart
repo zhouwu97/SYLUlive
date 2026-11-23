@@ -1,19 +1,52 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shenliyuan/models/user.dart';
+import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/toolbox_screen.dart';
 
-void main() {
-  testWidgets('常用工具包含试卷库入口', (tester) async {
-    await tester.pumpWidget(
-      ChangeNotifierProvider<ThemeProvider>(
-        create: (_) => ThemeProvider(loadOnStart: false),
-        child: const MaterialApp(home: ToolboxScreen()),
-      ),
-    );
+class _Auth extends AuthProvider {
+  _Auth(this.fixtureUser) : super(Dio(), loadStoredAuth: false);
+  final User fixtureUser;
+  @override
+  bool get isLoggedIn => true;
+  @override
+  User get user => fixtureUser;
+}
 
-    expect(find.text('试卷库'), findsOneWidget);
-    expect(find.byIcon(Icons.library_books_outlined), findsOneWidget);
-  });
+void main() {
+  for (final (label, verified, role, visible) in [
+    ('未完成教务认证时不显示试卷库入口', false, 'user', false),
+    ('完成教务认证后显示试卷库入口', true, 'user', true),
+    ('管理员未认证也显示试卷库入口', false, 'admin', true),
+  ]) {
+    testWidgets(label, (tester) async {
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<ThemeProvider>(
+              create: (_) => ThemeProvider(loadOnStart: false),
+            ),
+            ChangeNotifierProvider<AuthProvider>(
+              create: (_) => _Auth(User(
+                id: 1,
+                studentId: '20260001',
+                nickname: '测试',
+                role: role,
+                studentVerified: verified,
+                eduAuthorized: verified,
+                eduBound: verified,
+                createdAt: DateTime(2026),
+              )),
+            ),
+          ],
+          child: const MaterialApp(home: ToolboxScreen()),
+        ),
+      );
+
+      expect(find.text('试卷库'), visible ? findsOneWidget : findsNothing);
+    });
+  }
 }

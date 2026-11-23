@@ -34,7 +34,7 @@
   html { scroll-padding-bottom: 108px; }
   .social-shell { --topbar: 0px; background: var(--theme-background); }
   .social-shell[data-has-mobile-wallpaper="1"] { background: transparent; }
-  .social-shell[data-has-mobile-wallpaper="1"] .frame { position: relative; z-index: 1; }
+  .social-shell[data-has-mobile-wallpaper="1"] .frame { position: relative; }
   .mobile-theme-wallpaper { position: fixed; inset: 0; z-index: 0; display: block; overflow: hidden; pointer-events: none; user-select: none; background: var(--theme-background); }
   .mobile-theme-wallpaper img { width: 100%; height: 100%; display: block; }
   .mobile-theme-wallpaper-scrim { position: absolute; inset: 0; background: var(--theme-background); pointer-events: none; }
@@ -110,7 +110,7 @@
   .social-shell :is(.dashboard-feed, .community-feed) .post-author { gap: 9px; margin-bottom: 12px; }
   .social-shell :is(.dashboard-feed, .community-feed) .post-avatar { width: 36px; height: 36px; flex-basis: 36px; }
   .social-shell .feed-card .author-name-line b { font-size: 14px; font-weight: 650; }
-  .social-shell .feed-card .author-level, .social-shell .feed-card .author-follow { display: none; }
+  .social-shell .feed-card .author-follow { display: none; }
   .mobile-post-more { display: grid; place-items: center; width: 44px; height: 44px; margin-left: auto; color: var(--text-2); }
   .social-shell .feed-card .post-title { margin-bottom: 5px; font-size: 16px; line-height: 1.5; }
   .social-shell .feed-card .post-body { font-size: 14px; line-height: 1.65; color: var(--text-2); -webkit-line-clamp: 3; }
@@ -267,22 +267,4 @@
   [data-theme="dark"] .social-shell .market-page .market-types button[aria-pressed="true"], [data-theme="dark"] .mobile-market-type { background: #402e25; color: #ffb083; border-color: #7e5239; }
   @media (prefers-reduced-transparency: reduce) { .mobile-bottom-nav { background: var(--theme-card); backdrop-filter: none; -webkit-backdrop-filter: none; } }
   @media (forced-colors: active) { .mobile-bottom-nav { background: Canvas; border: 1px solid CanvasText; } .mobile-bottom-nav a.active { outline: 2px solid Highlight; } }
-  .mobile-theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
-  .mobile-theme-card { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--theme-card-border); border-radius: 16px; background: var(--theme-card); color: var(--theme-text-primary); }
-  .mobile-theme-card-cover { aspect-ratio: 9 / 16; width: 100%; background: var(--theme-surface-muted); overflow: hidden; position: relative; }
-  .mobile-theme-card-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .mobile-theme-card-body { padding: 10px; display: grid; gap: 4px; }
-  .mobile-theme-card-body b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mobile-theme-card-body small { font-size: 12px; color: var(--theme-text-secondary); }
-  .mobile-theme-badge { position: absolute; top: 8px; right: 8px; padding: 2px 8px; border-radius: 999px; background: var(--theme-primary); color: var(--theme-on-primary); font-size: 11px; font-weight: 600; }
-}
-.theme-landing-page { max-width: 680px; margin: 0 auto; display: grid; gap: 14px; }
-.theme-landing-previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.theme-landing-preview-box { aspect-ratio: 9 / 19.5; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); background: var(--surface-2); }
-.theme-landing-preview-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.theme-landing-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
-.theme-landing-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.theme-landing-tags span { padding: 3px 9px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 12px; }
-@media (max-width: 600px) {
-  .theme-landing-tags span { background: var(--theme-tag-background); color: var(--theme-tag-text); }
 }

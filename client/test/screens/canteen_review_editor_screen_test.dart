@@ -115,6 +115,7 @@ Widget _buildEditorTestApp({
         id: 101,
         studentId: '2023001',
         studentVerified: true,
+        eduAuthorized: true,
         nickname: '测试小周',
         createdAt: DateTime.now(),
       );
@@ -758,6 +759,7 @@ void main() {
       id: 101,
       studentId: '2023001',
       studentVerified: true,
+      eduAuthorized: true,
       nickname: '测试小周',
       creditScore: 100,
       createdAt: DateTime.now(),
@@ -884,6 +886,7 @@ void multiDishEditorTests() {
       id: 101,
       studentId: '2023001',
       studentVerified: true,
+      eduAuthorized: true,
       nickname: '测试小周',
       createdAt: DateTime.now(),
     );

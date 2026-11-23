@@ -80,7 +80,7 @@ func (h *CanteenHandler) CreateReview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "评价文字不能超过500字"})
 		return
 	}
-	userID, ok := requireVerifiedStudent(c, h.db, "评价")
+	userID, ok := requireEduAuthorized(c, h.db, "评价")
 	if !ok {
 		return
 	}
@@ -204,7 +204,7 @@ func (h *CanteenHandler) UpdateReview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "五个评分维度均需为1到5分"})
 		return
 	}
-	userID, ok := requireVerifiedStudent(c, h.db, "修改评价")
+	userID, ok := requireEduAuthorized(c, h.db, "修改评价")
 	if !ok {
 		return
 	}
@@ -1873,7 +1873,7 @@ func (h *CanteenHandler) CreateDishReview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "菜品评分均需为1到5分"})
 		return
 	}
-	userID, ok := requireVerifiedStudent(c, h.db, "评价菜品")
+	userID, ok := requireEduAuthorized(c, h.db, "评价菜品")
 	if !ok {
 		return
 	}
@@ -2203,7 +2203,7 @@ func parseCanteenID(c *gin.Context) (uint, bool) {
 	return uint(id), true
 }
 
-func requireVerifiedStudent(c *gin.Context, db *gorm.DB, action string) (uint, bool) {
+func requireEduAuthorized(c *gin.Context, db *gorm.DB, action string) (uint, bool) {
 	value, exists := c.Get("user_id")
 	userID, valid := value.(uint)
 	if !exists || !valid || userID == 0 {
@@ -2211,17 +2211,12 @@ func requireVerifiedStudent(c *gin.Context, db *gorm.DB, action string) (uint, b
 		return 0, false
 	}
 	var user models.User
-	if err := db.Select("id", "student_verified_at").First(&user, userID).Error; err != nil {
+	if err := db.Select("id", "student_verified_at", "edu_authorized", "edu_bound").First(&user, userID).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "登录状态无效，请重新登录", "code": "authentication_required"})
 		return 0, false
 	}
-	verified, identityErr := models.HasVerifiedAcademicIdentity(db, userID)
-	if identityErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取学生身份失败"})
-		return 0, false
-	}
-	if !verified {
-		c.JSON(http.StatusForbidden, gin.H{"error": "请先完成学生身份认证后" + action, "code": "edu_binding_required"})
+	if !user.HasEduAccess() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "请先完成教务认证后" + action, "code": "edu_binding_required"})
 		return 0, false
 	}
 	return userID, true

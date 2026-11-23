@@ -224,7 +224,7 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 		args = append(args, maxChildrenPreviewPerRoot)
 		rawSQL := fmt.Sprintf(`
 			SELECT id, post_id, parent_reply_id, author_id, content, sticker_id, asset_key, pack_id, status,
-			       like_count, created_at, updated_at, reply_to_user_id, reply_to_reply_id
+			       like_count, created_at, updated_at, reply_to_user_id, reply_to_reply_id, mentions
 			FROM (
 				SELECT r.*, ROW_NUMBER() OVER (PARTITION BY r.parent_reply_id ORDER BY r.created_at ASC, r.id ASC) AS rn
 				FROM replies r
@@ -533,6 +533,36 @@ type CreateReplyInput struct {
 	ParentReplyID  *uint   `form:"parent_reply_id"`
 	ReplyToUserID  *uint   `form:"reply_to_user_id"`
 	ReplyToReplyID *uint   `form:"reply_to_reply_id"`
+	// MentionUserIDs 逗号分隔的被 @ 用户 ID；服务端按真实用户落库为 Mentions 并发通知。
+	MentionUserIDs string `form:"mention_user_ids"`
+}
+
+// maxReplyMentions 单条评论最多 @ 的人数，防止借 @ 批量骚扰。
+const maxReplyMentions = 10
+
+// parseReplyMentionUserIDs 解析并去重被 @ 用户 ID。
+func parseReplyMentionUserIDs(raw string) ([]uint, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	seen := make(map[uint]struct{})
+	ids := make([]uint, 0)
+	for _, part := range strings.Split(raw, ",") {
+		id, err := strconv.ParseUint(strings.TrimSpace(part), 10, strconv.IntSize)
+		if err != nil || id == 0 {
+			return nil, fmt.Errorf("无效的提及用户")
+		}
+		if _, ok := seen[uint(id)]; ok {
+			continue
+		}
+		seen[uint(id)] = struct{}{}
+		ids = append(ids, uint(id))
+	}
+	if len(ids) > maxReplyMentions {
+		return nil, fmt.Errorf("一条评论最多 @%d 人", maxReplyMentions)
+	}
+	return ids, nil
 }
 
 // Create 创建回复
@@ -554,6 +584,11 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	input.StickerID = strings.TrimSpace(input.StickerID)
 	if utf8.RuneCountInString(input.Content) > 5000 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "回复内容过长"})
+		return
+	}
+	mentionUserIDs, err := parseReplyMentionUserIDs(input.MentionUserIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	fileIDs := c.PostForm("file_ids")
@@ -662,6 +697,15 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		input.ReplyToUserID = nil
 	}
 
+	var mentions []models.ReplyMention
+	if len(mentionUserIDs) > 0 {
+		if err := h.db.Model(&models.User{}).Select("id AS user_id", "nickname").
+			Where("id IN ?", mentionUserIDs).Order("id").Scan(&mentions).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+			return
+		}
+	}
+
 	var stickerID *string
 	// storedContent 用于持久化与展示；input.Content（真实文本）用于重复内容判定。
 	// 纯表情回复的文本回退不能参与去重，否则两个不同表情会因回退文案相同被误判为重复。
@@ -683,6 +727,7 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		StickerID:      stickerID,
 		AssetKey:       input.AssetKey,
 		PackID:         input.PackID,
+		Mentions:       mentions,
 		Status:         models.ReplyStatusNormal,
 		CreatedAt:      time.Now(),
 	}
@@ -857,12 +902,27 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		}
 		SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, post.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
 	}
+	h.notifyReplyMentions(mentions, userID.(uint), reply.ID, uint(postID), contentPreview)
 
 	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withReplyImageVariants).First(&reply, reply.ID).Error; err != nil {
 		log.Printf("[DB_WARN] Failed to re-fetch reply with preloads after create: %v", err)
 	}
 	c.JSON(http.StatusCreated, reply)
 }
+
+// notifyReplyMentions 给被 @ 的用户发回复通知，复用回复通知的跳转与推送链路。
+// 通知按 (用户, 回复) 去重：已作为回复对象收到通知的人不会再收到第二条；自己 @ 自己不提醒。
+// 通知内容以 replyMentionNotificationPrefix 开头，客户端据此把标题显示为“@了你”。
+func (h *ReplyHandler) notifyReplyMentions(mentions []models.ReplyMention, fromUserID, replyID, postID uint, contentPreview string) {
+	content := replyMentionNotificationPrefix + contentPreview
+	for _, mention := range mentions {
+		if err := CreateReplyNotificationFull(h.jpushAppKey, h.jpushMasterSecret, h.db, mention.UserID, fromUserID, replyID, postID, content); err != nil {
+			log.Printf("[DB_ERROR] 创建提及通知失败: reply_id=%d user_id=%d err=%v", replyID, mention.UserID, err)
+		}
+	}
+}
+
+const replyMentionNotificationPrefix = "@了你："
 
 // replyContentSecurityKind 只返回内容形态，不保存评论正文；管理员仍能知道本次被拦截的是文字、图片还是表情。
 func replyContentSecurityKind(content, stickerID string, hasImage bool) string {

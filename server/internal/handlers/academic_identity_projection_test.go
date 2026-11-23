@@ -16,6 +16,9 @@ func TestAcademicIdentityProjectionSurvivesChangeAndPartialUnbind(t *testing.T) 
 	h, db, _, user := newAcademicIdentityTestHandler(t)
 	require.NoError(t, db.AutoMigrate(&models.UserLegalConsent{}, &models.AccountSecurityAuditLog{}, &models.EduCredentialCleanupJob{}))
 	now := time.Now()
+	user.EduAuthorized = true
+	user.EduBound = true
+	require.NoError(t, db.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{"edu_authorized": true, "edu_bound": true}).Error)
 	require.NoError(t, h.persistBinding(user.ID, models.AcademicProviderUndergraduate, "U-A", now, "school_profile", "v1"))
 	require.NoError(t, h.persistBinding(user.ID, models.AcademicProviderGraduate, "G-B", now, "school_profile", "v1"))
 	// 即使旧投影完全错误，两个本人接口依赖的响应仍以 binding 为准。

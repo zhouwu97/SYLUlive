@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -68,7 +69,7 @@ func (h *LikeHandler) LikePost(c *gin.Context) {
 		if err := tx.Model(&models.User{}).Where("id = ?", post.AuthorID).Update("total_likes_received", gorm.Expr("total_likes_received + 1")).Error; err != nil {
 			return err
 		}
-		return nil
+		return services.ApplyManagedBotLikeExp(tx, post.AuthorID, userID.(uint), 1)
 	})
 
 	if err != nil {
@@ -110,6 +111,9 @@ func (h *LikeHandler) UnlikePost(c *gin.Context) {
 				return err
 			}
 			if err := tx.Model(&models.User{}).Where("id = ?", post.AuthorID).Update("total_likes_received", gorm.Expr("GREATEST(total_likes_received - 1, 0)")).Error; err != nil {
+				return err
+			}
+			if err := services.ApplyManagedBotLikeExp(tx, post.AuthorID, userID.(uint), -1); err != nil {
 				return err
 			}
 		}
@@ -172,7 +176,7 @@ func (h *LikeHandler) LikeReply(c *gin.Context) {
 		if err := tx.Model(&models.User{}).Where("id = ?", reply.AuthorID).Update("total_likes_received", gorm.Expr("total_likes_received + 1")).Error; err != nil {
 			return err
 		}
-		return nil
+		return services.ApplyManagedBotLikeExp(tx, reply.AuthorID, userID.(uint), 1)
 	})
 
 	if err != nil {
@@ -215,6 +219,9 @@ func (h *LikeHandler) UnlikeReply(c *gin.Context) {
 			}
 			// 与 LikeReply 对称维护兼容列，不依赖此列展示有效获赞。
 			if err := tx.Model(&models.User{}).Where("id = ?", reply.AuthorID).Update("total_likes_received", gorm.Expr("GREATEST(total_likes_received - 1, 0)")).Error; err != nil {
+				return err
+			}
+			if err := services.ApplyManagedBotLikeExp(tx, reply.AuthorID, userID.(uint), -1); err != nil {
 				return err
 			}
 		}

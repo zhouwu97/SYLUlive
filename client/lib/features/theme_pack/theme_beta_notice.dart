@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 
 import '../../providers/theme_provider.dart';
 import '../../screens/settings/appearance_settings_screen.dart';
-import 'theme_manifest.dart';
 import 'theme_pack_codec.dart';
 
 class ThemeBetaNotice extends StatefulWidget {
@@ -19,6 +18,16 @@ class ThemeBetaNotice extends StatefulWidget {
   static const assetPath = 'assets/beta-theme/mingfeng.sltheme';
 
   final Widget child;
+
+  /// 读取随包内置的默认主题；首次启动自动应用和「恢复默认外观」共用。
+  static Future<PreparedThemePack> loadPack(AssetBundle bundle) async {
+    final asset = await bundle.load(assetPath);
+    final appVersion = (await PackageInfo.fromPlatform()).version;
+    return ThemePackCodec.decode(
+      asset.buffer.asUint8List(asset.offsetInBytes, asset.lengthInBytes),
+      appVersion: appVersion,
+    );
+  }
 
   @override
   State<ThemeBetaNotice> createState() => _ThemeBetaNoticeState();
@@ -45,14 +54,8 @@ class _ThemeBetaNoticeState extends State<ThemeBetaNotice> {
     }
     setState(() => _notice = _BetaNoticeState.loading);
     try {
-      final asset = await DefaultAssetBundle.of(context).load(
-        ThemeBetaNotice.assetPath,
-      );
-      final appVersion = (await PackageInfo.fromPlatform()).version;
-      final pack = await ThemePackCodec.decode(
-        asset.buffer.asUint8List(asset.offsetInBytes, asset.lengthInBytes),
-        appVersion: appVersion,
-      );
+      final pack =
+          await ThemeBetaNotice.loadPack(DefaultAssetBundle.of(context));
       if (!mounted) return;
       if (!provider.canApplyBetaDefault) {
         setState(() => _notice = _BetaNoticeState.hidden);
@@ -62,10 +65,7 @@ class _ThemeBetaNoticeState extends State<ThemeBetaNotice> {
       if (!mounted) return;
       final applied = await provider.applyInstalledTheme(
         installed,
-        ThemeGroup.applicable.difference({
-          ThemeGroup.launcherIcon,
-          ThemeGroup.widgets,
-        }),
+        ThemeProvider.builtInDefaultGroups,
         asBetaDefault: true,
       );
       if (mounted) {

@@ -247,7 +247,12 @@ void main() {
           return;
         }
         handler.resolve(Response(requestOptions: request, data: {
-          ..._status({'bot_user_id': 10, 'name': '本人机器人', 'enabled': true}),
+          ..._status({
+            'bot_user_id': 10,
+            'name': '本人机器人',
+            'enabled': true,
+            'exp': 130
+          }),
           'runtime_supported': true,
           'runtime': {
             'state': 'loading',
@@ -266,6 +271,9 @@ void main() {
       await _pump(tester, auth,
           theme: profile.$1, scale: profile.$2, boundary: boundary);
       await tester.pumpAndSettle();
+      // 服务端返回经验时显示 AI 等级胶囊与升级进度。
+      expect(find.text('AI Lv.3'), findsOneWidget);
+      expect(find.text('AI Lv.3 · 经验 130/250'), findsOneWidget);
       await tester.enterText(find.byType(TextField).first, '未保存的机器人名字');
       await _show(tester, find.text('后台运行：正在浏览'), 200);
       await _capture(tester, boundary, 'app-runtime-${profile.$3}');
@@ -273,7 +281,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(requests, 1);
       expect(find.text('后台运行：执行端离线或尚未连接'), findsOneWidget);
-      expect(find.text('未保存的机器人名字'), findsOneWidget);
+      expect(find.text('未保存的机器人名字', skipOffstage: false), findsOneWidget);
       fail = true;
       final refresh = find.byKey(const ValueKey('bot-refresh-runtime'));
       await _show(tester, refresh, 100);

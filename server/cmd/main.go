@@ -370,6 +370,7 @@ func main() {
 
 		// Feed 推荐系统（FEED-1 / FEED-2 / FEED-4）
 		&models.FeedFeedback{},
+		&models.FeedSnapshot{},
 		&models.UserHiddenAuthor{},
 		&models.FeedImpression{},
 		&models.FeedDailyMetrics{},
@@ -378,6 +379,7 @@ func main() {
 		// 校园资讯
 		&models.CampusArticle{},
 		&models.JWCSyncState{},
+		&models.CampusSyncSchedule{},
 		&models.CompetitionCategory{},
 		&models.CompetitionCatalogPackage{},
 		&models.CompetitionCatalogAuditLog{},
@@ -713,7 +715,6 @@ func main() {
 	r.Use(middleware.ReadAbuseRateLimitMiddleware(
 		120,
 		time.Minute,
-		"/api/posts",
 		"/api/search",
 		"/api/topics/search",
 		"/api/topics/recommend",
@@ -1400,6 +1401,7 @@ func main() {
 	}
 	tasks.StartLotteryCron(db)
 	appealFinalizerCron := tasks.StartAppealFinalizerCron(appCtx, db)
+	go tasks.CleanupFeedSnapshots(appCtx, db)
 	feedMetricsCron := tasks.StartFeedMetricsCron(appCtx, services.NewFeedMetricsService(db))
 	var examPaperStorageCron *tasks.ExamPaperStorageCron
 	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
@@ -1795,7 +1797,8 @@ func main() {
 
 	posts := r.Group("/api/posts")
 
-	posts.Use(middleware.OptionalAuthMiddleware(db, cfg.JWTSecret))
+	postReads := middleware.CommunityReadRateLimit()
+	posts.Use(middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), postReads)
 
 	{
 
@@ -1957,7 +1960,7 @@ func main() {
 
 	postsAuth := r.Group("/api/posts")
 
-	postsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.RequireCommunityRules(db))
+	postsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), postReads, middleware.RequireCommunityRules(db))
 
 	{
 

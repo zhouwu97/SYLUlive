@@ -110,7 +110,7 @@ jobs:
         working-directory: server
         run: >-
           bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 -tags=integration -p 1 ./internal/handlers ./internal/services
-          -run '^(TestPostPublishQuota|TestReplyRejectedWhenPostHidden|TestSecurityEvent|TestFeedbackTicket.*Postgres|TestAwardDaily.*Postgres|TestPostgresEmailResetRecovery|TestPostgresLoginThrottleConcurrentFirstFailures)'
+          -run '^(TestCommunityMultiInstancePostgres|TestPostPublishQuota|TestReplyRejectedWhenPostHidden|TestSecurityEvent|TestFeedbackTicket.*Postgres|TestAwardDaily.*Postgres|TestPostgresEmailResetRecovery|TestPostgresLoginThrottleConcurrentFirstFailures)'
           -count=1
       - name: Run AstrBot authorization, password verification and publish-lock PostgreSQL regressions
         working-directory: server

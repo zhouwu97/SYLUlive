@@ -1,8 +1,12 @@
 package middleware
 
 import (
+	"fmt"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
+	"shenliyuan/internal/models"
 	"testing"
 	"time"
 
@@ -93,4 +97,52 @@ func TestReadAbuseRateLimitMiddlewareResetsAfterWindow(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, request().Code)
 	time.Sleep(30 * time.Millisecond)
 	require.Equal(t, http.StatusOK, request().Code)
+}
+
+func TestCommunityReadQuotaSharedExit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}))
+	router := gin.New()
+	_ = router.SetTrustedProxies(nil)
+	g := router.Group("/api/posts", OptionalAuthMiddleware(db, "test-read-quota"), CommunityReadRateLimit())
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	g.GET("", ok)
+	g.GET("/:id", ok)
+	g.GET("/:id/replies", ok)
+	request := func(path, ip, token string) int {
+		req := httptest.NewRequest("GET", path, nil)
+		req.RemoteAddr = ip + ":5050"
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w.Code
+	}
+	const ip = "192.0.2.1"
+	var first string
+	for i := 1; i <= 60; i++ {
+		user := models.User{ID: uint(10000 + i), PasswordHash: "test", Nickname: fmt.Sprint(i), Role: models.RoleUser}
+		require.NoError(t, db.Create(&user).Error)
+		InvalidateTokenVersionCache(user.ID)
+		t.Cleanup(func() { InvalidateTokenVersionCache(user.ID) })
+		token, err := GenerateToken(user.ID, string(user.Role), 0, "test-read-quota")
+		require.NoError(t, err)
+		if i == 1 {
+			first = token
+		}
+		require.Equal(t, 200, request("/api/posts/1", ip, token))
+		require.Equal(t, 200, request("/api/posts/1/replies", ip, token))
+	}
+	for i := 2; i < 600; i++ {
+		require.Equal(t, 200, request("/api/posts", ip, first))
+	}
+	require.Equal(t, 429, request("/api/posts/2", "192.0.2.2", first))
+	for i := 0; i < 240; i++ {
+		require.Equal(t, 200, request("/api/posts/2", ip, ""))
+	}
+	require.Equal(t, 429, request("/api/posts/2/replies", ip, "invalid"))
+	require.Equal(t, 200, request("/api/posts/2", "192.0.2.2", ""))
 }

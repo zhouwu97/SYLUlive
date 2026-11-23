@@ -22,6 +22,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/clients"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 )
@@ -419,4 +421,39 @@ func TestReplyRejectedWhenPostHiddenBeforeTransactionRecheck(t *testing.T) {
 	var refreshed models.Post
 	require.NoError(t, db.Select("id", "reply_count").First(&refreshed, post.ID).Error)
 	require.Zero(t, refreshed.ReplyCount, "被拒绝的回复不得增加 reply_count")
+}
+
+func TestCommunityMultiInstancePostgres(t *testing.T) {
+	first := openPostQuotaPG(t, 3)
+	second := openPostQuotaPG(t, 3)
+	for _, db := range []*gorm.DB{first, second} {
+		pool, err := db.DB()
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, pool.Close()) })
+	}
+	testHomeSnapshotPages(t, first, second)
+	require.NoError(t, first.AutoMigrate(&models.CampusArticle{}, &models.JWCSyncState{}, &models.CampusSyncSchedule{}))
+	var crawls atomic.Int32
+	spec := services.CrawlSourceSpec{Source: fmt.Sprintf("test_%d", time.Now().UnixNano()), CrawlFunc: func(context.Context, map[string][]string, int, bool) (*clients.CrawlResponse, error) {
+		crawls.Add(1)
+		return &clients.CrawlResponse{Success: true}, nil
+	}}
+	start := make(chan struct{})
+	results := make(chan *services.SyncResult, 2)
+	for _, db := range []*gorm.DB{first, second} {
+		go func() {
+			<-start
+			results <- services.NewCampusSyncService(db, spec).SyncScheduled(context.Background(), time.Hour, false)
+		}()
+	}
+	close(start)
+	claimed := 0
+	for range 2 {
+		if result := <-results; result != nil {
+			require.NoError(t, result.Error)
+			claimed++
+		}
+	}
+	require.Equal(t, 1, claimed)
+	require.EqualValues(t, 1, crawls.Load())
 }

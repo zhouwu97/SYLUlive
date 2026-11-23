@@ -27,7 +27,7 @@ func newPostFeedTestDB(t *testing.T) *gorm.DB {
 	seq := atomic.AddInt64(&postVisibilityTestDBSeq, 1)
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:postvis_%d?mode=memory&cache=shared", seq)), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(
+	require.NoError(t, db.AutoMigrate(&models.FeedSnapshot{},
 		&models.User{}, &models.Post{}, &models.PostImage{}, &models.File{}, &models.ImageVariant{},
 		&models.Like{}, &models.Reply{}, &models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 	))

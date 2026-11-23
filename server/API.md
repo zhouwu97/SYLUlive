@@ -230,7 +230,8 @@ AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人�
 FEED-H1 加固：
 - `not_interested` 有效期 90 天（`expires_at`），重复标记刷新有效期；历史无 `expires_at` 记录视为仍有效。
 - 不能隐藏自己、不能对自己的帖子标记不感兴趣（返回 `400`）。
-- 综合推荐 Snapshot 绑定用户：`loadmore` 时归属不匹配返回 `409 feed_session_expired`；隐藏作者 / 不感兴趣 / 撤销 / 恢复后，旧综合快照立即失效。
+- 帖子列表、详情与评论等读取在每个 Go 实例内共享一分钟额度，登录账号 600 次、匿名来源 IP 240 次。网关另按出口限流；应用层超额返回 429 `read_rate_limited` 及 `Retry-After`。
+- 综合推荐 Snapshot 在连接同一数据库的实例间共享，有效期 10 分钟。Snapshot 绑定用户：`loadmore` 时归属不匹配返回 `409 feed_session_expired`；隐藏作者 / 不感兴趣 / 撤销 / 恢复后，旧综合快照立即失效。
 
 ## 4.2 Feed 行为事件采集 (Feed Events) — FEED-2
 

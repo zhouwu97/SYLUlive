@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -20,6 +19,7 @@ import (
 	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -63,22 +63,6 @@ func NewPostHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string, security
 // withPostImageVariants 一次加载支持的配方，序列化时再按原图 MIME 选择。
 func withPostImageVariants(db *gorm.DB) *gorm.DB {
 	return db.Preload("Images.Variants", "recipe_version IN ?", []int{models.ImageVariantRecipeVersion, models.ImageVariantGIFRecipeVersion})
-}
-
-// Snapshot 帖子快照
-type Snapshot struct {
-	// UserID 快照归属用户。userID > 0 时快照已应用该用户的负反馈过滤，
-	// loadmore 必须校验归属；匿名 / 用户无关的 generic 快照为 0。
-	UserID           uint
-	PostIDs          []uint
-	ExpiredAt        time.Time
-	AlgorithmVersion string
-	Sort             string
-	FeedKind         string
-	// FilterKey 是生成快照时的筛选指纹（版块/类型/排序/标签/话题/搜索/增量）。
-	// loadmore 必须校验一致，避免换版块或换排序后仍复用旧 ID 列表。
-	// 空值表示旧路径或测试直接写入的快照，此时跳过该项校验。
-	FilterKey string
 }
 
 // latestFeedCursor 是最新 Feed 的稳定游标。created_at 相同时使用 ID
@@ -132,50 +116,62 @@ func encodeLatestFeedCursor(cursor latestFeedCursor) string {
 	return base64.RawURLEncoding.EncodeToString(payload)
 }
 
-// ActiveSnapshots 帖子快照缓存。key: session_id (string)，value: Snapshot。
-var ActiveSnapshots sync.Map
-
-// ActiveUserSnapshots 用户 → 该用户综合推荐快照 session 集合的索引，
-// 用于用户反馈变化后快速失效其全部旧快照，避免遍历整个 ActiveSnapshots。
-var ActiveUserSnapshots sync.Map // key: userID (uint)，value: *sync.Map[sessionID -> struct{}]
-
-// storeSnapshot 存储快照；用户相关快照（UserID>0）同时登记到用户索引。
-func storeSnapshot(sessionID string, snap Snapshot) {
-	ActiveSnapshots.Store(sessionID, snap)
-	if snap.UserID == 0 {
-		return
-	}
-	idx, _ := ActiveUserSnapshots.LoadOrStore(snap.UserID, &sync.Map{})
-	idx.(*sync.Map).Store(sessionID, struct{}{})
-}
-
-// deleteSnapshot 删除快照；用户相关快照同时从用户索引移除。
-func deleteSnapshot(sessionID string) {
-	value, ok := ActiveSnapshots.Load(sessionID)
-	ActiveSnapshots.Delete(sessionID)
-	if !ok {
-		return
-	}
-	snap := value.(Snapshot)
-	if snap.UserID == 0 {
-		return
-	}
-	if idx, ok := ActiveUserSnapshots.Load(snap.UserID); ok {
-		idx.(*sync.Map).Delete(sessionID)
-	}
-}
-
-// invalidateUserFeedSnapshots 使该用户所有用户相关快照失效（如负反馈变化后）。
-func invalidateUserFeedSnapshots(userID uint) {
-	if userID == 0 {
-		return
-	}
-	if value, ok := ActiveUserSnapshots.LoadAndDelete(userID); ok {
-		value.(*sync.Map).Range(func(sessionID, _ interface{}) bool {
-			ActiveSnapshots.Delete(sessionID.(string))
-			return true
+// 用户快照先占位再生成候选，让构建期间提交的负反馈也能使它失效。
+func (h *PostHandler) beginSnapshot(c *gin.Context, meta models.FeedSnapshot) *models.FeedSnapshot {
+	meta.SessionID = uuid.NewString()
+	meta.UserID = optionalFeedUserID(c)
+	meta.ExpiredAt = time.Now().UTC().Add(10 * time.Minute)
+	if meta.UserID != 0 {
+		err := h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+			if err := lockFeedUser(tx, meta.UserID, "SHARE"); err != nil {
+				return err
+			}
+			return tx.Create(&meta).Error
 		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存信息流快照失败"})
+			return nil
+		}
 	}
+	return &meta
+}
+
+func (h *PostHandler) finishSnapshot(c *gin.Context, snapshot *models.FeedSnapshot, ids []uint) bool {
+	db := h.db.WithContext(c.Request.Context())
+	snapshot.PostIDs = ids
+	var result *gorm.DB
+	if snapshot.UserID == 0 {
+		result = db.Create(snapshot)
+	} else {
+		result = db.Model(snapshot).Select("PostIDs").Updates(snapshot)
+	}
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存信息流快照失败"})
+		return false
+	}
+	if result.RowsAffected == 0 {
+		expiredFeedSession(c)
+		return false
+	}
+	return true
+}
+
+func expiredFeedSession(c *gin.Context) {
+	c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+}
+
+// 找不到、过期与归属不符使用相同响应；存储错误单独报告，避免客户端反复刷新。
+func (h *PostHandler) readSnapshot(c *gin.Context, sessionID string) (*models.FeedSnapshot, error) {
+	var snap models.FeedSnapshot
+	result := h.db.WithContext(c.Request.Context()).Where("session_id = ? AND user_id = ? AND expired_at > ?", sessionID, optionalFeedUserID(c), time.Now().UTC()).Limit(1).Find(&snap)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取信息流快照失败"})
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &snap, nil
 }
 
 var allowedWaterPostTypes = map[string]struct{}{
@@ -497,51 +493,49 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	// 如果是加载更多，并且带有有效的 session_id，尝试走快照
 	if scene == "loadmore" && sessionID != "" {
-		if val, ok := ActiveSnapshots.Load(sessionID); ok {
-			snapshot := val.(Snapshot)
-			// 快照必须同时满足：未过期、类型一致、筛选指纹一致、归属用户一致。
-			// 任一不满足都说明这份 ID 列表不属于当前请求上下文，不能复用。
-			if time.Now().Before(snapshot.ExpiredAt) && snapshotUsable(&snapshot, genericFeedKind, snapshotFilterKey(c), optionalFeedUserID(c)) {
-				window := sliceFeedWindow(len(snapshot.PostIDs), offset, limit)
-				targetIDs := snapshot.PostIDs[window.Start:window.End]
+		snapshot, err := h.readSnapshot(c, sessionID)
+		if err != nil {
+			return
+		}
+		if snapshot != nil && snapshotUsable(snapshot, genericFeedKind, snapshotFilterKey(c)) {
+			window := sliceFeedWindow(len(snapshot.PostIDs), offset, limit)
+			targetIDs := snapshot.PostIDs[window.Start:window.End]
 
-				// 固定候选窗口后应用当前可见性过滤，允许短页；
-				// 不跨全量快照循环补满一页，避免一次请求变成不受控扫描。
-				visiblePosts, loadErr := h.loadPostsInOrderWithContext(c.Request.Context(), targetIDs, visiblePostStatuses)
-				if loadErr != nil {
-					log.Printf("[DB_ERROR] GetList hot-feed Find failed: %v", loadErr)
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
-					return
-				}
-				shortPage := len(visiblePosts) < len(targetIDs)
-				if shortPage && !supportsFeedPaginationMeta(c) {
-					// 旧客户端按“已返回条数”推进 offset，过滤后的短页会让它重复扫描
-					// 同一批候选甚至在尾部空转。安全优先：让它刷新当前列表，
-					// 而不是返回受限内容来维持旧体验。
-					c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
-					return
-				}
-
-				posts = visiblePosts
-				h.hydratePosts(c, posts, time.Now())
-				if posts == nil {
-					posts = []models.Post{}
-				}
-				c.JSON(http.StatusOK, gin.H{
-					"posts": posts,
-					// total 语义：原始快照候选数（含当前已不可见的候选），
-					// 不代表当前精确可见数量；不为了显示总数做全表扫描。
-					"total":       len(snapshot.PostIDs),
-					"total_kind":  "snapshot_candidates",
-					"page":        page,
-					"limit":       limit,
-					"session_id":  sessionID,
-					"next_offset": window.NextOffset,
-					"has_more":    window.HasMore,
-				})
+			// 固定候选窗口后应用当前可见性过滤，允许短页；
+			// 不跨全量快照循环补满一页，避免一次请求变成不受控扫描。
+			visiblePosts, loadErr := h.loadPostsInOrderWithContext(c.Request.Context(), targetIDs, visiblePostStatuses)
+			if loadErr != nil {
+				log.Printf("[DB_ERROR] GetList hot-feed Find failed: %v", loadErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
 				return
 			}
-			deleteSnapshot(sessionID)
+			shortPage := len(visiblePosts) < len(targetIDs)
+			if shortPage && !supportsFeedPaginationMeta(c) {
+				// 旧客户端按“已返回条数”推进 offset，过滤后的短页会让它重复扫描
+				// 同一批候选甚至在尾部空转。安全优先：让它刷新当前列表，
+				// 而不是返回受限内容来维持旧体验。
+				c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+				return
+			}
+
+			posts = visiblePosts
+			h.hydratePosts(c, posts, time.Now())
+			if posts == nil {
+				posts = []models.Post{}
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"posts": posts,
+				// total 语义：原始快照候选数（含当前已不可见的候选），
+				// 不代表当前精确可见数量；不为了显示总数做全表扫描。
+				"total":       len(snapshot.PostIDs),
+				"total_kind":  "snapshot_candidates",
+				"page":        page,
+				"limit":       limit,
+				"session_id":  sessionID,
+				"next_offset": window.NextOffset,
+				"has_more":    window.HasMore,
+			})
+			return
 		}
 	}
 
@@ -784,6 +778,10 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	query.Session(&gorm.Session{}).Count(&total)
 
 	if isSnapshotting {
+		snapshot := h.beginSnapshot(c, models.FeedSnapshot{Sort: sort, FeedKind: genericFeedKind, FilterKey: snapshotFilterKey(c)})
+		if snapshot == nil {
+			return
+		}
 		var allIDs []uint
 		if isSectionRecommend {
 			sectionIDs, sectionErr := services.NewSectionFeedService(requestDB, supportsPoll).BuildSnapshot(c.Request.Context(), waterSectionFeedID, postType, now)
@@ -845,22 +843,10 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			}
 		}
 
-		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
-		// 快照记录归属用户与筛选指纹：loadmore 时必须两项都一致才允许复用，
-		// 避免把 A 用户的列表或另一个版块/排序的结果返回给当前请求。
-		storeSnapshot(sessionID, Snapshot{
-			UserID:    optionalFeedUserID(c),
-			PostIDs:   allIDs,
-			ExpiredAt: time.Now().Add(10 * time.Minute),
-			Sort:      sort,
-			FeedKind:  genericFeedKind,
-			FilterKey: snapshotFilterKey(c),
-		})
-
-		// 自动销毁
-		time.AfterFunc(10*time.Minute, func() {
-			deleteSnapshot(sessionID)
-		})
+		if !h.finishSnapshot(c, snapshot, allIDs) {
+			return
+		}
+		sessionID = snapshot.SessionID
 
 		// 取出第一页：固定候选窗口后按当前可见状态过滤，允许短页。
 		window := sliceFeedWindow(len(allIDs), 0, limit)
@@ -1250,28 +1236,29 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 		return
 	}
 	if sortName == "all" && scene == "loadmore" {
-		value, ok := ActiveSnapshots.Load(sessionID)
-		if !ok {
-			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+		snapshot, loadErr := h.readSnapshot(c, sessionID)
+		if loadErr != nil {
 			return
 		}
-		snapshot := value.(Snapshot)
-		// H1.1：综合快照按用户过滤，loadmore 必须归属校验，避免复用他人个性化快照。
-		if time.Now().After(snapshot.ExpiredAt) || snapshot.Sort != "all" || snapshot.AlgorithmVersion != algorithm || snapshot.FeedKind != feedKind || snapshot.UserID != optionalFeedUserID(c) {
-			deleteSnapshot(sessionID)
-			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+		if snapshot == nil || snapshot.Sort != "all" || snapshot.AlgorithmVersion != algorithm || snapshot.FeedKind != feedKind {
+			expiredFeedSession(c)
 			return
 		}
 		ids = snapshot.PostIDs
 	} else if sortName == "all" {
+		snapshot := h.beginSnapshot(c, models.FeedSnapshot{Sort: "all", AlgorithmVersion: algorithm, FeedKind: feedKind})
+		if snapshot == nil {
+			return
+		}
 		ids, err = feed.BuildSnapshot(c.Request.Context(), now, userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建首页信息流失败"})
 			return
 		}
-		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
-		storeSnapshot(sessionID, Snapshot{UserID: userID, PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), AlgorithmVersion: algorithm, Sort: "all", FeedKind: feedKind})
-		time.AfterFunc(10*time.Minute, func() { deleteSnapshot(sessionID) })
+		if !h.finishSnapshot(c, snapshot, ids) {
+			return
+		}
+		sessionID = snapshot.SessionID
 	} else {
 		var normal []models.Post
 		timeQuery := h.db.WithContext(c.Request.Context()).Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
@@ -1466,20 +1453,21 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 
 	var ids []uint
 	if scene == "loadmore" {
-		value, ok := ActiveSnapshots.Load(sessionID)
-		if !ok {
-			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+		snapshot, loadErr := h.readSnapshot(c, sessionID)
+		if loadErr != nil {
 			return
 		}
-		snapshot := value.(Snapshot)
-		if time.Now().After(snapshot.ExpiredAt) || snapshot.FeedKind != "legacy_hot" || snapshot.UserID != optionalFeedUserID(c) {
-			deleteSnapshot(sessionID)
-			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+		if snapshot == nil || snapshot.FeedKind != "legacy_hot" {
+			expiredFeedSession(c)
 			return
 		}
 		ids = snapshot.PostIDs
 	} else {
 		userID := optionalFeedUserID(c)
+		snapshot := h.beginSnapshot(c, models.FeedSnapshot{Sort: "all", FeedKind: "legacy_hot"})
+		if snapshot == nil {
+			return
+		}
 		ids, err = feed.BuildSnapshot(c.Request.Context(), now, userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建首页信息流失败"})
@@ -1501,9 +1489,10 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 		}
 		ids = finalIDs
 
-		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
-		storeSnapshot(sessionID, Snapshot{UserID: userID, PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), Sort: "all", FeedKind: "legacy_hot"})
-		time.AfterFunc(10*time.Minute, func() { deleteSnapshot(sessionID) })
+		if !h.finishSnapshot(c, snapshot, ids) {
+			return
+		}
+		sessionID = snapshot.SessionID
 	}
 
 	window := sliceFeedWindow(len(ids), offset, limit)

@@ -20,7 +20,7 @@ func TestPostSnapshotLoadMorePreservesOrderAndIncludesOlderPosts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
+	if err := db.AutoMigrate(&models.FeedSnapshot{}, &models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
 		&models.File{},
 		&models.Post{},
@@ -52,12 +52,13 @@ func TestPostSnapshotLoadMorePreservesOrderAndIncludesOlderPosts(t *testing.T) {
 	}
 
 	sessionID := "snapshot-test"
-	ActiveSnapshots.Store(sessionID, Snapshot{
+	if err := db.Create(&models.FeedSnapshot{SessionID: sessionID,
 		PostIDs:   []uint{posts[4].ID, posts[2].ID, posts[0].ID, posts[3].ID, posts[1].ID},
 		ExpiredAt: time.Now().Add(time.Minute),
 		FeedKind:  "generic",
-	})
-	defer ActiveSnapshots.Delete(sessionID)
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()

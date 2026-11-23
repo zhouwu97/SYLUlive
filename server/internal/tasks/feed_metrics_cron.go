@@ -2,7 +2,9 @@ package tasks
 
 import (
 	"context"
+	"gorm.io/gorm"
 	"log"
+	"shenliyuan/internal/models"
 	"sync"
 	"time"
 )
@@ -59,4 +61,20 @@ func StartFeedMetricsCron(ctx context.Context, agg feedMetricsAggregator) *FeedM
 	}()
 	log.Println("Feed 指标每日聚合任务已启动")
 	return cron
+}
+
+// CleanupFeedSnapshots 启动时及每分钟按过期索引回收，覆盖实例重启期间遗留的记录。
+func CleanupFeedSnapshots(ctx context.Context, db *gorm.DB) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for ctx.Err() == nil {
+		if err := db.WithContext(ctx).Where("expired_at <= ?", time.Now().UTC()).Delete(&models.FeedSnapshot{}).Error; err != nil && ctx.Err() == nil {
+			log.Printf("清理信息流快照失败: %v", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }

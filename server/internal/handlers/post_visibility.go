@@ -117,14 +117,11 @@ func snapshotFilterKey(c *gin.Context) string {
 // snapshotUsable 判断快照是否可用于本次 loadmore 请求。
 // 空 FilterKey 表示该快照由旧路径或测试直接写入，此时不做筛选指纹校验，
 // 避免把既有测试与历史快照全部判为不可用。
-func snapshotUsable(snapshot *Snapshot, feedKind, filterKey string, userID uint) bool {
+func snapshotUsable(snapshot *models.FeedSnapshot, feedKind, filterKey string) bool {
 	if snapshot.FeedKind != feedKind {
 		return false
 	}
 	if snapshot.FilterKey != "" && snapshot.FilterKey != filterKey {
-		return false
-	}
-	if snapshot.UserID != userID {
 		return false
 	}
 	return true

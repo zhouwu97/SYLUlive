@@ -18,12 +18,17 @@ type readAbuseLimitEntry struct {
 	lastSeen    time.Time
 }
 
-// ReadAbuseRateLimitMiddleware 为高成本公开读取接口提供进程内的基础限流。
-//
-// 来源封禁只负责已确认的攻击来源，不能用来覆盖正常 GET 请求；这里按客户端 IP
-// 和路由族限速，先把最容易被爬取和洪泛的读取入口挡在业务查询之前。部署多实例时
-// 仍应在网关或共享限流层复用同一策略，本层负责单实例失守时的最后一道成本上限。
+// CommunityReadRateLimit 在认证中间件之后执行，只有通过验证的账号才独占额度。
+func CommunityReadRateLimit() gin.HandlerFunc {
+	return readAbuseRateLimit(240, 600, time.Minute, "/api/posts")
+}
+
+// ReadAbuseRateLimitMiddleware 按可信来源和路由族限制公开读取。
 func ReadAbuseRateLimitMiddleware(limit int, window time.Duration, prefixes ...string) gin.HandlerFunc {
+	return readAbuseRateLimit(limit, 0, window, prefixes...)
+}
+
+func readAbuseRateLimit(limit, accountLimit int, window time.Duration, prefixes ...string) gin.HandlerFunc {
 	if limit <= 0 {
 		limit = 120
 	}
@@ -50,11 +55,16 @@ func ReadAbuseRateLimitMiddleware(limit int, window time.Duration, prefixes ...s
 		if clientIP == "" {
 			clientIP = strings.TrimSpace(c.Request.RemoteAddr)
 		}
-		key := clientIP + "\n" + prefix
+		key := "ip:" + clientIP + "\n" + prefix
+		requestLimit := limit
+		if userID := c.GetUint("user_id"); accountLimit > 0 && userID != 0 {
+			key = "user:" + strconv.FormatUint(uint64(userID), 10) + "\n" + prefix
+			requestLimit = accountLimit
+		}
 		now := time.Now()
 
 		mu.Lock()
-		if len(entries) >= readAbuseLimiterMaxKeys {
+		if _, exists := entries[key]; !exists && len(entries) >= readAbuseLimiterMaxKeys {
 			for existingKey, entry := range entries {
 				if now.Sub(entry.lastSeen) >= window {
 					delete(entries, existingKey)
@@ -80,7 +90,7 @@ func ReadAbuseRateLimitMiddleware(limit int, window time.Duration, prefixes ...s
 			entry = readAbuseLimitEntry{windowStart: now}
 		}
 		entry.lastSeen = now
-		if entry.count >= limit {
+		if entry.count >= requestLimit {
 			entries[key] = entry
 			mu.Unlock()
 			c.Header("Retry-After", strconv.Itoa(retryAfterSeconds(window-now.Sub(entry.windowStart))))

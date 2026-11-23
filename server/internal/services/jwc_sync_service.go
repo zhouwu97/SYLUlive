@@ -11,6 +11,7 @@ import (
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/clients"
 	"shenliyuan/internal/models"
@@ -58,6 +59,56 @@ type SyncResult struct {
 	LastErrors  []string // first few structured error summaries
 }
 
+// SyncScheduled 原子领取 UTC 时间窗口。已完成或已失败的同一轮由后到实例跳过。
+func (s *CampusSyncService) SyncScheduled(ctx context.Context, interval time.Duration, reconcile bool) *SyncResult {
+	const timeout = 90 * time.Second
+	if reconcile && !s.ShouldReconcile() {
+		return nil
+	}
+	// 各实例以同一数据库时钟划分轮次和租约，避免时钟偏差造成提前抢占。
+	clockSQL := "SELECT CAST(strftime('%s','now') AS INTEGER)"
+	if s.db.Dialector.Name() == "postgres" {
+		clockSQL = "SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp()))::bigint"
+	}
+	var unixSeconds int64
+	if err := s.db.WithContext(ctx).Raw(clockSQL).Scan(&unixSeconds).Error; err != nil {
+		return &SyncResult{Error: err}
+	}
+	now := time.Unix(unixSeconds, 0).UTC()
+	round := now.Truncate(interval).Unix()
+	row := models.CampusSyncSchedule{Source: s.spec.Source, LeaseUntil: now.Add(timeout + 30*time.Second)}
+	column := "regular_round"
+	if reconcile {
+		column = "reconcile_round"
+		row.ReconcileRound = round
+	} else {
+		row.RegularRound = round
+	}
+	claim := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "source"}},
+		DoUpdates: clause.AssignmentColumns([]string{column, "lease_until"}),
+		Where: clause.Where{Exprs: []clause.Expression{
+			clause.Expr{SQL: "campus_sync_schedules." + column + " < ? AND campus_sync_schedules.lease_until <= ?", Vars: []any{round, now}},
+		}},
+	}).Create(&row)
+	if claim.Error != nil {
+		return &SyncResult{Error: claim.Error}
+	}
+	if claim.RowsAffected == 0 {
+		return nil
+	}
+	// 进程退出时租约自动到期；晚到的旧任务只能释放自己的租约。
+	defer func() {
+		if err := s.db.WithContext(ctx).Model(&row).Where("lease_until = ?", row.LeaseUntil).Update("lease_until", now).Error; err != nil && ctx.Err() == nil {
+			log.Printf("[CAMPUS_TASK] release %s: %v", s.spec.Source, err)
+		}
+	}()
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	run := NewCampusSyncService(s.db.WithContext(runCtx), s.spec)
+	return run.Sync(runCtx, reconcile, 3)
+}
+
 // Sync performs a full sync cycle: query known URLs, call Python, upsert.
 func (s *CampusSyncService) Sync(ctx context.Context, reconcile bool, maxPages int) *SyncResult {
 	result := &SyncResult{}
@@ -67,7 +118,9 @@ func (s *CampusSyncService) Sync(ctx context.Context, reconcile bool, maxPages i
 	var partialFailure bool
 	var itemCount int
 	defer func() {
-		s.updateSyncState(result, reconcile, partialFailure, itemCount)
+		stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		NewCampusSyncService(s.db.WithContext(stateCtx), s.spec).updateSyncState(result, reconcile, partialFailure, itemCount)
 	}()
 
 	// ── 1. Determine bootstrap status ──────────────────

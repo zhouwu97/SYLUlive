@@ -1,9 +1,9 @@
 import { CompetitionPersonal } from "./competition-personal";
 import { CampusMap } from './campus-map';
 import { SchoolCalendar } from './school-calendar';
-import { CanteenContributions } from './canteen';
-import { formatScore } from './canteen-data';
-import { CanteenDetailPage } from './canteen-detail';
+import { CanteenContributions } from './canteen/canteen';
+import { formatScore } from './canteen/canteen-data';
+import { CanteenDetailPage } from './canteen/canteen-detail';
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { entity, query, rows, time, useApi, write, asset } from "./api";
 import { Empty, Form, Head, Pagination, QueryState, Tabs, useUI } from "./ui";

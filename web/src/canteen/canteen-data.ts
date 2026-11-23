@@ -1,4 +1,4 @@
-import {time,type Entity} from './api';
+import {time,type Entity} from '../api';
 
 /** 评分统一保留一位小数；服务端的加权平均会带浮点尾数（如 4.000000000000001）。 */
 export function formatScore(value:unknown):string{

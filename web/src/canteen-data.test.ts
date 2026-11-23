@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
-import {preservedReviewData} from './canteen-data';
-import {stringList} from './canteen-data';
+import {preservedReviewData} from './canteen/canteen-data';
+import {stringList} from './canteen/canteen-data';
 describe('历史评价媒体数据兼容',()=>{
   it('损坏的编码或非字符串条目不会使详情页崩溃',()=>{
     expect(stringList('不是 JSON')).toEqual([]);
@@ -17,7 +17,7 @@ describe('食堂评价编辑的完整替换请求',()=>{
   });
 });
 
-import {readReviewDishes,reviewTime} from './canteen-data';
+import {readReviewDishes,reviewTime} from './canteen/canteen-data';
 describe('评价表单里的菜品',()=>{
   const form=(values:Record<string,string>)=>{const fd=new FormData();for(const [k,v] of Object.entries(values))fd.set(k,v);return fd};
   it('最多读取 3 道菜，同名去重，实拍只挂到第一道',()=>{

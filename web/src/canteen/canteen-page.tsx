@@ -1,11 +1,11 @@
 import type {CSSProperties} from 'react';
 import {Link,useNavigate,useSearchParams} from 'react-router-dom';
-import {asset,query,rows,useApi,type Entity} from './api';
-import {useAuth} from './auth';
-import {useMobile} from './mobile';
-import {ServerAvatar} from './server-avatar';
-import {displayName,userHref} from './user-level';
-import {Empty,Head,Icon,Pagination,QueryState,Tabs,useUI} from './ui';
+import {asset,query,rows,useApi,type Entity} from '../api';
+import {useAuth} from '../auth';
+import {useMobile} from '../mobile';
+import {ServerAvatar} from '../server-avatar';
+import {displayName,userHref} from '../user-level';
+import {Empty,Head,Icon,Pagination,QueryState,Tabs,useUI} from '../ui';
 import {CanteenContributions,CanteenFavorites,DishDetail} from './canteen';
 import {formatScore} from './canteen-data';
 import {CanteenList} from './canteen-list';

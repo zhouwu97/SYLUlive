@@ -1,8 +1,8 @@
 import {useState} from 'react';
 import {Link} from 'react-router-dom';
-import {asset,type Entity} from './api';
+import {asset,type Entity} from '../api';
 import {formatScore} from './canteen-data';
-import {Icon} from './ui';
+import {Icon} from '../ui';
 import './canteen-list.css';
 
 const ranked=(c:Entity)=>typeof c.ranked==='boolean'?c.ranked:Number(c.rating_count)>0;

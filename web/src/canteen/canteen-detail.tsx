@@ -1,11 +1,11 @@
 import {useState, type CSSProperties} from 'react';
 import {Link, useParams} from 'react-router-dom';
-import {asset, entity, rows, useApi, type Entity} from './api';
-import {useAuth} from './auth';
+import {asset, entity, rows, useApi, type Entity} from '../api';
+import {useAuth} from '../auth';
 import {CanteenArchiveManagement, CanteenDetailActions, CanteenReviewForm, CanteenReviews, DishDetail, OFFLINE_READONLY_TEXT} from './canteen';
 import {formatScore} from './canteen-data';
-import {MediaGallery} from './media';
-import {Empty, Icon, QueryState, useUI} from './ui';
+import {MediaGallery} from '../media';
+import {Empty, Icon, QueryState, useUI} from '../ui';
 import './canteen-detail.css';
 import {CanteenManagement} from './canteen-management';
 

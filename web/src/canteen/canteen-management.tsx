@@ -1,9 +1,9 @@
 import {useRef,useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {useQueryClient} from '@tanstack/react-query';
-import {captureAuthSession,write,type Entity} from './api';
-import {useAuth} from './auth';
-import {Form,Icon,useDialogCloseGuard,useUI} from './ui';
+import {captureAuthSession,write,type Entity} from '../api';
+import {useAuth} from '../auth';
+import {Form,Icon,useDialogCloseGuard,useUI} from '../ui';
 
 export function CanteenManagement({id,item,onSaved}:{id:string;item:Entity;onSaved:()=>void}){
   const auth=useAuth(),ui=useUI();

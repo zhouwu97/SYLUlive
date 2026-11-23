@@ -51,7 +51,7 @@ import { useMobileThemeRuntime } from "./mobile-theme";
 import { MobileThemeBackdrop, MobileThemesPage, ThemeLandingPage } from "./mobile-theme-pages";
 const Admin = lazy(() => import('./admin').then(module => ({default: module.Admin})));
 const Competition = lazy(() => import('./competition').then(module => ({default: module.Competition})));
-const CanteenPage = lazy(() => import('./canteen-page').then(module => ({default: module.CanteenPage})));
+const CanteenPage = lazy(() => import('./canteen/canteen-page').then(module => ({default: module.CanteenPage})));
 const Campus = lazy(() => import('./campus').then(module => ({default: module.Campus})));
 const Catalog = lazy(() => import('./catalog').then(module => ({default: module.Catalog})));
 const CatalogDetail = lazy(() => import('./catalog').then(module => ({default: module.CatalogDetail})));

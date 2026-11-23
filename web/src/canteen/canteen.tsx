@@ -2,12 +2,12 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {Link} from 'react-router-dom';
 import {useQueryClient} from '@tanstack/react-query';
 import {DISH_DIMENSIONS,MAX_REVIEW_DISHES,formatScore,preservedReviewData,readReviewDishes,reviewTime,stringList} from './canteen-data';
-import {asset,captureAuthSession,entity,errorText,request,rows,useApi,write,type Entity} from './api';
-import {useAuth} from './auth';
-import {Empty,Form,Icon,QueryState,useUI,type Field} from './ui';
-import {ServerAvatar} from './server-avatar';
-import {displayName,userHref} from './user-level';
-import {MediaGallery} from './media';
+import {asset,captureAuthSession,entity,errorText,request,rows,useApi,write,type Entity} from '../api';
+import {useAuth} from '../auth';
+import {Empty,Form,Icon,QueryState,useUI,type Field} from '../ui';
+import {ServerAvatar} from '../server-avatar';
+import {displayName,userHref} from '../user-level';
+import {MediaGallery} from '../media';
 import './canteen-detail.css';
 
 /** 1–5 分统一用下拉选择，避免数字框误输入；文案与 App 的分值按钮一致。 */

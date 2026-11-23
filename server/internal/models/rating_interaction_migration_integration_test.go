@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -145,4 +146,48 @@ type models2Rating struct {
 	Comment        string
 	HelpfulCount   int
 	UnhelpfulCount int
+}
+
+func TestCanteenNameIndexUpgradePostgres(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("未配置 PostgreSQL 迁移测试库")
+	}
+	db, cleanup := openIsolatedMigrationDB(t, dsn)
+	defer cleanup()
+	require.NoError(t, db.AutoMigrate(&Canteen{}, &AppSchemaMigration{}))
+	require.NoError(t, db.Exec("CREATE UNIQUE INDEX idx_canteens_normalized_name ON canteens(normalized_name)").Error)
+	indexOID := func() int64 {
+		t.Helper()
+		var oid int64
+		require.NoError(t, db.Raw("SELECT 'idx_canteens_normalized_name'::regclass::oid::bigint").Scan(&oid).Error)
+		return oid
+	}
+	original := indexOID()
+	rows := []Canteen{
+		{Name: "一食堂 面馆", NormalizedName: "旧名称1"},
+		{Name: "面馆", NormalizedName: "旧名称2", LocationArea: CanteenLocationArea1},
+	}
+	require.NoError(t, db.Create(&rows).Error)
+
+	// 两条记录清洗后撞名，验证失败时历史名称、旧约束和迁移标记一起回滚。
+	require.ErrorContains(t, MigrateCanteenLocations(db), "规范化后重复")
+	require.Equal(t, original, indexOID())
+	var first Canteen
+	require.NoError(t, db.First(&first, rows[0].ID).Error)
+	require.Equal(t, "一食堂 面馆", first.Name)
+	require.Equal(t, "旧名称1", first.NormalizedName)
+	var marked int64
+	require.NoError(t, db.Model(&AppSchemaMigration{}).Count(&marked).Error)
+	require.Zero(t, marked)
+
+	require.NoError(t, db.Model(&rows[1]).Update("location_area", CanteenLocationArea2).Error)
+	require.NoError(t, MigrateCanteenLocations(db))
+	composite := indexOID()
+	require.NotEqual(t, original, composite)
+	require.NoError(t, MigrateCanteenLocations(db))
+	require.Equal(t, composite, indexOID())
+	require.NoError(t, db.Model(&Canteen{}).Where("normalized_name = ?", "面馆").Count(&marked).Error)
+	require.EqualValues(t, 2, marked)
+	require.Error(t, db.Create(&Canteen{Name: "面馆", NormalizedName: "面馆", LocationArea: CanteenLocationArea1}).Error)
 }

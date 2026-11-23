@@ -32,7 +32,7 @@ func TestCanteenNameIndexSkipsRejectedSubmissions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ensureCanteenNormalizedNameIndex(db); err != nil {
+	if err := models.MigrateCanteenLocations(db); err != nil {
 		t.Fatalf("startup normalization must tolerate rejected duplicates: %v", err)
 	}
 	var reloadedRejected, reloadedLive models.Canteen

@@ -252,9 +252,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
-      studentVerified: verified,
-      eduAuthorized: verified,
-      eduBound: verified,
+      academicConfigured: verified,
       createdAt: DateTime(2026));
 
   Future<void> openAccessCheck(WidgetTester tester, AuthProvider auth,
@@ -268,7 +266,7 @@ void main() {
         child: MaterialApp(
             home: ExamPaperLibraryScreen(
                 service: _FakeExamPaperService(),
-                synchronizeAcademicBinding: coordinator == null
+                synchronizeAcademicConfig: coordinator == null
                     ? null
                     : () => coordinator.synchronizeIdentityBinding()))));
     if (settle) {
@@ -301,7 +299,7 @@ void main() {
     waiting.complete();
     await tester.pumpAndSettle();
     expect(find.text('高等数学'), findsNothing);
-    expect(find.text('完成教务认证后使用'), findsOneWidget);
+    expect(find.text('登记教务配置后使用'), findsOneWidget);
     expect(auth.user?.id, 2);
   });
 
@@ -312,7 +310,7 @@ void main() {
     await openAccessCheck(tester, auth);
     expect(auth.refreshes, 1);
     expect(find.text('高等数学'), findsOneWidget);
-    expect(find.text('完成教务认证后使用'), findsNothing);
+    expect(find.text('登记教务配置后使用'), findsNothing);
   });
 
   testWidgets('同一账号重新登录后不接收旧登录会话的补交结果', (tester) async {
@@ -337,10 +335,10 @@ void main() {
     expect(coordinator.synchronizations, 2);
     expect(find.text('当前登录会话暂未同步'), findsOneWidget);
     expect(find.text('旧登录会话失败'), findsNothing);
-    expect(find.text('正在同步已有教务绑定…'), findsNothing);
+    expect(find.text('正在读取教务配置…'), findsNothing);
   });
 
-  testWidgets('试卷库在服务器漏记时恢复本机会话并自动补交后刷新资格', (tester) async {
+  testWidgets('试卷库在服务器漏记时同步本机配置后刷新资格', (tester) async {
     var serverVerified = false;
     final auth = _RefreshingAuth(account(verified: false), (auth) async {
       auth.fakeUser = account(verified: serverVerified);
@@ -362,12 +360,12 @@ void main() {
       auth.fakeUser = account(verified: serverVerified);
     });
     final coordinator = _BindingCoordinator(() async {
-      if (failed) return '学校会话需要恢复，请在原教务入口重新登录';
+      if (failed) return '配置暂未同步，请重试';
       serverVerified = true;
       return null;
     });
     await openAccessCheck(tester, auth, coordinator: coordinator);
-    expect(find.text('学校会话需要恢复，请在原教务入口重新登录'), findsOneWidget);
+    expect(find.text('配置暂未同步，请重试'), findsOneWidget);
     expect(find.text('重试同步'), findsOneWidget);
     failed = false;
     await tester.tap(find.text('重试同步'));
@@ -381,8 +379,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
-      studentVerified: true,
-      eduBound: true,
+      academicConfigured: true,
       createdAt: DateTime(2026),
     );
     final auth = _SwitchableAuthProvider(user);
@@ -420,8 +417,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
-      studentVerified: true,
-      eduBound: true,
+      academicConfigured: true,
       createdAt: DateTime(2026),
     );
 
@@ -455,8 +451,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
-      studentVerified: true,
-      eduBound: true,
+      academicConfigured: true,
       createdAt: DateTime(2026),
     );
     final service = _OutOfOrderExamPaperService();
@@ -516,8 +511,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
-      studentVerified: true,
-      eduBound: true,
+      academicConfigured: true,
       createdAt: DateTime(2026),
     );
 
@@ -554,8 +548,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
-      studentVerified: true,
-      eduBound: true,
+      academicConfigured: true,
       createdAt: DateTime(2026),
     );
     final service = _DelayedRefreshExamPaperService();
@@ -594,8 +587,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
-      studentVerified: true,
-      eduBound: true,
+      academicConfigured: true,
       createdAt: DateTime(2026),
     );
 
@@ -633,8 +625,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
-      studentVerified: true,
-      eduBound: true,
+      academicConfigured: true,
       createdAt: DateTime(2026),
     );
     final service = _CapturingExamPaperService();

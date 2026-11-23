@@ -172,11 +172,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.textContaining('本机已配置，教务认证状态暂未确认'),
+        find.textContaining('学号归属记录暂未确认'),
         findsOneWidget,
       );
-      expect(find.textContaining('仅本机连接，未完成教务认证'), findsNothing);
-      expect(find.text('教务认证状态暂未刷新'), findsOneWidget);
+      expect(find.textContaining('尚无学号归属核验记录'), findsNothing);
+      expect(find.text('学号归属记录暂未刷新'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });
@@ -231,14 +231,14 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('仅本机连接，未完成教务认证'), findsOneWidget);
+    expect(find.textContaining('尚无学号归属核验记录'), findsOneWidget);
     expect(find.textContaining('教务认证状态暂未确认'), findsNothing);
-    expect(find.text('教务认证状态暂未刷新'), findsNothing);
+    expect(find.text('学号归属记录暂未刷新'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('服务端返回学校认证时显示教务认证已完成', (tester) async {
+  testWidgets('服务端返回学校认证时显示学校已核验此学号', (tester) async {
     final dio = Dio()
       ..interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
         handler.resolve(Response(
@@ -297,9 +297,9 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('教务认证已完成'), findsOneWidget);
+    expect(find.textContaining('学校已核验此学号'), findsOneWidget);
     expect(find.textContaining('教务认证状态暂未确认'), findsNothing);
-    expect(find.text('教务认证状态暂未刷新'), findsNothing);
+    expect(find.text('学号归属记录暂未刷新'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -371,7 +371,7 @@ void main() {
       child: const GoldenTestApp(home: AcademicDataSettingsScreen()),
     ));
     await tester.pumpAndSettle();
-    expect(find.textContaining('教务认证已完成'), findsOneWidget);
+    expect(find.textContaining('学校已核验此学号'), findsOneWidget);
 
     // 触发刷新并失败，重新挂载设置页测试页面呈现
     fail = true;
@@ -387,8 +387,8 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('上次成功确认：教务认证已完成'), findsOneWidget);
-    expect(find.text('教务认证状态暂未刷新'), findsOneWidget);
+    expect(find.textContaining('上次成功确认：学校已核验此学号'), findsOneWidget);
+    expect(find.text('学号归属记录暂未刷新'), findsOneWidget);
     expect(find.textContaining('显示上次成功确认的状态'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -470,7 +470,7 @@ void main() {
       child: const GoldenTestApp(home: AcademicDataSettingsScreen()),
     ));
     await tester.pumpAndSettle();
-    expect(find.textContaining('教务认证已完成'), findsOneWidget);
+    expect(find.textContaining('学校已核验此学号'), findsOneWidget);
 
     // 切换到用户 8
     userId = '8';
@@ -487,10 +487,10 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('教务认证已完成'), findsNothing);
+    expect(find.textContaining('学校已核验此学号'), findsNothing);
     expect(find.textContaining('上次成功确认'), findsNothing);
-    expect(find.textContaining('本机已配置，教务认证状态暂未确认'), findsOneWidget);
-    expect(find.text('教务认证状态暂未刷新'), findsOneWidget);
+    expect(find.textContaining('学号归属记录暂未确认'), findsOneWidget);
+    expect(find.text('学号归属记录暂未刷新'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

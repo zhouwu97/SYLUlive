@@ -47,6 +47,7 @@ type SelfUserResponse struct {
 	LoginAccount          string                           `json:"login_account"`
 	ID                    uint                             `json:"id"`
 	StudentID             string                           `json:"student_id,omitempty"`
+	AcademicConfigured    bool                             `json:"academic_configured"`
 	StudentVerified       bool                             `json:"student_verified"`
 	AcademicIdentities    []models.AcademicIdentityBinding `json:"academic_identities"`
 	EmailMasked           string                           `json:"email_masked"`
@@ -89,11 +90,9 @@ func selfUserResponse(user models.User, consentState models.LegalConsentState) S
 		loginMethods = append(loginMethods, "email")
 	}
 	response := SelfUserResponse{
-		ID:        user.ID,
-		StudentID: user.StudentID,
-		// 旧字段保留为兼容投影，产品上的校内准入统一由教务认证决定。
-		StudentVerified: user.HasEduAccess(),
-		EmailMasked:     maskEmail(user.Email), EmailBound: user.EmailVerifiedAt != nil && user.Email != "",
+		ID:          user.ID,
+		StudentID:   user.StudentID,
+		EmailMasked: maskEmail(user.Email), EmailBound: user.EmailVerifiedAt != nil && user.Email != "",
 		LoginMethods: loginMethods, CanResetViaEmail: user.EmailVerifiedAt != nil && user.Email != "",
 		CanResetViaEdu: false, Nickname: user.Nickname, Gender: user.Gender,
 		Avatar: user.Avatar, Background: user.Background, NightMode: user.NightMode,
@@ -140,6 +139,15 @@ func selfUserResponseForDB(db *gorm.DB, user models.User) (SelfUserResponse, err
 		return SelfUserResponse{}, err
 	}
 	response := selfUserResponse(user, consentState)
+	// 旧库升级期间仍可登录；配置表就绪后，本人资料与业务准入使用同一查询。
+	if db.Migrator().HasTable(&models.AcademicAccountConfig{}) {
+		configured, err := models.HasAcademicConfig(db, user.ID)
+		if err != nil {
+			return SelfUserResponse{}, err
+		}
+		response.AcademicConfigured = configured
+		response.StudentVerified = configured
+	}
 	if previewPath, ready, err := services.ReadyPublicImageVariantPath(db, user.Background, services.ImageVariantMedium); err != nil {
 		return SelfUserResponse{}, err
 	} else if ready {
@@ -152,7 +160,6 @@ func selfUserResponseForDB(db *gorm.DB, user models.User) (SelfUserResponse, err
 		}
 		response.AcademicIdentities = bindings
 		response.StudentID = ""
-		response.StudentVerified = user.HasEduAccess()
 		response.LoginMethods = filterNonSchoolLoginMethods(response.LoginMethods)
 		response.CanResetViaEdu = false
 		if len(bindings) > 0 {

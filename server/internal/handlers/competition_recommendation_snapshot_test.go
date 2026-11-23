@@ -23,6 +23,7 @@ func TestCreateCompetitionRecommendationSnapshotUsesServerResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedVerifiedStudent(t, db, user)
+	seedAcademicConfig(t, db, user)
 	preference := models.UserCompetitionPreference{
 		UserID: user.ID, Goals: jsonArray([]string{"ability"}), DirectionTags: jsonArray([]string{"程序设计"}),
 		SkillTags: jsonArray([]string{"C++"}), PreferredRoles: jsonArray([]string{"developer"}), WeeklyHours: 7,
@@ -118,6 +119,7 @@ func TestCreateCompetitionRecommendationSnapshotRejectsUnavailableAndDuplicate(t
 		t.Fatal(err)
 	}
 	seedVerifiedStudent(t, db, user)
+	seedAcademicConfig(t, db, user)
 	event := models.CompetitionEvent{Title: "赛事", Status: "published"}
 	if err := db.Create(&event).Error; err != nil {
 		t.Fatal(err)

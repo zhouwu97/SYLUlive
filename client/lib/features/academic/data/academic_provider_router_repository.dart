@@ -20,6 +20,7 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     required this.registry,
     this.identityClient,
     this.onIdentityVerified,
+    this.onAcademicConfigSynced,
     this.configClient,
     this.providerIdLoader,
     DateTime Function()? now,
@@ -30,6 +31,7 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
   final AcademicProviderRegistry registry;
   final AcademicIdentityClient? identityClient;
   final Future<void> Function()? onIdentityVerified;
+  final void Function(String, bool)? onAcademicConfigSynced;
   final AcademicAccountConfigClient? configClient;
   LocalAcademicAccountStore? accountStore;
   Timer? _syncTimer;
@@ -253,7 +255,13 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
             await selectProvider(identity,
                 expectedContextGeneration: generation);
           }
-          if (current()) onConfigChanged?.call();
+          if (current()) {
+            onConfigChanged?.call();
+            final configured = presentProviders.any(
+              (provider) => (store.entry(provider)['snapshot'] as Map?)?['state'] == 'active',
+            );
+            onAcademicConfigSynced?.call(user, configured);
+          }
         }
       }
       if (current()) _refreshConfigStatuses(clearTransient: true);

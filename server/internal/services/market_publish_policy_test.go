@@ -19,8 +19,9 @@ func TestMarketPublishPolicySurvivesIdentityMigration(t *testing.T) {
 	p := MarketPublishPolicy{DB: db}
 	allowed, err := p.CanPublish(u.ID)
 	require.NoError(t, err)
-	require.True(t, allowed)
+	require.False(t, allowed)
 	require.NoError(t, MigrateAcademicIdentities(db))
+	require.NoError(t, SeedAcademicAccountConfigs(db))
 	allowed, err = p.CanPublish(u.ID)
 	require.NoError(t, err)
 	require.True(t, allowed)
@@ -33,7 +34,7 @@ func TestMarketPublishPolicySurvivesIdentityMigration(t *testing.T) {
 	require.NoError(t, db.Create(&models.AcademicAccountConfig{UserID: other.ID, ProviderID: models.AcademicProviderGraduate, StudentID: "U-1", State: "active", Revision: 1}).Error)
 	allowed, err = p.CanPublish(other.ID)
 	require.NoError(t, err)
-	require.False(t, allowed)
+	require.True(t, allowed)
 }
 
 func TestUnboundIdentityCannotReturnThroughLegacyRepair(t *testing.T) {

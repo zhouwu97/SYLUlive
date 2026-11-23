@@ -33,7 +33,7 @@ func newWaterSectionTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(&models.FeedSnapshot{}, &models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
-		&models.AcademicIdentityBinding{},
+		&models.AcademicIdentityBinding{}, &models.AcademicAccountConfig{},
 		&models.File{},
 		&models.FileUploadGrant{},
 		&models.ImageVariant{},
@@ -95,6 +95,7 @@ func newWaterTestUser(t *testing.T, db *gorm.DB, eduBound bool) models.User {
 		t.Fatalf("create user: %v", err)
 	}
 	if eduBound {
+		seedAcademicConfig(t, db, user)
 		if err := db.Create(&models.AcademicIdentityBinding{
 			UserID:              user.ID,
 			ProviderID:          models.AcademicProviderUndergraduate,

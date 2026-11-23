@@ -11,8 +11,8 @@ void main() {
       ]) {
         final message = marketPublishServerDeniedMessage(detail);
         expect(message, isNot(contains('毕业')));
-        expect(message, contains('教务绑定同步完成'));
-        expect(message, contains('原教务入口'));
+        expect(message, contains('教务配置已登记'));
+        expect(message, contains('教务入口'));
       }
     });
 
@@ -22,14 +22,14 @@ void main() {
             marketPublishBlockedMessage(hasLocalAcademicConnection: hasLocal);
         expect(message, isNot(contains('毕业')),
             reason: '缺少学生认证与学历无关，文案不能误导用户去处理毕业状态');
-        expect(message, contains('教务绑定同步完成'));
+        expect(message, contains('教务配置已登记'));
       }
     });
 
     test('说清楚缺的是哪一种可信凭据', () {
       final message =
           marketPublishBlockedMessage(hasLocalAcademicConnection: false);
-      expect(marketPublishRequiredCredential, '教务绑定同步完成');
+      expect(marketPublishRequiredCredential, '教务配置已登记');
       expect(message, contains(marketPublishRequiredCredential));
     });
 
@@ -39,8 +39,8 @@ void main() {
       final none =
           marketPublishBlockedMessage(hasLocalAcademicConnection: false);
       expect(local, isNot(equals(none)));
-      expect(local, contains('自动核验补交'));
-      expect(none, contains('登录成功后自动登记'));
+      expect(local, contains('同步配置'));
+      expect(none, contains('连接本科或研究生账号'));
       expect(none, isNot(contains('本机已连接教务')));
     });
 
@@ -48,8 +48,7 @@ void main() {
       for (final hasLocal in [true, false]) {
         final message =
             marketPublishBlockedMessage(hasLocalAcademicConnection: hasLocal);
-        expect(message, contains('账号安全 - 教务身份与本机连接'));
-        expect(message, contains('原教务入口'));
+        expect(message, contains('教务入口'));
       }
     });
 
@@ -61,11 +60,11 @@ void main() {
       // 服务端没给说明时退回本地文案，不能显示空白。
       expect(
         marketPublishServerDeniedMessage(null),
-        contains('教务绑定同步完成'),
+        contains('教务配置已登记'),
       );
       expect(
         marketPublishServerDeniedMessage('   '),
-        contains('教务绑定同步完成'),
+        contains('教务配置已登记'),
       );
     });
   });

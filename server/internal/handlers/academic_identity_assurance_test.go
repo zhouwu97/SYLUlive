@@ -59,7 +59,7 @@ func TestAdminCandidateSurfacesPreserveLegacyEligibilityUntilAudit(t *testing.T)
 	context, _ := gin.CreateTestContext(recorder)
 	context.Request = httptest.NewRequest(http.MethodGet, "/api/admin/candidates/stats", nil)
 	NewInvitationHandler(db, "test-secret").GetCandidatesStats(context)
-	if stats := decodePaginatedResponse(t, recorder); stats["edu"] != float64(1) {
+	if stats := decodePaginatedResponse(t, recorder); stats["edu"] != float64(0) {
 		t.Fatalf("历史回填身份的兼容统计状态错误: %s", recorder.Body.String())
 	}
 }
@@ -85,8 +85,8 @@ func TestAdminCandidateSurfacesCountSchoolProfileIdentity(t *testing.T) {
 	context, _ = gin.CreateTestContext(recorder)
 	context.Request = httptest.NewRequest(http.MethodGet, "/api/admin/candidates/stats", nil)
 	NewInvitationHandler(db, "test-secret").GetCandidatesStats(context)
-	if stats := decodePaginatedResponse(t, recorder); stats["edu"] != float64(1) {
-		t.Fatalf("学校核验身份未计入教务账号统计: %s", recorder.Body.String())
+	if stats := decodePaginatedResponse(t, recorder); stats["edu"] != float64(0) {
+		t.Fatalf("单有学校身份不能计入配置人数: %s", recorder.Body.String())
 	}
 }
 

@@ -367,13 +367,13 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                   ),
                   _buildStatDivider(isDark),
                   _buildStatItem(
-                    '教务有记录',
+                    '教务已登记',
                     _statsError == null ? _eduUsers : null,
                     isDark,
                   ),
                   _buildStatDivider(isDark),
                   _buildStatItem(
-                    '暂无记录',
+                    '教务未登记',
                     _statsError == null ? _otherUsers : null,
                     isDark,
                   ),

@@ -40,7 +40,7 @@ func newExamPaperTestEnv(t *testing.T) examPaperTestEnv {
 		t.Fatalf("打开测试数据库失败: %v", err)
 	}
 	if err := db.AutoMigrate(
-		&models.User{}, &models.AcademicIdentityBinding{},
+		&models.User{}, &models.AcademicIdentityBinding{}, &models.AcademicAccountConfig{},
 		&models.ExamPaper{},
 		&models.ExamPaperUploadSession{},
 		&models.ExamPaperStorageJob{},
@@ -69,29 +69,21 @@ func newExamPaperTestEnv(t *testing.T) examPaperTestEnv {
 	}
 }
 
-func createExamPaperTestUser(t *testing.T, db *gorm.DB, studentID string, role models.Role, eduBound bool, exp int) models.User {
+func createExamPaperTestUser(t *testing.T, db *gorm.DB, studentID string, role models.Role, configured bool, exp int) models.User {
 	t.Helper()
-	var verifiedAt *time.Time
-	if eduBound {
-		now := time.Now()
-		verifiedAt = &now
-	}
 	user := models.User{
-		StudentID:         studentID,
-		StudentVerifiedAt: verifiedAt,
-		PasswordHash:      "test",
-		Nickname:          studentID,
-		Role:              role,
-		EduAuthorized:     eduBound,
-		EduBound:          eduBound,
-		Exp:               exp,
-		Avatar:            "/uploads/avatar.png",
+		StudentID:    studentID,
+		PasswordHash: "test",
+		Nickname:     studentID,
+		Role:         role,
+		Exp:          exp,
+		Avatar:       "/uploads/avatar.png",
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("创建测试用户失败: %v", err)
 	}
-	if eduBound {
-		seedVerifiedStudent(t, db, user)
+	if configured {
+		seedAcademicConfig(t, db, user)
 	}
 	return user
 }
@@ -230,7 +222,7 @@ func createStoredExamPaper(t *testing.T, env examPaperTestEnv, submitter models.
 	return paper
 }
 
-func TestExamPaperDeniedLocalDeclarationGetsUpgradeHint(t *testing.T) {
+func TestExamPaperDeniedWithoutConfigGetsRegistrationHint(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	plain := createExamPaperTestUser(t, env.db, "plain-unverified", models.RoleUser, false, 0)
 	declared := createExamPaperTestUser(t, env.db, "20260000001", models.RoleUser, false, 0)
@@ -256,18 +248,18 @@ func TestExamPaperDeniedLocalDeclarationGetsUpgradeHint(t *testing.T) {
 	// 本机声明不能开放试卷库，只换成升级提示，错误码保持不变。
 	response := performExamPaperRequest(env.handler.List, http.MethodGet, "/api/exam-papers", nil, declared.ID, nil, "")
 	code, message := decode(response)
-	if response.Code != http.StatusForbidden || code != "edu_verification_required" || message != examPaperLocalDeclarationMessage {
+	if response.Code != http.StatusForbidden || code != "edu_verification_required" || message != "请先登记教务配置后使用试卷库" {
 		t.Fatalf("本机声明用户应收到升级提示: status=%d body=%s", response.Code, response.Body.String())
 	}
 
 	response = performExamPaperRequest(env.handler.List, http.MethodGet, "/api/exam-papers", nil, plain.ID, nil, "")
 	code, message = decode(response)
-	if response.Code != http.StatusForbidden || code != "edu_verification_required" || message != "完成教务认证后才能使用试卷库" {
+	if response.Code != http.StatusForbidden || code != "edu_verification_required" || message != "请先登记教务配置后使用试卷库" {
 		t.Fatalf("无任何记录的用户保留原提示: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
-func TestExamPaperUsesEduAuthorizationWithoutStudentProjection(t *testing.T) {
+func TestExamPaperDeniesLegacyAuthorizationWithoutConfig(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	user := createExamPaperTestUser(t, env.db, "edu-only", models.RoleUser, false, 0)
 	if err := env.db.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
@@ -278,8 +270,8 @@ func TestExamPaperUsesEduAuthorizationWithoutStudentProjection(t *testing.T) {
 	}
 
 	response := performExamPaperRequest(env.handler.List, http.MethodGet, "/api/exam-papers", nil, user.ID, nil, "")
-	if response.Code != http.StatusOK {
-		t.Fatalf("仅有教务授权的用户应可访问试卷库: status=%d body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("仅有旧授权的用户应被引导登记配置: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

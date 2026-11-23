@@ -58,7 +58,7 @@ class ExamPaperAccessGuide extends StatelessWidget {
                 ),
                 const SizedBox(height: 18),
                 Text(
-                  isLogin ? '登录后使用试卷库' : '完成教务认证后使用',
+                  isLogin ? '登录后使用试卷库' : '登记教务配置后使用',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
@@ -68,8 +68,8 @@ class ExamPaperAccessGuide extends StatelessWidget {
                 Text(
                   detail ??
                       (isLogin
-                          ? '登录后可浏览、预览、下载并投稿历年试卷。'
-                          : '为保护校内资料，仅完成教务认证的普通用户可以访问；管理员不受此限制。'),
+                          ? '登录后可查看教务配置并使用试卷库。'
+                          : '在教务入口登记本科或研究生账号后，即可浏览、下载和投稿。'),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -80,7 +80,7 @@ class ExamPaperAccessGuide extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: onAction,
                   icon: Icon(isLogin ? Icons.login : Icons.school_outlined),
-                  label: Text(isLogin ? '去登录' : '去认证'),
+                  label: Text(isLogin ? '去登录' : '去配置教务'),
                 ),
                 if (onRetry != null)
                   TextButton(onPressed: onRetry, child: const Text('重试同步')),

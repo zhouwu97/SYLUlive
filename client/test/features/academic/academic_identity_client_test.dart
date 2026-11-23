@@ -234,7 +234,7 @@ void main() {
     expect(identities.last.assuranceLevel, academicAssuranceLegacyInherited);
     expect(
       academicIdentityStandingLabel(identities.last),
-      '已继承历史教务认证',
+      '历史学号绑定',
     );
     expect(challenge, isNotNull);
     expect(challenge!.challengeType, 'school_login');
@@ -599,7 +599,7 @@ void main() {
       expect(legacy.isSchoolVerified, isFalse);
       expect(
         academicIdentityStandingLabel(legacy),
-        '已继承历史教务认证',
+        '历史学号绑定',
       );
     });
 
@@ -612,7 +612,7 @@ void main() {
         assuranceLevel: academicAssuranceLegacyInherited,
       );
       expect(legacy.isSchoolVerified, isFalse);
-      expect(academicIdentityStandingLabel(legacy), '历史教务认证待重新确认');
+      expect(academicIdentityStandingLabel(legacy), '历史学号绑定待确认');
     });
   });
   group('身份状态的分开表达', () {
@@ -637,7 +637,7 @@ void main() {
         method: academicVerificationMethodLocalDeclaration,
       );
       expect(localOnly.isSchoolVerified, isFalse);
-      expect(academicIdentityStandingLabel(localOnly), '仅本机连接，未完成教务认证');
+      expect(academicIdentityStandingLabel(localOnly), '尚无学号归属核验记录');
 
       final schoolVerified = binding(
         providerId: AcademicProviderId.syluUndergraduate,
@@ -646,7 +646,7 @@ void main() {
         method: academicVerificationMethodSchoolProfile,
       );
       expect(schoolVerified.isSchoolVerified, isTrue);
-      expect(academicIdentityStandingLabel(schoolVerified), '教务认证已完成');
+      expect(academicIdentityStandingLabel(schoolVerified), '学校已核验此学号');
     });
 
     test('首次可信身份读取失败时不把本机账号断言为未认证', () {
@@ -660,7 +660,7 @@ void main() {
           readStatus: AcademicIdentityReadStatus.error,
           hasServerBinding: false,
         ),
-        '本机已配置，教务认证状态暂未确认',
+        '学号归属记录暂未确认',
       );
       expect(
         academicIdentityStandingLabel(
@@ -668,7 +668,7 @@ void main() {
           readStatus: AcademicIdentityReadStatus.empty,
           hasServerBinding: false,
         ),
-        '仅本机连接，未完成教务认证',
+        '尚无学号归属核验记录',
       );
     });
 

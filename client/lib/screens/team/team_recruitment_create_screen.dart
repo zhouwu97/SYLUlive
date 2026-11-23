@@ -1639,7 +1639,7 @@ class _TeamRecruitmentCreateScreenState
                             ),
                           ),
                         ),
-                        if (user?.hasEduAccess == true) ...[
+                        if (user?.academicConfigured == true) ...[
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -1649,7 +1649,7 @@ class _TeamRecruitmentCreateScreenState
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: const Text(
-                              '教务已认证',
+                              '教务已配置',
                               style: TextStyle(
                                 color: CampusTheme.primary,
                                 fontSize: 10,

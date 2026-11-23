@@ -620,9 +620,9 @@ class _AcademicDataSettingsScreenState
             children: [
               SettingsTile(
                 icon: Icons.sync_problem_outlined,
-                title: '教务认证状态暂未刷新',
+                title: '学号归属记录暂未刷新',
                 subtitle: _identities.isEmpty
-                    ? '当前无法确认服务器身份，请检查网络后重试'
+                    ? '当前无法读取学号归属记录，请检查网络后重试'
                     : '显示上次成功确认的状态；当前读取失败，请稍后重试',
                 showChevron: false,
               ),

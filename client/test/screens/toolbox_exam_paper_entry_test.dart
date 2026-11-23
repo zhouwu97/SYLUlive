@@ -18,7 +18,7 @@ class _Auth extends AuthProvider {
 
 void main() {
   for (final (label, verified, role, visible) in [
-    ('未完成教务认证时不显示试卷库入口', false, 'user', false),
+    ('未配置账号可从试卷库进入配置引导', false, 'user', true),
     ('完成教务认证后显示试卷库入口', true, 'user', true),
     ('管理员未认证也显示试卷库入口', false, 'admin', true),
   ]) {
@@ -35,9 +35,7 @@ void main() {
                 studentId: '20260001',
                 nickname: '测试',
                 role: role,
-                studentVerified: verified,
-                eduAuthorized: verified,
-                eduBound: verified,
+                academicConfigured: verified,
                 createdAt: DateTime(2026),
               )),
             ),

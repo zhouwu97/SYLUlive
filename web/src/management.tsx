@@ -86,6 +86,7 @@ export function Management({kind}:{kind:string}){
               <div className="admin-row-head">
                 <b>{x.title||x.nickname||x.version_name||x.action||x.name}</b>
                 {kind==='notices'&&x.status&&<span className={`tag ${x.status==='published'?'is-resolved':x.status==='draft'?'warn':''}`}>{({draft:'草稿',published:'已发布',archived:'已归档'} as Record<string,string>)[x.status]||x.status}</span>}
+                {kind==='users'&&<span>教务配置：{x.academic_configured ? '已登记' : '未登记'}</span>}
                 {kind==='users'&&x.role&&<span className={`tag ${x.role==='super_admin'?'violet':x.role==='admin'?'brand':''}`}>{x.role}</span>}
                 {kind==='releases'&&x.platform&&<span className="tag">{x.platform}</span>}
               </div>
@@ -145,7 +146,7 @@ function UserForm({item}:{item:Entity}){
   const ui=useUI();
   const isSuperTarget=item.role==='super_admin';
   return <div className="admin-drawer-stack">
-    <p><b>{item.nickname||'未命名用户'}</b> · UID #{item.id} · 当前角色 {item.role}</p>
+    <p><b>{item.nickname||'未命名用户'}</b> · UID #{item.id} · 当前角色 {item.role} · 教务配置：{item.academic_configured ? "已登记" : "未登记"}</p>
     {isSuperTarget?<p className="muted">超级管理员角色受系统保护，不可在线降权或删除。</p>:(
       <Form fields={[{name:'role',label:'角色（变更后立即吊销旧登录态）',value:item.role==='admin'?'admin':'user',options:[['user','普通用户'],['admin','管理员']]}]} submit="确认修改角色" onSubmit={async values=>{await write(`/api/super/users/${item.id}/role`,values,'PUT');await ui.act(async()=>{},'角色已更新');ui.close();}}/>
     )}

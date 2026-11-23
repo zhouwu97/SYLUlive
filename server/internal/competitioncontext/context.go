@@ -136,7 +136,11 @@ func (b *Builder) BuildCompetitionUserContext(
 	if result.ProfileProvenance == "" && result.EntryYear != "" && result.College != "" && result.Major != "" && verified {
 		result.ProfileProvenance = "school_verified"
 	}
-	result.ProfileReady = user.HasEduAccess() &&
+	configured, configErr := models.HasAcademicConfig(b.db.WithContext(ctx), userID)
+	if configErr != nil {
+		return result, configErr
+	}
+	result.ProfileReady = configured &&
 		result.EntryYear != "" && result.College != "" && result.Major != ""
 
 	var preference models.UserCompetitionPreference

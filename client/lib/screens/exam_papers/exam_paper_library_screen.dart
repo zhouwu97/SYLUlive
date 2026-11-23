@@ -25,13 +25,13 @@ typedef ExamPaperServiceFactory = ExamPaperService Function(AuthProvider auth);
 class ExamPaperLibraryScreen extends StatefulWidget {
   final ExamPaperService? service;
   final ExamPaperServiceFactory? serviceFactory;
-  final Future<String?> Function()? synchronizeAcademicBinding;
+  final Future<String?> Function()? synchronizeAcademicConfig;
 
   const ExamPaperLibraryScreen({
     super.key,
     this.service,
     this.serviceFactory,
-    this.synchronizeAcademicBinding,
+    this.synchronizeAcademicConfig,
   });
 
   @override
@@ -56,6 +56,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
   int _requestGeneration = 0;
   String? _error;
   String? _accessCheckScope;
+  String? _configDeniedScope;
   String? _accessSyncMessage;
   bool _checkingAccess = false;
   String _academicYear = '';
@@ -96,15 +97,15 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
       _total = 0;
       _error = null;
     }
-    final canAccess = auth.isLoggedIn &&
-        (auth.user?.isAdmin == true || auth.user?.hasEduAccess == true);
-    // 资料刷新会递增 sessionGeneration；资格补交只绑定登录会话代次。
-    final accessScope = '${auth.accountSessionEpoch}:${auth.user?.id}';
+    final scope = '${auth.accountSessionEpoch}:${auth.user?.id}';
+    final canAccess = _configDeniedScope != scope && auth.isLoggedIn &&
+        (auth.user?.isAdmin == true || auth.user?.academicConfigured == true);
+    // 资料刷新会递增 sessionGeneration；配置查询只绑定登录会话代次。
     if (auth.isInitialized &&
         auth.isLoggedIn &&
         !canAccess &&
-        _accessCheckScope != accessScope) {
-      _accessCheckScope = accessScope;
+        _accessCheckScope != scope) {
+      _accessCheckScope = scope;
       _checkingAccess = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_checkAccess());
@@ -186,6 +187,13 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     } on ExamPaperApiException catch (error) {
       if (!mounted || generation != _requestGeneration) return;
       setState(() {
+        if (error.code == 'edu_verification_required') {
+          final auth = context.read<AuthProvider>();
+          _configDeniedScope = '${auth.accountSessionEpoch}:${auth.user?.id}';
+          _items.clear();
+          _hasMore = false;
+          _loadScheduled = false;
+        }
         _error = error.message;
         _loading = false;
         _refreshing = false;
@@ -255,7 +263,8 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     await auth.refreshUser();
     if (!mounted) return;
     _loadScheduled = false;
-    if (auth.user?.hasEduAccess == true || auth.user?.isAdmin == true) {
+    if (auth.user?.academicConfigured == true || auth.user?.isAdmin == true) {
+      setState(() => _configDeniedScope = null);
       await _load(refresh: true);
     }
   }
@@ -277,35 +286,30 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     try {
       await auth.refreshUser();
       if (!current()) return;
-      if (auth.user?.hasEduAccess != true && auth.user?.isAdmin != true) {
-        final sync = widget.synchronizeAcademicBinding;
+      if (auth.user?.academicConfigured != true && auth.user?.isAdmin != true) {
+        final sync = widget.synchronizeAcademicConfig;
         if (sync != null) {
           final message = await sync();
           if (!current()) return;
           _accessSyncMessage = message;
         } else {
-          if (coordinator != null) {
-            final restored = await coordinator.ensureAuthenticated();
-            if (!current()) return;
-            final message = await coordinator.synchronizeIdentityBinding();
-            if (!current()) return;
-            _accessSyncMessage = message;
-            if (_accessSyncMessage == null && !restored.isSuccess) {
-              _accessSyncMessage = restored.message;
-            }
-          }
+          await coordinator?.controller.providerRouter?.reconcileAccountConfiguration(
+            requireSuccess: true,
+            force: true,
+          );
         }
         if (!current()) return;
         await auth.refreshUser();
       }
       if (!current()) return;
-      if ((auth.user?.hasEduAccess == true || auth.user?.isAdmin == true) &&
+      if ((auth.user?.academicConfigured == true || auth.user?.isAdmin == true) &&
           !_loadScheduled) {
+        _configDeniedScope = null;
         _loadScheduled = true;
         await _load(refresh: true);
       }
     } catch (_) {
-      if (current()) _accessSyncMessage = '教务绑定同步暂未完成，请检查网络后重试';
+      if (current()) _accessSyncMessage = '教务配置暂未同步，请检查网络后重试';
     } finally {
       if (current()) setState(() => _checkingAccess = false);
     }
@@ -392,8 +396,9 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
-    final canAccess = auth.isLoggedIn &&
-        (user?.isAdmin == true || user?.hasEduAccess == true);
+    final scope = '${auth.accountSessionEpoch}:${auth.user?.id}';
+    final canAccess = _configDeniedScope != scope && auth.isLoggedIn &&
+        (user?.isAdmin == true || user?.academicConfigured == true);
 
     return GlobalBackgroundWrapper(
       child: Scaffold(
@@ -432,7 +437,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
                             children: [
                             CircularProgressIndicator(),
                             SizedBox(height: 16),
-                            Text('正在同步已有教务绑定…')
+                            Text('正在读取教务配置…')
                           ]))
                     : !canAccess
                         ? ExamPaperAccessGuide(

@@ -78,7 +78,7 @@ func (h *SuperAdminHandler) GetUsers(c *gin.Context) {
 
 	response := make([]AdminUserResponse, 0, len(users))
 	for _, user := range users {
-		response = append(response, adminUserResponse(user, adminStudentID(user, academicStudentIDs), adminStudentVerified(user, academicStudentIDs), academicConfigured[user.ID]))
+		response = append(response, adminUserResponse(user, adminStudentID(user, academicStudentIDs), academicConfigured[user.ID]))
 	}
 	c.JSON(http.StatusOK, response)
 

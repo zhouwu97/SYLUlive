@@ -55,17 +55,18 @@ type emailPasswordResetInput struct {
 }
 
 type accountSecurityResponse struct {
-	LoginAccount     string   `json:"login_account"`
-	StudentID        string   `json:"student_id,omitempty"`
-	StudentVerified  bool     `json:"student_verified"`
-	Email            string   `json:"email"`
-	EmailMasked      string   `json:"email_masked"`
-	EmailBound       bool     `json:"email_bound"`
-	LoginMethods     []string `json:"login_methods"`
-	CanResetViaEmail bool     `json:"can_reset_via_email"`
-	CanResetViaEdu   bool     `json:"can_reset_via_edu,omitempty"`
-	EduAuthorized    bool     `json:"edu_authorized,omitempty"`
-	EduSessionState  string   `json:"edu_session_state,omitempty"`
+	LoginAccount       string   `json:"login_account"`
+	StudentID          string   `json:"student_id,omitempty"`
+	AcademicConfigured bool     `json:"academic_configured"`
+	StudentVerified    bool     `json:"student_verified"`
+	Email              string   `json:"email"`
+	EmailMasked        string   `json:"email_masked"`
+	EmailBound         bool     `json:"email_bound"`
+	LoginMethods       []string `json:"login_methods"`
+	CanResetViaEmail   bool     `json:"can_reset_via_email"`
+	CanResetViaEdu     bool     `json:"can_reset_via_edu,omitempty"`
+	EduAuthorized      bool     `json:"edu_authorized,omitempty"`
+	EduSessionState    string   `json:"edu_session_state,omitempty"`
 }
 
 // RequestEmailRegistrationCode 发送邮箱注册验证码。外部响应不暴露邮箱是否已注册。
@@ -504,6 +505,7 @@ func (h *AuthHandler) GetAccountSecurity(c *gin.Context) {
 	}
 	response.StudentID = profile.StudentID
 	response.LoginAccount = profile.LoginAccount
+	response.AcademicConfigured = profile.AcademicConfigured
 	response.StudentVerified = profile.StudentVerified
 	response.LoginMethods = profile.LoginMethods
 	response.CanResetViaEdu = profile.CanResetViaEdu

@@ -114,9 +114,7 @@ class _VerifiedAuthProvider extends Fake
         nickname: '评价同学',
         avatar: '',
         createdAt: DateTime(2026, 1, 1),
-        studentVerified: true,
-        eduAuthorized: true,
-        eduBound: true,
+        academicConfigured: true,
       );
 }
 

@@ -137,9 +137,9 @@ class _CanteenScreenState extends State<CanteenScreen> {
           .showSnackBar(const SnackBar(content: Text('请先登录后评价')));
       return;
     }
-    if (auth.user?.hasEduAccess != true) {
+    if (auth.user?.academicConfigured != true) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先绑定教务账号后再评价')),
+        const SnackBar(content: Text('请先登记教务配置后再评价')),
       );
       return;
     }

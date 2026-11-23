@@ -50,7 +50,7 @@ func TestCanteenRateConcurrentOptimisticLock(t *testing.T) {
 	cleanup()
 	t.Cleanup(cleanup)
 
-	if err := db.AutoMigrate(&models.Canteen{}, &models.CanteenRating{}, &models.CanteenRatingVote{},
+	if err := db.AutoMigrate(&models.AcademicAccountConfig{}, &models.Canteen{}, &models.CanteenRating{}, &models.CanteenRatingVote{},
 		&models.CanteenDish{}, &models.CanteenDishPhoto{}, &models.CanteenRatingDishRecommendation{},
 		&models.AcademicIdentityBinding{}, &models.TeacherRating{}, &models.MajorRating{},
 		&models.Report{}, &models.File{}, &models.User{}, &models.AdminLog{}); err != nil {
@@ -74,6 +74,7 @@ func TestCanteenRateConcurrentOptimisticLock(t *testing.T) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	seedAcademicConfig(t, db, user)
 	binding := models.AcademicIdentityBinding{
 		UserID:              user.ID,
 		ProviderID:          string(models.AcademicProviderSyluUndergraduate),

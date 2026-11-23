@@ -654,7 +654,7 @@ func TestAdminApproveExamPaperConcurrentRequestsRemainIdempotent(t *testing.T) {
 		t.Fatalf("open sql database: %v", err)
 	}
 	defer sqlDB.Close()
-	if err := db.AutoMigrate(&models.User{}, &models.ExamPaper{}, &models.Conversation{}, &models.Message{}, &models.AdminLog{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.AcademicAccountConfig{}, &models.ExamPaper{}, &models.Conversation{}, &models.Message{}, &models.AdminLog{}); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
 	if err := models.EnsureExamPaperIndexes(db); err != nil {

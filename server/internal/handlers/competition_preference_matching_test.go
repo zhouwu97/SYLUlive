@@ -42,6 +42,7 @@ func createFitUser(t *testing.T, studentID string) (*CompetitionHandler, models.
 		t.Fatal(err)
 	}
 	seedVerifiedStudent(t, db, user)
+	seedAcademicConfig(t, db, user)
 	return NewCompetitionHandler(db), user
 }
 

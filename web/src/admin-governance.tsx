@@ -1318,7 +1318,7 @@ export function AdminTeamCollaboration() {
                       {href ? <Link className="author-name-link" to={href}><b>{name}</b></Link> : <b>{name}</b>}
                       <span className={`tag ${m.role === "super_admin" ? "violet" : "brand"}`}>{m.role === "super_admin" ? "超级管理员" : "管理员"}</span>
                     </div>
-                    <p>UID #{m.id}{m.credit_score != null ? ` · 诚信分 ${m.credit_score}` : ""}{m.admin_exp != null ? ` · 管理经验 ${m.admin_exp}` : ""}</p>
+                    <p>UID #{m.id} · 教务配置：{m.academic_configured ? "已登记" : "未登记"}{m.credit_score != null ? ` · 诚信分 ${m.credit_score}` : ""}{m.admin_exp != null ? ` · 管理经验 ${m.admin_exp}` : ""}</p>
                   </div>
                   {m.role === "admin" && m.id !== auth.user?.id && (
                     <button
@@ -1352,9 +1352,9 @@ export function AdminTeamCollaboration() {
           {candStats.data && (
             <Stats items={[
               [candStats.data.eligible ?? 0, "符合提名条件"],
-              [candStats.data.high_credit ?? 0, "高诚信分用户"],
-              [candStats.data.active_posters ?? 0, "活跃贡献同学"],
-              [candStats.data.total_users ?? 0, "全站用户总数"],
+              [candStats.data.edu ?? 0, "已登记教务配置"],
+              [candStats.data.other ?? 0, "未登记教务配置"],
+              [candStats.data.total ?? 0, "全站用户总数"],
             ]} />
           )}
           <div className="filter-row admin-search">
@@ -1374,7 +1374,7 @@ export function AdminTeamCollaboration() {
                       <span className="tag">UID #{c.id}</span>
                       {c.pending_invitation_id && <span className="tag warn">邀请流转中</span>}
                     </div>
-                    <p>诚信分 {c.credit_score ?? 100} · 发帖 {c.post_count ?? 0} · 回复 {c.reply_count ?? 0}{c.active_days != null ? ` · 活跃 ${c.active_days} 天` : ""}</p>
+                    <p>教务配置：{c.academic_configured ? "已登记" : "未登记"} · 诚信分 {c.credit_score ?? 100} · 发帖 {c.post_count ?? 0} · 回复 {c.reply_count ?? 0}{c.active_days != null ? ` · 活跃 ${c.active_days} 天` : ""}</p>
                   </div>
                   <div className="admin-row-actions">
                     {!c.pending_invitation_id && (

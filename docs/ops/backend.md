@@ -4,7 +4,7 @@
 
 - 源码：/opt/shenliyuan-src
 - 运行目录：/opt/shenliyuan
-- systemd：shenliyuan.service
+- systemd：[shenliyuan.service](../../deploy/shenliyuan.service)
 - 二进制：/opt/shenliyuan/shenliyuan
 - 本机监听：127.0.0.1:8080 或容器内部 0.0.0.0:8080
 

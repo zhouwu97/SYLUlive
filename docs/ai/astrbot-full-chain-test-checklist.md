@@ -90,7 +90,7 @@
 ```powershell
 pnpm -r check
 pnpm test
-pnpm exec playwright test web/e2e/connected-apps.spec.ts web/e2e/community-presentation.spec.ts web/e2e/integration-personal-sync.spec.ts web/e2e/assistant-authorization.spec.ts web/e2e/assistant-autologin.spec.ts web/e2e/assistant-extension-login.spec.ts web/e2e/academic-connection.spec.ts web/e2e/auth-cookie.spec.ts web/e2e/extension.spec.ts web/e2e/privacy.spec.ts --workers=1
+pnpm test:e2e web/e2e/connected-apps.spec.ts web/e2e/community-presentation.spec.ts web/e2e/integration-personal-sync.spec.ts web/e2e/assistant-authorization.spec.ts web/e2e/assistant-autologin.spec.ts web/e2e/assistant-extension-login.spec.ts web/e2e/academic-connection.spec.ts web/e2e/auth-cookie.spec.ts web/e2e/extension.spec.ts web/e2e/privacy.spec.ts --workers=1
 pnpm -r build
 pnpm assistant:dev
 python scripts/package-astrbot-plugin.py

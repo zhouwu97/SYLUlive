@@ -16,6 +16,16 @@
             ]
         },
         {
+            "name": "SYLUlive (Local/Configured)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "toolArgs": [
+                "--no-enable-impeller",
+                "--dart-define-from-file=.env.local-api.json"
+            ]
+        },
+        {
             "name": "SYLUlive (Production)",
             "request": "launch",
             "type": "dart",

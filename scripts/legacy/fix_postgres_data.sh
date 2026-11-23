@@ -2,8 +2,8 @@
 
 # 检查是否提供了数据库名
 if [ -z "$1" ]; then
-    echo "使用方法: bash fix_postgres_data.sh <您的数据库名>"
-    echo "例如: bash fix_postgres_data.sh postgres"
+    echo "使用方法: bash $0 <您的数据库名>"
+    echo "例如: bash $0 postgres"
     echo "如果您不知道数据库名，通常是您的项目名或默认的 postgres"
     exit 1
 fi

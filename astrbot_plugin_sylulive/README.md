@@ -463,7 +463,7 @@ go test -p 1 ./internal/services -run TestIntegration -count=1
 python -m pip install -r astrbot_plugin_sylulive/requirements.txt pytest pytest-asyncio docstring-parser
 python -m pytest -q astrbot_plugin_sylulive/tests
 $env:SYLULIVE_API_ORIGIN='http://127.0.0.1:8080'
-pnpm exec playwright test web/e2e/connected-apps.spec.ts
+pnpm test:e2e web/e2e/connected-apps.spec.ts
 ```
 
 `test_astrbot_dispatch.py` 需要真实 AstrBot SDK：在隔离环境安装固定 `astrbot==4.29.3` 后运行，未安装时明确跳过。该测试通过 AstrBot 的真实 `ProcessStage` / `StarRequestSubStage` 检查命令成功、失败和拒绝访问路径不会落入第二次模型回复，同时核对英文命令注册。离线事件替身不覆盖这一边界，不能替代此项检查。SDK 导入测试应在隔离目录运行并设置 `ASTRBOT_ROOT`，避免向工作目录写入运行数据。
@@ -474,4 +474,4 @@ pnpm exec playwright test web/e2e/connected-apps.spec.ts
 
 ## 权限页本地验收
 
-使用已安装 AstrBot 4.29.3 SDK 的 Python 运行模块测试；UI 验收另启 `tests/console_lab.py`（设置仓库及 tests 目录为 PYTHONPATH），再执行 `pnpm exec playwright test --config playwright.permissions.config.ts`。实验页仅监听 `127.0.0.1:6198`，使用临时目录的原生 AstrBotConfig 和合成用户，不读取运行中机器人的配置或凭据，不发送 QQ 消息。实验页带明确标识，不随 ZIP 分发；生产入口始终是已登录的 AstrBot 插件页。
+使用已安装 AstrBot 4.29.3 SDK 的 Python 运行模块测试；UI 验收另启 `tests/console_lab.py`（设置仓库及 tests 目录为 PYTHONPATH），再执行 `pnpm test:e2e:permissions`。实验页仅监听 `127.0.0.1:6198`，使用临时目录的原生 AstrBotConfig 和合成用户，不读取运行中机器人的配置或凭据，不发送 QQ 消息。实验页带明确标识，不随 ZIP 分发；生产入口始终是已登录的 AstrBot 插件页。

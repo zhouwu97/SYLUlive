@@ -8,8 +8,10 @@
     "dev:online": "pnpm --filter @sylulive/web dev:online",
     "build": "pnpm -r build",
     "check": "pnpm -r check",
-    "test": "vitest run",
-    "test:e2e": "playwright test",
+    "test": "vitest run --config scripts/test-config/vitest.config.ts",
+    "test:e2e": "playwright test --config scripts/test-config/playwright.config.ts",
+    "test:e2e:local": "playwright test --config scripts/test-config/playwright.local.config.ts",
+    "test:e2e:permissions": "playwright test --config scripts/test-config/playwright.permissions.config.ts",
     "assistant:dev": "pnpm --filter @sylulive/extension package:web:dev",
     "package": "pnpm build && pnpm --filter @sylulive/extension dev && node scripts/package-web.mjs"
   },

@@ -133,7 +133,7 @@ AI 页面布局由 `src/ai.css` 维护：历史列表独立滚动，长标题最
 定向回归入口为 `e2e/ui-repair.spec.ts`、`e2e/feedback-admin.spec.ts`、`e2e/feedback-attachments.spec.ts` 与 `src/notification-target.test.ts`。当 `5173` 用于线上联调时，可使用独立的本机 `5187` 测试服务，避免与该进程共用：
 
 ```powershell
-pnpm exec playwright test -c playwright.local.config.ts web/e2e/ui-repair.spec.ts web/e2e/canteen.spec.ts web/e2e/canteen-detail-ui.spec.ts web/e2e/feedback-admin.spec.ts web/e2e/feedback-attachments.spec.ts
+pnpm test:e2e:local web/e2e/ui-repair.spec.ts web/e2e/canteen.spec.ts web/e2e/canteen-detail-ui.spec.ts web/e2e/feedback-admin.spec.ts web/e2e/feedback-attachments.spec.ts
 ```
 
 该配置沿用测试环境探针，并固定代理到本机 API；用例中的业务写入全部由模拟接口接收。

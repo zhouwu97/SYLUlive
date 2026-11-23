@@ -4,8 +4,8 @@ import { resolve } from 'node:path';
 const evidence = process.env.SYLULIVE_PERMISSION_EVIDENCE_DIR || resolve('test-results/permissions-evidence');
 
 export default defineConfig({
-  testDir: './astrbot_plugin_sylulive/tests/ui',
-  outputDir: './test-results/permissions',
+  testDir: '../../astrbot_plugin_sylulive/tests/ui',
+  outputDir: '../../test-results/permissions',
   fullyParallel: false,
   workers: 1,
   retries: 0,

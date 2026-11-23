@@ -130,7 +130,9 @@ flutter run
 
 液态玻璃的 Android 视觉验收使用默认 GPU 渲染。Android Studio 的运行参数应与命令行保持一致，不额外开启 `--enable-software-rendering`；软件渲染截图不能代表 GPU 折射材质的实际效果。
 
-本地联调时，请把客户端 API 地址指向开发机可访问的 Go 服务。不要把真实学校账号、密码或 Cookie 写入提交内容、测试快照和日志。
+Windows 本地联调可双击仓库根目录的 [一键配置本地环境.bat](../一键配置本地环境.bat)，选择本机桌面、Android Studio 模拟器或与真机同网的网卡。它会把 Go 服务地址写入本机专用的 `.env.local-api.json`。启动开发机的 Go 服务（默认 8080 端口）后，用 VS Code 打开 `client/` 并选择 `SYLUlive (Local/Configured)`，或在该目录运行 `flutter run --dart-define-from-file=.env.local-api.json`。真机需能访问所选地址的 8080 端口。
+
+不要把真实学校账号、密码或 Cookie 写入提交内容、测试快照和日志。
 
 ## 常用检查
 

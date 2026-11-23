@@ -15,6 +15,8 @@
 
 ### Flutter 客户端
 
+Windows 上双击根目录的 [一键配置本地环境.bat](一键配置本地环境.bat) 可为 Flutter App 选择本地 Go 服务地址，启动方式见 [客户端运行说明](client/README.md#运行)。
+
 ~~~bash
 cd client
 flutter pub get

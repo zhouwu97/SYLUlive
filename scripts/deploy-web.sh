@@ -11,9 +11,14 @@ set -Eeuo pipefail
 HOST=${DEPLOY_HOST:-ubuntu@101.36.125.129}
 SSH=(ssh -o BatchMode=yes "$HOST")
 cd "$(git rev-parse --show-toplevel)"
+SHA=$(git rev-parse HEAD)
+BUILD_DIR=$(mktemp -d)
+trap 'cd / && rm -rf -- "$BUILD_DIR"' EXIT
+# 所有操作使用提交中的 LF 脚本，Windows 工作区的换行转换不会影响远端 Bash。
+git show "$SHA:deploy/deploy-web" > "$BUILD_DIR/deploy-web-helper"
 
 remote() {
-	scp -q -o BatchMode=yes deploy/deploy-web "$HOST:/tmp/deploy-web"
+	scp -q -o BatchMode=yes "$BUILD_DIR/deploy-web-helper" "$HOST:/tmp/deploy-web" || return
 	"${SSH[@]}" "sudo bash /tmp/deploy-web $*; rc=\$?; rm -f /tmp/deploy-web; exit \$rc"
 }
 
@@ -28,7 +33,9 @@ if [[ -n "$(git status --porcelain -- web browser-extension packages pnpm-lock.y
 	echo "web/、browser-extension/ 或 packages/ 有未提交改动，先提交再发布" >&2
 	exit 1
 fi
-SHA=$(git rev-parse HEAD)
+# 扩展还读取服务端的隐私正文，构建输入统一取自发布提交。
+git -c core.autocrlf=false archive "$SHA" | tar -x -C "$BUILD_DIR"
+cd "$BUILD_DIR"
 
 pnpm install --frozen-lockfile
 if [[ "${SKIP_TESTS:-}" != 1 ]]; then
@@ -37,13 +44,12 @@ if [[ "${SKIP_TESTS:-}" != 1 ]]; then
 fi
 pnpm --filter @sylulive/web build
 
-ARCHIVE=$(mktemp -t "web-${SHA:0:12}-XXXX.tar.gz")
-trap 'rm -f "$ARCHIVE"' EXIT
+ARCHIVE="$BUILD_DIR/web-$SHA.tar.gz"
 tar -czf "$ARCHIVE" -C web/dist --transform 's,^\.,web,' .
 echo "发布 $SHA（$(du -h "$ARCHIVE" | cut -f1)）到 $HOST"
 
 scp -q -o BatchMode=yes "$ARCHIVE" "$HOST:/tmp/web-$SHA.tar.gz"
 rc=0
-remote "$SHA /tmp/web-$SHA.tar.gz" || rc=$?
+remote "$SHA" "/tmp/web-$SHA.tar.gz" || rc=$?
 "${SSH[@]}" "rm -f /tmp/web-$SHA.tar.gz" || true
 exit $rc

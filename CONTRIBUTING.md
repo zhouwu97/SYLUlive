@@ -24,6 +24,8 @@ flutter analyze
 flutter test --reporter compact
 ~~~
 
+Flutter 引用的教务协议库在 `experiments/jiaowu_dart_poc/` 内执行 `dart pub get` 和 `dart test`。
+
 ### Go 服务端
 
 ~~~bash
@@ -32,6 +34,8 @@ go vet ./...
 go test ./...
 go build ./...
 ~~~
+
+MCP 适配器使用独立 Go 模块，在仓库根目录执行 `go -C _mcp test ./...`。
 
 涉及并发、共享状态或请求取消时，补充适用的 go test -race；涉及数据库、迁移或上传时，只能在隔离的可丢弃测试环境执行集成检查。
 

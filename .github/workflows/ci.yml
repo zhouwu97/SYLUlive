@@ -45,6 +45,9 @@ jobs:
       # 计数断言：零条匹配或整体跳过不得算通过（审计 R01 第 8 条）。
       - name: Run Go tests
         run: bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 ./...
+      - name: Test standalone MCP adapter
+        working-directory: _mcp
+        run: bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 ./...
 
   astrbot-plugin:
     runs-on: ubuntu-latest
@@ -161,6 +164,11 @@ jobs:
         run: >-
           bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 -tags=integration ./internal/models
           -run TestIdempotencySchemaUpgradeFromLegacyFixtures -count=1
+      - name: Verify canteen index upgrade and rollback
+        working-directory: server
+        run: >-
+          bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 -tags=integration ./internal/models
+          -run '^TestCanteenNameIndexUpgradePostgres$' -count=1
 
   edu-service:
     runs-on: ubuntu-latest
@@ -236,6 +244,11 @@ jobs:
           lib/screens/my_content_screen.dart
           lib/screens/major_detail_screen.dart
           lib/screens/social_list_screen.dart
+      - name: Test academic protocol package
+        working-directory: experiments/jiaowu_dart_poc
+        run: |
+          dart pub get
+          dart test
       - run: flutter test --reporter compact
       - name: Create ephemeral Android signing key
         working-directory: client/android/app

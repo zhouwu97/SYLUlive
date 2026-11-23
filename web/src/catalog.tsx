@@ -1,27 +1,23 @@
-import { CompetitionPersonal } from "./competition-personal";
-import { CampusMap } from './campus-map';
-import { SchoolCalendar } from './school-calendar';
-import { CanteenContributions } from './canteen/canteen';
 import { formatScore } from './canteen/canteen-data';
 import { CanteenDetailPage } from './canteen/canteen-detail';
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { entity, query, rows, time, useApi, write, asset } from "./api";
+import { entity, query, rows, useApi, write, asset } from "./api";
 import { Empty, Form, Head, Pagination, QueryState, Tabs, useUI } from "./ui";
 import { useAuth } from "./auth";
 import { useMobile } from "./mobile";
-const sources = {
-  campus: ["校园服务", "/api/campus/articles", "articles"],
-  competition: ["竞赛中心", "/api/competitions/events", "events"],
-  canteen: ["食堂与菜品", "/api/canteens", "canteens"],
-  ratings: ["教师 · 专业评价", "/api/teachers", "teachers"],
+const detailPaths = {
+  campus: "/api/campus/articles",
+  competition: "/api/competitions/events",
+  canteen: "/api/canteens",
+  ratings: "/api/teachers",
 } as const;
-export type CatalogKind = keyof typeof sources;
-export function Catalog({ kind }: { kind: CatalogKind }) {
-  const [params, setParams] = useSearchParams(),
-    ui = useUI();
-  const [title, base, key] = sources[kind];
-  const majors = kind === "ratings" && params.get("tab") === "majors";
-  const path = majors ? "/api/majors" : base;
+export type CatalogKind = keyof typeof detailPaths;
+
+export function RatingsList() {
+  const title = "教师 · 专业评价";
+  const [params, setParams] = useSearchParams();
+  const majors = params.get("tab") === "majors";
+  const path = majors ? "/api/majors" : detailPaths.ratings;
   const page = Number(params.get("page")) || 1;
   const q = useApi(
     query(path, {
@@ -31,52 +27,18 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
       search: params.get("q"),
     }),
   );
-  const data = rows(q.data, majors ? "majors" : key);
+  const data = rows(q.data, majors ? "majors" : "teachers");
   return (
     <>
-      <Head
-        title={title}
-        description={
-          kind === "campus"
-            ? "学校公告、校历与服务信息"
-            : kind === "competition"
-              ? "竞赛目录与个人参赛计划"
-              : kind === "canteen"
-                ? "发现食堂，分享真实的就餐体验"
-                : "查询教师和专业，分享学习体验"
-        }
-      >
-        {kind === 'canteen' && <button className="btn" onClick={() => ui.open('我的食堂贡献', <CanteenContributions />)}>我的贡献</button>}
-        {kind === "competition" && (
-          <button
-            className="btn"
-            onClick={() => ui.open("我的竞赛计划", <CompetitionPersonal />)}
-          >
-            我的计划
-          </button>
-        )}
-        {kind === "campus" && (
-          <button className="btn" onClick={() => ui.open('校园地图', <CampusMap />)}>校园地图</button>
-        )}
-        {kind === "campus" && (
-          <button
-            className="btn"
-            onClick={() => ui.open("学校校历", <SchoolCalendar />)}
-          >
-            查看校历
-          </button>
-        )}
-      </Head>
-      {kind === "ratings" && (
-        <Tabs
-          tabs={[
-            ["teachers", "教师评价"],
-            ["majors", "专业评价"],
-          ]}
-          value={majors ? "majors" : "teachers"}
-          onChange={(tab) => setParams({ tab })}
-        />
-      )}
+      <Head title={title} description="查询教师和专业，分享学习体验" />
+      <Tabs
+        tabs={[
+          ["teachers", "教师评价"],
+          ["majors", "专业评价"],
+        ]}
+        value={majors ? "majors" : "teachers"}
+        onChange={(tab) => setParams({ tab })}
+      />
       <form
         className="filter-row catalog-search"
         onSubmit={(e) => {
@@ -96,24 +58,14 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
         <button className="btn">搜索</button>
       </form>
       <QueryState query={q}>
-        <div className={kind === "canteen" ? "dish-list" : "panel"}>
+        <div className="panel">
           {data.map((x) => (
             <Link
-              className={
-                kind === "competition"
-                  ? "comp-row"
-                  : kind === "canteen"
-                    ? "dish"
-                    : "list-row"
-              }
+              className="list-row"
               key={x.id}
-              to={`/${kind}/${x.id}${majors ? "?tab=majors" : ""}`}
+              to={`/ratings/${x.id}${majors ? "?tab=majors" : ""}`}
             >
-              <div
-                className={
-                  kind === "competition" ? "comp-logo" : "author-avatar"
-                }
-              >
+              <div className="author-avatar">
                 {(x.name || x.title || title).slice(0, 2)}
               </div>
               <div className="list-main">
@@ -148,20 +100,7 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
     </>
   );
 }
-function Plans() {
-  const q = useApi("/api/user/competition-calendar");
-  return (
-    <QueryState query={q}>
-      {rows(q.data, "items").map((x) => (
-        <div className="list-row" key={x.id}>
-          <b>{x.title || x.name}</b>
-          <p>{x.start_date || x.status}</p>
-        </div>
-      ))}
-      {!rows(q.data, "items").length && <Empty title="暂无个人计划" />}
-    </QueryState>
-  );
-}
+
 export function CatalogDetail({ kind }: { kind: CatalogKind }) {
   return kind === 'canteen' ? <CanteenDetailPage /> : <CatalogRecordDetail kind={kind} />;
 }
@@ -172,7 +111,7 @@ function CatalogRecordDetail({ kind }: { kind: Exclude<CatalogKind, "canteen"> }
     auth = useAuth(),
     mobile = useMobile();
   const majors = kind === "ratings" && params.get("tab") === "majors";
-  const base = majors ? "/api/majors" : sources[kind][1];
+  const base = majors ? "/api/majors" : detailPaths[kind];
   const q = useApi(`${base}/${id}`);
   const d = entity(
     q.data,

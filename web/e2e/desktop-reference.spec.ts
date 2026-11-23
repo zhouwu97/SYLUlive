@@ -19,6 +19,44 @@ test("校园资讯按真实 item 封装进入详情并完整显示正文与官�
   await expect(page).toHaveURL(/\/campus$/);
 });
 
+test("评价列表的标签、搜索与分页可通过历史记录恢复", async ({ page }) => {
+  await fixture(page);
+  await page.route("**/api/teachers?**", route => route.fulfill({
+    json: { teachers: [{ id: 1, name: "教师甲" }] },
+  }));
+  await page.route("**/api/majors?**", route => {
+    const params = new URL(route.request().url()).searchParams;
+    const filtered = params.get("q") === "工程" && params.get("search") === "工程";
+    const second = params.get("page") === "2";
+    const majors = Array.from({ length: filtered && !second ? 20 : 1 }, (_, index) => ({
+      id: second ? 81 : index + 1,
+      name: filtered ? (second ? "工程第二页" : `工程专业${index + 1}`) : "专业甲",
+    }));
+    return route.fulfill({ json: { majors } });
+  });
+  await page.route("**/api/majors/81", route => route.fulfill({
+    json: { major: { id: 81, name: "工程第二页" } },
+  }));
+  await page.goto("ratings");
+  await expect(page.getByRole("link", { name: /教师甲/ })).toBeVisible();
+  await page.getByRole("tab", { name: "专业评价" }).click();
+  await expect(page.getByRole("link", { name: /专业甲/ })).toBeVisible();
+  await page.locator(".catalog-search input").fill("工程");
+  await page.locator(".catalog-search").getByRole("button", { name: "搜索" }).click();
+  await page.getByRole("button", { name: "下一页" }).click();
+  const result = page.getByRole("link", { name: /工程第二页/ });
+  await expect(result).toHaveAttribute("href", "/web/ratings/81?tab=majors");
+  const listUrl = page.url();
+  await result.click();
+  await expect(page.getByRole("heading", { name: "工程第二页" })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(listUrl);
+  await page.reload();
+  await expect(result).toBeVisible();
+  await expect(page.locator(".catalog-search input")).toHaveValue("工程");
+  await expect(page.getByRole("button", { name: "下一页" })).toBeDisabled();
+});
+
 for (const [path, api, key, action] of [
   ["competition/81", "competitions/events/81", "event", "加入计划"],
   ["ratings/81", "teachers/81", "teacher", "发表评价"],

@@ -53,7 +53,7 @@ const Admin = lazy(() => import('./admin').then(module => ({default: module.Admi
 const Competition = lazy(() => import('./competition').then(module => ({default: module.Competition})));
 const CanteenPage = lazy(() => import('./canteen/canteen-page').then(module => ({default: module.CanteenPage})));
 const Campus = lazy(() => import('./campus').then(module => ({default: module.Campus})));
-const Catalog = lazy(() => import('./catalog').then(module => ({default: module.Catalog})));
+const RatingsList = lazy(() => import('./catalog').then(module => ({default: module.RatingsList})));
 const CatalogDetail = lazy(() => import('./catalog').then(module => ({default: module.CatalogDetail})));
 const AiPage = lazy(() => import('./ai').then(module => ({default: module.AiPage})));
 const Feedback = lazy(() => import('./feedback').then(module => ({default: module.Feedback})));
@@ -433,17 +433,7 @@ function Shell() {
                   <Route path="/competition" element={<Competition/>}/>
                   <Route path="/canteen" element={<CanteenPage/>}/>
                   <Route path="/campus" element={<Campus/>}/>
-                  {(
-                    [
-                      "ratings",
-                    ] as CatalogKind[]
-                  ).map((kind) => (
-                    <Route
-                      key={kind}
-                      path={`/${kind}`}
-                      element={<Catalog kind={kind} />}
-                    />
-                  ))}
+                  <Route path="/ratings" element={<RatingsList />} />
                   {(
                     [
                       "campus",

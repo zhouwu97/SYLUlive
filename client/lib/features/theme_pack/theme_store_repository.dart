@@ -245,6 +245,15 @@ class ThemeSubmissionItem {
 }
 
 abstract final class ThemeReviewReasons {
+  static String licenseLabel(String license) =>
+      const {
+        'personal-use': '仅限个人使用',
+        'CC0-1.0': '可自由使用（CC0）',
+        'CC-BY-4.0': '使用时需署名（CC BY）',
+        'CC-BY-NC-4.0': '需署名，仅限非商业使用（CC BY-NC）',
+      }[license] ??
+      license;
+
   static const List<(String, String)> options = [
     ('contrast', '部分页面的文字看不清，请提高文字与背景的对比度'),
     ('wallpaper_text', '壁纸含文字、水印、二维码或联系方式'),

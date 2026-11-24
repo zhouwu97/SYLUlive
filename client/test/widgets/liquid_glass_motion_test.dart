@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_dynamics.dart';
+import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_tilt.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -33,6 +36,65 @@ void main() {
       expect(hard.pressure - soft.pressure, greaterThan(.45));
       soft.dispose();
       hard.dispose();
+    },
+  );
+
+  testWidgets(
+    'overlapping LiquidGlassTilt instances share one native gravity stream',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      const capChannel = MethodChannel('liquid_glass/capabilities');
+      const gravityChannel = MethodChannel('liquid_glass/gravity');
+      var listenCount = 0;
+      var cancelCount = 0;
+      var active = false;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        capChannel,
+        (call) async => call.method == 'gravity',
+      );
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        gravityChannel,
+        (call) async {
+          if (call.method == 'listen') {
+            listenCount++;
+            active = true;
+          } else if (call.method == 'cancel') {
+            if (!active) {
+              throw PlatformException(
+                code: 'error',
+                message: 'No active stream to cancel',
+              );
+            }
+            active = false;
+            cancelCount++;
+          }
+          return null;
+        },
+      );
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+        tester.binding.defaultBinaryMessenger
+            .setMockMethodCallHandler(capChannel, null);
+        tester.binding.defaultBinaryMessenger
+            .setMockMethodCallHandler(gravityChannel, null);
+      });
+
+      final first = LiquidGlassTilt();
+      final second = LiquidGlassTilt();
+      try {
+        await tester.pump();
+        first.dispose();
+        await tester.pump();
+        expect(cancelCount, 0);
+        second.dispose();
+        await tester.pump();
+
+        expect(listenCount, 1);
+        expect(cancelCount, 1);
+        expect(tester.takeException(), isNull);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     },
   );
 }

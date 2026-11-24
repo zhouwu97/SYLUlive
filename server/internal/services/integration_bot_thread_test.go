@@ -50,19 +50,20 @@ func TestIntegrationBotDiscoversAddressedPublicReplies(t *testing.T) {
 	answered := create(post.ID, 1, "已经答过", &bot.UserID, normal, now)
 	oldAnswer := create(post.ID, bot.UserID, "之前的答复", nil, models.ReplyStatusDeleted, now.Add(-time.Hour))
 	require.NoError(t, db.Model(&oldAnswer).Update("reply_to_reply_id", answered.ID).Error)
-	targets, err := s.BotReplyTargets(ctx, binding, bot)
+	targets, name, err := s.BotReplyTargets(ctx, binding, bot)
 	require.NoError(t, err)
+	require.Equal(t, "大肥鱼", name)
 	require.Len(t, targets, 3)
-	for i, expected := range []models.Reply{underBot, mention, direct} {
+	for i, expected := range []models.Reply{mention, underBot, direct} {
 		require.Equal(t, ManagedBotReplyTarget{PostID: expected.PostID, PostType: "campus_life", ReplyID: expected.ID, SourceVersion: community.ReplyDTO(expected).SourceVersion}, targets[i])
 	}
 	// A recent reply fills the shared cooldown for both interactive and proactive replies.
 	require.NoError(t, db.Model(&oldAnswer).Update("created_at", now.Add(-time.Minute)).Error)
-	targets, err = s.BotReplyTargets(ctx, binding, bot)
+	targets, _, err = s.BotReplyTargets(ctx, binding, bot)
 	require.NoError(t, err)
 	require.Empty(t, targets)
 	binding.Scopes = IntegrationReadScope
-	targets, err = s.BotReplyTargets(ctx, binding, bot)
+	targets, _, err = s.BotReplyTargets(ctx, binding, bot)
 	require.NoError(t, err)
 	require.Empty(t, targets)
 }

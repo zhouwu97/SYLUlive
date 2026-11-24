@@ -93,6 +93,8 @@ func TestNotificationHandlerExcludesRetiredNotifications(t *testing.T) {
 		{UserID: 1, Type: "reply", Content: "回复内容"},
 		{UserID: 1, Type: models.RetiredNotificationTypeMarketPost, Content: "商品内容"},
 		{UserID: 1, Type: models.RetiredNotificationTypeCanteenPending, Content: "有新的食堂提交待审核"},
+		{UserID: 1, Type: "feedback_update", Content: "工单回复"},
+		{UserID: 1, Type: models.NotificationTypeFeedbackAdminUpdate, Content: "工单用户补充"},
 	}).Error; err != nil {
 		t.Fatalf("写入通知失败: %v", err)
 	}

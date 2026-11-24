@@ -679,16 +679,6 @@ func TestThemePackValidatorTable(t *testing.T) {
 			wantCode: ThemeCodeImageInvalid,
 		},
 		{
-			name: "对比度低于阈值返回 theme_contrast_low",
-			build: func() ([]byte, ThemeMetadataOverrides) {
-				m := defaultValidManifest()
-				// 默认内置浅色 #747B82 在白卡片上对比度 4.29 < 4.5
-				m["light"].(map[string]any)["tokens"].(map[string]any)["textSecondary"] = "#747B82"
-				return buildTestThemeZip(t, m, defaultValidAssets()), ThemeMetadataOverrides{}
-			},
-			wantCode: ThemeCodeContrastLow,
-		},
-		{
 			name: "损坏或 TTC 字体返回 theme_font_invalid",
 			build: func() ([]byte, ThemeMetadataOverrides) {
 				m := defaultValidManifest()

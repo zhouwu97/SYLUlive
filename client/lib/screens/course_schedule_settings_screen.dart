@@ -7,6 +7,28 @@ import '../widgets/app_page_background.dart';
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/app_card.dart';
 
+enum ScheduleColorOption {
+  theme('默认', null),
+  dark('深色', Color(0xFF1F2937)),
+  white('白色', Colors.white),
+  blue('蓝色', Color(0xFF2563EB)),
+  green('绿色', Color(0xFF15803D)),
+  purple('紫色', Color(0xFF7E22CE)),
+  orange('橙色', Color(0xFFC2410C));
+
+  const ScheduleColorOption(this.label, this.color);
+
+  final String label;
+  final Color? color;
+
+  static ScheduleColorOption fromStorage(String? value) {
+    for (final option in values) {
+      if (option.name == value) return option;
+    }
+    return theme;
+  }
+}
+
 class CourseScheduleSettingsSnapshot {
   const CourseScheduleSettingsSnapshot({
     required this.courseCount,
@@ -23,6 +45,9 @@ class CourseScheduleSettingsSnapshot {
     required this.scheduleCardOpacity,
     required this.scheduleSlotHeight,
     required this.defaultSlotHeight,
+    this.scheduleFontScale = 1,
+    this.scheduleTextColor = ScheduleColorOption.theme,
+    this.scheduleCourseColor = ScheduleColorOption.theme,
     this.minimumSlotHeight = 55,
     this.maximumSlotHeight = 120,
   });
@@ -41,6 +66,9 @@ class CourseScheduleSettingsSnapshot {
   final double scheduleCardOpacity;
   final double scheduleSlotHeight;
   final double defaultSlotHeight;
+  final double scheduleFontScale;
+  final ScheduleColorOption scheduleTextColor;
+  final ScheduleColorOption scheduleCourseColor;
   final double minimumSlotHeight;
   final double maximumSlotHeight;
 }
@@ -59,6 +87,9 @@ class CourseScheduleSettingsCallbacks {
     required this.openHomeWidgets,
     required this.updateScheduleOpacity,
     required this.updateScheduleSlotHeight,
+    required this.updateScheduleFontScale,
+    required this.updateScheduleTextColor,
+    required this.updateScheduleCourseColor,
     required this.resetScheduleDisplay,
     this.scanToWeb,
   });
@@ -75,6 +106,11 @@ class CourseScheduleSettingsCallbacks {
   final Future<void> Function() openHomeWidgets;
   final Future<void> Function(double value) updateScheduleOpacity;
   final Future<void> Function(double value) updateScheduleSlotHeight;
+  final Future<void> Function(double value) updateScheduleFontScale;
+  final Future<void> Function(ScheduleColorOption value)
+      updateScheduleTextColor;
+  final Future<void> Function(ScheduleColorOption value)
+      updateScheduleCourseColor;
   final Future<void> Function() resetScheduleDisplay;
 
   /// 扫描网页课表上的二维码，把本机课表等资料加密同步给网页；为空时不显示入口。
@@ -132,6 +168,12 @@ class _CourseScheduleSettingsScreenState
     setState(() => _busy = true);
     try {
       await action();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('操作失败，请重试')),
+        );
+      }
     } finally {
       try {
         final next = await widget.callbacks.reloadSnapshot();
@@ -145,6 +187,69 @@ class _CourseScheduleSettingsScreenState
       }
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _pickDisplayColor({required bool forText}) async {
+    final sheetTheme = CampusTheme.withBrandAccent(Theme.of(context));
+    final selected = await showAppModalBottomSheet<ScheduleColorOption>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => Theme(
+        data: sheetTheme,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      forText ? '课表文字颜色' : '课程块颜色',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+                for (final option in ScheduleColorOption.values)
+                  ListTile(
+                    leading: option.color == null
+                        ? const Icon(Icons.palette_outlined)
+                        : Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              color: option.color,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.outline,
+                              ),
+                            ),
+                          ),
+                    title: Text(option == ScheduleColorOption.theme
+                        ? (forText ? '默认（跟随主题）' : '默认（按课程配色）')
+                        : option.label),
+                    trailing: option ==
+                            (forText
+                                ? _snapshot.scheduleTextColor
+                                : _snapshot.scheduleCourseColor)
+                        ? const Icon(Icons.check)
+                        : null,
+                    onTap: () => Navigator.of(context).pop(option),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (!mounted || selected == null) return;
+    await _runAndRefresh(() => forText
+        ? widget.callbacks.updateScheduleTextColor(selected)
+        : widget.callbacks.updateScheduleCourseColor(selected));
   }
 
   Future<void> _pickReminderMinutes() async {
@@ -325,6 +430,43 @@ class _CourseScheduleSettingsScreenState
               title: '课表显示',
               children: [
                 _CourseDisplaySliderTile(
+                  title: '课表字体大小',
+                  value: _snapshot.scheduleFontScale,
+                  min: 0.8,
+                  max: 1.5,
+                  divisions: 14,
+                  valueLabel: _snapshot.scheduleFontScale == 1
+                      ? '100%（默认）'
+                      : '${(_snapshot.scheduleFontScale * 100).round()}%',
+                  enabled: !_busy,
+                  onChanged: (value) => setState(() {
+                    _snapshot = _copySnapshot(scheduleFontScale: value);
+                  }),
+                  onChangeEnd: (value) => _runAndRefresh(
+                    () => widget.callbacks.updateScheduleFontScale(value),
+                  ),
+                ),
+                _CourseSettingsTile(
+                  icon: Icons.format_color_text,
+                  title: '课表文字颜色',
+                  subtitle:
+                      _snapshot.scheduleTextColor == ScheduleColorOption.theme
+                          ? '默认，跟随当前主题'
+                          : _snapshot.scheduleTextColor.label,
+                  enabled: !_busy,
+                  onTap: () => _pickDisplayColor(forText: true),
+                ),
+                _CourseSettingsTile(
+                  icon: Icons.palette_outlined,
+                  title: '课程块颜色',
+                  subtitle:
+                      _snapshot.scheduleCourseColor == ScheduleColorOption.theme
+                          ? '默认，按课程配色'
+                          : '${_snapshot.scheduleCourseColor.label}，统一用于本周课程',
+                  enabled: !_busy,
+                  onTap: () => _pickDisplayColor(forText: false),
+                ),
+                _CourseDisplaySliderTile(
                   title: '课程块透明度',
                   value: _snapshot.scheduleCardOpacity,
                   min: 0.1,
@@ -362,7 +504,8 @@ class _CourseScheduleSettingsScreenState
                 _CourseSettingsTile(
                   icon: Icons.restart_alt_outlined,
                   title: '恢复课表显示默认值',
-                  subtitle: '仅重置课程块透明度和每节课高度',
+                  subtitle: '重置字号、颜色、课程块透明度和每节课高度',
+                  enabled: !_busy,
                   onTap: () => _runAndRefresh(
                     widget.callbacks.resetScheduleDisplay,
                   ),
@@ -400,6 +543,7 @@ class _CourseScheduleSettingsScreenState
   CourseScheduleSettingsSnapshot _copySnapshot({
     double? scheduleCardOpacity,
     double? scheduleSlotHeight,
+    double? scheduleFontScale,
   }) {
     return CourseScheduleSettingsSnapshot(
       courseCount: _snapshot.courseCount,
@@ -415,6 +559,9 @@ class _CourseScheduleSettingsScreenState
       backgroundKeepAliveBusy: _snapshot.backgroundKeepAliveBusy,
       scheduleCardOpacity: scheduleCardOpacity ?? _snapshot.scheduleCardOpacity,
       scheduleSlotHeight: scheduleSlotHeight ?? _snapshot.scheduleSlotHeight,
+      scheduleFontScale: scheduleFontScale ?? _snapshot.scheduleFontScale,
+      scheduleTextColor: _snapshot.scheduleTextColor,
+      scheduleCourseColor: _snapshot.scheduleCourseColor,
       defaultSlotHeight: _snapshot.defaultSlotHeight,
       minimumSlotHeight: _snapshot.minimumSlotHeight,
       maximumSlotHeight: _snapshot.maximumSlotHeight,
@@ -566,6 +713,8 @@ class _CourseDisplaySliderTile extends StatelessWidget {
     required this.divisions,
     required this.valueLabel,
     required this.onChanged,
+    this.onChangeEnd,
+    this.enabled = true,
   });
 
   final String title;
@@ -575,6 +724,8 @@ class _CourseDisplaySliderTile extends StatelessWidget {
   final int divisions;
   final String valueLabel;
   final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeEnd;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -597,7 +748,8 @@ class _CourseDisplaySliderTile extends StatelessWidget {
             max: max,
             divisions: divisions,
             label: valueLabel,
-            onChanged: onChanged,
+            onChanged: enabled ? onChanged : null,
+            onChangeEnd: enabled ? onChangeEnd : null,
           ),
         ],
       ),

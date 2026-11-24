@@ -11,6 +11,40 @@ import 'theme_manifest.dart';
 class ThemeAppearance {
   const ThemeAppearance(this.data);
   const ThemeAppearance.empty() : data = const {};
+
+  /// 原始外观显式覆盖壁纸和材质，避免重新启用用户后来保存的手动设置。
+  const ThemeAppearance.originalDefault()
+      : data = const {
+          'wallpapers': {
+            'source': _originalDefaultSource,
+            'light': <String, dynamic>{},
+            'dark': <String, dynamic>{},
+          },
+          'material': {
+            'source': _originalDefaultSource,
+            'light': {
+              'componentOpacity': 1.0,
+              'frostedGlass': {'enabled': false, 'strength': 0.0},
+            },
+            'dark': {
+              'componentOpacity': 1.0,
+              'frostedGlass': {'enabled': false, 'strength': 0.0},
+            },
+          },
+          'navigation': {
+            'source': _originalDefaultSource,
+            'style': 'liquid_glass',
+            'iconTint': 'template',
+            'icons': <String, dynamic>{},
+          },
+        };
+
+  static const _originalDefaultSource = {
+    'themeId': '00000000-0000-4000-8000-000000000000',
+    'version': 1,
+    'name': '默认主题（经典）',
+  };
+
   final Map<String, dynamic> data;
 
   Map<String, dynamic>? group(ThemeGroup group) =>

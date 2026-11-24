@@ -38,32 +38,42 @@ type ManagedBotReplyTarget struct {
 
 // BotReplyTargets only discovers current public sources. Publication still takes the
 // runtime lease and repeats the version, author, scope and quota checks in its transaction.
-func (s *IntegrationActionService) BotReplyTargets(ctx context.Context, binding models.IntegrationBinding, bot models.ManagedBot) ([]ManagedBotReplyTarget, error) {
+func (s *IntegrationActionService) BotReplyTargets(ctx context.Context, binding models.IntegrationBinding, bot models.ManagedBot) ([]ManagedBotReplyTarget, string, error) {
 	targets := []ManagedBotReplyTarget{}
 	policy := ManagedBotPolicy(bot)
 	if bot.OwnerID != binding.OwnerID || !bot.Enabled || !policy.PublicReadEnabled || !policy.ReplyEnabled ||
 		!IntegrationHasScope(binding, IntegrationReadScope) || !IntegrationHasScope(binding, IntegrationAutoReplyScope) || len(policy.AllowedPostTypes) == 0 {
-		return targets, nil
+		return targets, "", nil
 	}
 	db := s.Auth.DB.WithContext(ctx)
 	now := s.Auth.Now()
 	if err := managedBotReplyQuota(db, bot.UserID, now, policy, 0); err != nil {
 		var problem *IntegrationError
 		if errors.As(err, &problem) && problem.Status == 429 {
-			return targets, nil
+			return targets, "", nil
 		}
-		return nil, err
+		return nil, "", err
 	}
 	var actor models.User
 	if err := db.Select("id", "nickname", "account_status").First(&actor, bot.UserID).Error; err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if actor.AccountStatus != "bot" {
-		return targets, nil
+		return targets, "", nil
+	}
+	nickname := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(actor.Nickname, "[AI] ")))
+	if nickname != "" {
+		var names int64
+		if err := db.Model(&models.User{}).Where("LOWER(nickname) IN ?", []string{nickname, "[ai] " + nickname}).Count(&names).Error; err != nil {
+			return nil, "", err
+		}
+		if names != 1 {
+			nickname = ""
+		}
 	}
 	var sections []models.WaterSection
 	if err := db.Where("slug IN ?", policy.AllowedPostTypes).Find(&sections).Error; err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	allowed := []string{}
 	for _, section := range sections {
@@ -74,19 +84,16 @@ func (s *IntegrationActionService) BotReplyTargets(ctx context.Context, binding 
 	posts := community.VisiblePosts(db).Select("id").Where("post_type IN ?", allowed)
 	ownPosts := community.VisiblePosts(db).Select("id").Where("author_id = ?", actor.ID)
 	addressed := db.Where("replies.reply_to_user_id = ? OR (replies.parent_reply_id IS NULL AND replies.post_id IN (?))", actor.ID, ownPosts)
-	nickname := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(actor.Nickname, "[AI] ")))
-	mention := (*regexp.Regexp)(nil)
+	var mention *regexp.Regexp
+	order := clause.Expr{SQL: "replies.id DESC"}
 	if nickname != "" {
-		var names int64
-		if err := db.Model(&models.User{}).Where("LOWER(nickname) IN ?", []string{nickname, "[ai] " + nickname}).Count(&names).Error; err != nil {
-			return nil, err
-		}
-		if names == 1 {
-			mention = regexp.MustCompile(`(?:^|[^\pL\pN_@])@(?:\[ai\] )?` + regexp.QuoteMeta(nickname) + `(?:$|[^\pL\pN_])`)
-			escape := strings.NewReplacer("!", "!!", "%", "!%", "_", "!_")
-			addressed = addressed.Or("LOWER(replies.content) LIKE ? ESCAPE '!' OR LOWER(replies.content) LIKE ? ESCAPE '!'",
-				"%@"+escape.Replace(nickname)+"%", "%@[ai] "+escape.Replace(nickname)+"%")
-		}
+		mention = regexp.MustCompile(`(?:^|[^\pL\pN_@])@(?:\[ai\] )?` + regexp.QuoteMeta(nickname) + `(?:$|[^\pL\pN_])`)
+		escape := strings.NewReplacer("!", "!!", "%", "!%", "_", "!_")
+		const mentionsName = "LOWER(replies.content) LIKE ? ESCAPE '!' OR LOWER(replies.content) LIKE ? ESCAPE '!'"
+		patterns := []any{"%@" + escape.Replace(nickname) + "%", "%@[ai] " + escape.Replace(nickname) + "%"}
+		addressed = addressed.Or(mentionsName, patterns...)
+		// 先查点名，避免机器人帖下较新的普通跟帖占满整页候选。
+		order = clause.Expr{SQL: "CASE WHEN " + mentionsName + " THEN 0 ELSE 1 END, replies.id DESC", Vars: patterns}
 	}
 	var replies []struct {
 		models.Reply
@@ -99,9 +106,9 @@ func (s *IntegrationActionService) BotReplyTargets(ctx context.Context, binding 
 		Where("replies.post_id IN (?) AND replies.status = ? AND replies.created_at > ?", posts, models.ReplyStatusNormal, now.Add(-24*time.Hour)).
 		Where("NOT EXISTS (SELECT 1 FROM managed_bots WHERE managed_bots.user_id = replies.author_id)").
 		Where("NOT EXISTS (SELECT 1 FROM replies AS answered WHERE answered.author_id = ? AND answered.reply_to_reply_id = replies.id)", actor.ID).
-		Where(addressed).Order("replies.id DESC").Limit(40).Find(&replies).Error
+		Where(addressed).Clauses(clause.OrderBy{Expression: order}).Limit(40).Find(&replies).Error
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	for _, candidate := range replies {
 		reply := candidate.Reply
@@ -113,7 +120,7 @@ func (s *IntegrationActionService) BotReplyTargets(ctx context.Context, binding 
 			}
 		}
 	}
-	return targets, nil
+	return targets, nickname, nil
 }
 
 // Legacy rows have no policy. Keep them read-only until the owner explicitly grants participation.

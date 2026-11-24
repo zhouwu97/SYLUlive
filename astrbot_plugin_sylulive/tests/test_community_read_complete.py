@@ -299,7 +299,7 @@ async def test_real_astrbot_loop_reads_thread_and_pixels_before_community_sticke
 
     from astrbot_plugin_sylulive.community_publisher import CommunityPublisher
 
-    p = source()
+    p = source(title="@测试鱼 合成公开讨论")
     paths = []
 
     async def public(path, **kwargs):
@@ -326,6 +326,7 @@ async def test_real_astrbot_loop_reads_thread_and_pixels_before_community_sticke
         call=AsyncMock(return_value={"state": "published", "reply_id": 55}),
     )
     agent.publisher = CommunityPublisher(agent, client)
+    agent.mention_name = "测试鱼"
 
     class Model(Provider):
         def get_current_key(self):

@@ -62,6 +62,8 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen>
   DateTime? _generatedAt;
   bool _pasting = false;
   bool _pickingImage = false;
+  bool _startingScanner = false;
+  bool _pausedForBackground = false;
   bool _retryClaim = false;
   DateTime? _lastInvalidCode;
 
@@ -91,13 +93,22 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_phase != _Phase.scanning) {
+    if (_phase != _Phase.scanning ||
+        _pasting ||
+        _pickingImage ||
+        _startingScanner) {
       return;
     }
-    if (state == AppLifecycleState.resumed && !_pasting && !_pickingImage) {
+    // 系统相机权限弹窗会触发 inactive/paused/resumed；启动中忽略生命周期回调，
+    // 且仅在真正退到后台后再返回前台时恢复扫描，避免重复弹窗并保留权限错误态。
+    if (state == AppLifecycleState.paused) {
+      _pausedForBackground = true;
+      if (_scanner?.value.isRunning == true) {
+        unawaited(_scanner!.stop());
+      }
+    } else if (state == AppLifecycleState.resumed && _pausedForBackground) {
+      _pausedForBackground = false;
       unawaited(_startScanner());
-    } else if (state != AppLifecycleState.resumed) {
-      unawaited(_scanner?.stop());
     }
   }
 
@@ -122,13 +133,16 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen>
   }
 
   Future<void> _startScanner() async {
-    if (!mounted || _phase != _Phase.scanning) {
+    if (!mounted || _phase != _Phase.scanning || _startingScanner) {
       return;
     }
+    _startingScanner = true;
     try {
       await _scanner?.start();
     } catch (_) {
       // 控制器错误由扫描组件的 errorBuilder 展示，并保留相册识别入口。
+    } finally {
+      _startingScanner = false;
     }
   }
 
@@ -370,8 +384,11 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen>
       return;
     }
     _pickingImage = true;
+    final wasRunning = scanner.value.isRunning;
     try {
-      await scanner.stop();
+      if (wasRunning) {
+        await scanner.stop();
+      }
       final image = await ImagePicker().pickImage(source: ImageSource.gallery);
       if (image == null || !mounted) return;
       final capture = await scanner.analyzeImage(image.path);
@@ -395,7 +412,9 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen>
       );
     } finally {
       _pickingImage = false;
-      if (mounted && _phase == _Phase.scanning) unawaited(_startScanner());
+      if (wasRunning && mounted && _phase == _Phase.scanning) {
+        unawaited(_startScanner());
+      }
     }
   }
 
@@ -404,9 +423,12 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen>
       return;
     }
     _pasting = true;
+    final wasRunning = _scanner?.value.isRunning == true;
     String input = '';
     try {
-      await _scanner?.stop();
+      if (wasRunning) {
+        await _scanner?.stop();
+      }
       if (!mounted) return;
       String? error;
       final link = await showAppDialog<AcademicTransferLink>(
@@ -446,7 +468,9 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen>
       if (link != null && mounted) await _start(link);
     } finally {
       _pasting = false;
-      if (mounted && _phase == _Phase.scanning) unawaited(_startScanner());
+      if (wasRunning && mounted && _phase == _Phase.scanning) {
+        unawaited(_startScanner());
+      }
     }
   }
 

@@ -155,6 +155,26 @@ class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
     if (mounted) await _load();
   }
 
+  Future<void> _applyOriginalDefault() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await context.read<ThemeProvider>().applyOriginalDefaultAppearance();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已应用默认主题（经典）')),
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = '默认主题未能应用，请重试。');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _remove(InstalledTheme theme) async {
     final confirmed = await showAppDialog<bool>(
         context: context,
@@ -253,6 +273,17 @@ class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
                       padding: const EdgeInsets.all(18),
                       physics: const AlwaysScrollableScrollPhysics(),
                       children: [
+                        Card(
+                          child: ListTile(
+                            key: const ValueKey('installed-original-default'),
+                            leading: const Icon(Icons.palette_outlined),
+                            title: const Text('默认主题（经典）'),
+                            subtitle: const Text('主题商城上线前的原始外观 · 内置'),
+                            enabled: !_busy,
+                            onTap: _applyOriginalDefault,
+                          ),
+                        ),
+                        if (_busy) const LinearProgressIndicator(),
                         OutlinedButton.icon(
                             onPressed: _busy ? null : () => _open(),
                             icon: const Icon(Icons.file_open_outlined),

@@ -89,6 +89,30 @@ func (h *FeedbackTicketHandler) AdminListTickets(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询工单失败"})
 		return
 	}
+	if len(tickets) > 0 {
+		ids := make([]uint, 0, len(tickets))
+		for _, ticket := range tickets {
+			ids = append(ids, ticket.ID)
+		}
+		var unread []struct {
+			RelatedID uint
+			Count     int64
+		}
+		if err := h.db.Model(&models.Notification{}).
+			Select("related_id, COUNT(*) AS count").
+			Where("user_id = ? AND type = ? AND is_read = ? AND related_id IN ?", c.GetUint("user_id"), models.NotificationTypeFeedbackAdminUpdate, false, ids).
+			Group("related_id").Scan(&unread).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单未读状态失败"})
+			return
+		}
+		counts := make(map[uint]int64, len(unread))
+		for _, row := range unread {
+			counts[row.RelatedID] = row.Count
+		}
+		for i := range tickets {
+			tickets[i].AdminUnreadCount = counts[tickets[i].ID]
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"total":    total,
@@ -106,6 +130,7 @@ func (h *FeedbackTicketHandler) AdminGetStats(c *gin.Context) {
 	var testingCount int64
 	var unviewedCount int64
 	var totalUnresolved int64
+	var unreadCount int64
 
 	// 概览计数失败时不能返回全 0：那会让管理端角标显示成"没有待处理工单"。
 	counts := []struct {
@@ -118,6 +143,10 @@ func (h *FeedbackTicketHandler) AdminGetStats(c *gin.Context) {
 		{h.db.Model(&models.FeedbackTicket{}).Where("admin_viewed = ?", false), &unviewedCount},
 		{h.db.Model(&models.FeedbackTicket{}).
 			Where("status NOT IN ?", []string{models.FeedbackStatusResolved, models.FeedbackStatusClosed}), &totalUnresolved},
+		{h.db.Model(&models.Notification{}).
+			Where("user_id = ? AND type = ? AND is_read = ?", c.GetUint("user_id"), models.NotificationTypeFeedbackAdminUpdate, false).
+			Where("related_id IN (?)", h.db.Model(&models.FeedbackTicket{}).Select("id")).
+			Distinct("related_id"), &unreadCount},
 	}
 	for _, count := range counts {
 		if err := count.query.Count(count.dest).Error; err != nil {
@@ -132,6 +161,7 @@ func (h *FeedbackTicketHandler) AdminGetStats(c *gin.Context) {
 		"testing_count":      testingCount,
 		"unviewed_count":     unviewedCount,
 		"total_unresolved":   totalUnresolved,
+		"unread_count":       unreadCount,
 	})
 }
 
@@ -146,6 +176,12 @@ func (h *FeedbackTicketHandler) AdminGetTicketDetail(c *gin.Context) {
 	}
 
 	// 先完整读取详情，确认响应内容可用后再标记管理队列已查看。
+	userID := c.GetUint("user_id")
+	maxNotificationID, err := h.feedbackNotificationBoundary(userID, ticket.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单未读状态失败"})
+		return
+	}
 	messages, initialSubmission, err := h.loadFeedbackConversation(ticket.ID, false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取消息失败"})
@@ -179,37 +215,47 @@ func (h *FeedbackTicketHandler) AdminGetTicketDetail(c *gin.Context) {
 
 	// 只把本次完整读取到的用户消息标记为已查看。若读取过程中出现新用户消息，
 	// 条件更新不会命中，避免新消息被误判为已读；该操作不推进业务 updated_at。
-	if !ticket.AdminViewed {
-		now := time.Now()
-		lastUserMessageID := uint(0)
-		for _, message := range messages {
-			if message.SenderType == "user" && message.ID > lastUserMessageID {
-				lastUserMessageID = message.ID
-			}
+	now := time.Now()
+	lastUserMessageID := uint(0)
+	for _, message := range messages {
+		if message.SenderType == "user" && message.ID > lastUserMessageID {
+			lastUserMessageID = message.ID
 		}
-		if initialSubmission != nil && initialSubmission.SenderType == "user" && initialSubmission.MessageID > lastUserMessageID {
-			lastUserMessageID = initialSubmission.MessageID
+	}
+	if initialSubmission != nil && initialSubmission.SenderType == "user" && initialSubmission.MessageID > lastUserMessageID {
+		lastUserMessageID = initialSubmission.MessageID
+	}
+	adminViewed := ticket.AdminViewed
+	firstViewedAt := ticket.AdminFirstViewedAt
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var current models.FeedbackTicket
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, ticket.ID).Error; err != nil {
+			return err
 		}
-
+		adminViewed, firstViewedAt = current.AdminViewed, current.AdminFirstViewedAt
 		updates := map[string]interface{}{"admin_viewed": true}
-		if ticket.AdminFirstViewedAt == nil {
+		if firstViewedAt == nil {
 			updates["admin_first_viewed_at"] = now
 		}
-		result := h.db.Model(&models.FeedbackTicket{}).
+		result := tx.Model(&models.FeedbackTicket{}).
 			Where("id = ? AND admin_viewed = ?", ticket.ID, false).
 			Where("NOT EXISTS (SELECT 1 FROM feedback_messages WHERE ticket_id = ? AND sender_type = ? AND id > ?)", ticket.ID, "user", lastUserMessageID).
 			UpdateColumns(updates)
 		if result.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "标记工单已读失败"})
-			return
+			return result.Error
 		}
 		if result.RowsAffected > 0 {
-			ticket.AdminViewed = true
-			if ticket.AdminFirstViewedAt == nil {
-				ticket.AdminFirstViewedAt = &now
+			adminViewed = true
+			if firstViewedAt == nil {
+				firstViewedAt = &now
 			}
 		}
+		return markFeedbackNotificationsRead(tx, userID, ticket.ID, maxNotificationID)
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "标记工单已读失败"})
+		return
 	}
+	ticket.AdminViewed, ticket.AdminFirstViewedAt = adminViewed, firstViewedAt
 
 	c.JSON(http.StatusOK, gin.H{
 		"ticket":             ticket,

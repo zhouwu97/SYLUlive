@@ -6,6 +6,10 @@ import 'package:flutter/widgets.dart';
 /// Local gravity makes the light track the device on Android; other platforms
 /// use pointer light. No permission or network access is involved.
 class LiquidGlassTilt extends ValueNotifier<Offset> {
+  // 多个液态玻璃容器共存或横竖屏重建时复用同一广播流，保证与原生单流通道 1:1 订阅/取消。
+  static final Stream<dynamic> _sharedGravityStream =
+      const EventChannel('liquid_glass/gravity').receiveBroadcastStream();
+
   LiquidGlassTilt() : super(Offset.zero) {
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       unawaited(_connect());
@@ -19,9 +23,7 @@ class LiquidGlassTilt extends ValueNotifier<Offset> {
         'liquid_glass/capabilities',
       ).invokeMethod<bool>('gravity');
       if (_disposed || available != true) return;
-      _subscription = const EventChannel('liquid_glass/gravity')
-          .receiveBroadcastStream()
-          .listen((event) {
+      _subscription = _sharedGravityStream.listen((event) {
         if (event is List && event.length >= 2) {
           final next = Offset(
             (event[0] as num).toDouble(),
@@ -43,7 +45,11 @@ class LiquidGlassTilt extends ValueNotifier<Offset> {
   @override
   void dispose() {
     _disposed = true;
-    _subscription?.cancel();
+    final sub = _subscription;
+    _subscription = null;
+    if (sub != null) {
+      unawaited(sub.cancel());
+    }
     super.dispose();
   }
 }

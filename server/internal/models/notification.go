@@ -30,7 +30,14 @@ const (
 	NotificationTypeAppealApproved        = "appeal_approved"
 	NotificationTypeAppealRejected        = "appeal_rejected"
 	NotificationTypeFeedbackAdminUpdate   = "feedback_admin_update"
+	NotificationTypeFeedbackUpdate        = "feedback_update"
 )
+
+// 工单更新保留投递记录，列表与未读由工单会话消费，不计入通用通知。
+var FeedbackNotificationTypes = []string{
+	NotificationTypeFeedbackUpdate,
+	NotificationTypeFeedbackAdminUpdate,
+}
 
 // RetiredNotificationTypes 已退役通知类型：不再产生，查询时过滤并分批清理历史数据。
 var RetiredNotificationTypes = []string{

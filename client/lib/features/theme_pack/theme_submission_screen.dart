@@ -12,10 +12,8 @@ import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/idempotency_key.dart';
 import '../../services/publish_session_scope.dart';
-import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_dialog.dart';
-import 'theme_contrast.dart';
 import 'theme_manifest.dart';
 import 'theme_pack_codec.dart';
 import 'theme_pack_store.dart';
@@ -52,7 +50,6 @@ class _ThemeSubmissionScreenState extends State<ThemeSubmissionScreen> {
 
   Uint8List? _packageBytes;
   ThemeManifest? _manifest;
-  List<ThemeContrastIssue> _contrastIssues = const [];
 
   late String _idempotencyKey;
   bool _submitting = false;
@@ -103,9 +100,7 @@ class _ThemeSubmissionScreenState extends State<ThemeSubmissionScreen> {
         }
       }
     }
-    if (_manifest != null) {
-      _contrastIssues = ThemeContrast.check(_manifest!);
-    } else if (_packageBytes != null) {
+    if (_manifest == null && _packageBytes != null) {
       unawaited(_decodeInitialBytes(_packageBytes!));
     }
   }
@@ -188,11 +183,9 @@ class _ThemeSubmissionScreenState extends State<ThemeSubmissionScreen> {
     ThemeManifest manifest, {
     bool resetKey = true,
   }) {
-    final issues = ThemeContrast.check(manifest);
     setState(() {
       _packageBytes = bytes;
       _manifest = manifest;
-      _contrastIssues = issues;
       _errorMessage = null;
       _lastName = manifest.name;
       _lastDesc = manifest.description;
@@ -333,7 +326,6 @@ class _ThemeSubmissionScreenState extends State<ThemeSubmissionScreen> {
       !_submitting &&
       _session != null &&
       _packageBytes != null &&
-      _contrastIssues.isEmpty &&
       _rightsConfirmed &&
       _nameController.text.trim().isNotEmpty;
 
@@ -399,7 +391,6 @@ class _ThemeSubmissionScreenState extends State<ThemeSubmissionScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final tokens = AppThemeTokens.of(context);
     final isAdmin = auth.user?.isAdmin == true;
 
     return Scaffold(
@@ -465,51 +456,6 @@ class _ThemeSubmissionScreenState extends State<ThemeSubmissionScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    if (_manifest != null)
-                      Container(
-                        key: const ValueKey('theme-submit-contrast-status'),
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: _contrastIssues.isEmpty
-                              ? tokens.primaryContainer
-                              : Theme.of(context).colorScheme.errorContainer,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: _contrastIssues.isEmpty
-                            ? Text(
-                                '对比度检查通过：明暗全套配对均满足可读性要求',
-                                style: TextStyle(
-                                  color: tokens.onPrimaryContainer,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              )
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '对比度未达标（共 ${_contrastIssues.length} 项），请返回主题工坊点击“自动修正”后再投稿：',
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onErrorContainer,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  for (final issue in _contrastIssues.take(4))
-                                    Text(
-                                      '• ${issue.brightness == Brightness.dark ? "深色" : "浅色"} ${issue.foreground} / ${issue.background}：${issue.ratio.toStringAsFixed(2)} < ${issue.minimum}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onErrorContainer,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                      ),
                     AppCard(
                       child: Padding(
                         padding: const EdgeInsets.all(14),

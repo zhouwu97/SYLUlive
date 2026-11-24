@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../../theme/app_theme_tokens.dart';
 import '../../utils/app_navigator.dart';
+import '../../utils/responsive_util.dart';
 import 'theme_presentation.dart';
 import 'themed_wallpaper_layer.dart';
 
@@ -185,6 +186,9 @@ class ThemeHeroLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (ResponsiveUtil.useSideNavigation(context)) {
+      return const SizedBox.shrink();
+    }
     return ValueListenableBuilder<int>(
       valueListenable: currentHomeTabIndex,
       builder: (context, tab, _) {

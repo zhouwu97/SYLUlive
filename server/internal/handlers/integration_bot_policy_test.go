@@ -109,6 +109,7 @@ func TestManagedBotHTTPCreatePausedEditRecentPauseAndReadPolicy(t *testing.T) {
 		Targets []services.ManagedBotReplyTarget `json:"reply_targets"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &pending))
+	require.Contains(t, w.Body.String(), `"mention_name":"新建鱼"`)
 	require.Len(t, pending.Targets, 1)
 	require.Equal(t, addressed.ID, pending.Targets[0].ReplyID)
 	require.NotContains(t, w.Body.String(), addressed.Content)

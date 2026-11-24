@@ -582,7 +582,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         if (id != null && !_openingNotificationIds.add(id)) return;
         try {
           // 已读历史也要校准其他入口，不能因本页红点已消失而跳过系统清理。
-          if ((type == 'reply' || !isRead) && id != null) {
+          if ((type == 'reply' || !isRead) &&
+              id != null &&
+              type != 'feedback_update' &&
+              type != 'feedback_admin_update') {
             final accountId = session.accountId;
             if (accountId == null) return;
             try {
@@ -691,6 +694,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 ),
               ),
             );
+            if (mounted && _isCurrentSession(auth, session)) {
+              await _loadReplies();
+            }
           }
         } finally {
           if (id != null) _openingNotificationIds.remove(id);

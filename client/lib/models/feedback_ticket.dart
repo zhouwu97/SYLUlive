@@ -18,6 +18,7 @@ class FeedbackTicket {
   final bool adminViewed;
   final DateTime? adminFirstViewedAt;
   final int userUnreadCount;
+  final int adminUnreadCount;
   final String? appVersion;
   final String? buildNumber;
   final String? deviceModel;
@@ -50,6 +51,7 @@ class FeedbackTicket {
     this.adminViewed = false,
     this.adminFirstViewedAt,
     this.userUnreadCount = 0,
+    this.adminUnreadCount = 0,
     this.appVersion,
     this.buildNumber,
     this.deviceModel,
@@ -88,6 +90,7 @@ class FeedbackTicket {
           ? DateTime.tryParse(json['admin_first_viewed_at'] as String)
           : null,
       userUnreadCount: json['user_unread_count'] as int? ?? 0,
+      adminUnreadCount: json['admin_unread_count'] as int? ?? 0,
       appVersion: json['app_version'] as String?,
       buildNumber: json['build_number'] as String?,
       deviceModel: json['device_model'] as String?,

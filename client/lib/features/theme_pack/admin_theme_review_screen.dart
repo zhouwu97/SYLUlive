@@ -115,8 +115,10 @@ class _AdminThemeReviewScreenState extends State<AdminThemeReviewScreen>
     try {
       final repo = _repo(auth);
       final results = await Future.wait([
-        repo.adminList(session: session!, status: 'pending', cancelToken: token),
-        repo.adminList(session: session, status: 'approved', cancelToken: token),
+        repo.adminList(
+            session: session!, status: 'pending', cancelToken: token),
+        repo.adminList(
+            session: session, status: 'approved', cancelToken: token),
       ]);
       if (!mounted ||
           token.isCancelled ||
@@ -691,9 +693,22 @@ class _AdminThemeReviewDetailScreenState
   ) {
     if (current == null || previous == null) return const [];
     final diffs = <String>[];
-    for (final key in ['name', 'description', 'license', 'minAppVersion', 'shape']) {
+    for (final key in [
+      'name',
+      'description',
+      'license',
+      'minAppVersion',
+      'shape'
+    ]) {
       if ('${current[key]}' != '${previous[key]}') {
-        diffs.add('$key：${previous[key] ?? "默认"} → ${current[key] ?? "默认"}');
+        final label = const {
+          'name': '主题名称',
+          'description': '主题简介',
+          'license': '使用许可',
+          'minAppVersion': '适用版本',
+          'shape': '圆角风格',
+        }[key]!;
+        diffs.add('$label已更新');
       }
     }
     if (jsonEncode(current['layout']) != jsonEncode(previous['layout'])) {
@@ -708,13 +723,14 @@ class _AdminThemeReviewDetailScreenState
     }
     for (final mode in ['light', 'dark']) {
       final curTokens = (current[mode] as Map?)?['tokens'] as Map? ?? const {};
-      final prevTokens = (previous[mode] as Map?)?['tokens'] as Map? ?? const {};
+      final prevTokens =
+          (previous[mode] as Map?)?['tokens'] as Map? ?? const {};
       var changedTokens = 0;
       for (final tk in curTokens.keys) {
         if (curTokens[tk] != prevTokens[tk]) changedTokens++;
       }
       if (changedTokens > 0) {
-        diffs.add('${mode == "dark" ? "深色" : "浅色"}配色修改了 $changedTokens 个语义 Token');
+        diffs.add('${mode == "dark" ? "深色" : "浅色"}模式调整了 $changedTokens 处配色');
       }
       if (jsonEncode((current[mode] as Map?)?['decorations']) !=
           jsonEncode((previous[mode] as Map?)?['decorations'])) {
@@ -779,9 +795,7 @@ class _AdminThemeReviewDetailScreenState
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          isTrialingThis
-                              ? '当前状态：正在全局试用此待审主题'
-                              : '当前状态：未开启试用',
+                          isTrialingThis ? '正在试用，可返回各页面查看效果' : '先试用，看看实际效果',
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
@@ -819,7 +833,11 @@ class _AdminThemeReviewDetailScreenState
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '作者：${sub.author?.nickname ?? "UID ${sub.authorUserId}"} · 许可：${sub.license} · 最低版本：${sub.minAppVersion} · 大小：${ThemeReviewReasons.formatBytes(sub.packageSize)}',
+                        '作者：${sub.author?.nickname ?? "用户 ${sub.authorUserId}"} · ${ThemeReviewReasons.formatBytes(sub.packageSize)}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      Text(
+                        '${ThemeReviewReasons.licenseLabel(sub.license)} · 适用于 ${sub.minAppVersion} 及以上版本',
                         style: const TextStyle(fontSize: 12),
                       ),
                       if (sub.tags.isNotEmpty) ...[
@@ -882,7 +900,8 @@ class _AdminThemeReviewDetailScreenState
                         ))
                           Padding(
                             padding: const EdgeInsets.only(bottom: 3),
-                            child: Text('• $line', style: const TextStyle(fontSize: 12.5)),
+                            child: Text('• $line',
+                                style: const TextStyle(fontSize: 12.5)),
                           ),
                       ],
                     ),
@@ -900,14 +919,27 @@ class _AdminThemeReviewDetailScreenState
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          '布局、卡片、图片效果与装饰原图层次',
+                          '主题效果',
                           style: TextStyle(fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '圆角档位：${manifestMap['shape'] ?? 'standard'} · 页头模板：${layoutMap == null || layoutMap.isEmpty ? '全部默认 standard' : jsonEncode(layoutMap)}',
+                          '圆角：${const {
+                            'compact': '小圆角',
+                            'standard': '标准圆角',
+                            'rounded': '大圆角'
+                          }[manifestMap['shape'] ?? 'standard']}',
                           style: const TextStyle(fontSize: 12),
                         ),
+                        for (final page in const ['home', 'campus', 'me'])
+                          Text(
+                            '${_pageLabel(page)}页头：${const {
+                              'standard': '图文分区',
+                              'compact': '紧凑排列',
+                              'immersive': '沉浸插画'
+                            }[(layoutMap?[page] as Map?)?['preset'] ?? 'standard']}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         for (final mode in ['light', 'dark']) ...[
                           const SizedBox(height: 6),
                           _VariantInspectionSection(
@@ -978,7 +1010,8 @@ class _AdminThemeReviewDetailScreenState
                           style: const TextStyle(fontSize: 12.5),
                         ),
                         if (launcherMap['custom'] != null &&
-                            _loadedPack?.contents[launcherMap['custom']] != null)
+                            _loadedPack?.contents[launcherMap['custom']] !=
+                                null)
                           Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: ClipRRect(
@@ -1075,7 +1108,8 @@ class _PreviewBox extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             child: bytes == null
                 ? Container(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                     child: const Center(child: Icon(Icons.image_outlined)),
                   )
                 : Image.memory(bytes!, fit: BoxFit.cover),
@@ -1086,6 +1120,35 @@ class _PreviewBox extends StatelessWidget {
       ],
     );
   }
+}
+
+String _pageLabel(String page) =>
+    const {
+      'global': '全局',
+      'home': '首页',
+      'campus': '校园',
+      'me': '我的',
+      'schedule': '课表',
+      'secondary': '其他页面',
+    }[page] ??
+    page;
+
+String _imageEffects(Map settings) {
+  final adjustments = settings['adjustments'] as Map?;
+  final brightness = (adjustments?['brightness'] as num?) ?? 0;
+  final contrast = (adjustments?['contrast'] as num?) ?? 100;
+  final saturation = (adjustments?['saturation'] as num?) ?? 100;
+  final blur = (settings['blur'] as num?) ?? 0;
+  final scrim = (settings['scrim'] as num?) ?? 0;
+  final effects = [
+    if (brightness != 0)
+      '亮度${brightness > 0 ? '提高' : '降低'} ${brightness.abs().round()}',
+    if (contrast != 100) '对比度 ${contrast.round()}%',
+    if (saturation != 100) '饱和度 ${saturation.round()}%',
+    if (blur > 0) '背景虚化',
+    if (scrim > 0) '遮罩 ${(scrim * 100).round()}%',
+  ];
+  return effects.isEmpty ? '保留原图效果' : effects.join('、');
 }
 
 class _VariantInspectionSection extends StatelessWidget {
@@ -1108,14 +1171,33 @@ class _VariantInspectionSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '$modeLabel：透明度 ${variant['componentOpacity'] ?? 1.0} · 卡片样式 ${cs == null ? "默认" : jsonEncode(cs)}',
+          '$modeLabel模式',
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
+        Text(
+          '卡片：${const {
+            'solid': '纯色底',
+            'tint': '淡彩底',
+            'glass': '玻璃效果'
+          }[cs?['fill'] ?? 'solid']} · ${const {
+            'none': '无阴影',
+            'soft': '柔和阴影',
+            'medium': '明显阴影'
+          }[cs?['shadow'] ?? 'soft']} · 不透明度 ${(((variant['componentOpacity'] as num?) ?? 1) * 100).round()}%',
+          style: const TextStyle(fontSize: 12),
+        ),
+        if (cs?['borderWidth'] != null)
+          Text(
+            (cs!['borderWidth'] as num) == 0
+                ? '卡片边缘：无描边'
+                : '卡片边缘：${cs['borderWidth']} 宽描边',
+            style: const TextStyle(fontSize: 12),
+          ),
         if (walls != null)
           for (final e in walls.entries)
             if (e.value is Map)
               Text(
-                '  壁纸[${e.key}]：${(e.value as Map)['portrait']} · 调色 ${jsonEncode((e.value as Map)['adjustments'] ?? "默认")}',
+                '${_pageLabel(e.key as String)}背景：主题壁纸 · ${_imageEffects(e.value as Map)}',
                 style: const TextStyle(fontSize: 11.5),
               ),
         if (decos != null)
@@ -1123,7 +1205,7 @@ class _VariantInspectionSection extends StatelessWidget {
             if (e.value is Map) ...[
               if ((e.value as Map)['background'] is Map)
                 Text(
-                  '  页头背景[${e.key}]：${((e.value as Map)['background'] as Map)['image']} · 调色 ${jsonEncode(((e.value as Map)['background'] as Map)['adjustments'] ?? "默认")}',
+                  '${_pageLabel(e.key as String)}页头插画：${_imageEffects((e.value as Map)['background'] as Map)}',
                   style: const TextStyle(fontSize: 11.5),
                 ),
               for (var i = 0;
@@ -1145,7 +1227,7 @@ class _VariantInspectionSection extends StatelessWidget {
                             ),
                           Expanded(
                             child: Text(
-                              '  贴纸[${e.key} #${i + 1}]：$imgPath (x=${st['x']}, y=${st['y']}, w=${st['width']}, rot=${st['rotation']}°)',
+                              '${_pageLabel(e.key as String)}贴纸 ${i + 1}：横向 ${((st['x'] as num) * 100).round()}%、纵向 ${((st['y'] as num) * 100).round()}%，宽度 ${((st['width'] as num) * 100).round()}%，旋转 ${st['rotation']}°',
                               style: const TextStyle(fontSize: 11.5),
                             ),
                           ),

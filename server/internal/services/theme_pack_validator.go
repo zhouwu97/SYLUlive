@@ -313,10 +313,6 @@ func ValidateAndNormalizeThemePack(rawZip []byte, overrides ThemeMetadataOverrid
 		return nil, err
 	}
 
-	if err := checkManifestContrast(parsedManifest); err != nil {
-		return nil, err
-	}
-
 	// 按唯一 (path, kind) 解压引用资源并累计解压总预算（96MB），忽略未引用条目。
 	var expandedTotal int64
 	rawEntryCache := make(map[string][]byte, len(refs))

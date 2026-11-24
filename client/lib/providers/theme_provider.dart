@@ -311,6 +311,8 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _bottomNavClearMaterial = false;
   bool _bottomNavSetupHintDismissed = false;
   bool _bottomNavSetupHintSeen = false;
+  bool _themeStoreSetupHintDismissed = false;
+  bool _themeStoreSetupHintSeen = false;
   bool _bottomNavLiquidGlassConfirmed = false;
   final DevicePerformanceLevel? _performanceLevelOverride;
   bool _predictiveBack = _defaultPredictiveBack;
@@ -540,6 +542,8 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       _navigationMotion?['clearMaterial'] as bool? ?? _bottomNavClearMaterial;
   bool get showBottomNavSetupHint =>
       isLoaded && !_bottomNavSetupHintDismissed && !_bottomNavSetupHintSeen;
+  bool get showThemeStoreSetupHint =>
+      isLoaded && !_themeStoreSetupHintDismissed && !_themeStoreSetupHintSeen;
   double get bottomNavBlur => bottomNavClearMaterial ? 0 : 2;
   double? get bottomNavTint => bottomNavClearMaterial ? .06 : .26;
   DevicePerformanceLevel get devicePerformanceLevel =>
@@ -699,6 +703,10 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     _bottomNavClearMaterial = prefs.getBool('bottom_nav_clear_material') ?? false;
     _bottomNavSetupHintDismissed = prefs.getBool('bottom_nav_setup_hint_dismissed') ?? false;
     _bottomNavSetupHintSeen = prefs.getBool('bottom_nav_setup_hint_seen') ?? false;
+    _themeStoreSetupHintDismissed =
+        prefs.getBool('theme_store_setup_hint_dismissed') ?? false;
+    _themeStoreSetupHintSeen =
+        prefs.getBool('theme_store_setup_hint_seen') ?? false;
     final customIntensity = prefs.getDouble('bottom_nav_custom_intensity') ?? .65;
     _bottomNavCustomIntensity = customIntensity.isFinite && customIntensity > 0
         ? customIntensity.clamp(0.0, 1.0) : .65;
@@ -1026,6 +1034,20 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     _bottomNavSetupHintSeen = true;
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool('bottom_nav_setup_hint_seen', true);
+    notifyListeners();
+  }
+
+  Future<void> dismissThemeStoreSetupHint() async {
+    _themeStoreSetupHintDismissed = true;
+    final prefs = await AppPreferencesStore.getInstance();
+    await prefs.setBool('theme_store_setup_hint_dismissed', true);
+    notifyListeners();
+  }
+
+  Future<void> markThemeStoreSetupHintSeen() async {
+    _themeStoreSetupHintSeen = true;
+    final prefs = await AppPreferencesStore.getInstance();
+    await prefs.setBool('theme_store_setup_hint_seen', true);
     notifyListeners();
   }
 
@@ -1656,6 +1678,67 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     final activeId = (src['themeId'] ?? src['id'])?.toString().toLowerCase();
     return activeId == themeId.toLowerCase() && src['version'] == version;
   }
+
+  /// 本机编辑的资源已在选取边界校验；直接保存分组与受管文件，不生成导出包。
+  Future<void> applyEditedAppearance(
+    ThemeAppearance edited,
+    Set<ThemeGroup> groups,
+  ) =>
+      _queueAppearanceOperation((prefs) async {
+        if (!_isLoaded) {
+          _applyStoredPreferences(prefs);
+          _isLoaded = true;
+        }
+        await _initializeThemeFiles(prefs);
+        final selected = groups.intersection(builtInDefaultGroups);
+        final snapshot = _snapshotAppearance(prefs);
+        var changes = ThemeAppearance({
+          for (final group in selected)
+            if (edited.group(group) != null) group.name: edited.group(group),
+        });
+        for (final raw in changes.paths.toSet()) {
+          if (!isLocalFileBackground(raw)) continue;
+          final local = raw.startsWith('file://')
+              ? File.fromUri(Uri.parse(raw)).path
+              : raw;
+          final adopted = await themePacks.adoptWallpaper(local);
+          changes = changes.replacePath(raw, adopted);
+        }
+        final data = {..._appearance.data};
+        for (final group in selected) {
+          final value = changes.group(group);
+          if (value == null) {
+            data.remove(group.name);
+          } else {
+            data[group.name] = value;
+          }
+        }
+        if (selected.contains(ThemeGroup.navigation) &&
+            data['navigation'] != null &&
+            _appearance.group(ThemeGroup.navigation)?['motion'] != null) {
+          data['navigation'] = {
+            ...data['navigation'] as Map<String, dynamic>,
+            'motion': _appearance.group(ThemeGroup.navigation)!['motion'],
+          };
+        }
+        final next = ThemeAppearance(data);
+        await ThemeFontRegistry.ensureLoaded(next.group(ThemeGroup.font));
+        await _commitAppearance(prefs, next, snapshot, notifyImmediately: false);
+        final oldTrialStaging = _trial?.stagingDirectory;
+        _trialGeneration++;
+        _trial = null;
+        if (!_disposed) notifyListeners();
+        await HomeWidgetService.syncThemeAppearance(next, prefs: prefs);
+        if (oldTrialStaging != null) {
+          await themePacks.removeStagingDirectory(oldTrialStaging);
+        }
+        await _cleanupThemeFiles();
+      });
+
+  Future<void> applyOriginalDefaultAppearance() => applyEditedAppearance(
+        const ThemeAppearance.originalDefault(),
+        builtInDefaultGroups,
+      );
 
   Future<bool> applyInstalledTheme(
     InstalledTheme theme,

@@ -200,7 +200,10 @@ class CampusHeader extends StatelessWidget {
             ),
           ],
         );
-        return Container(
+        return AppCardSurface(
+          blur: 0,
+          surfaceOpacity: 1,
+          themeArt: false,
           padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
           decoration: BoxDecoration(
             color: tokens.card,
@@ -234,7 +237,10 @@ class CampusHeader extends StatelessWidget {
         );
       },
       compactInfoBuilder: (_, layout) {
-        return Container(
+        return AppCardSurface(
+          blur: 0,
+          surfaceOpacity: 1,
+          themeArt: false,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           decoration: BoxDecoration(
             color: tokens.card,

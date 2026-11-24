@@ -7,6 +7,7 @@ import 'package:shenliyuan/screens/settings/bottom_navigation_settings_screen.da
 import 'package:shenliyuan/widgets/liquid_bottom_nav.dart';
 import 'package:shenliyuan/widgets/floating_bottom_nav.dart';
 import 'package:shenliyuan/widgets/bottom_nav_setup_hint.dart';
+import 'package:shenliyuan/widgets/theme_store_setup_hint.dart';
 
 Widget app(ThemeProvider theme) => ChangeNotifierProvider.value(
     value: theme,
@@ -41,6 +42,35 @@ void main() {
     await tester.pumpWidget(host(restarted, true));
     await tester.pump(const Duration(seconds: 2));
     expect(find.text('首次使用建议'), findsNothing);
+  });
+  testWidgets('未到首页不消费主题商城首次提示；展示后即使未确认重启也不重复', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    final provider = ThemeProvider(loadOnStart: false);
+    addTearDown(provider.dispose);
+    await provider.loadThemeForTesting();
+    Widget host(ThemeProvider theme, bool eligible) =>
+        ChangeNotifierProvider.value(
+            value: theme,
+            child: MaterialApp(
+                home: Scaffold(body: ThemeStoreSetupHint(eligible: eligible))));
+    await tester.pumpWidget(host(provider, false));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('发现主题商城'), findsNothing);
+    expect(provider.showThemeStoreSetupHint, isTrue);
+    await tester.pumpWidget(host(provider, true));
+    await tester.pump(const Duration(milliseconds: 850));
+    await tester.pumpAndSettle();
+    expect(find.text('发现主题商城'), findsOneWidget);
+    expect(find.text('去试用'), findsOneWidget);
+    final prefs = await AppPreferencesStore.getInstance();
+    expect(prefs.getBool('theme_store_setup_hint_seen'), isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    final restarted = ThemeProvider(loadOnStart: false);
+    addTearDown(restarted.dispose);
+    await restarted.loadThemeForTesting();
+    await tester.pumpWidget(host(restarted, true));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('发现主题商城'), findsNothing);
   });
   test('强度与预设联动，并修复旧版不一致记录', () async {
     AppPreferencesStore.setMockInitialValues({

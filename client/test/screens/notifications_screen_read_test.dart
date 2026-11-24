@@ -78,6 +78,48 @@ Future<void> _pumpUntilRequest(
 }
 
 void main() {
+  testWidgets('历史工单通知打开会话后刷新整组，不提前消费单条提醒', (tester) async {
+    final dio = Dio();
+    var opened = false;
+    var individualReads = 0;
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+      Object data;
+      if (request.path == '/feedback/tickets/200') {
+        opened = true;
+        data = {
+          'ticket': {'id': 200, 'title': '同一工单', 'status': 'pending'},
+          'messages': [], 'history': [],
+        };
+      } else if (request.path == '/notifications/read-selected') {
+        individualReads++;
+        data = {};
+      } else {
+        data = {
+          'items': opened ? [] : [
+            for (var i = 1; i <= 2; i++) {
+              'id': i, 'type': 'feedback_update', 'related_id': 200,
+              'content': '工单新消息$i', 'is_read': false,
+              'created_at': '2026-11-24T01:00:00Z',
+            },
+          ],
+          'has_more': false,
+        };
+      }
+      handler.resolve(Response(requestOptions: request, statusCode: 200, data: data));
+    }));
+    await tester.pumpWidget(_app(dio));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('工单新消息1'));
+    await tester.pumpAndSettle();
+    expect(opened, isTrue);
+    expect(individualReads, 0);
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(find.text('工单新消息1'), findsNothing);
+    expect(find.text('工单新消息2'), findsNothing);
+    expect(find.text('全部已读'), findsNothing);
+  });
+
   testWidgets('被 @ 的回复通知标题显示为“@了你”并去掉正文前缀', (tester) async {
     final dio = Dio();
     dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {

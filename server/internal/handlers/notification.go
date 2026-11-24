@@ -81,6 +81,7 @@ func (h *NotificationHandler) GetUnreadCount(c *gin.Context) {
 	if err := h.db.Model(&models.Notification{}).
 		Where("user_id = ? AND is_read = ?", uid, false).
 		Where("type NOT IN ?", models.RetiredNotificationTypes).
+		Where("type NOT IN ?", models.FeedbackNotificationTypes).
 		Count(&count).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取未读数量失败"})
 		return
@@ -91,7 +92,7 @@ func (h *NotificationHandler) GetUnreadCount(c *gin.Context) {
 	})
 }
 
-// GetNotifications 获取所有类型的通知列表
+// GetNotifications 获取通用通知；工单更新在工单会话内展示与消费。
 func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	uid := userID.(uint)
@@ -136,7 +137,8 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 
 	var notifications []models.Notification
 	query := h.db.Where("user_id = ?", uid).
-		Where("type NOT IN ?", models.RetiredNotificationTypes)
+		Where("type NOT IN ?", models.RetiredNotificationTypes).
+		Where("type NOT IN ?", models.FeedbackNotificationTypes)
 	if c.Query("cursor") != "" {
 		query = query.Where(
 			"(created_at < ? OR (created_at = ? AND id < ?))",
@@ -234,6 +236,8 @@ func (h *NotificationHandler) markNotificationsRead(c *gin.Context, notification
 	query := h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ? AND id <= ?", uid, false, maxID)
 	if notificationType != "" {
 		query = query.Where("type = ?", notificationType)
+	} else {
+		query = query.Where("type NOT IN ?", models.FeedbackNotificationTypes)
 	}
 	if err := query.Update("is_read", true).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "标记已读失败"})

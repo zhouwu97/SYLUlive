@@ -285,7 +285,7 @@ class AppCardSurface extends Container {
     final radius = box?.borderRadius ?? BorderRadius.zero;
     final plain = box == null
         ? BoxDecoration(color: surface)
-        : box.color == null && box.gradient == null
+        : box.gradient == null
             ? box.copyWith(color: surface)
             : box;
     final shape = box?.shape == BoxShape.circle
@@ -431,7 +431,10 @@ class AppCard extends Card {
     final outerShadows = cardStyle?.resolveBoxShadows(
       theme.brightness == Brightness.dark,
     );
-    final surface = color ?? cardTheme.color ?? tokens.card;
+    final baseSurface = color ?? cardTheme.color ?? tokens.card;
+    final surface = cardStyle?.tinted == true && baseSurface == tokens.card
+        ? Color.lerp(tokens.card, tokens.primaryContainer, 0.32)!
+        : baseSurface;
     Widget clipped = ClipPath(
       clipper: ShapeBorderClipper(shape: effectiveShape),
       child: FrostedGlass(
@@ -445,8 +448,11 @@ class AppCard extends Card {
               : settings?.canCustomizeCardMaterial == true
                   ? appGlassSurfaceColor(context, surface, alpha)
                   : alpha == 1
-                      ? color
-                      : fill.withValues(alpha: fill.a * alpha),
+                      ? surface != baseSurface
+                          ? surface
+                          : color
+                      : (surface != baseSurface ? surface : fill)
+                          .withValues(alpha: fill.a * alpha),
           shape: effectiveShape,
           shadowColor: (glass || outerShadows != null)
               ? Colors.transparent

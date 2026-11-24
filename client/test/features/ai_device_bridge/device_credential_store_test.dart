@@ -33,15 +33,15 @@ void main() {
     final secure = MemorySecretStore();
     final store = DeviceCredentialStore(secretStore: secure);
     const credentials = DeviceErkeCredentials(
-      casPassword: 'cas-secret',
-      erkePassword: 'erke-secret',
+      casPassword: ' @Fixture0+&=%中文• ',
+      erkePassword: ' @Fixture0+&=%中文• ',
     );
 
     await store.writeErke('20260001', credentials);
 
     final restored = await store.readErke('20260001');
-    expect(restored?.casPassword, 'cas-secret');
-    expect(restored?.erkePassword, 'erke-secret');
+    expect(restored?.casPassword, credentials.casPassword);
+    expect(restored?.erkePassword, credentials.erkePassword);
     expect(await store.readErke('20260002'), isNull);
 
     await store.deleteErke('20260001');

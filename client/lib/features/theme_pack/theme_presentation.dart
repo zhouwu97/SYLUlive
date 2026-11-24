@@ -8,6 +8,8 @@ import '../../providers/theme_provider.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/app_theme_style.dart';
 import '../../theme/app_theme_tokens.dart';
+import '../../utils/responsive_util.dart';
+import '../../widgets/app_card.dart';
 import 'theme_appearance.dart';
 import 'theme_hero_layer.dart';
 import 'theme_manifest.dart';
@@ -213,8 +215,11 @@ class ThemeHeaderDecorationArea extends StatelessWidget {
             : MediaQuery.sizeOf(context).width;
         final boxWidth =
             (availableWidth * layout.imageWidth).clamp(1.0, availableWidth);
-        final boxHeight =
-            this.boxHeight ?? layout.imageHeight.clamp(96.0, 280.0);
+        final tablet = ResponsiveUtil.useSideNavigation(context) && !transparent;
+        final boxHeight = this.boxHeight ??
+            (tablet
+                ? (boxWidth * 2 / 3).clamp(160.0, 300.0)
+                : layout.imageHeight.clamp(96.0, 280.0));
         final dpr = MediaQuery.devicePixelRatioOf(context);
         final radius = transparent
             ? BorderRadius.zero
@@ -226,7 +231,43 @@ class ThemeHeaderDecorationArea extends StatelessWidget {
             : <String, dynamic>{
                 ...background!,
                 'portrait': bgImagePath ?? '',
+                if (tablet) 'fit': 'contain',
               };
+
+        if (tablet && bgSettings != null && bgImagePath != null) {
+          Widget art = ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: boxWidth, maxHeight: 300),
+            child: ClipRRect(
+              key: ValueKey('theme-header-decoration-$slot'),
+              borderRadius: radius,
+              child: Stack(children: [
+                ThemedWallpaperLayer(
+                  settings: bgSettings,
+                  imageProvider: assetResolver(bgImagePath),
+                  intrinsicSize: true,
+                ),
+                if (stickers.isNotEmpty)
+                  Positioned.fill(child: LayoutBuilder(
+                    builder: (context, bounds) => Stack(children: [
+                      for (var i = 0; i < math.min(5, stickers.length); i++)
+                        _buildSticker(
+                          context: context,
+                          index: i,
+                          sticker: stickers[i],
+                          boxWidth: bounds.maxWidth,
+                          boxHeight: bounds.maxHeight,
+                          dpr: dpr,
+                        ),
+                    ]),
+                  )),
+              ]),
+            ),
+          );
+          if (!interactive) {
+            art = ExcludeSemantics(child: IgnorePointer(child: art));
+          }
+          return Align(alignment: layout.boxAlignment, child: art);
+        }
 
         Widget box = SizedBox(
           key: ValueKey('theme-header-decoration-$slot'),
@@ -424,6 +465,30 @@ class ThemeHeaderFrame extends StatelessWidget {
       assetResolver: resolved.assetResolver,
     );
 
+    // 平板按内容栏排版，个人中心分栏仍沿用窄栏上下布局；插画不再按整屏宽度裁切。
+    if (ResponsiveUtil.useSideNavigation(context)) {
+      return LayoutBuilder(builder: (context, constraints) {
+        if (constraints.maxWidth < ResponsiveUtil.mobileMaxWidth) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: layout.preset == 'immersive'
+                ? [decorationWidget, SizedBox(height: spacing), infoWidget]
+                : [infoWidget, SizedBox(height: spacing), decorationWidget],
+          );
+        }
+        return Row(
+          key: ValueKey('theme-header-wide-$slot'),
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(flex: 2, child: infoWidget),
+            const SizedBox(width: 24),
+            Expanded(flex: 3, child: decorationWidget),
+          ],
+        );
+      });
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -441,9 +506,9 @@ class ThemeHeaderFrame extends StatelessWidget {
     );
   }
 
-  /// 只有主壳里的正式页面能使用背景层 hero；预览环境（挂了 ThemePresentationOverride）
-  /// 和二级路由沿用内嵌装饰区。
+  /// 手机主壳使用背景层 hero；平板、预览和二级路由使用所属内容栏的内嵌装饰区。
   static bool immersiveEnabled(BuildContext context) =>
+      !ResponsiveUtil.useSideNavigation(context) &&
       ThemePresentationOverride.maybeOf(context) == null &&
       ModalRoute.of(context)?.isFirst != false;
 }
@@ -502,7 +567,10 @@ class HomeThemedHeaderBanner extends StatelessWidget {
     }
 
     Widget buildInfoCard(ThemeHeaderLayoutSpec layout, {required bool compact}) {
-      return Container(
+      return AppCardSurface(
+        blur: 0,
+        surfaceOpacity: 1,
+        themeArt: false,
         key: const ValueKey('home-themed-header-info'),
         padding: EdgeInsets.symmetric(
           horizontal: 14,

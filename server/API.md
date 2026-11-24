@@ -401,15 +401,27 @@ FEED-H1 加固：
 | `POST`| `/api/messages/:user_id` | 发送私信，首次发送时自动创建会话 |
 | `POST`| `/api/messages/conversations/:id/read` | 将会话中的接收消息标记为已读 |
 | `GET` | `/api/messages/unread_count` | 获取私信未读总数 |
-| `GET` | `/api/user/notifications/unread_count`| 获取未读系统通知和互动红点数 |
-| `POST`| `/api/user/notifications/read` | 标记所有通知为已读 |
+| `GET` | `/api/user/notifications/unread_count`| 获取未读系统通知和互动红点数，不包含工单更新 |
+| `POST`| `/api/user/notifications/read` | 将当前账号的通用通知标为已读，不消费工单会话更新 |
 | `POST`| `/api/notifications/read-selected` | 以当前登录用户为接收者。支持 `{"ids":[通知ID]}`（最多100个），或成功打开目标回复后发送 `{"post_id":帖子ID,"reply_id":回复ID}`；只消费匹配的回复通知 |
+| `POST` | `/api/notifications/replies/read` | 将当前账号全部回复通知标为已读，包含未加载分页；不影响其他类型通知。旧服务端无此路径返回 `404`，客户端保留提醒且提示重试，不降级为全部通知已读 |
 | `GET` | `/api/user/likes/received` | 当前用户的帖子、评论收到的有效点赞；`limit` 默认30、最大50，`cursor` 为上一页返回的点赞ID。响应 `{items,has_more,next_cursor}`，每项含 `id,user_id,nickname,avatar,target_type,target_id,post_id,post_title,created_at`；过滤自赞、取消的赞、已删除/受限内容和注销账号 |
 
 用户资料的 `total_likes_received` 与此明细采用同一有效点赞查询：统计他人对本人公开帖子（`normal/sold/closed`）及这些帖子下本人正常评论的现存点赞，每个“点赞人 + 内容类型 + 内容 ID”计一次。同一人赞三条不同内容计 3 次。整帖删除或治理隐藏时，其下各评论作者的获赞也不再计入；恢复公开后仍存在的有效赞重新计入。自赞、已撤回的赞、已删除评论以及点赞账号非 `active`（兼容空状态）的记录不计。本人资料、会话刷新、公开资料及关联作者加载均从事实投影，不直接展示数据库兼容列的历史数值；无有效记录时返回 `0`。分页协议和字段类型不变。
 
-通知已读接口在原有响应上附加 `read_receipt`：`recipient_user_id` 表示接收账号，单条/目标回复读取返回实际归属该账号的 `ids` 和 `reply_ids`，全部已读返回 `all_before_id`。全部已读只处理该水位之前的通知，新产生的通知保持未读。旧客户端可忽略此附加字段。Android 用回执清理系统通知并阻止延迟重放；新回复推送附带 `notification_id`，使用 `reply_notifications_v1` 高优先级渠道，仍遵从用户的系统通知权限。
-| `POST` | `/api/notifications/replies/read` | 将当前账号全部回复通知标为已读，包含未加载分页；不影响其他类型通知。旧服务端无此路径返回 `404`，客户端保留提醒且提示重试，不降级为全部通知已读 |
+通知已读接口在原有响应上附加 `read_receipt`：`recipient_user_id` 表示接收账号，单条/目标回复读取返回实际归属该账号的 `ids` 和 `reply_ids`，全部已读返回 `all_before_id`。全部已读只处理该水位之前的通用通知，新产生的通知保持未读。旧客户端可忽略此附加字段。Android 用回执清理系统通知并阻止延迟重放；新回复推送附带 `notification_id`，使用 `reply_notifications_v1` 高优先级渠道，仍遵从用户的系统通知权限。
+
+`GET /api/notifications` 的列表与上述通用未读计数均排除 `feedback_update`、`feedback_admin_update`；历史工单通知保留在库内，由工单详情消费，不删除或批量改写历史。用户与管理员的工单入口分别使用以下计数：
+
+| 方法 | 路径 | 未读语义 |
+| --- | --- | --- |
+| `GET` | `/api/feedback/tickets/unread-count` | 本人存在未读管理员回复的工单数，响应 `unread_count` |
+| `GET` | `/api/admin/feedback/tickets/stats` | 原业务队列统计保留；新增 `unread_count` 为当前管理员未读更新关联的不同工单数 |
+| `GET` | `/api/admin/feedback/tickets` | 每项新增 `admin_unread_count`，为当前管理员在该会话内的未读更新条数，不新增数据库列 |
+| `GET` | `/api/feedback/tickets/:id` | 仅本人可查看；成功读取完整详情后在同一事务更新工单未读与本账号该会话的通知 |
+| `GET` | `/api/admin/feedback/tickets/:id` | 沿用管理员权限；成功读取完整详情后消费当前管理员在该会话的通知，不替其他管理员已读 |
+
+详情读取先固定本账号该会话的通知 ID 水位。读取期间新增的消息和通知继续保留未读；读取失败、无权访问或已读写入失败均不消费工单未读。已读操作不推进工单业务 `updated_at`。客户端从旧缓存工单通知进入详情时，返回后重新读取通用通知列表。
 
 ## 6.1 统一搜索 (Search)
 
@@ -610,7 +622,7 @@ FEED-H1 加固：
 
 运行状态协议：管理响应新增 `runtime_supported:true` 与 `runtime`；`/bot/policy` 同时返回本人 binding 的不透明ID／代次及 bot `revision`。资料、权限或启停保存递增版本。心跳只接受 `session_id`（UUID）、`sequence`（递增正整数）、`revision`、`state`、`error_code`、`round_id`（可空UUID）、`read_count`（0–5）与 `next_run_in_seconds`（0–86400），拒绝额外字段／查询参数；每绑定每分钟最多12次。状态限定 idle/waiting/loading/completed/empty/error/paused/disabled/scope_required/cooldown/stopped，错误码限定为空或固定的执行／网络／模型配置错误，不接受正文、账号参数或客户端发布结果。
 
-`GET /bot/policy?reply_targets=1` 可为已启用文字自动评论的本人机器人返回最近24小时内最多8条待处理的公开评论。每项目仅包含 `post_id`、`post_type`、`reply_id` 和 `source_version`。候选来自对机器人评论的明确回复、机器人帖子下的顶层评论，以及公开评论中以空格或标点分隔的唯一机器人昵称 `@名称`。排除已答复、已删除、AI 发送和当前不可读的来源。未获得 `community:bot_reply` 或仍处于发言额度限制时无候选。执行端沿用公开上下文与原发布接口复核来源。
+`GET /bot/policy?reply_targets=1` 可为已启用文字自动评论的本人机器人返回最近24小时内最多8条待处理的公开评论。同一响应的 `mention_name` 提供服务端已核实唯一的机器人显示名（小写），无可用名称时为空，供定时浏览与优先互动一致识别点名。每项目仅包含 `post_id`、`post_type`、`reply_id` 和 `source_version`。候选来自对机器人评论的明确回复、机器人帖子下的顶层评论，以及公开评论中以空格或标点分隔的唯一机器人昵称 `@名称`。排除已答复、已删除、AI 发送和当前不可读的来源。未获得 `community:bot_reply` 或仍处于发言额度限制时无候选。执行端沿用公开上下文与原发布接口复核来源。
 
 同一有效 binding 的不同执行会话在两分钟占用内返回 `bot_runtime_busy`；旧序号返回 `stale_bot_runtime`，旧规则版本返回 `bot_policy_changed`。正常 stopped 释放占用，异常退出等待过期。首次加入运行协议后，自动评论／发帖必须携带当前 `runtime_session_id` 和 `bot_revision`，最终事务验证 binding、会话、占用和版本；旧插件省略这些字段返回 `bot_runtime_required`，普通本人确认发布拒绝这些机器人载荷。历史未加入的安装保留兼容入口，不自动获得新 scope。
 

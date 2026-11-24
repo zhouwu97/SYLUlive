@@ -666,7 +666,7 @@ void main() {
       );
       expect(chip.selected, isTrue);
       expect(find.text('先补齐竞赛匹配条件'), findsOneWidget);
-      expect(find.text('还需要：专业、教务认证。'), findsOneWidget);
+      expect(find.text('还需要：专业、教务配置。'), findsOneWidget);
       expect(find.text('填写匹配画像'), findsOneWidget);
     });
 

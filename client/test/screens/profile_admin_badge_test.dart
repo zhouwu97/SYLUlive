@@ -288,6 +288,35 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('工单入口显示未读会话数，返回后清除未读角标并保留待办摘要', (tester) async {
+    final adapter = _PendingAdapter();
+    adapter.responses['/admin/feedback/tickets/stats'] = {
+      'pending_count': 4,
+      'unread_count': 2,
+    };
+    adapter.responses['/admin/feedback/tickets'] = {
+      'tickets': [], 'has_more': false,
+    };
+    await _pumpProfile(tester, adapter);
+    final entry = find.ancestor(
+        of: find.text('工单管理'), matching: find.byType(InkWell));
+    expect(find.descendant(of: entry, matching: find.text('2')), findsOneWidget);
+    expect(find.text('2 个工单有新消息 · 4 条待办'), findsOneWidget);
+    await tester.ensureVisible(find.text('工单管理'));
+    await tester.tap(find.text('工单管理'));
+    await tester.pumpAndSettle();
+    adapter.responses['/admin/feedback/tickets/stats'] = {
+      'pending_count': 4,
+      'unread_count': 0,
+    };
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: entry, matching: find.text('2')), findsNothing);
+    expect(find.descendant(of: entry, matching: find.text('4')), findsNothing);
+    expect(find.text('用户问题、建议与待处理反馈 · 4 条待办'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('单类接口失败仍显示其他已确认待办，大数字角标限制宽度', (tester) async {
     final adapter = _PendingAdapter()..failedPath = '/reports';
     adapter.responses['/admin/exam-papers/pending-count'] = {'count': 120};

@@ -14,6 +14,16 @@ class _Client extends ErkeClient {
   String encryptRsa(String plainText, String publicKeyBase64) => 'ciphertext';
 }
 
+class _SpecialCharacterClient extends ErkeClient {
+  _SpecialCharacterClient({required super.dio, required this.expectedPassword});
+  final String expectedPassword;
+  @override
+  String encryptRsa(String plainText, String publicKeyBase64) {
+    expect(plainText, expectedPassword);
+    return 'cipher+slash/padding=';
+  }
+}
+
 const _login = '<input id="pubKey" value="fixture-key">'
     '<input id="UserName"><input id="Password"><span id="code-box">K777</span>';
 
@@ -27,6 +37,31 @@ String _graduation() => '${[
     '<span id="SunCount">50</span><span id="SunCount1">25</span>';
 
 void main() {
+  test('特殊字符密码保持原样，RSA Base64 中的加号不能变成空格', () async {
+    const password = ' @Fixture0+&=%中文• ';
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.method == 'POST') {
+        final body = options.data as String;
+        expect(body, contains('pwd=cipher%2Bslash%2Fpadding%3D'));
+        final encryptedField = body.split('&').singleWhere((field) => field.startsWith('pwd='));
+        expect(Uri.splitQueryString(encryptedField)['pwd'], 'cipher+slash/padding=');
+        expect(body, isNot(contains(password)));
+      }
+      handler.resolve(Response(
+          requestOptions: options,
+          statusCode: 200,
+          headers: Headers.fromMap({
+            'content-type': ['text/html; charset=utf-8']
+          }),
+          data: utf8.encode(options.method == 'POST'
+              ? '<script>window.location.href="SystemForm/main.htm";</script>'
+              : _login)));
+    }));
+    await _SpecialCharacterClient(dio: dio, expectedPassword: password)
+        .loginToErke('fixture', password);
+  });
+
   test('逐跳保存 Cookie，并用前一跳会话继续请求', () async {
     final dio = Dio(BaseOptions(
         followRedirects: false, validateStatus: (s) => s != null && s < 500));

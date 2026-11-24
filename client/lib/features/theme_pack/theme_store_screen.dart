@@ -1274,7 +1274,7 @@ class _ThemeDetailScreenState extends State<ThemeDetailScreen> {
                         '大小 ${ThemeReviewReasons.formatBytes(item.packageSize)}',
                         style: const TextStyle(fontSize: 12.5),
                       ),
-                      Text('许可 ${item.license}',
+                      Text(ThemeReviewReasons.licenseLabel(item.license),
                           style: const TextStyle(fontSize: 12.5)),
                       Text('下载 ${item.downloads}',
                           style: const TextStyle(fontSize: 12.5)),

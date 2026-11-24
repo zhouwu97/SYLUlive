@@ -260,7 +260,8 @@ class _GoLoopbackServer {
   final Map<String, String> tokens;
 
   static Future<_GoLoopbackServer> start() async {
-    final serverDir = p.normalize(p.join(Directory.current.path, '..', 'server'));
+    final serverDir =
+        p.normalize(p.join(Directory.current.path, '..', 'server'));
     final proc = await Process.start(
       'go',
       const [
@@ -289,8 +290,8 @@ class _GoLoopbackServer {
       const marker = 'HARNESS_READY ';
       final idx = line.indexOf(marker);
       if (idx >= 0 && !readyCompleter.isCompleted) {
-        final payload =
-            jsonDecode(line.substring(idx + marker.length)) as Map<String, dynamic>;
+        final payload = jsonDecode(line.substring(idx + marker.length))
+            as Map<String, dynamic>;
         readyCompleter.complete(payload);
       }
     });
@@ -311,7 +312,8 @@ class _GoLoopbackServer {
       const Duration(seconds: 90),
       onTimeout: () {
         proc.kill();
-        throw TimeoutException('Timed out starting Go loopback server:\n$logBuf');
+        throw TimeoutException(
+            'Timed out starting Go loopback server:\n$logBuf');
       },
     );
     final rawTokens = Map<String, dynamic>.from(payload['tokens'] as Map);
@@ -401,8 +403,7 @@ void main() {
     }
   });
 
-  testWidgets('主题 Beta 默认应用、失败重试、跳转恢复与再次启动',
-      (tester) async {
+  testWidgets('主题 Beta 默认应用、失败重试、跳转恢复与再次启动', (tester) async {
     PackageInfo.setMockInitialValues(
       appName: '沈理校园',
       packageName: 'com.shenliyuan.app',
@@ -443,9 +444,7 @@ void main() {
     expect(themeProvider.hasThemeColors, isFalse);
 
     await tester.tap(find.text('重试'));
-    for (var i = 0;
-        i < 55 && find.text('前往主题设置').evaluate().isEmpty;
-        i++) {
+    for (var i = 0; i < 55 && find.text('前往主题设置').evaluate().isEmpty; i++) {
       await _settleIo(tester, cycles: 2);
     }
     expect(themeProvider.isThemeVersionActive(familyId, 1), isTrue);
@@ -501,7 +500,9 @@ void main() {
               Response(
                 requestOptions: options,
                 statusCode: 200,
-                headers: Headers.fromMap({'etag': ['"etag-ids"']}),
+                headers: Headers.fromMap({
+                  'etag': ['"etag-ids"']
+                }),
                 data: {
                   'items': [
                     {
@@ -668,12 +669,19 @@ void main() {
         await delayed.future;
       }
       final name = more ? '$sort-next' : '$sort-first';
-      return ResponseBody.fromString(jsonEncode({
-        'items': sort == 'official' ? [] : [{'familyId': name, 'name': name}],
-        if (!more) 'nextCursor': 'page-2',
-      }), 200, headers: {
-        Headers.contentTypeHeader: [Headers.jsonContentType],
-      });
+      return ResponseBody.fromString(
+          jsonEncode({
+            'items': sort == 'official'
+                ? []
+                : [
+                    {'familyId': name, 'name': name}
+                  ],
+            if (!more) 'nextCursor': 'page-2',
+          }),
+          200,
+          headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType],
+          });
     });
     await tester.pumpWidget(MaterialApp(
       home: ThemeStoreScreen(repository: ThemeStoreRepository(dio)),
@@ -839,7 +847,8 @@ void main() {
           final image = await boundary.toImage();
           final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
           image.dispose();
-          final directory = await Directory(qaDirectory).create(recursive: true);
+          final directory =
+              await Directory(qaDirectory).create(recursive: true);
           await File(p.join(directory.path, 'theme-store.png'))
               .writeAsBytes(bytes!.buffer.asUint8List());
         });
@@ -1142,7 +1151,7 @@ void main() {
 
     // 3. 管理员拒绝弹窗：未选原因前确认按钮置灰，选中原因后允许提交
     auth.switchUser(id: 3, role: 'admin');
-    const subItem = ThemeSubmissionItem(
+    final subItem = ThemeSubmissionItem(
       id: 'sub-admin-1',
       familyId: '11111111-2222-4333-8444-555555555555',
       version: 1,
@@ -1166,6 +1175,13 @@ void main() {
       reasonMessage: '',
       createdAt: '',
       updatedAt: '',
+      manifest: {
+        ...sharedPackManifest.data,
+        'shape': 'rounded',
+        'layout': {
+          'home': {'preset': 'immersive'},
+        },
+      },
     );
     await tester.pumpWidget(
       _wrapWithProviders(
@@ -1179,6 +1195,15 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.textContaining('使用时需署名'), findsOneWidget);
+    await tester.ensureVisible(find.text('主题效果'));
+    await tester.pumpAndSettle();
+    expect(find.text('圆角：大圆角'), findsOneWidget);
+    expect(find.text('首页页头：沉浸插画'), findsOneWidget);
+    expect(find.text('校园页头：图文分区'), findsOneWidget);
+    expect(find.textContaining('不透明度'), findsWidgets);
+    expect(find.textContaining('"preset"'), findsNothing);
+    expect(find.textContaining('cardStyle'), findsNothing);
     final rejectBtn = find.byKey(const ValueKey('admin-theme-reject-button'));
     await tester.ensureVisible(rejectBtn);
     await tester.tap(rejectBtn);
@@ -1194,8 +1219,7 @@ void main() {
     await _settleIo(tester);
   });
 
-  testWidgets('本机回环 Go 服务端端到端七步闭环（含沉浸页头、贴纸、私有包试用、版本更新与下架深链）',
-      (tester) async {
+  testWidgets('本机回环 Go 服务端端到端七步闭环（含沉浸页头、贴纸、私有包试用、版本更新与下架深链）', (tester) async {
     HttpOverrides.global = null;
     _GoLoopbackServer? server;
     try {
@@ -1328,9 +1352,9 @@ void main() {
             .group(ThemeGroup.material)?['light']?['cardStyle'] as Map?;
         expect(appliedCardStyle?['borderWidth'], 1.5);
         expect(appliedCardStyle?['shadow'], 'soft');
-        final appliedStickers = (themeProvider.appearance
-                .group(ThemeGroup.decoration)?['light']?['home']?['stickers']
-            as List);
+        final appliedStickers =
+            (themeProvider.appearance.group(ThemeGroup.decoration)?['light']
+                ?['home']?['stickers'] as List);
         expect(appliedStickers.length, 2);
         expect((appliedStickers[0] as Map)['x'], 0.82);
         expect((appliedStickers[0] as Map)['rotation'], 12.0);
@@ -1388,7 +1412,8 @@ void main() {
         );
         final localThemes = await themeProvider.installedThemes();
         expect(
-          localThemes.any((t) => t.familyId == familyId && t.manifest.version == 2),
+          localThemes
+              .any((t) => t.familyId == familyId && t.manifest.version == 2),
           isTrue,
         );
         final afterRemoveCatalog = await repoC.listCatalog(sort: 'latest');
@@ -1442,8 +1467,8 @@ void main() {
       );
       final tiny = img.Image(width: 2, height: 2);
       img.fill(tiny, color: img.ColorRgb8(47, 127, 216));
-      final codec =
-          await ui.instantiateImageCodec(Uint8List.fromList(img.encodePng(tiny)));
+      final codec = await ui
+          .instantiateImageCodec(Uint8List.fromList(img.encodePng(tiny)));
       final frame = await codec.getNextFrame();
       codec.dispose();
       PaintingBinding.instance.imageCache.putIfAbsent(

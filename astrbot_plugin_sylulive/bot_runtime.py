@@ -231,7 +231,7 @@ class BotRuntimeManager:
         try:
             async with self.network_slots:
                 automatic = schedule and self.config.get("community_auto_browse", False) is True
-                check_targets = (automatic and not worker.round_task and self.config.get("community_auto_comment", False) is True
+                check_targets = ((automatic or worker.manual) and not worker.round_task and self.config.get("community_auto_comment", False) is True
                                  and (worker.agent is None or not worker.agent.paused))
                 result = await self._policy(worker, check_targets=check_targets)
                 if result.get("bot") is None:
@@ -247,6 +247,11 @@ class BotRuntimeManager:
                     worker.agent.epoch += 1
                     worker.agent.public_call.expected_policy = marker[1]
                     worker.agent.publisher.runtime = lambda: self._publication_context(worker)
+                if check_targets:
+                    name = result.get("mention_name", "")
+                    if name != worker.agent.mention_name:
+                        worker.agent.sampled_out_targets.clear()
+                    worker.agent.mention_name = name
                 worker.agent.publisher.controls = result
                 if self._ready(worker) and worker.error == "service_unavailable":
                     # A recovered control request must not leave a completed round
@@ -286,13 +291,16 @@ class BotRuntimeManager:
         if not worker.agent.publisher.authorized() or not isinstance(targets, list) or len(targets) > 8:
             return None
         policy = BrowsePolicy(self.config)
+        valid_targets = []
         for target in targets:
             if (isinstance(target, dict) and policy.permits({**target, "status": "normal"})
                     and type(target.get("reply_id")) is int and target["reply_id"] > 0
                     and isinstance(target.get("source_version"), str) and re.fullmatch(r"[0-9a-f]{64}", target["source_version"])
                     and not worker.agent.publisher.target_attempted(target["reply_id"])):
-                return target
-        return None
+                valid_targets.append(target)
+        skipped = worker.agent.sampled_out_targets
+        skipped.intersection_update((t["reply_id"], t["source_version"]) for t in valid_targets)
+        return next((t for t in valid_targets if (t["reply_id"], t["source_version"]) not in skipped), None)
 
     async def _report(self, worker, state):
         async with worker.report_lock:

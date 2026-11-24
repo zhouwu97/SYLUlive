@@ -297,7 +297,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
     final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
     final borderColor = isDark ? Colors.white12 : const Color(0xFFE8EEE9);
 
-    final isUnviewed = !ticket.adminViewed;
+    final isUnviewed = !ticket.adminViewed || ticket.adminUnreadCount > 0;
     final isWaiting = ticket.status == 'waiting_user';
 
     return AppCardSurface(
@@ -345,9 +345,11 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
                         ),
                       ),
                       const SizedBox(width: 6),
-                      const Text(
-                        '未查看',
-                        style: TextStyle(
+                      Text(
+                        ticket.adminUnreadCount > 0
+                            ? '${ticket.adminUnreadCount}条未读'
+                            : '未查看',
+                        style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: Colors.red,

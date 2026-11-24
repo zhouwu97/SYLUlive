@@ -261,6 +261,12 @@ void main() {
         ]
       },
       '/admin/exam-papers/pending-count': {'count': 3},
+      '/admin/themes': {
+        'items': [
+          {'id': 'theme-1'},
+          {'id': 'theme-2'},
+        ]
+      },
       '/admin/water/section-icon-reviews': {
         'reviews': [
           {'id': 1}
@@ -276,9 +282,9 @@ void main() {
       ],
     });
     await _pumpProfile(tester, adapter);
-    expect(find.descendant(of: _adminEntry(), matching: find.text('12')),
+    expect(find.descendant(of: _adminEntry(), matching: find.text('14')),
         findsOneWidget);
-    for (final path in ['/reports', '/admin/water/section-icon-reviews']) {
+    for (final path in ['/reports', '/admin/water/section-icon-reviews', '/admin/themes']) {
       expect(
           adapter.requests
               .singleWhere((r) => r.path == path)

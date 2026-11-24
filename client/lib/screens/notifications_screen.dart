@@ -23,6 +23,8 @@ import 'my_content_screen.dart';
 import 'post_detail_screen.dart';
 import 'court_screen.dart';
 import 'feedback/feedback_detail_screen.dart';
+import '../features/theme_pack/admin_theme_review_screen.dart';
+import '../features/theme_pack/theme_submission_screen.dart';
 
 @visibleForTesting
 bool canLoadMoreNotifications({
@@ -544,6 +546,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       actionText = '食堂审核结果';
     } else if (type == 'course_evaluation_result') {
       actionText = '学科评价审核结果';
+    } else if (type == 'theme_pending') {
+      actionText = '主题上线申请待审核';
+    } else if (type == 'theme_review') {
+      actionText = '主题审核结果';
     } else if (type == 'content_governed') {
       actionText = '内容处理通知';
     } else if (type == 'rectification_approved') {
@@ -650,6 +656,20 @@ class _NotificationsScreenState extends State<NotificationsScreen>
               context,
               MaterialPageRoute(
                 builder: (_) => CourtScreen(appealId: relatedId),
+              ),
+            );
+          } else if (type == 'theme_pending' || type == 'theme_review') {
+            if (!mounted) return;
+            if (type == 'theme_pending' && auth.user?.isAdmin != true) {
+              AppFeedback.showSnackBar(context, '需要管理员权限', isError: true);
+              return;
+            }
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => type == 'theme_pending'
+                    ? const AdminThemeReviewScreen()
+                    : const MyThemeSubmissionsScreen(),
               ),
             );
           } else if (postId != null) {
@@ -796,8 +816,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                       color: isDark ? Colors.white70 : Colors.black87,
                       height: 1.4,
                     ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                    maxLines: type == 'theme_pending' || type == 'theme_review'
+                        ? null
+                        : 3,
+                    overflow: type == 'theme_pending' || type == 'theme_review'
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
                   ),
                 ],
               ),

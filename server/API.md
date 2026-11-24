@@ -648,6 +648,8 @@ AstrBot 食堂工具直接匿名复用现有 `/api/canteens/rankings`、`/search
 
 错误响应统一为 `{"error": "...", "code": "theme_*"}`（字段校验错误附带 `"field"`）。`POST /api/reports` 新增 `target_type="theme"`，`target_id` 传版本族 `familyId`（UUID）。
 
+新投稿在同一事务内向有效管理员和超级管理员发送 `theme_pending` 站内通知，排除投稿者本人；同一幂等键重试不重复通知。审核通过上架、拒绝及低版本被取代时向作者发送 `theme_review` 站内通知，拒绝通知包含原因中文说明和管理员填写的补充说明。两类通知均计入通用未读数；App 点击待审通知进入主题审核，点击结果通知进入我的主题投稿。管理处入口及主题审核入口显示待审数量。
+
 | 方法与路径 | 权限 | 说明 |
 | --- | --- | --- |
 | `GET /api/themes` | 公开 | 查询参数：`sort`（`latest`/`popular`/`official`）、`tag`、`q`、`ids`（最多 50 个，批量检查更新）、`cursor`；每页 20 条，支持 `ETag` / `304` |

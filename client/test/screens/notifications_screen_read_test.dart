@@ -1,11 +1,14 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/notifications_screen.dart';
+import 'package:shenliyuan/features/theme_pack/admin_theme_review_screen.dart';
+import 'package:shenliyuan/features/theme_pack/theme_submission_screen.dart';
 
 class _Auth extends ChangeNotifier implements AuthProvider {
   _Auth(this.dio);
@@ -17,6 +20,7 @@ class _Auth extends ChangeNotifier implements AuthProvider {
   int accountSessionEpoch = 0;
 
   int accountId = 1;
+  String role = 'user';
 
   void switchAccount(int id) {
     accountId = id;
@@ -38,6 +42,7 @@ class _Auth extends ChangeNotifier implements AuthProvider {
       id: accountId,
       studentId: '',
       nickname: '测试账号',
+      role: role,
       createdAt: DateTime(2026));
 }
 
@@ -78,6 +83,94 @@ Future<void> _pumpUntilRequest(
 }
 
 void main() {
+  for (final type in ['theme_pending', 'theme_review']) {
+    testWidgets('$type 通知显示主题提示、完整原因并打开对应列表', (tester) async {
+      const channel = MethodChannel('shenliyuan/notification_open');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async => null);
+      addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null));
+      final dio = Dio();
+      final auth = _Auth(dio)..role = type == 'theme_pending' ? 'admin' : 'user';
+      final paths = <String>[];
+      final content = type == 'theme_pending'
+          ? '有新的主题上线申请：《海盐》v1，请前往主题审核处理'
+          : '你的主题《海盐》v1 未通过审核：图片质量不达标：页头文字被背景遮挡，请修改';
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+        paths.add(request.path);
+        handler.resolve(Response(
+          requestOptions: request,
+          statusCode: 200,
+          data: request.path == '/notifications'
+              ? {
+                  'items': [
+                    {'id': 11, 'type': type, 'content': content, 'is_read': false,
+                     'created_at': '2026-11-24T01:00:00Z', 'post_id': 0, 'related_id': 0},
+                  ],
+                  'has_more': false,
+                }
+              : {'items': []},
+        ));
+      }));
+      await tester.pumpWidget(_app(dio, auth: auth));
+      await tester.pumpAndSettle();
+      expect(find.text(type == 'theme_pending' ? '主题上线申请待审核' : '主题审核结果'), findsOneWidget);
+      expect(tester.widget<Text>(find.text(content)).maxLines, isNull);
+      await tester.tap(find.text(content));
+      await _pumpUntilRequest(tester, () => paths.contains(type == 'theme_pending' ? '/admin/themes' : '/themes/submissions'));
+      await tester.pumpAndSettle();
+      expect(paths, contains('/notifications/read-selected'));
+      expect(find.byType(type == 'theme_pending' ? AdminThemeReviewScreen : MyThemeSubmissionsScreen), findsOneWidget);
+      expect(paths, contains(type == 'theme_pending' ? '/admin/themes' : '/themes/submissions'));
+      expect(paths.where((path) => path.startsWith('/posts/')), isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final switchAccount in [false, true]) {
+    testWidgets('主题待审通知等待已读期间${switchAccount ? '切号' : '降权'}不能打开审核页', (tester) async {
+      const channel = MethodChannel('shenliyuan/notification_open');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async => null);
+      addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null));
+      final dio = Dio();
+      final auth = _Auth(dio)..role = 'admin';
+      RequestOptions? readRequest;
+      RequestInterceptorHandler? readHandler;
+      var adminRequests = 0;
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+        if (request.path == '/notifications/read-selected') {
+          readRequest = request;
+          readHandler = handler;
+          return;
+        }
+        if (request.path == '/admin/themes') adminRequests++;
+        handler.resolve(Response(requestOptions: request, statusCode: 200, data: {
+          'items': auth.accountId == 1 ? [
+            {'id': 11, 'type': 'theme_pending', 'is_read': false, 'content': '等待审核的主题',
+             'created_at': '2026-11-24T01:00:00Z', 'post_id': 0, 'related_id': 0},
+          ] : [],
+          'has_more': false,
+        }));
+      }));
+      await tester.pumpWidget(_app(dio, auth: auth));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('等待审核的主题'));
+      await _pumpUntilRequest(tester, () => readHandler != null);
+      if (switchAccount) {
+        auth.switchAccount(2);
+      } else {
+        auth.role = 'user';
+      }
+      readHandler!.resolve(Response(requestOptions: readRequest!, statusCode: 200));
+      await tester.pumpAndSettle();
+      expect(find.byType(AdminThemeReviewScreen), findsNothing);
+      expect(adminRequests, 0);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('历史工单通知打开会话后刷新整组，不提前消费单条提醒', (tester) async {
     final dio = Dio();
     var opened = false;

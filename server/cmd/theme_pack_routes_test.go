@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -428,6 +429,121 @@ func TestThemePackRoutesPermissionsCatalogVersionedDownloadAndRemoval(t *testing
 	require.Equal(t, http.StatusFound, redir.Code)
 	require.Equal(t, "/web/theme/"+wFam, redir.Header().Get("Location"))
 	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, "/theme/not-a-uuid", 0, nil, nil).Code)
+}
+
+func TestThemePackRoutesSubmissionAndReviewNotifications(t *testing.T) {
+	f := newThemeRouteFixture(t)
+	notifications := handlers.NewNotificationHandler(f.db)
+	group := f.router.Group("/api/notifications", middleware.AuthMiddleware(f.db, "theme-routes-test-secret"))
+	group.GET("", notifications.GetNotifications)
+	group.GET("/unread-count", notifications.GetUnreadCount)
+	group.POST("/read", notifications.MarkAllRead)
+	require.NoError(t, f.db.Create(&models.User{ID: 5, Nickname: "已停用管理员", Role: models.RoleAdmin, AccountStatus: "deactivated", PasswordHash: "fixture"}).Error)
+	require.NoError(t, f.db.Create(&models.User{ID: 6, Nickname: "超级管理员", Role: models.RoleSuperAdmin, AccountStatus: "active", PasswordHash: "fixture"}).Error)
+
+	list := func(user uint) []models.Notification {
+		res := f.req(http.MethodGet, "/api/notifications", user, nil, nil)
+		require.Equal(t, http.StatusOK, res.Code, res.Body.String())
+		var items []models.Notification
+		require.NoError(t, json.Unmarshal(res.Body.Bytes(), &items))
+		return items
+	}
+	unread := func(user uint) int {
+		res := f.req(http.MethodGet, "/api/notifications/unread-count", user, nil, nil)
+		require.Equal(t, http.StatusOK, res.Code)
+		var body struct{ Count int }
+		require.NoError(t, json.Unmarshal(res.Body.Bytes(), &body))
+		return body.Count
+	}
+	submit := func(user uint, key, family string) models.ThemePack {
+		res := f.submitPack(t, user, key, family, f.zipV1)
+		require.Equal(t, http.StatusOK, res.Code, res.Body.String())
+		var body struct{ ID string }
+		require.NoError(t, json.Unmarshal(res.Body.Bytes(), &body))
+		var pack models.ThemePack
+		require.NoError(t, f.db.First(&pack, "id = ?", body.ID).Error)
+		return pack
+	}
+
+	first := submit(1, "notify-theme-first-001", "")
+	for _, adminID := range []uint{3, 4, 6} {
+		var items []models.Notification
+		require.NoError(t, f.db.Where("user_id = ?", adminID).Find(&items).Error)
+		require.Len(t, items, 1)
+		require.Equal(t, "theme_pending", items[0].Type)
+		require.Equal(t, uint(1), items[0].FromUID)
+		require.Contains(t, items[0].Content, first.Name)
+		require.False(t, items[0].IsRead)
+	}
+	require.Equal(t, 1, unread(3))
+	require.Empty(t, list(1))
+	require.Empty(t, list(2))
+	var inactiveCount int64
+	require.NoError(t, f.db.Model(&models.Notification{}).Where("user_id = ?", 5).Count(&inactiveCount).Error)
+	require.Zero(t, inactiveCount)
+
+	// 重发同一申请不重复通知，越权审核不产生结果通知。
+	require.Equal(t, first.ID, submit(1, "notify-theme-first-001", "").ID)
+	require.Len(t, list(3), 1)
+	path := "/api/admin/themes/" + first.ID + "/review"
+	rejectedBody := `{"approve":false,"reasonCode":"quality","note":"页头文字被背景遮挡，请修改"}`
+	require.Equal(t, http.StatusForbidden, f.req(http.MethodPost, path, 2, strings.NewReader(rejectedBody), map[string]string{"Content-Type": "application/json"}).Code)
+	require.Empty(t, list(1))
+	require.Equal(t, http.StatusOK, f.req(http.MethodPost, path, 3, strings.NewReader(rejectedBody), map[string]string{"Content-Type": "application/json"}).Code)
+	items := list(1)
+	require.Len(t, items, 1)
+	require.Equal(t, "theme_review", items[0].Type)
+	require.Contains(t, items[0].Content, services.ThemeReviewReasonMessages["quality"])
+	require.Contains(t, items[0].Content, "页头文字被背景遮挡，请修改")
+	require.Equal(t, 1, unread(1))
+	require.Equal(t, http.StatusConflict, f.req(http.MethodPost, path, 4, strings.NewReader(rejectedBody), map[string]string{"Content-Type": "application/json"}).Code)
+	require.Len(t, list(1), 1)
+
+	second := submit(1, "notify-theme-update-002", first.FamilyID)
+	require.Equal(t, http.StatusOK, f.req(http.MethodPost, "/api/admin/themes/"+second.ID+"/review", 4, strings.NewReader(`{"approve":true}`), map[string]string{"Content-Type": "application/json"}).Code)
+	items = list(1)
+	require.Len(t, items, 2)
+	require.Contains(t, items[0].Content, "v2 已审核通过并上架")
+	require.Equal(t, 2, unread(1))
+	require.Equal(t, http.StatusOK, f.req(http.MethodPost, "/api/notifications/read", 1, nil, nil).Code)
+	require.Zero(t, unread(1))
+	require.Len(t, list(1), 2)
+	require.Equal(t, 2, unread(3))
+
+	// 管理员自己的投稿交由其他管理员处理，不给自己发待审通知。
+	submit(3, "notify-theme-admin-003", "")
+	require.Len(t, list(3), 2)
+	require.Len(t, list(4), 3)
+}
+
+func TestThemePackRoutesNotificationFailureRollsBackSubmission(t *testing.T) {
+	f := newThemeRouteFixture(t)
+	const callback = "test:fail_theme_notification"
+	require.NoError(t, f.db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+		if tx.Statement.Schema != nil && tx.Statement.Schema.Table == "notifications" {
+			tx.AddError(fmt.Errorf("notification write unavailable"))
+		}
+	}))
+	t.Cleanup(func() { _ = f.db.Callback().Create().Remove(callback) })
+
+	res := f.submitPack(t, 1, "notify-theme-retry-001", "", f.zipV1)
+	require.Equal(t, http.StatusInternalServerError, res.Code)
+	var count int64
+	require.NoError(t, f.db.Model(&models.ThemePack{}).Count(&count).Error)
+	require.Zero(t, count)
+	require.NoError(t, f.db.Model(&models.Notification{}).Count(&count).Error)
+	require.Zero(t, count)
+	entries, err := os.ReadDir(f.dir + "/.theme-packs")
+	require.NoError(t, err)
+	require.Empty(t, entries)
+
+	require.NoError(t, f.db.Callback().Create().Remove(callback))
+	res = f.submitPack(t, 1, "notify-theme-retry-001", "", f.zipV1)
+	require.Equal(t, http.StatusOK, res.Code, res.Body.String())
+	require.NoError(t, f.db.Model(&models.ThemePack{}).Count(&count).Error)
+	require.EqualValues(t, 1, count)
+	require.NoError(t, f.db.Model(&models.Notification{}).Count(&count).Error)
+	require.EqualValues(t, 2, count)
 }
 
 func TestThemeLoopbackHarness(t *testing.T) {

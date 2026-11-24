@@ -1108,6 +1108,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       loadCount('/admin/course-evaluations/pending',
           queryParameters: {'limit': 50}),
       loadCount('/admin/exam-papers/pending-count'),
+      loadCount('/admin/themes', queryParameters: {'status': 'pending'}),
       loadCount('/admin/water/section-icon-reviews',
           queryParameters: {'status': 'pending'}),
       loadList('/admin/invitations/pending')

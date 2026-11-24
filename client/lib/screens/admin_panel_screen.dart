@@ -49,6 +49,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   int? _examPapersCount; // Exam paper submissions
   int? _courtReviewCount;
   int? _securityCount;
+  int? _themeCount;
   bool _hasLoadError = false;
   int _loadGeneration = 0;
   PublishSessionScope? _session;
@@ -75,7 +76,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         : null;
     _loadGeneration++;
     _reportsCount = _featuredCount = _reviewTasksCount = _adminTasksCount =
-        _examPapersCount = _courtReviewCount = _securityCount = null;
+        _examPapersCount = _courtReviewCount = _securityCount = _themeCount = null;
     _hasLoadError = false;
     _isLoading = _session != null;
     final session = _session;
@@ -126,6 +127,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           queryParameters: {'limit': 50}),
       safeGet('/admin/appeals/review'),
       safeGet('/admin/security/overview', queryParameters: {'range': '24h'}),
+      safeGet('/admin/themes', queryParameters: {'status': 'pending'}),
     ]);
 
     if (!_owns(session) || generation != _loadGeneration) return;
@@ -172,6 +174,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       _examPapersCount = getCount(responses[6]);
       _courtReviewCount = getCount(responses[9]);
       _securityCount = getSecurityCount(responses[10]);
+      _themeCount = getCount(responses[11]);
       _hasLoadError = responses.any((response) => response == null);
       _isLoading = false;
     });
@@ -334,7 +337,13 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           icon: Icons.palette_outlined,
                           iconColor: Theme.of(context).colorScheme.primary,
                           title: '主题审核',
-                          subtitle: '待审主题跨页试用、审核与下架管理',
+                          subtitle: _isLoading
+                              ? '正在加载主题待办'
+                              : _themeCount == null
+                                  ? '主题待办加载失败，请刷新重试'
+                                  : _themeCount! > 0
+                                      ? '$_themeCount 个主题待审核'
+                                      : '待审主题跨页试用、审核与下架管理',
                           isDark: isDark,
                           onTap: () => Navigator.push(
                             context,

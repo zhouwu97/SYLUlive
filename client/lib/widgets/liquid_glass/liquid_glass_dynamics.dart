@@ -169,9 +169,8 @@ class LiquidGlassDynamics extends ChangeNotifier {
         }
       }
       final damping = _held ? 22.0 : 17.0;
-      // Direct manipulation follows the pointer with a frame-rate-independent
-      // exponential spring. Release still uses the ordinary spring below, so
-      // its velocity carries into the existing recoil and optical deformation.
+      // The exact critically damped solution keeps position and velocity
+      // continuous when a moving lens is grabbed or its target reverses.
       if (_held && !_tapPosition && directFollowRate > 0) {
         _x.follow(h, _x.target, directFollowRate);
       } else {
@@ -207,9 +206,12 @@ class _Spring {
   }
 
   void follow(double dt, double nextTarget, double rate) {
-    final previous = value;
-    value += (nextTarget - value) * (1 - math.exp(-rate * dt));
-    velocity = (value - previous) / dt;
+    final omega = rate * 2;
+    final displacement = value - nextTarget;
+    final step = (velocity + omega * displacement) * dt;
+    final decay = math.exp(-omega * dt);
+    value = nextTarget + (displacement + step) * decay;
+    velocity = (velocity - omega * step) * decay;
     if ((nextTarget - value).abs() < .005 && velocity.abs() < .025) {
       snap(nextTarget);
     }

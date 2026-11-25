@@ -12,6 +12,78 @@ import 'package:shenliyuan/widgets/settings/settings_switch.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('regrabbing a moving switch decelerates without losing momentum',
+      (tester) async {
+    final motion = LiquidGlassDynamics(vsync: tester, directFollowRate: 100)
+      ..configure(20);
+    try {
+      motion.grab();
+      motion.dragTo(1);
+      motion.advance(.01);
+      final position = motion.position;
+      final speed = motion.speed;
+      motion.grab();
+      expect(motion.speed, speed);
+      motion.advance(.001);
+      expect(motion.position, greaterThan(position));
+      expect(motion.speed, greaterThan(speed * .1));
+    } finally {
+      motion.dispose();
+    }
+  });
+
+  for (final scenario in ['diagonal reversal', 'late saved value']) {
+    testWidgets('held switch keeps gesture ownership: $scenario',
+        (tester) async {
+      await tester.runAsync(loadLiquidGlassSwitchProgram);
+      final value = ValueNotifier(false);
+      addTearDown(value.dispose);
+      var commits = 0;
+      await tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: LiquidGlassScene(
+        background: const ColoredBox(color: Colors.white),
+        overlay: Center(
+            child: ValueListenableBuilder<bool>(
+          valueListenable: value,
+          builder: (context, current, child) => SettingsSwitch(
+            value: current,
+            onChanged: (_) => commits++,
+          ),
+        )),
+      ))));
+      await tester.pumpAndSettle();
+      final toggle = find.byType(Switch);
+      final custom = find.descendant(
+          of: find.byType(LiquidGlassSwitch),
+          matching: find.byWidgetPredicate((w) =>
+              w is CustomPaint &&
+              w.painter.runtimeType.toString() == '_SwitchPainter'));
+      final dynamic painter = tester.widget<CustomPaint>(custom.first).painter;
+      final motion = painter.motion as LiquidGlassDynamics;
+      final center = tester.getCenter(toggle);
+      final drag = await tester.startGesture(center);
+      await tester.pump(const Duration(milliseconds: 300));
+      await drag.moveTo(center + const Offset(32, 0));
+      await tester.pump(const Duration(milliseconds: 60));
+      if (scenario == 'diagonal reversal') {
+        await drag.moveTo(center + const Offset(4, 24));
+        await tester.pump(const Duration(milliseconds: 80));
+        await drag.moveTo(center + const Offset(32, 24));
+      } else {
+        value.value = true;
+      }
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(commits, 0);
+      expect(motion.pressure, greaterThan(.8));
+      expect(motion.position, greaterThan(.8));
+      await drag.up();
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   for (final hz in [60, 120]) {
     for (final on in [false, true]) {
       testWidgets(

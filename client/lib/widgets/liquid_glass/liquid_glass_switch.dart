@@ -50,6 +50,7 @@ class _LiquidGlassSwitchState extends State<LiquidGlassSwitch>
   double _startIndex = 0, _colorTarget = 0;
   bool _ready = false, _opticalGesture = false, _verticalCancelled = false;
   bool _tapCandidate = false;
+  bool _horizontalDrag = false;
   bool? _pendingReady;
   bool get _reduced => MediaQuery.disableAnimationsOf(context);
 
@@ -98,6 +99,7 @@ class _LiquidGlassSwitchState extends State<LiquidGlassSwitch>
     super.didUpdateWidget(oldWidget);
     _motion.intensity = widget.intensity;
     if (oldWidget.value != widget.value &&
+        (_pointer == null || _verticalCancelled) &&
         (!_motion.isTapping ||
             _motion.tapDestination != (widget.value ? 1 : 0))) {
       _motion.releaseTo(widget.value ? 1 : 0);
@@ -118,6 +120,7 @@ class _LiquidGlassSwitchState extends State<LiquidGlassSwitch>
     _startIndex = _motion.position.clamp(0, 1);
     _light = event.localPosition;
     _verticalCancelled = false;
+    _horizontalDrag = false;
     _tapCandidate = true;
     _opticalGesture = true;
     _motion.grab();
@@ -126,13 +129,20 @@ class _LiquidGlassSwitchState extends State<LiquidGlassSwitch>
   void _move(PointerMoveEvent event) {
     if (_pointer != event.pointer || _verticalCancelled) return;
     final delta = event.position - _start;
-    if (delta.dx.abs() > kTouchSlop) _tapCandidate = false;
-    if (delta.dy.abs() > kTouchSlop && delta.dy.abs() > delta.dx.abs()) {
+    // After horizontal drag ownership is established, a diagonal reversal
+    // belongs to the same gesture rather than a new vertical scroll.
+    if (!_horizontalDrag &&
+        delta.dy.abs() > kTouchSlop &&
+        delta.dy.abs() > delta.dx.abs()) {
       _verticalCancelled = true;
       _tapCandidate = false;
       _opticalGesture = false;
       _motion.releaseTo(widget.value ? 1 : 0);
       return;
+    }
+    if (delta.dx.abs() > kTouchSlop) {
+      _horizontalDrag = true;
+      _tapCandidate = false;
     }
     _light = event.localPosition;
     _motion.dragTo((_startIndex + delta.dx / 20).clamp(0, 1),
@@ -371,14 +381,21 @@ class _SwitchPainter extends CustomPainter {
         center: center,
         width: half.width * 2 * (1 + stretch),
         height: half.height * 2 / (1 + stretch));
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(thumb, Radius.circular(thumb.height / 2)),
-        Paint()..color = Colors.white.withValues(alpha: 1 - glass));
+    if (glass < 1) {
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(thumb, Radius.circular(thumb.height / 2)),
+          Paint()..color = Colors.white.withValues(alpha: 1 - glass));
+    }
     final bounds = (Offset.zero & size).inflate(14);
-    canvas.saveLayer(
-        bounds, Paint()..color = Colors.white.withValues(alpha: glass));
-    canvas.drawRect(bounds, Paint()..shader = shader);
-    canvas.restore();
+    // Only the solid-to-glass crossfade needs an intermediate render target.
+    if (glass == 1) {
+      canvas.drawRect(bounds, Paint()..shader = shader);
+    } else if (glass > 0) {
+      canvas.saveLayer(
+          bounds, Paint()..color = Colors.white.withValues(alpha: glass));
+      canvas.drawRect(bounds, Paint()..shader = shader);
+      canvas.restore();
+    }
     if (focused()) {
       canvas.drawRRect(
           RRect.fromRectAndRadius(

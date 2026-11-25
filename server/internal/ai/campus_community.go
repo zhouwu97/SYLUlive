@@ -123,7 +123,7 @@ func (mcp *campusMCP) communityReadTools() []PureReadTool {
 			case "after_sticker_id":
 				properties[field] = map[string]interface{}{"type": "string", "maxLength": 128}
 			case "sort":
-				properties[field] = map[string]interface{}{"type": "string", "enum": []string{"newest", "likes", "replies"}}
+				properties[field] = map[string]interface{}{"type": "string", "enum": []string{"newest", "oldest", "likes", "replies"}}
 			case "cursor":
 				properties[field] = map[string]interface{}{"type": "string", "maxLength": 512}
 			case "limit":
@@ -158,8 +158,8 @@ func (mcp *campusMCP) communityReadTools() []PureReadTool {
 		return tool
 	}
 	return []PureReadTool{
-		makeTool("community.list_feed", "浏览公开水帖及公开昵称、图片引用和计数。sort=newest/likes/replies；最新用 after_id，排名用 next_cursor；不增加浏览量。", []string{"after_id", "limit", "sort", "cursor"}, []string{}),
-		makeTool("community.search_posts", "检索公开水帖，支持最新、点赞数和评论数排序；排名分页使用 next_cursor。", []string{"query", "after_id", "limit", "sort", "cursor"}, []string{"query"}),
+		makeTool("community.list_feed", "浏览公开水帖及公开昵称、图片引用和计数。sort=newest/oldest/likes/replies；查最早帖子直接用 oldest，不从最新逐页倒翻。最新/最早用 after_id，排名用 next_cursor；不增加浏览量。", []string{"after_id", "limit", "sort", "cursor"}, []string{}),
+		makeTool("community.search_posts", "检索公开水帖，支持最新、最早、点赞数和评论数排序；最早用 sort=oldest，排名分页使用 next_cursor。", []string{"query", "after_id", "limit", "sort", "cursor"}, []string{"query"}),
 		makeTool("community.get_post", "读取指定公开水帖文字、内容版本及可见性，不记录真人浏览。", []string{"post_id"}, []string{"post_id"}),
 		makeTool("community.list_replies", "分页读取指定公开水帖的正常评论；after_id 为下一页游标，包含楼中楼定位。", []string{"post_id", "after_id", "limit"}, []string{"post_id"}),
 		makeTool("community.get_reply_context", "读取正常评论、所属公开水帖和根评论；已删除根评论仅返回墓碑。", []string{"reply_id"}, []string{"reply_id"}),

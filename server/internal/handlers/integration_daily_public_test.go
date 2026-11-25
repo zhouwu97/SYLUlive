@@ -49,6 +49,9 @@ func TestIntegrationAnonymousPublicAndPrivateCheckInHTTP(t *testing.T) {
 	}
 	w := send("GET", fmt.Sprintf("/api/integrations/v1/public/community/posts/%d", post.ID), "", "")
 	require.Equal(t, 200, w.Code, w.Body.String())
+	w = send("GET", "/api/integrations/v1/public/community/posts?sort=oldest&limit=1", "", "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"sort":"oldest"`)
 	require.Contains(t, w.Body.String(), "公开合成帖子")
 	require.NotContains(t, w.Body.String(), "private-contact")
 	var current models.Post

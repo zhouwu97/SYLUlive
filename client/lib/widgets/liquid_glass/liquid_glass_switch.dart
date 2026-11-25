@@ -56,7 +56,8 @@ class _LiquidGlassSwitchState extends State<LiquidGlassSwitch>
   @override
   void initState() {
     super.initState();
-    _motion = LiquidGlassDynamics(vsync: this, index: widget.value ? 1 : 0)
+    _motion = LiquidGlassDynamics(
+        vsync: this, index: widget.value ? 1 : 0, directFollowRate: 100)
       ..configure(20)
       ..addListener(_onMotion);
     _colorTarget = widget.value ? 1 : 0;

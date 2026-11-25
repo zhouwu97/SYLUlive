@@ -8,12 +8,20 @@ import 'package:flutter/scheduler.dart';
 // Navigation-specific changes: bounded horizontal rail, measured pressure,
 // logical-pixel sizing, and no animation when reduced motion is requested.
 class LiquidGlassDynamics extends ChangeNotifier {
-  LiquidGlassDynamics({required TickerProvider vsync, double index = 0}) {
+  LiquidGlassDynamics({
+    required TickerProvider vsync,
+    double index = 0,
+    this.directFollowRate = 0,
+  }) {
     _x.snap(index);
     _ticker = vsync.createTicker(_tick);
   }
 
   late final Ticker _ticker;
+
+  /// Optional tighter response for controls whose thumb must track a pointer.
+  /// Zero keeps the navigation lens' existing spring response.
+  final double directFollowRate;
   final _x = _Spring();
   final _y = _Spring();
   final _press = _Spring();
@@ -25,6 +33,7 @@ class LiquidGlassDynamics extends ChangeNotifier {
   double _angle = 0;
   bool _held = false;
   bool _tapActive = false, _tapPosition = false;
+  bool _tapInterrupted = false;
   double _heldSeconds = 0,
       _tapSeconds = 0,
       _tapLift = 0,
@@ -59,6 +68,7 @@ class LiquidGlassDynamics extends ChangeNotifier {
   }
 
   void grab({double pressure = 1}) {
+    _tapInterrupted = isMoving;
     _tapActive = _tapPosition = false;
     _heldSeconds = 0;
     _held = true;
@@ -95,8 +105,10 @@ class LiquidGlassDynamics extends ChangeNotifier {
     _held = false;
     _tapFrom = _x.value;
     _tapTo = index * _itemWidth;
-    _tapSeconds = 0;
-    _tapLift = math.max(0, .14 - _heldSeconds);
+    // An unfinished gesture already lifted the lens. Retarget its springs
+    // directly so repeated taps keep their pose and momentum without a pause.
+    _tapSeconds = _tapInterrupted ? .28 : 0;
+    _tapLift = _tapInterrupted ? 0 : math.max(0, .14 - _heldSeconds);
     _tapActive = _tapPosition = true;
     _x.target = _tapFrom;
     _y.target = 0;
@@ -157,7 +169,14 @@ class LiquidGlassDynamics extends ChangeNotifier {
         }
       }
       final damping = _held ? 22.0 : 17.0;
-      _x.step(h, _tapPosition ? 700 : 260, _tapPosition ? 54 : damping);
+      // Direct manipulation follows the pointer with a frame-rate-independent
+      // exponential spring. Release still uses the ordinary spring below, so
+      // its velocity carries into the existing recoil and optical deformation.
+      if (_held && !_tapPosition && directFollowRate > 0) {
+        _x.follow(h, _x.target, directFollowRate);
+      } else {
+        _x.step(h, _tapPosition ? 700 : 260, _tapPosition ? 54 : damping);
+      }
       _y.step(h, 260, damping);
       _press.step(h, 310, _tapPosition && !_tapActive ? 24 : 18);
       if (speed > 16) _angle = math.atan2(_y.velocity, _x.velocity);
@@ -185,6 +204,15 @@ class _Spring {
     velocity += ((target - value) * stiffness - velocity * damping) * dt;
     value += velocity * dt;
     if (!moving) snap(target);
+  }
+
+  void follow(double dt, double nextTarget, double rate) {
+    final previous = value;
+    value += (nextTarget - value) * (1 - math.exp(-rate * dt));
+    velocity = (value - previous) / dt;
+    if ((nextTarget - value).abs() < .005 && velocity.abs() < .025) {
+      snap(nextTarget);
+    }
   }
 
   void snap(double to) {

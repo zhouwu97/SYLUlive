@@ -19,8 +19,10 @@ class SettingsSwitch extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final source = LiquidGlassScene.maybeOf(context);
     if (source != null && !SharedPageBackground.of(context)) {
-      return LiquidGlassSwitch(
-          value: value, onChanged: onChanged, source: source, label: '');
+      return RepaintBoundary(
+        child: LiquidGlassSwitch(
+            value: value, onChanged: onChanged, source: source, label: ''),
+      );
     }
     if (MediaQuery.highContrastOf(context)) {
       return Switch(value: value, onChanged: onChanged);

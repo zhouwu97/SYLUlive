@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { asset, errorText, query, rows, time, upload, useApi, write, type Entity } from "./api";
 import { useAuth } from "./auth";
-import { formatScore } from "./canteen-data";
+import { formatScore } from "./canteen/canteen-data";
 import { waitLevel, waitText } from "./admin-time";
 import { Empty, Form, Head, Icon, Pagination, QueryState, useUI } from "./ui";
 

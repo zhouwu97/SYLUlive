@@ -100,3 +100,19 @@ SELECT COUNT(*) FILTER (WHERE edu_bound) AS legacy_bound_accounts,
        COUNT(*) FILTER (WHERE edu_bound AND NOT legacy_binding_verified) AS legacy_bound_missing_identity,
        COUNT(*) FILTER (WHERE configured AND NOT verified) AS configured_accounts_pending_school_proof
 FROM identity_state;
+
+-- 切换配置准入前按普通账号去重统计；删除墓碑不参与准入。
+SELECT EXISTS (
+         SELECT 1 FROM academic_account_configs c
+         WHERE c.user_id = u.id AND c.state = 'active' AND TRIM(c.student_id) <> ''
+           AND c.provider_id IN ('sylu_undergraduate', 'sylu_graduate')
+       ) AS academic_configured,
+       COALESCE(u.edu_authorized OR u.edu_bound, false) AS legacy_access,
+       EXISTS (
+         SELECT 1 FROM academic_identity_bindings b WHERE b.user_id = u.id
+           AND b.verification_method IN ('school_profile', 'legacy_migration')
+       ) AS has_login_binding,
+       COUNT(*) AS account_count
+FROM users u
+WHERE u.role = 'user' AND u.account_status = 'active'
+GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;

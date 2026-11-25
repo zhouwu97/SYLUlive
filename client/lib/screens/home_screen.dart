@@ -28,6 +28,7 @@ import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/bottom_nav_setup_hint.dart';
+import '../widgets/theme_store_setup_hint.dart';
 import '../features/theme_pack/theme_hero_layer.dart'
     show ThemeHeroScrollListener, ThemeStatusBarScrim;
 import '../widgets/global_background_wrapper.dart' show CustomBackgroundLayer;
@@ -1537,6 +1538,9 @@ class _HomeScreenState extends State<HomeScreen>
       bottomNavigationBar: useSideRail
           ? null
           : Column(mainAxisSize: MainAxisSize.min, children: [
+              ThemeStoreSetupHint(
+                  eligible:
+                      !_restoringInitialDeepPage && !_announcementDialogOpen),
               BottomNavSetupHint(
                   eligible:
                       !_restoringInitialDeepPage && !_announcementDialogOpen),
@@ -1554,7 +1558,8 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
               ),
               child: FloatingActionButton(
-                heroTag: 'home_fab',
+                // 窄宽屏切换底栏/侧栏与路由返回叠加时，固定 heroTag 会触发重复 Hero 断言。
+                heroTag: null,
                 onPressed: () => _showPublishTypeSheet(context),
                 backgroundColor: AppThemeTokens.of(context).primary,
                 elevation: 2,

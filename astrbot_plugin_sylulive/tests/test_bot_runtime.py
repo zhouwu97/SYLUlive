@@ -39,12 +39,13 @@ class Client:
             result = {"runtime_supported": self.supported, "bot": copy.deepcopy(self.bot), "binding": {"binding_id": self.binding, "epoch": 1}, "auto_reply_server_enabled": self.reply_service, "auto_reply_authorized": True}
             if kwargs.get("params") == {"reply_targets": "1"}:
                 result["reply_targets"] = self.reply_targets
+                result["mention_name"] = "测试鱼"
             return result
         if path == "/bot/runtime":
             if self.busy:
                 raise IntegrationProblem("bot_runtime_busy")
             return {"accepted": True}
-        post = {"post_id": self.ident, "title": "合成公开帖", "content": f"public-source-{self.ident}", "post_type": "campus_life", "status": "normal", "source_version": "a" * 64, "created_at": "2026-01-01T00:00:00Z"}
+        post = {"post_id": self.ident, "title": "@测试鱼 合成公开帖", "content": f"public-source-{self.ident}", "post_type": "campus_life", "status": "normal", "source_version": "a" * 64, "created_at": "2026-01-01T00:00:00Z"}
         if path == "/community/posts":
             return {"data": {"items": [post]}}
         if path.startswith("/community/replies/") and path.endswith("/context"):

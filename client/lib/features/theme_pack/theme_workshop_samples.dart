@@ -6,6 +6,7 @@ import '../../models/post.dart';
 import '../../models/user.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/app_theme_tokens.dart';
+import '../../theme/app_theme_style.dart';
 import '../../widgets/ai/ai_input_composer.dart';
 import '../../widgets/ai/ai_mode_switch.dart';
 import '../../widgets/app_dialog.dart';
@@ -411,7 +412,13 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
               child: CircularProgressIndicator(strokeWidth: 2.5),
             )
           else
-            Icon(icon, size: 36, color: tokens.primary),
+            ThemeStateArt(
+              enabled: widget.sampleState == WorkshopSampleState.empty ||
+                  widget.sampleState == WorkshopSampleState.error,
+              error: widget.sampleState == WorkshopSampleState.error,
+              size: 96,
+              fallback: Icon(icon, size: 36, color: tokens.primary),
+            ),
           const SizedBox(height: 10),
           Text(
             title,

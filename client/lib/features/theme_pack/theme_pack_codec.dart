@@ -20,6 +20,7 @@ abstract final class ThemePackCodec {
   static const maxPackageBytes = 48 * 1024 * 1024;
   static const maxExpandedBytes = 96 * 1024 * 1024;
   static const maxManifestBytes = 64 * 1024;
+  static const maxPreviewBytes = 2 * 1024 * 1024;
 
   static Future<PreparedThemePack> readFile(String file,
       {required String appVersion}) async {
@@ -143,7 +144,8 @@ abstract final class ThemePackCodec {
                 kind == ThemeAssetKind.font
                     ? 'theme_font_invalid'
                     : 'theme_image_invalid',
-                item.key);
+                item.key,
+                '文件大小 ${(item.value.uncompressedSize / (1024 * 1024)).toStringAsFixed(2)}MB，上限 ${_assetLimit(kind) / (1024 * 1024)}MB');
           }
         }
         final content = readVerifiedZipEntry(item.value);
@@ -165,7 +167,8 @@ abstract final class ThemePackCodec {
   }
 
   static int _assetLimit(ThemeAssetKind kind) => switch (kind) {
-        ThemeAssetKind.preview || ThemeAssetKind.header => 2 * 1024 * 1024,
+        ThemeAssetKind.preview => maxPreviewBytes,
+        ThemeAssetKind.header => 2 * 1024 * 1024,
         ThemeAssetKind.wallpaper => 8 * 1024 * 1024,
         ThemeAssetKind.icon => 256 * 1024,
         ThemeAssetKind.launcher => 1024 * 1024,
@@ -277,7 +280,11 @@ abstract final class ThemePackCodec {
             !jpeg && w <= 1024 && h <= 1024,
           ThemeAssetKind.font => true,
         };
-        if (!valid) throw const FormatException('图片尺寸不合规');
+        if (!valid) {
+          throw FormatException(kind == ThemeAssetKind.preview
+              ? '预览图须为 1080×2340，实际为 $w×$h'
+              : '图片尺寸不合规：$w×$h');
+        }
       }
       codec = await descriptor.instantiateCodec();
       if (codec.frameCount != 1) throw const FormatException('仅支持静态图片');
@@ -291,6 +298,8 @@ abstract final class ThemePackCodec {
           }
         }
       }
+    } on FormatException catch (error) {
+      throw ThemePackError('theme_image_invalid', field, error.message);
     } catch (_) {
       throw ThemePackError('theme_image_invalid', field);
     } finally {

@@ -30,6 +30,9 @@ class _Camera extends MobileScannerPlatform {
   final frames = StreamController<BarcodeCapture?>.broadcast(sync: true);
   StartOptions? options;
   bool permissionDenied = false;
+  Completer<void>? startGate;
+  int startCount = 0;
+  int stopCount = 0;
   BarcodeCapture? galleryCapture;
   String? last;
   @override
@@ -40,7 +43,11 @@ class _Camera extends MobileScannerPlatform {
   Stream<double> get zoomScaleStateStream => const Stream.empty();
   @override
   Future<MobileScannerViewAttributes> start(StartOptions startOptions) async {
+    startCount++;
     options = startOptions;
+    if (startGate != null) {
+      await startGate!.future;
+    }
     if (permissionDenied) {
       throw const MobileScannerException(
           errorCode: MobileScannerErrorCode.permissionDenied);
@@ -56,7 +63,9 @@ class _Camera extends MobileScannerPlatform {
   @override
   Future<void> updateScanWindow(Rect? window) async {}
   @override
-  Future<void> stop() async {}
+  Future<void> stop() async {
+    stopCount++;
+  }
   @override
   Future<void> dispose() async {}
 
@@ -322,6 +331,73 @@ void main() {
     expect(find.byType(TextField), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
+    expect(find.text('没有相机权限'), findsOneWidget);
+    expect(find.text('对准电脑网页上的二维码'), findsNothing);
+    expect(camera.startCount, 1);
+    expect(camera.stopCount, 0);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('系统权限弹窗引发前后台切换并拒绝时，不重复请求且持续保留无权限提示', (tester) async {
+    final previous = MobileScannerPlatform.instance;
+    final gate = Completer<void>();
+    final camera = _Camera()
+      ..permissionDenied = true
+      ..startGate = gate;
+    MobileScannerPlatform.instance = camera;
+    addTearDown(() async {
+      MobileScannerPlatform.instance = previous;
+      await camera.frames.close();
+    });
+    await _mount(tester, _Server(), _Loader(_bundle),
+        camera: true, settle: false);
+
+    // 模拟系统权限框弹出导致的前后台切换，随后用户拒绝并回到页面。
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    gate.complete();
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(camera.startCount, 1);
+    expect(camera.stopCount, 0);
+    expect(find.text('没有相机权限'), findsOneWidget);
+    expect(find.text('对准电脑网页上的二维码'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('已授权扫描在实际退后台后恢复，取消粘贴链接也恢复扫描', (tester) async {
+    final previous = MobileScannerPlatform.instance;
+    final camera = _Camera();
+    MobileScannerPlatform.instance = camera;
+    addTearDown(() async {
+      MobileScannerPlatform.instance = previous;
+      await camera.frames.close();
+    });
+    await _mount(tester, _Server(), _Loader(_bundle), camera: true);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pumpAndSettle();
+    expect(camera.stopCount, 0);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pumpAndSettle();
+    expect(camera.stopCount, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(camera.startCount, 2);
+
+    await tester.tap(find.byTooltip('粘贴同步链接'));
+    await tester.pumpAndSettle();
+    expect(camera.stopCount, 2);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(camera.startCount, 3);
+    expect(find.text('对准电脑网页上的二维码'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });

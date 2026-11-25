@@ -159,6 +159,30 @@ async def test_full_public_post_fields_survive_actual_isolated_dispatch_without_
 
 
 @pytest.mark.asyncio
+async def test_oldest_posts_keep_sort_and_cursor_through_isolated_chat(tmp_path):
+    plugin, event, _, _ = setup(tmp_path)
+
+    async def read(path, **kwargs):
+        assert path.endswith("/community/posts")
+        params = kwargs["params"]
+        assert params["sort"] == "oldest"
+        rows = [source(post_id=3), source(post_id=9)] if params["after_id"] == 0 else []
+        return {"data": {"items": rows, "sort": "oldest", "next_after_id": 9 if rows else 0}}
+
+    plugin.client.public_call.side_effect = read
+    try:
+        page = json.loads(await plugin.posts(event, sort="oldest"))["data"]
+        assert [row["post_id"] for row in page["items"]] == [3, 9]
+        assert page["sort"] == "oldest" and page["next_after_id"] == 9
+        assert "PRIVATE" not in json.dumps(page)
+        end = json.loads(await plugin.posts(event, sort="oldest", after_id=page["next_after_id"]))["data"]
+        assert end["items"] == [] and end["next_after_id"] == 0
+        assert end["sort"] == "oldest"
+    finally:
+        await plugin.public_agent.close()
+
+
+@pytest.mark.asyncio
 async def test_reply_thread_catalog_and_pagination_work_through_actual_tools(tmp_path):
     plugin, event, _, _ = setup(tmp_path)
     try:
@@ -299,7 +323,7 @@ async def test_real_astrbot_loop_reads_thread_and_pixels_before_community_sticke
 
     from astrbot_plugin_sylulive.community_publisher import CommunityPublisher
 
-    p = source()
+    p = source(title="@测试鱼 合成公开讨论")
     paths = []
 
     async def public(path, **kwargs):
@@ -326,6 +350,7 @@ async def test_real_astrbot_loop_reads_thread_and_pixels_before_community_sticke
         call=AsyncMock(return_value={"state": "published", "reply_id": 55}),
     )
     agent.publisher = CommunityPublisher(agent, client)
+    agent.mention_name = "测试鱼"
 
     class Model(Provider):
         def get_current_key(self):

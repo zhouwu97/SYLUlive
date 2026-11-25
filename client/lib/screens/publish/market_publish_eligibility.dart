@@ -1,26 +1,9 @@
-/// 集市发帖所需的凭据：教务认证已完成。
-///
-/// 原教务绑定链路会向学校核验后自动登记，配置或本机标记本身不授予权限。
-const marketPublishRequiredCredential = '教务绑定同步完成';
+const marketPublishRequiredCredential = '教务配置已登记';
 
-/// 集市发布被拒时的用户侧说明。
-///
-/// 缺少上面那项凭据时统一引导到教务认证，产品不再展示独立的学生认证状态。
-/// 历史文案把记录缺失误报为毕业；原教务绑定入口负责核验和自动补交。
-///
-/// [hasLocalAcademicConnection] 用来区分"已连接教务但未认证"和"什么都没有"，
-/// 两者的下一步不一样，不能共用一句话。
-///
 String marketPublishBlockedMessage({required bool hasLocalAcademicConnection}) {
-  const entry = '可到「账号安全 - 教务身份与本机连接」查看同步状态';
-  const retryHint = '联网后刷新课表会自动核验补交；学校会话失效时在原教务入口重连，无需反复重新绑定';
-  if (hasLocalAcademicConnection) {
-    return '集市发帖需要$marketPublishRequiredCredential。'
-        '本机已连接教务，服务器绑定记录尚未同步完成。'
-        '$retryHint。$entry。';
-  }
-  return '集市发帖需要$marketPublishRequiredCredential。'
-      '请在原教务入口连接账号，登录成功后自动登记。$entry，无需单独认证。';
+  return hasLocalAcademicConnection
+      ? '集市发帖要求$marketPublishRequiredCredential。本机已连接教务，请联网后在教务入口同步配置。'
+      : '集市发帖要求$marketPublishRequiredCredential。请在教务入口连接本科或研究生账号。';
 }
 
 /// 服务端拒绝集市发布时的统一说明。

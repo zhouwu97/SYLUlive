@@ -43,7 +43,8 @@ for (const dataset of ["grades", "erke"]) {
   test(`${dataset}授权登录成功后自动续拉资料，第二次无需重开助手`, async ({ page }) => {
     const operations: string[] = [];
     await page.route("**/api/**", route => route.fulfill({ json: route.request().url().endsWith("/user/profile") ? { id: 7, nickname: "测试用户", role: "user" } : { ok: true } }));
-    await page.route('**/api/student-identity/bind',route=>{
+    await page.route('**/api/academic-account-configs', route => route.fulfill({json:{configs:[]}}));
+    await page.route('**/api/academic-account-configs/sylu_undergraduate',route=>{
       expect(route.request().headers()['x-expected-app-user']).toBe('7');
       return route.fulfill({json:{ok:true}});
     });

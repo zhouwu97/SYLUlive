@@ -86,8 +86,10 @@ export function Management({kind}:{kind:string}){
               <div className="admin-row-head">
                 <b>{x.title||x.nickname||x.version_name||x.action||x.name}</b>
                 {kind==='notices'&&x.status&&<span className={`tag ${x.status==='published'?'is-resolved':x.status==='draft'?'warn':''}`}>{({draft:'草稿',published:'已发布',archived:'已归档'} as Record<string,string>)[x.status]||x.status}</span>}
+                {kind==='users'&&<span>教务配置：{x.academic_configured ? '已登记' : '未登记'}</span>}
                 {kind==='users'&&x.role&&<span className={`tag ${x.role==='super_admin'?'violet':x.role==='admin'?'brand':''}`}>{x.role}</span>}
                 {kind==='releases'&&x.platform&&<span className="tag">{x.platform}</span>}
+                {kind==='releases'&&<span className="tag">{x.channel==='beta'?'Beta 测试版':'正式版'}</span>}
               </div>
               <p>{kind==='logs'?`${x.admin_name||`#${x.admin_id}`} · ${x.target||''} · ${x.detail||''}${x.admin_exp!=null?`（经验 ${x.admin_exp}）`:''}`:kind==='bots'?`${x.id} · 归属于 ${x.owner_name}（#${x.owner_id}） · ${x.enabled?'已启用':'已暂停'}`:kind==='users'?`#${x.id} · ${x.role} · 诚信分 ${x.credit_score}`:kind==='releases'?`v${x.version_code} · ${x.status} · ${x.delivery_mode||x.channel||'direct_package'}`:x.description||x.subtitle||x.status}</p>
               <small>{time(x.created_at)}</small>
@@ -145,7 +147,7 @@ function UserForm({item}:{item:Entity}){
   const ui=useUI();
   const isSuperTarget=item.role==='super_admin';
   return <div className="admin-drawer-stack">
-    <p><b>{item.nickname||'未命名用户'}</b> · UID #{item.id} · 当前角色 {item.role}</p>
+    <p><b>{item.nickname||'未命名用户'}</b> · UID #{item.id} · 当前角色 {item.role} · 教务配置：{item.academic_configured ? "已登记" : "未登记"}</p>
     {isSuperTarget?<p className="muted">超级管理员角色受系统保护，不可在线降权或删除。</p>:(
       <Form fields={[{name:'role',label:'角色（变更后立即吊销旧登录态）',value:item.role==='admin'?'admin':'user',options:[['user','普通用户'],['admin','管理员']]}]} submit="确认修改角色" onSubmit={async values=>{await write(`/api/super/users/${item.id}/role`,values,'PUT');await ui.act(async()=>{},'角色已更新');ui.close();}}/>
     )}
@@ -162,26 +164,33 @@ function UserForm({item}:{item:Entity}){
 function ReleaseForm({item={}}:{item?:Entity}){
   const ui=useUI();const base='/api/super/app-releases';
   const [mode,setMode]=useState(String(item.delivery_mode||'direct_package'));
+  const [channel,setChannel]=useState(String(item.channel||'stable'));
   const fields:Field[]=[
     ...(!item.id?([
       {name:'platform',label:'目标平台',value:'android',options:[['android','Android'],['ohos','HarmonyOS NEXT']]},
+      {name:'channel',label:'发布通道',value:channel,options:[['stable','正式版（stable）'],['beta','Beta 测试版（beta）']]},
       {name:'delivery_mode',label:'分发方式',value:mode,options:[['direct_package','直传安装包'],['external_market','外部应用市场链接']]},
       {name:'version_name',label:'版本名称',required:true},
       {name:'version_code',label:'版本号（正整数）',type:'number',min:1,required:true},
       ...(mode==='external_market'?[{name:'action_url',label:'应用市场地址',required:true}]:[{name:'apk',label:'安装包文件',type:'file',required:true}]),
     ] as Field[]):[]),
-    {name:'title',label:'更新标题',value:item.title,required:true},
-    {name:'changelog',label:'更新说明',type:'textarea',value:item.changelog||item.release_notes,required:true},
-    {name:'minimum_supported_version_code',label:'最低支持版本号',type:'number',min:1,required:true,value:item.minimum_supported_version_code||item.min_supported_version_code||1},
+    ...(!item.id||item.status==='draft'?([
+      {name:'title',label:'更新标题',value:item.title,required:true},
+      {name:'changelog',label:'更新说明',type:'textarea',value:item.changelog||item.release_notes,required:true},
+    ] as Field[]):[]),
+    ...(channel==='stable'?([{name:'minimum_supported_version_code',label:'最低支持版本号',type:'number',min:1,required:true,value:item.minimum_supported_version_code||item.min_supported_version_code||1}] as Field[]):[]),
   ];
   async function action(name:string,method='POST'){if(await ui.act(()=>write(`${base}/${item.id}${name?`/${name}`:''}`,{},method),'版本状态已更新'))ui.close();}
-  return <div onChange={e=>{if(e.target instanceof HTMLSelectElement&&e.target.name==='delivery_mode')setMode(e.target.value);}}>
-    {item.id&&<p><b>{item.version_name}</b> · {item.status}</p>}
-    <Form fields={fields} onSubmit={async(values,form)=>{
+  return <div onChange={e=>{if(e.target instanceof HTMLSelectElement){if(e.target.name==='delivery_mode')setMode(e.target.value);if(e.target.name==='channel')setChannel(e.target.value);}}}>
+    {item.id&&<p><b>{item.version_name}</b> · {channel==='beta'?'Beta 测试版':'正式版'} · {item.status}</p>}
+    {channel==='beta'&&<p>仅通知已开启 Beta 通知的用户，提供独立下载入口，可关闭弹窗。功能更丰富，但不建议小白用户下载。</p>}
+    {(!item.id||item.status==='draft'||(item.status==='published'&&channel==='stable'))&&<Form fields={fields} onSubmit={async(values,form)=>{
+      const minimum=channel==='beta'?1:Number(values.minimum_supported_version_code);
       if(item.id){
-        await write(`${base}/${item.id}`,{title:values.title,changelog:values.changelog,release_notes:values.changelog,minimum_supported_version_code:Number(values.minimum_supported_version_code),min_supported_version_code:Number(values.minimum_supported_version_code)},'PATCH');
+        await write(`${base}/${item.id}`,{...(item.status==='draft'?{title:values.title,changelog:values.changelog}:{}),minimum_supported_version_code:minimum},'PATCH');
       }else{
-        form.set('channel','stable');
+        form.set('channel',channel);
+        form.set('minimum_supported_version_code',String(minimum));
         form.set('release_notes',String(values.changelog||''));
         form.set('min_supported_version_code',String(values.minimum_supported_version_code||1));
         const file=form.get('apk');
@@ -189,7 +198,7 @@ function ReleaseForm({item={}}:{item?:Entity}){
         await write(base,form);
       }
       await ui.act(async()=>{},'版本草稿已保存');ui.close();
-    }}/>
+    }}/>}
     {item.id&&<div className="form-actions">
       {item.status==='draft'&&<button className="btn primary" onClick={()=>ui.open('确认发布版本',<><p>发布 {item.version_name} 后，客户端将能检测并下载该版本。</p><button className="btn primary" onClick={()=>void action('publish')}>确认发布</button></>)}>发布版本</button>}
       {item.status==='published'&&<button className="btn" onClick={()=>ui.open('确认下架版本',<><p>确认下架 {item.version_name}？服务器会检查是否存在可用的回退版本。</p><button className="btn" onClick={()=>void action('withdraw')}>确认下架</button></>)}>下架版本</button>}

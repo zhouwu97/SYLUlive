@@ -125,8 +125,8 @@ func TestGetUsersSeparatesAcademicConfigurationFromIdentityAndAuthorization(t *t
 			if response[0]["academic_configured"] != test.configured {
 				t.Fatalf("教务配置状态错误: %s", recorder.Body.String())
 			}
-			if response[0]["student_verified"] != false || response[0]["edu_bound"] != false || response[0]["student_id"] != test.studentID {
-				t.Fatalf("自报配置不能授予身份认证或旧教务授权: %s", recorder.Body.String())
+			if response[0]["student_verified"] != test.configured || response[0]["edu_bound"] != false || response[0]["student_id"] != test.studentID {
+				t.Fatalf("有效配置只能授予校内功能资格: %s", recorder.Body.String())
 			}
 		})
 	}
@@ -156,7 +156,7 @@ func TestGetUsersSearchesActiveConfiguredStudentIDWithoutGrantingIdentity(t *tes
 		if len(response) != test.count {
 			t.Fatalf("search=%s: %s", test.search, recorder.Body.String())
 		}
-		if len(response) > 0 && (response[0]["student_id"] != test.search || response[0]["student_verified"] != false || response[0]["edu_bound"] != false) {
+		if len(response) > 0 && (response[0]["student_id"] != test.search || response[0]["student_verified"] != true || response[0]["edu_bound"] != false) {
 			t.Fatalf("配置学号显示或权限错误: %s", recorder.Body.String())
 		}
 	}
@@ -196,7 +196,7 @@ func TestGetUsersUsesVerifiedAcademicStudentIDAndSearch(t *testing.T) {
 	if len(response) != 1 || response[0]["student_id"] != "2408010115" {
 		t.Fatalf("管理员用户列表未显示已验证教务学号: %s", recorder.Body.String())
 	}
-	if response[0]["student_verified"] != true || response[0]["edu_bound"] != false {
+	if response[0]["student_verified"] != false || response[0]["edu_bound"] != false {
 		t.Fatalf("管理员身份状态语义错误: %s", recorder.Body.String())
 	}
 }

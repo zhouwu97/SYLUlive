@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,8 @@ import 'package:material_color_utilities/material_color_utilities.dart';
 import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/features/theme_pack/theme_contrast.dart';
+import 'package:shenliyuan/features/theme_pack/theme_appearance.dart';
+import 'package:shenliyuan/features/theme_pack/theme_workshop_samples.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_codec.dart';
 import 'package:shenliyuan/features/theme_pack/theme_manifest.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_store.dart';
@@ -64,6 +67,49 @@ void main() {
     provider.dispose();
     AppPreferencesStore.setCustomInstance(null);
     await temp.delete(recursive: true);
+  });
+
+  testWidgets('工坊预览显示主题的空态和失败插画，加载和权限仍保留状态图标', (tester) async {
+    final imagePath = path.join(temp.path, 'state.png');
+    await tester.runAsync(() => File(imagePath).writeAsBytes(themeImage(64, 64)));
+    final appearance = ThemeAppearance({
+      'decoration': {
+        'light': {
+          'illustrations': {'empty': imagePath, 'error': imagePath},
+        },
+      },
+    });
+    for (final state in [
+      WorkshopSampleState.empty,
+      WorkshopSampleState.error,
+      WorkshopSampleState.loading,
+      WorkshopSampleState.permission,
+    ]) {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ThemeWorkshopSampleStage(
+            appearance: appearance,
+            brightness: Brightness.light,
+            assetResolver: (file) => FileImage(File(file)),
+            page: WorkshopSamplePage.market,
+            sampleState: state,
+          ),
+        ),
+      ));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(const ValueKey('theme-state-art-empty')),
+          state == WorkshopSampleState.empty ? findsOneWidget : findsNothing);
+      expect(find.byKey(const ValueKey('theme-state-art-error')),
+          state == WorkshopSampleState.error ? findsOneWidget : findsNothing);
+      if (state == WorkshopSampleState.loading) {
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      }
+      if (state == WorkshopSampleState.permission) {
+        expect(find.byIcon(Icons.lock_outline_rounded), findsOneWidget);
+      }
+      expect(tester.takeException(), isNull);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   test('工坊推导：#2F7FD8 常量角色映射、覆盖优先、8 色课表对比度与色相不变自动修正', () {
@@ -185,8 +231,9 @@ void main() {
       appVersion: '9.0.0',
     );
     expect(decoded.manifest.name, '海盐蓝工坊测试');
+    expect(decoded.manifest.data['bottomNav']['style'], 'liquid_glass');
     final lightPreview =
-        img.decodeImage(decoded.contents['preview/light.png']!)!;
+        img.decodeImage(decoded.contents[decoded.manifest.data['preview']['light']]!)!;
     expect(lightPreview.width, 1080);
     expect(lightPreview.height, 2340);
 
@@ -204,12 +251,36 @@ void main() {
       {'brightness': 40.0, 'contrast': 150.0, 'saturation': 60.0},
     );
 
-    // 破坏对比度后导出应被门禁拦截
+    // 低对比度不再由自动门禁拦截，由人工审核把关
     restored.light.overrides['textPrimary'] = '#EAEAEA';
-    await expectLater(
-      restored.exportPack(appVersion: '1.7.12'),
-      throwsA(isA<ThemeWorkshopContrastException>()),
+    final lowContrastBytes = await restored.exportPack(appVersion: '1.7.12');
+    expect(lowContrastBytes, isNotEmpty);
+  });
+
+  test('复杂预览图自动压缩到 2MB，导出包可重新导入', () async {
+    final canvas = img.Image(width: 1080, height: 2340);
+    final random = Random(42);
+    for (final pixel in canvas) {
+      pixel
+        ..r = random.nextInt(256)
+        ..g = random.nextInt(256)
+        ..b = random.nextInt(256);
+    }
+    final png = Uint8List.fromList(img.encodePng(canvas));
+    expect(png.length, greaterThan(2 * 1024 * 1024));
+    final bytes = await ThemeWorkshopStateData.fromDefault().exportPack(
+      appVersion: '1.7.12',
+      renderedLightPng: png,
+      renderedDarkPng: png,
     );
+    final pack = await ThemePackCodec.decode(bytes, appVersion: '9.0.0');
+    for (final mode in ['light', 'dark']) {
+      final preview = pack.contents[pack.manifest.data['preview'][mode]]!;
+      expect(preview.length, lessThanOrEqualTo(2 * 1024 * 1024));
+      final decoded = img.decodeImage(preview)!;
+      expect(decoded.width, 1080);
+      expect(decoded.height, 2340);
+    }
   });
 
   testWidgets('主题设置：360×800 1.5x 分类与全屏预览无溢出、点选预览定位、复制后独立编辑、贴纸调层与重置、保存失败重试',
@@ -451,7 +522,103 @@ void main() {
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 60)));
   });
 
+  testWidgets('换壁纸和页头背景直接应用，经典默认主题同步编辑器且支持撤回', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await provider.setThemeMode(ThemeMode.light);
+    final initial = ThemeWorkshopStateData.fromDefault();
+    final photo = File(path.join(temp.path, 'photo.png'));
+    await tester.runAsync(() => photo.writeAsBytes(themeImage(240, 360)));
+    Uint8List? exported;
+    final boundary = GlobalKey();
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: provider,
+        child: MaterialApp(
+          theme: provider.buildAppTheme(Brightness.light),
+          home: RepaintBoundary(
+            key: boundary,
+            child: ThemeWorkshopScreen(
+              initialState: initial,
+              draftStore: ThemeWorkshopDraftStore(
+                themesDirectory: Directory(path.join(temp.path, 'themes')),
+              ),
+              pickFilePath: (_) async => photo.path,
+              saveExportFile: (_, bytes) async {
+                exported = bytes;
+                return null;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    Future<void> tapAndWait(Finder target, {bool Function()? until}) async {
+      await tester.ensureVisible(target);
+      await tester.runAsync(() async {
+        await tester.tap(target);
+        await tester.pump();
+      });
+      await waitForEmojiWork(tester);
+      if (until != null) {
+        for (var i = 0; i < 300 && !until(); i++) {
+          await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 10)));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(until(), isTrue);
+      }
+      expect(tester.takeException(), isNull);
+    }
+
+    await tapAndWait(find.byKey(const ValueKey('workshop-category-wallpapers')));
+    await tapAndWait(find.byKey(const ValueKey('workshop-wallpaper-portrait')),
+        until: () => initial.light.wallpapers['global'] != null);
+    final apply = find.byKey(const ValueKey('workshop-apply'));
+    await tapAndWait(apply);
+    final wallpaper = provider.backgroundImage!;
+    expect(wallpaper, contains(path.join('themes', 'user')));
+
+    await tapAndWait(find.byKey(const ValueKey('workshop-category-cards')));
+    await tapAndWait(find.byKey(const ValueKey('workshop-tab-decoration')));
+    await tapAndWait(find.text('选择背景图'),
+        until: () => initial.light.decorations['home']?['background'] != null);
+    await tapAndWait(apply);
+    final decoration = provider.appearance.group(ThemeGroup.decoration)!;
+    final header = decoration['light']['home']['background']['image'] as String;
+    expect(header, contains(path.join('themes', 'user')));
+    expect(await tester.runAsync(() => File(header).exists()), isTrue);
+    expect(provider.backgroundImage, wallpaper);
+    await tapAndWait(find.text('移除背景图'));
+    await tapAndWait(apply);
+    expect(provider.appearance.group(ThemeGroup.decoration)!['light']['home']?
+        ['background'], isNull);
+    expect(await tester.runAsync(provider.installedThemes), isEmpty);
+
+    await tapAndWait(find.byKey(const ValueKey('workshop-category-packages')));
+    await tapAndWait(find.byKey(const ValueKey('theme-original-default')));
+    expect(provider.isCleanBackgroundMode, isTrue);
+    expect(provider.hasThemeColors, isFalse);
+    expect(tester.widget<FilledButton>(apply).onPressed, isNull,
+        reason: '切换默认主题后同步编辑器，旧草稿不能覆盖默认主题');
+    await _captureWorkshop(tester, boundary, 'classic-default-workshop');
+    await tapAndWait(find.widgetWithText(OutlinedButton, '恢复上一个外观'));
+    expect(provider.backgroundImage, wallpaper);
+    expect(tester.widget<FilledButton>(apply).onPressed, isNull);
+    await tapAndWait(find.byKey(const ValueKey('workshop-export-button')));
+    await tapAndWait(find.text('保存文件'), until: () => exported != null);
+    expect(exported, isNotNull);
+    final pack = await tester.runAsync(
+        () => ThemePackCodec.decode(exported!, appVersion: '9.0.0'));
+    expect(pack!.manifest.data['preview']['light'], endsWith('.jpg'));
+    expect(pack.manifest.groups, contains(ThemeGroup.wallpapers));
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 60)));
+  });
+
   testWidgets('主题直接应用与保存失败重试，保留设备壁纸和其他主题组', (tester) async {
+    await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
     await provider.setBackgroundImage('morenbeijing.jpeg');
     final draftStore = ThemeWorkshopDraftStore(
       themesDirectory: Directory(path.join(temp.path, 'themes')),
@@ -468,6 +635,9 @@ void main() {
     );
     final apply = find.byKey(const ValueKey('workshop-apply'));
     expect(tester.widget<FilledButton>(apply).onPressed, isNull);
+    final preview = tester.widget<ThemeWorkshopSampleStage>(
+        find.byType(ThemeWorkshopSampleStage));
+    expect(preview.appearance.group(ThemeGroup.navigation)!['style'], 'floating');
     final preset = find.byKey(const ValueKey('workshop-seed-海盐蓝'));
     await tester.ensureVisible(preset);
     await tester.tap(preset);
@@ -495,6 +665,8 @@ void main() {
     expect(provider.appearance.group(ThemeGroup.wallpapers), isNull);
     expect(provider.backgroundImage, 'morenbeijing.jpeg');
     expect(provider.appearance.group(ThemeGroup.widgets), isNull);
+    expect(await tester.runAsync(provider.installedThemes), isEmpty,
+        reason: '本地修改直接保存外观，不生成并安装主题包');
     expect(tester.widget<FilledButton>(apply).onPressed, isNull);
     await tester.pumpWidget(const SizedBox());
   });

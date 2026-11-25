@@ -104,7 +104,7 @@ func TestCheckUpdate_OhosWithoutPublishedReleaseReturnsNoUpdate(t *testing.T) {
 
 func TestCheckUpdate_RejectsUnsupportedChannel(t *testing.T) {
 	r := newAppUpdateRouter(t, newAppUpdateTestDB(t))
-	w := mustDoUpdateRequest(t, r, "/api/app/update?platform=android&channel=beta&version_name=1.6.1&version_code=1601", nil)
+	w := mustDoUpdateRequest(t, r, "/api/app/update?platform=android&channel=nightly&version_name=1.6.1&version_code=1601", nil)
 	require.Equal(t, http.StatusBadRequest, w.Code)
 	require.Contains(t, w.Body.String(), "unsupported_channel")
 }
@@ -449,3 +449,30 @@ func latestReleaseID(t *testing.T, db *gorm.DB) uint {
 }
 
 func formatID(id uint) string { return strconv.FormatUint(uint64(id), 10) }
+
+func TestStableBetaUpdateChannelIsolation(t *testing.T) {
+	for _, current := range []int64{1601, 1602, 2000} {
+		t.Run(strconv.FormatInt(current, 10), func(t *testing.T) {
+			db := newAppUpdateTestDB(t)
+			stable := buildReleasePtrForUpdate(1700, models.AppReleaseStatusPublished, 1650)
+			beta := buildReleasePtrForUpdate(1602, models.AppReleaseStatusPublished, 1)
+			beta.Channel = models.AppReleaseChannelBeta
+			beta.StorageKey = "android/beta/1602/app.apk"
+			require.NoError(t, db.Create(stable).Error)
+			require.NoError(t, db.Create(beta).Error)
+			router := newAppUpdateRouter(t, db)
+			suffix := "&version_name=audit&version_code=" + strconv.FormatInt(current, 10)
+			response := decodeUpdateResponse(t, mustDoUpdateRequest(t, router, "/api/app/update?platform=android&channel=beta"+suffix, nil))
+			require.Equal(t, "beta", response.Channel)
+			require.True(t, response.UpdateAvailable)
+			require.Equal(t, "optional", response.UpdateType)
+			require.Equal(t, beta.VersionCode, response.LatestVersionCode)
+			stableResponse := decodeUpdateResponse(t, mustDoUpdateRequest(t, router, "/api/app/update?platform=android&channel=stable"+suffix, nil))
+			require.Equal(t, "stable", stableResponse.Channel)
+			require.Equal(t, stable.VersionCode, stableResponse.LatestVersionCode)
+			require.NoError(t, db.Model(beta).Update("status", models.AppReleaseStatusWithdrawn).Error)
+			emptyBeta := decodeUpdateResponse(t, mustDoUpdateRequest(t, router, "/api/app/update?platform=android&channel=beta"+suffix, nil))
+			require.False(t, emptyBeta.UpdateAvailable, "no fallback from beta to stable")
+		})
+	}
+}

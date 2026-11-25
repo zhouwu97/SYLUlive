@@ -67,18 +67,19 @@ type rankCursor struct {
 }
 
 func ValidateOptions(input Request) error {
-	if input.Sort != "" && input.Sort != "newest" && input.Sort != "likes" && input.Sort != "replies" {
+	if input.Sort != "" && input.Sort != "newest" && input.Sort != "oldest" && input.Sort != "likes" && input.Sort != "replies" {
 		return ErrInvalidReadOptions
 	}
-	if len(input.Cursor) > 512 || (input.Cursor != "" && (input.Sort == "" || input.Sort == "newest")) || (input.Sort != "" && input.Sort != "newest" && input.AfterID != 0) {
+	ranked := input.Sort == "likes" || input.Sort == "replies"
+	if len(input.Cursor) > 512 || (input.Cursor != "" && !ranked) || (ranked && input.AfterID != 0) {
 		return ErrInvalidReadOptions
 	}
 	return nil
 }
 
 type PublicAuthor struct {
-	Nickname string `json:"nickname"`
-	AIBot *models.PublicBotIdentity `json:"ai_bot,omitempty"`
+	Nickname string                    `json:"nickname"`
+	AIBot    *models.PublicBotIdentity `json:"ai_bot,omitempty"`
 }
 type PublicImage struct {
 	Index    int    `json:"index"`
@@ -304,7 +305,11 @@ func (reader *Reader) Read(ctx context.Context, name string, input Request) (int
 			query = query.Where("author_id = ?", input.InternalOwnerID)
 		}
 		if input.AfterID != 0 {
-			query = query.Where("id < ?", input.AfterID)
+			if input.Sort == "oldest" {
+				query = query.Where("id > ?", input.AfterID)
+			} else {
+				query = query.Where("id < ?", input.AfterID)
+			}
 		}
 		if name == "community.search_posts" {
 			// 转义 LIKE 通配符，避免用户输入的 % 或 _ 被解释为全量匹配。
@@ -312,6 +317,9 @@ func (reader *Reader) Read(ctx context.Context, name string, input Request) (int
 			query = query.Where("(LOWER(title) LIKE ? ESCAPE '!' OR LOWER(content) LIKE ? ESCAPE '!')", pattern, pattern)
 		}
 		order := "id DESC"
+		if input.Sort == "oldest" {
+			order = "id ASC"
+		}
 		ranked := input.Sort == "likes" || input.Sort == "replies"
 		column := "like_count"
 		if input.Sort == "replies" {

@@ -26,6 +26,7 @@ class User {
 
   // 账号身份与找回能力，仅在本人响应中由服务端返回。
   final bool studentVerified;
+  final bool academicConfigured;
   final String emailMasked;
   final bool emailBound;
   final List<String> loginMethods;
@@ -72,6 +73,7 @@ class User {
     this.botOwnerId,
     this.botOwnerNickname = '',
     this.studentVerified = false,
+    this.academicConfigured = false,
     this.emailMasked = '',
     this.emailBound = false,
     this.loginMethods = const [],
@@ -126,7 +128,7 @@ class User {
           ? ownerId.toInt()
           : null,
       botOwnerNickname: ownerNickname is String ? ownerNickname.trim() : '',
-      // student_verified 是旧版本兼容字段，校内功能统一由教务授权判断。
+      academicConfigured: json['academic_configured'] == true,
       studentVerified: json['student_verified'] == true,
       emailMasked: json['email_masked']?.toString() ?? '',
       emailBound: json['email_bound'] == true,
@@ -179,6 +181,7 @@ class User {
           'owner_nickname': botOwnerNickname,
         },
       'student_verified': studentVerified,
+      'academic_configured': academicConfigured,
       'email_masked': emailMasked,
       'email_bound': emailBound,
       'login_account': loginAccount,
@@ -203,9 +206,6 @@ class User {
       author?.isAiBot == true ? content.replaceFirst('[AI机器人] ', '') : content;
 
   bool get isAdmin => role == 'admin' || role == 'super_admin';
-  /// 教务认证完成后即可使用校内受限功能。
-  /// 旧版本的 edu_bound 作为等价投影兼容，避免升级后已绑定账号被误拦截。
-  bool get hasEduAccess => eduAuthorized || eduBound;
   bool get isSuperAdmin => role == 'super_admin';
   String get publicIdLabel => 'ID $id';
   String get aiBotLabel => botOwnerNickname.trim().isEmpty

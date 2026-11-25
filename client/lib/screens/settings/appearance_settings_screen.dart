@@ -530,7 +530,11 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
 
   String _bottomNavSummary(ThemeProvider theme,
       {required bool sideNavigation}) {
-    if (theme.bottomNavAnimationIntensity <= 0) {
+    if (theme.bottomNavStyle == BottomNavStyle.normal) {
+      return sideNavigation ? '标准侧栏' : BottomNavStyle.normal.label;
+    }
+    if (theme.bottomNavStyle == BottomNavStyle.floating ||
+        theme.bottomNavPerformanceMode == BottomNavPerformanceMode.off) {
       return sideNavigation ? '悬浮侧栏' : BottomNavStyle.floating.label;
     }
     final style = sideNavigation ? '液态玻璃侧栏' : BottomNavStyle.liquidGlass.label;

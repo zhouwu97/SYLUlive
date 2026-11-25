@@ -60,6 +60,9 @@ CourseScheduleSettingsCallbacks _callbacks() {
     openHomeWidgets: () async {},
     updateScheduleOpacity: (_) async {},
     updateScheduleSlotHeight: (_) async {},
+    updateScheduleFontScale: (_) async {},
+    updateScheduleTextColor: (_) async {},
+    updateScheduleCourseColor: (_) async {},
     resetScheduleDisplay: () async {},
   );
 }

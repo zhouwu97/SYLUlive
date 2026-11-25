@@ -261,6 +261,12 @@ void main() {
         ]
       },
       '/admin/exam-papers/pending-count': {'count': 3},
+      '/admin/themes': {
+        'items': [
+          {'id': 'theme-1'},
+          {'id': 'theme-2'},
+        ]
+      },
       '/admin/water/section-icon-reviews': {
         'reviews': [
           {'id': 1}
@@ -276,15 +282,44 @@ void main() {
       ],
     });
     await _pumpProfile(tester, adapter);
-    expect(find.descendant(of: _adminEntry(), matching: find.text('12')),
+    expect(find.descendant(of: _adminEntry(), matching: find.text('14')),
         findsOneWidget);
-    for (final path in ['/reports', '/admin/water/section-icon-reviews']) {
+    for (final path in ['/reports', '/admin/water/section-icon-reviews', '/admin/themes']) {
       expect(
           adapter.requests
               .singleWhere((r) => r.path == path)
               .queryParameters['status'],
           'pending');
     }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('工单入口显示未读会话数，返回后清除未读角标并保留待办摘要', (tester) async {
+    final adapter = _PendingAdapter();
+    adapter.responses['/admin/feedback/tickets/stats'] = {
+      'pending_count': 4,
+      'unread_count': 2,
+    };
+    adapter.responses['/admin/feedback/tickets'] = {
+      'tickets': [], 'has_more': false,
+    };
+    await _pumpProfile(tester, adapter);
+    final entry = find.ancestor(
+        of: find.text('工单管理'), matching: find.byType(InkWell));
+    expect(find.descendant(of: entry, matching: find.text('2')), findsOneWidget);
+    expect(find.text('2 个工单有新消息 · 4 条待办'), findsOneWidget);
+    await tester.ensureVisible(find.text('工单管理'));
+    await tester.tap(find.text('工单管理'));
+    await tester.pumpAndSettle();
+    adapter.responses['/admin/feedback/tickets/stats'] = {
+      'pending_count': 4,
+      'unread_count': 0,
+    };
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: entry, matching: find.text('2')), findsNothing);
+    expect(find.descendant(of: entry, matching: find.text('4')), findsNothing);
+    expect(find.text('用户问题、建议与待处理反馈 · 4 条待办'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

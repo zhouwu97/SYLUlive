@@ -370,6 +370,7 @@ func main() {
 
 		// Feed 推荐系统（FEED-1 / FEED-2 / FEED-4）
 		&models.FeedFeedback{},
+		&models.FeedSnapshot{},
 		&models.UserHiddenAuthor{},
 		&models.FeedImpression{},
 		&models.FeedDailyMetrics{},
@@ -378,6 +379,7 @@ func main() {
 		// 校园资讯
 		&models.CampusArticle{},
 		&models.JWCSyncState{},
+		&models.CampusSyncSchedule{},
 		&models.CompetitionCategory{},
 		&models.CompetitionCatalogPackage{},
 		&models.CompetitionCatalogAuditLog{},
@@ -458,7 +460,7 @@ func main() {
 		log.Fatal("食堂菜品与实拍历史数据迁移失败:", err)
 	}
 	if err := models.MigrateCanteenLocations(db); err != nil {
-		log.Fatal("食堂位置标签历史数据迁移失败:", err)
+		log.Fatal("食堂位置与店名索引迁移失败:", err)
 	}
 	if err := models.ValidateAIUserPermissionSchema(db); err != nil {
 		log.Fatal("AI_PERMISSION_SCHEMA_INVALID:", err)
@@ -523,14 +525,8 @@ func main() {
 	if err := models.EnsureCampusCalendarIndexes(db); err != nil {
 		log.Fatal("校历索引迁移失败:", err)
 	}
-	if err := ensureCanteenNormalizedNameIndex(db); err != nil {
-		log.Fatal("食堂名称唯一索引迁移失败:", err)
-	}
 	if err := models.EnsureCanteenOperatingStatusSchema(db); err != nil {
 		log.Fatal("食堂营业状态迁移失败:", err)
-	}
-	if err := models.EnsureCanteenDishSchema(db); err != nil {
-		log.Fatal("食堂菜品图库约束迁移失败:", err)
 	}
 	if err := models.EnsureCanteenRatingRecommendationSchema(db); err != nil {
 		log.Fatal("食堂评价菜品推荐约束迁移失败:", err)
@@ -713,7 +709,6 @@ func main() {
 	r.Use(middleware.ReadAbuseRateLimitMiddleware(
 		120,
 		time.Minute,
-		"/api/posts",
 		"/api/search",
 		"/api/topics/search",
 		"/api/topics/recommend",
@@ -1398,8 +1393,9 @@ func main() {
 	if cfg.ImageVariantWorkerEnabled {
 		services.StartImageVariantWorkers(appCtx, db, cfg.UploadDir, 1)
 	}
-	tasks.StartLotteryCron(db)
+	lotteryCron := tasks.StartLotteryCron(appCtx, db)
 	appealFinalizerCron := tasks.StartAppealFinalizerCron(appCtx, db)
+	go tasks.CleanupFeedSnapshots(appCtx, db)
 	feedMetricsCron := tasks.StartFeedMetricsCron(appCtx, services.NewFeedMetricsService(db))
 	var examPaperStorageCron *tasks.ExamPaperStorageCron
 	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
@@ -1795,7 +1791,8 @@ func main() {
 
 	posts := r.Group("/api/posts")
 
-	posts.Use(middleware.OptionalAuthMiddleware(db, cfg.JWTSecret))
+	postReads := middleware.CommunityReadRateLimit()
+	posts.Use(middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), postReads)
 
 	{
 
@@ -1957,7 +1954,7 @@ func main() {
 
 	postsAuth := r.Group("/api/posts")
 
-	postsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.RequireCommunityRules(db))
+	postsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), postReads, middleware.RequireCommunityRules(db))
 
 	{
 
@@ -2364,7 +2361,9 @@ func main() {
 		superAdmin.DELETE("/security/blocks/:id", securityAdminHandler.RevokeBlock)
 
 		superAdmin.GET("/users", superAdminHandler.GetUsers)
+		superAdmin.GET("/lottery/events", superAdminHandler.GetLotteryEvents)
 		superAdmin.POST("/lottery", superAdminHandler.CreateLotteryEvent)
+		superAdmin.PUT("/lottery/:id", superAdminHandler.UpdateLotteryEvent)
 		superAdmin.DELETE("/lottery/:id", superAdminHandler.DeleteLotteryEvent)
 		superAdmin.GET("/lottery/participants", superAdminHandler.GetLotteryParticipants)
 		superAdmin.DELETE("/lottery/participants/:event_id/:user_id", superAdminHandler.KickLotteryParticipant)
@@ -2761,18 +2760,13 @@ func main() {
 		adminViolations.PUT("/:id/appeal", teacherHandler.HandleAppeal)
 	}
 
-	// 抽奖路由
-
+	// 抽奖路由（统一要求登录访问）
 	lotteryGroup := r.Group("/api/lottery")
-
+	lotteryGroup.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
-
-		// 获取当前抽奖活动（可以允许未登录用户看，所以不用统一拦截，或者用带用户信息的中间件）
-
-		lotteryGroup.GET("/current", middleware.AuthMiddleware(db, cfg.JWTSecret), lotteryHandler.GetCurrent)
-
-		lotteryGroup.POST("/:id/join", middleware.AuthMiddleware(db, cfg.JWTSecret), lotteryHandler.Join)
-
+		lotteryGroup.GET("/current", lotteryHandler.GetCurrent)
+		lotteryGroup.GET("/history", lotteryHandler.GetHistory)
+		lotteryGroup.POST("/:id/join", lotteryHandler.Join)
 	}
 
 	lotteryAdminGroup := r.Group("/api/admin/lottery")
@@ -2969,6 +2963,9 @@ func main() {
 	if appealFinalizerCron != nil {
 		appealFinalizerCron.Wait()
 	}
+	if lotteryCron != nil {
+		lotteryCron.Wait()
+	}
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)
 	}
@@ -3129,46 +3126,6 @@ func ensureUserCalendarAgentActionUniqueIndex(db *gorm.DB) error {
 	return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_user_calendar_events_agent_action
  ON user_calendar_events (user_id, source_type, source_id)
  WHERE source_type = 'agent_action' AND source_id <> ''`).Error
-}
-
-// ensureCanteenNormalizedNameIndex 回填历史数据后建立数据库级唯一约束。
-func ensureCanteenNormalizedNameIndex(db *gorm.DB) error {
-	var canteens []models.Canteen
-	if err := db.Select("id", "name", "normalized_name", "location_area", "location_floor", "verified", "rejected_at").Find(&canteens).Error; err != nil {
-		return err
-	}
-	type locationKey struct {
-		normalized string
-		area       string
-		floor      string
-	}
-	seen := make(map[locationKey]uint, len(canteens))
-	for _, canteen := range canteens {
-		normalized := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(canteen.Name)), " "))
-		// 被驳回的提交保留记录但不占真实店名，规范名固定为占位值，否则同名重新提交会让启动失败。
-		if canteen.IsRejected() {
-			normalized = models.CanteenRejectedNormalizedName(canteen.ID)
-		}
-		key := locationKey{
-			normalized: normalized,
-			area:       canteen.LocationArea,
-			floor:      canteen.LocationFloor,
-		}
-		if previousID, exists := seen[key]; exists {
-			return errors.New("食堂名称规范化后重复: id=" + strconv.FormatUint(uint64(previousID), 10) + ", id=" + strconv.FormatUint(uint64(canteen.ID), 10))
-		}
-		seen[key] = canteen.ID
-		if canteen.NormalizedName != normalized {
-			if err := db.Model(&models.Canteen{}).Where("id = ?", canteen.ID).Update("normalized_name", normalized).Error; err != nil {
-				return err
-			}
-		}
-	}
-	// 位置字段加入唯一约束：同名店铺允许存在于不同食堂区域/楼层。
-	if err := db.Exec("DROP INDEX IF EXISTS idx_canteens_normalized_name").Error; err != nil {
-		return err
-	}
-	return db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_canteens_normalized_name ON canteens (normalized_name, location_area, location_floor)").Error
 }
 
 func ensureFeatureCollaborationIndexes(db *gorm.DB) error {

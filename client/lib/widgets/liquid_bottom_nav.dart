@@ -1,8 +1,6 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_theme_tokens.dart';
 import 'liquid_glass/bottom_nav_controller.dart';
@@ -65,7 +63,6 @@ class LiquidBottomNav extends StatefulWidget {
 
 class _LiquidBottomNavState extends State<LiquidBottomNav>
     with TickerProviderStateMixin {
-  late final AnimationController _recoil;
   late final LiquidGlassDynamics _fluid;
   late final BottomNavController _drag;
   late final Listenable _motion;
@@ -103,8 +100,7 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
       vsync: this,
       index: widget.currentIndex.toDouble(),
     )..addListener(_publish);
-    _recoil = AnimationController.unbounded(vsync: this);
-    _motion = Listenable.merge([_fluid, _recoil, _tilt]);
+    _motion = Listenable.merge([_fluid, _tilt]);
     widget.visualIndexListenable.addListener(_externalPosition);
   }
 
@@ -144,8 +140,6 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
       _ownedTarget = null;
       _committedTarget = null;
       _drag.cancelDrag(widget.currentIndex.toDouble());
-      _recoil.stop();
-      _recoil.value = 0;
       _fluid.snapTo(widget.currentIndex.toDouble());
     }
     if (oldWidget.currentIndex != widget.currentIndex) {
@@ -166,41 +160,9 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
     _tracker = null;
     _dragging = false;
     widget.visualIndexListenable.removeListener(_externalPosition);
-    _recoil.dispose();
     _fluid.dispose();
     _tilt.dispose();
     super.dispose();
-  }
-
-  void _spring(
-    AnimationController controller,
-    double to, {
-    double stiffness = 700,
-    double damping = 48,
-  }) {
-    final velocity = controller.velocity;
-    controller.stop();
-    if (_reduceMotion) {
-      controller.value = to;
-      return;
-    }
-    unawaited(
-      controller
-          .animateWith(
-            SpringSimulation(
-              SpringDescription(
-                mass: 1,
-                stiffness: stiffness,
-                damping: damping,
-              ),
-              controller.value,
-              to,
-              velocity,
-            ),
-          )
-          .orCancel
-          .catchError((Object _) {}),
-    );
   }
 
   Offset _local(PointerEvent event) =>
@@ -226,7 +188,6 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
     widget.onInteractionStart?.call();
     _ownedTarget = null;
     _pointerId = event.pointer;
-    _recoil.stop();
     _startX = p.dx;
     _startY = p.dy;
     _light = _fromTrack(p);
@@ -282,8 +243,6 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
       pullY: (p.dy - _startY) * .25,
       pressure: _pressure(event),
     );
-    final delta = (p.dx - _startX) / 120;
-    _recoil.value = _reduceMotion ? 0 : 4 * delta / (1 + delta.abs());
     setState(() {});
   }
 
@@ -321,17 +280,14 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
   }
 
   void _settle(int target) {
-    _spring(_recoil, 0, stiffness: 300, damping: 34.64);
     _speed = 0;
     _fluid.releaseTo(target.toDouble());
   }
 
   void _accessibleSelect(int index) {
-    _recoil.stop();
     _pointerId = null;
     _dragging = false;
     _fluid.snapTo(index.toDouble());
-    _recoil.value = 0;
     _commit(index);
   }
 
@@ -379,126 +335,123 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
               animation: _motion,
               builder: (context, _) {
                 final press = _fluid.pressure;
-                final scale = 1 + (78 / 56 - 1) * press;
                 final lens = Rect.fromCenter(
                   center: _fromTrack(Offset(
                     4 + (_fluid.position.clamp(-.12, 4.12) + .5) * _itemWidth,
                     (_vertical ? width / 2 : 32) + _fluid.vertical,
                   )),
-                  width: (_vertical ? width - 8 : _itemWidth) * scale,
-                  height: (_vertical ? _itemWidth : 56) * scale,
+                  width:
+                      (_vertical ? width - 8 : _itemWidth) * (1 + .30 * press),
+                  height: (_vertical ? _itemWidth : 56) * (1 + .39 * press),
                 );
-                return Transform.translate(
-                  offset: _fromTrack(Offset(_recoil.value, 0)),
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    onHover: (event) =>
-                        setState(() => _light = event.localPosition),
-                    child: Listener(
-                      behavior: HitTestBehavior.opaque,
-                      onPointerDown: _down,
-                      onPointerMove: _move,
-                      onPointerUp: _up,
-                      onPointerCancel: _cancel,
-                      child: SizedBox(
-                        key: const ValueKey('bottom-nav-floating-dock'),
-                        height: height,
-                        child: Stack(
-                          key: _dockKey,
-                          clipBehavior: Clip.none,
-                          children: [
+                return MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  onHover: (event) =>
+                      setState(() => _light = event.localPosition),
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: _down,
+                    onPointerMove: _move,
+                    onPointerUp: _up,
+                    onPointerCancel: _cancel,
+                    child: SizedBox(
+                      key: const ValueKey('bottom-nav-floating-dock'),
+                      height: height,
+                      child: Stack(
+                        key: _dockKey,
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned.fill(
+                            child: RepaintBoundary(
+                              child: LiquidGlassRenderer(
+                                lens: lens,
+                                press: press,
+                                axis: widget.axis,
+                                bend: _fromTrack(_fluid.bend),
+                                stretch: _fluid.stretch,
+                                angle: _vertical
+                                    ? math.pi / 2 - _fluid.angle
+                                    : _fluid.angle,
+                                energy: _fluid.energy,
+                                enabled: widget.shaderEnabled,
+                                pointer: _light +
+                                    (_reduceMotion
+                                        ? Offset.zero
+                                        : _tilt.value *
+                                            (_vertical ? height : width) *
+                                            .8),
+                                labels: LiquidBottomNav.labels,
+                                icons: LiquidBottomNav.icons,
+                                themeImages: widget.themeImages,
+                                originalIcons: widget.originalIcons,
+                                badges: widget.badges,
+                                accent: widget.accent ??
+                                    AppThemeTokens.of(context).navSelected,
+                                compare: widget.compare,
+                                blur: widget.blur,
+                                tint: widget.tint,
+                              ),
+                            ),
+                          ),
+                          Positioned.fromRect(
+                            rect: lens,
+                            child: const IgnorePointer(
+                              child: SizedBox(
+                                key: ValueKey('bottom-nav-selection'),
+                              ),
+                            ),
+                          ),
+                          if (_keyboardFocus)
                             Positioned.fill(
-                              child: RepaintBoundary(
-                                child: LiquidGlassRenderer(
-                                  lens: lens,
-                                  press: press,
-                                  axis: widget.axis,
-                                  bend: _fromTrack(_fluid.bend),
-                                  stretch: _fluid.stretch,
-                                  angle: _vertical
-                                      ? math.pi / 2 - _fluid.angle
-                                      : _fluid.angle,
-                                  energy: _fluid.energy,
-                                  enabled: widget.shaderEnabled,
-                                  pointer: _light +
-                                      (_reduceMotion
-                                          ? Offset.zero
-                                          : _tilt.value *
-                                              (_vertical ? height : width) *
-                                              .8),
-                                  labels: LiquidBottomNav.labels,
-                                  icons: LiquidBottomNav.icons,
-                                  themeImages: widget.themeImages,
-                                  originalIcons: widget.originalIcons,
-                                  badges: widget.badges,
-                                  accent: widget.accent ??
-                                      AppThemeTokens.of(context).navSelected,
-                                  compare: widget.compare,
-                                  blur: widget.blur,
-                                  tint: widget.tint,
-                                ),
-                              ),
-                            ),
-                            Positioned.fromRect(
-                              rect: lens,
-                              child: const IgnorePointer(
-                                child: SizedBox(
-                                  key: ValueKey('bottom-nav-selection'),
-                                ),
-                              ),
-                            ),
-                            if (_keyboardFocus)
-                              Positioned.fill(
-                                child: IgnorePointer(
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(
-                                        32,
-                                      ),
-                                      border: Border.all(
-                                        color: widget.accent ??
-                                            AppThemeTokens.of(context)
-                                                .navSelected,
-                                        width: 2,
-                                      ),
+                              child: IgnorePointer(
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(
+                                      32,
+                                    ),
+                                    border: Border.all(
+                                      color: widget.accent ??
+                                          AppThemeTokens.of(context)
+                                              .navSelected,
+                                      width: 2,
                                     ),
                                   ),
                                 ),
                               ),
-                            Positioned.fill(
-                              child: Padding(
-                                padding: _vertical
-                                    ? const EdgeInsets.symmetric(vertical: 4)
-                                    : const EdgeInsets.symmetric(horizontal: 4),
-                                child: Flex(
-                                  direction: widget.axis,
-                                  children: List.generate(
-                                    5,
-                                    (index) => Expanded(
-                                      child: Semantics(
+                            ),
+                          Positioned.fill(
+                            child: Padding(
+                              padding: _vertical
+                                  ? const EdgeInsets.symmetric(vertical: 4)
+                                  : const EdgeInsets.symmetric(horizontal: 4),
+                              child: Flex(
+                                direction: widget.axis,
+                                children: List.generate(
+                                  5,
+                                  (index) => Expanded(
+                                    child: Semantics(
+                                      key: ValueKey(
+                                        'bottom-nav-semantic-$index',
+                                      ),
+                                      label:
+                                          '${LiquidBottomNav.labels[index]}${widget.badges[index] == true ? '，有新消息' : ''}',
+                                      button: true,
+                                      selected: widget.currentIndex == index,
+                                      onTap: () => _accessibleSelect(index),
+                                      child: SizedBox.expand(
                                         key: ValueKey(
-                                          'bottom-nav-semantic-$index',
+                                          'bottom-nav-item-$index',
                                         ),
-                                        label:
-                                            '${LiquidBottomNav.labels[index]}${widget.badges[index] == true ? '，有新消息' : ''}',
-                                        button: true,
-                                        selected: widget.currentIndex == index,
-                                        onTap: () => _accessibleSelect(index),
-                                        child: SizedBox.expand(
-                                          key: ValueKey(
-                                            'bottom-nav-item-$index',
-                                          ),
-                                          child: const ColoredBox(
-                                              color: Colors.transparent),
-                                        ),
+                                        child: const ColoredBox(
+                                            color: Colors.transparent),
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

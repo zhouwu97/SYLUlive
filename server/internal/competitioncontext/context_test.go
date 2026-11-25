@@ -23,7 +23,7 @@ func newContextTestDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
-		&models.User{}, &models.AcademicIdentityBinding{},
+		&models.User{}, &models.AcademicIdentityBinding{}, &models.AcademicAccountConfig{},
 		&models.UserCompetitionPreference{}, &models.UserCompetitionProfile{}, &models.UserCompetitionAward{},
 	); err != nil {
 		t.Fatal(err)
@@ -60,17 +60,23 @@ func readyContextUser(t *testing.T, db *gorm.DB) models.User {
 
 func TestCompetitionProfileNeedsEduAccessAndCompleteFields(t *testing.T) {
 	for _, tc := range []struct {
-		name                                                   string
-		authorized, legacyBound, identity, missingMajor, ready bool
+		name                                                               string
+		configured, authorized, legacyBound, identity, missingMajor, ready bool
 	}{
-		{name: "教务认证", authorized: true, ready: true},
-		{name: "旧教务绑定", legacyBound: true, ready: true},
+		{name: "有效配置", configured: true, ready: true},
+		{name: "旧授权", authorized: true},
+		{name: "旧教务绑定", legacyBound: true},
 		{name: "仅旧身份", identity: true},
-		{name: "缺少专业", authorized: true, missingMajor: true},
+		{name: "缺少专业", configured: true, missingMajor: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := newContextTestDB(t)
 			user := readyContextUser(t, db)
+			if tc.configured {
+				if err := db.Create(&models.AcademicAccountConfig{UserID: user.ID, ProviderID: models.AcademicProviderUndergraduate, StudentID: user.StudentID, State: "active", Revision: 1}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
 			if !tc.identity {
 				if err := db.Where("user_id = ?", user.ID).Delete(&models.AcademicIdentityBinding{}).Error; err != nil {
 					t.Fatal(err)

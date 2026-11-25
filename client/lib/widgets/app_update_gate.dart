@@ -5,34 +5,14 @@ import 'package:provider/provider.dart';
 
 import '../models/app_update_info.dart';
 import '../platform/app_platform.dart';
-import '../platform/contracts/external_navigator.dart';
-import '../platform/contracts/update_action.dart';
 import '../platform/platform_capabilities.dart';
 import '../platform/update_download_bridge.dart';
 import '../services/app_update_coordinator.dart';
-import '../utils/app_feedback.dart';
-import 'app_dialog.dart';
+import 'app_update_dialog.dart';
+import 'beta_download_dialog.dart';
 
-const _githubReleasesUrl = 'https://github.com/zhouwu97/SYLUlive/releases';
-
-String get _storeLabel => AppPlatforms.current.isIOS
-    ? '打开 App Store / TestFlight'
-    : '打开应用市场';
-
-Future<bool> _openStore(BuildContext context, AppUpdateInfo info) async {
-  final action = AppPlatforms.current.isIOS
-      ? const IOSAppStoreUpdateAction()
-      : const OhosMarketUpdateAction();
-  try {
-    await action.execute(info);
-    return true;
-  } catch (_) {
-    if (context.mounted) {
-      AppFeedback.error('无法打开应用市场，请重试', context: context);
-    }
-    return false;
-  }
-}
+String get _storeLabel =>
+    AppPlatforms.current.isIOS ? '打开 App Store / TestFlight' : '打开应用市场';
 
 /// 根级更新提示协调器。它只在需要用户决策时呈现紧凑 Dialog，下载始终留在后台。
 class AppUpdateGate extends StatefulWidget {
@@ -53,9 +33,10 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     with WidgetsBindingObserver {
   bool _optionalDialogVisible = false;
   bool _requiredDialogVisible = false;
-  int? _presentedOptionalVersion;
-  int? _presentedRequiredVersion;
-  int? _presentedFailedVersion;
+  bool _betaDialogVisible = false;
+  final _presentedBetaVersions = <String>{};
+  final _presentedInstallVersions = <String>{};
+  String? _presentedOptionalVersion;
   late bool _isForeground;
   Timer? _foregroundCheckTimer;
   Timer? _retryTimer;
@@ -108,34 +89,56 @@ class _AppUpdateGateState extends State<AppUpdateGate>
   Widget build(BuildContext context) {
     final coordinator = context.watch<AppUpdateCoordinator>();
     final info = coordinator.info;
-    if (_isForeground &&
+    final canPrompt = _isForeground && !coordinator.isPromptActive;
+    if (canPrompt &&
         !_optionalDialogVisible &&
+        !_betaDialogVisible &&
         info != null &&
-        coordinator.shouldPromptOptional &&
-        _presentedOptionalVersion != info.latestVersionCode) {
+        ((coordinator.shouldPromptOptional &&
+                _presentedOptionalVersion != info.releaseKey) ||
+            (coordinator.shouldPromptInstall &&
+                !_presentedInstallVersions.contains(info.releaseKey)))) {
       WidgetsBinding.instance
           .addPostFrameCallback((_) => _showOptionalDialog());
     }
-    if (info != null &&
-        coordinator.isRequired &&
-        _presentedRequiredVersion != info.latestVersionCode) {
-      _presentedRequiredVersion = info.latestVersionCode;
+    if (canPrompt &&
+        info != null &&
+        coordinator.shouldPromptRequired &&
+        !_betaDialogVisible &&
+        !_optionalDialogVisible) {
       WidgetsBinding.instance
           .addPostFrameCallback((_) => _showRequiredDialog());
     }
-    if (info != null &&
-        coordinator.downloadState == AppUpdateDownloadState.failed &&
-        coordinator.downloadStatus.userInitiated &&
-        _presentedFailedVersion != info.latestVersionCode) {
-      _presentedFailedVersion = info.latestVersionCode;
+    if (canPrompt &&
+        info != null &&
+        !_betaDialogVisible &&
+        !_optionalDialogVisible &&
+        !_requiredDialogVisible &&
+        coordinator.shouldPromptFailure) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _showFailedDialog());
+    }
+    final beta = coordinator.betaInfo;
+    if (canPrompt &&
+        !_optionalDialogVisible &&
+        !_requiredDialogVisible &&
+        !_betaDialogVisible &&
+        (!coordinator.shouldPromptOptional ||
+            _presentedOptionalVersion == info?.releaseKey) &&
+        !coordinator.shouldPromptInstall &&
+        coordinator.shouldPromptBeta &&
+        beta != null &&
+        !_presentedBetaVersions.contains(beta.releaseKey)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showBetaDialog());
     }
 
     return Stack(
       children: [
         widget.child,
         if (coordinator.isRequired && info != null)
-          _RequiredDownloadBanner(info: info, coordinator: coordinator),
+          _RequiredDownloadBanner(
+              info: info,
+              coordinator: coordinator,
+              onTap: () => _showRequiredDialog(fromBanner: true)),
       ],
     );
   }
@@ -143,134 +146,113 @@ class _AppUpdateGateState extends State<AppUpdateGate>
   BuildContext? get _dialogContext =>
       widget.navigatorKey.currentState?.overlay?.context;
 
+  Future<void> _showBetaDialog() async {
+    if (!mounted ||
+        !_isForeground ||
+        _betaDialogVisible ||
+        _optionalDialogVisible ||
+        _requiredDialogVisible) {
+      return;
+    }
+    final coordinator = context.read<AppUpdateCoordinator>();
+    if (coordinator.isPromptActive) return;
+    final beta = coordinator.betaInfo;
+    if (beta == null ||
+        !coordinator.shouldPromptBeta ||
+        coordinator.shouldPromptInstall ||
+        (coordinator.shouldPromptOptional &&
+            _presentedOptionalVersion != coordinator.info?.releaseKey) ||
+        _presentedBetaVersions.contains(beta.releaseKey)) {
+      return;
+    }
+    final dialogContext = _dialogContext;
+    if (dialogContext == null) return _retryLater(_showBetaDialog);
+    _presentedBetaVersions.add(beta.releaseKey);
+    _betaDialogVisible = true;
+    try {
+      await showBetaDownloadDialog(dialogContext, coordinator, beta);
+    } finally {
+      if (mounted) setState(() => _betaDialogVisible = false);
+    }
+  }
+
   Future<void> _showOptionalDialog() async {
     if (!mounted || !_isForeground || _optionalDialogVisible) return;
     final coordinator = context.read<AppUpdateCoordinator>();
+    if (coordinator.isPromptActive) return;
     final info = coordinator.info;
+    final ready = coordinator.shouldPromptInstall;
     if (info == null ||
-        !coordinator.shouldPromptOptional ||
-        _presentedOptionalVersion == info.latestVersionCode) {
+        (ready
+            ? _presentedInstallVersions.contains(info.releaseKey)
+            : !coordinator.shouldPromptOptional ||
+                _presentedOptionalVersion == info.releaseKey)) {
       return;
     }
     final dialogContext = _dialogContext;
     if (dialogContext == null) return _retryLater(_showOptionalDialog);
 
-    _presentedOptionalVersion = info.latestVersionCode;
     _optionalDialogVisible = true;
-    final initialStatus = coordinator.downloadStatus;
+    if (ready) {
+      _presentedInstallVersions.add(info.releaseKey);
+    } else {
+      _presentedOptionalVersion = info.releaseKey;
+    }
     try {
-      final action = await showAppDialog<_UpdateDialogAction>(
-        context: dialogContext,
-        builder: (context) {
-          final current = context.watch<AppUpdateCoordinator>();
-          return _UpdateDialog(
-            info: info,
-            required: false,
-            downloadStatus:
-                current.info?.latestVersionCode == info.latestVersionCode
-                    ? current.downloadStatus
-                    : initialStatus,
-          );
-        },
-      );
-      if (!mounted ||
-          coordinator.info?.latestVersionCode != info.latestVersionCode) {
-        return;
-      }
-      switch (action) {
-        case _UpdateDialogAction.download:
-        case _UpdateDialogAction.currentNetwork:
-          await coordinator.enqueueDownload(
-              wifiOnly: false, userInitiated: true);
-        case _UpdateDialogAction.install:
-          await coordinator.installPreparedUpdate();
-        case _UpdateDialogAction.github:
-          await coordinator.deferOptionalUpdate();
-          await _openGithub();
-        case _UpdateDialogAction.later:
-        case null:
-          await coordinator.deferOptionalUpdate();
-      }
+      await showAppUpdateDialog(dialogContext, coordinator, info);
     } finally {
-      if (mounted) setState(() => _optionalDialogVisible = false);
+      if (mounted) {
+        if (coordinator.info?.releaseKey == info.releaseKey &&
+            coordinator.hasReadyPackage) {
+          _presentedInstallVersions.add(info.releaseKey);
+        }
+        setState(() => _optionalDialogVisible = false);
+      }
     }
   }
 
-  Future<void> _showRequiredDialog() async {
-    if (!mounted || _requiredDialogVisible) return;
+  Future<void> _showRequiredDialog({bool fromBanner = false}) async {
+    if (!mounted || !_isForeground || _requiredDialogVisible) return;
     final coordinator = context.read<AppUpdateCoordinator>();
+    if (coordinator.isPromptActive) return;
     final info = coordinator.info;
-    if (info == null || !coordinator.isRequired) return;
+    if (info == null ||
+        !coordinator.isRequired ||
+        (!fromBanner && !coordinator.shouldPromptRequired)) {
+      return;
+    }
     final dialogContext = _dialogContext;
     if (dialogContext == null) return _retryLater(_showRequiredDialog);
-
     _requiredDialogVisible = true;
-    final action = await showAppDialog<_UpdateDialogAction>(
-      context: dialogContext,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: _UpdateDialog(
-          info: info,
-          required: true,
-          downloadStatus: coordinator.downloadStatus,
-        ),
-      ),
-    );
-    _requiredDialogVisible = false;
-    if (!mounted) return;
-    switch (action) {
-      case _UpdateDialogAction.download:
-        await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
-      case _UpdateDialogAction.currentNetwork:
-        await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
-      case _UpdateDialogAction.install:
-        await coordinator.installPreparedUpdate();
-      case _UpdateDialogAction.github:
-        await _openGithub();
-      case _UpdateDialogAction.later:
-      case null:
-        break;
+    try {
+      await showAppUpdateDialog(dialogContext, coordinator, info,
+          required: true);
+    } finally {
+      if (mounted) setState(() => _requiredDialogVisible = false);
     }
   }
 
   Future<void> _showFailedDialog() async {
-    if (!mounted) return;
+    if (!mounted ||
+        !_isForeground ||
+        _optionalDialogVisible ||
+        _requiredDialogVisible) {
+      return;
+    }
     final coordinator = context.read<AppUpdateCoordinator>();
+    if (coordinator.isPromptActive) return;
     final info = coordinator.info;
-    if (info == null ||
-        coordinator.downloadState != AppUpdateDownloadState.failed ||
-        !coordinator.downloadStatus.userInitiated) {
+    if (info == null || !coordinator.shouldPromptFailure) {
       return;
     }
     final dialogContext = _dialogContext;
     if (dialogContext == null) return _retryLater(_showFailedDialog);
-    final retry = await showAppDialog<bool>(
-      context: dialogContext,
-      builder: (_) => AppAlertDialog(
-        title: const Text('更新包下载失败'),
-        content: const Text('可以稍后重试，也可以前往 GitHub Releases 手动下载。'),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await _openGithub();
-              if (dialogContext.mounted) Navigator.of(dialogContext).pop(false);
-            },
-            child: const Text('GitHub 下载'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('稍后'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('立即重试'),
-          ),
-        ],
-      ),
-    );
-    if (retry == true) {
-      await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
+    _optionalDialogVisible = true;
+    try {
+      await showAppUpdateDialog(dialogContext, coordinator, info,
+          required: coordinator.isRequired);
+    } finally {
+      if (mounted) setState(() => _optionalDialogVisible = false);
     }
   }
 
@@ -280,125 +262,15 @@ class _AppUpdateGateState extends State<AppUpdateGate>
       callback();
     });
   }
-
-  Future<void> _openGithub() async {
-    final uri = Uri.parse(_githubReleasesUrl);
-    await ExternalNavigator.current().open(uri);
-  }
-}
-
-enum _UpdateDialogAction { later, github, download, currentNetwork, install }
-
-class _UpdateDialog extends StatelessWidget {
-  const _UpdateDialog({
-    required this.info,
-    required this.required,
-    required this.downloadStatus,
-  });
-
-  final AppUpdateInfo info;
-  final bool required;
-  final NativeUpdateDownloadStatus downloadStatus;
-
-  @override
-  Widget build(BuildContext context) {
-    if (info.deliveryMode == AppUpdateDeliveryMode.externalMarket) {
-      return AppAlertDialog(
-        title: Text(required ? '需要更新沈理校园' : '发现新版本 ${info.latestVersionName}'),
-        content: SingleChildScrollView(
-          child: Text(info.changelog.isEmpty ? '请在应用市场更新。' : info.changelog),
-        ),
-        actions: [
-          if (!required)
-            TextButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(_UpdateDialogAction.later),
-              child: const Text('稍后'),
-            ),
-          FilledButton(
-            onPressed: () async {
-              if (await _openStore(context, info) && context.mounted) {
-                Navigator.of(context).pop(_UpdateDialogAction.later);
-              }
-            },
-            child: Text(_storeLabel),
-          ),
-        ],
-      );
-    }
-    final active = downloadStatus.isActive;
-    final ready = downloadStatus.state == AppUpdateDownloadState.ready;
-    return AppAlertDialog(
-      title: Text(required ? '需要更新沈理校园' : '发现新版本 ${info.latestVersionName}'),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 260),
-        child: SingleChildScrollView(
-          child: Text(
-            required
-                ? (ready
-                    ? '当前版本已停止服务，更新包已经准备完成，请安装后继续使用。'
-                    : active
-                        ? '当前版本已停止服务。安装包正在后台下载 ${_progressText(downloadStatus)}，完成后可直接安装。'
-                        : '当前版本已停止服务，请下载更新后继续使用。')
-                : '${_sizeText(info.fileSize)}\n\n${info.changelog.isEmpty ? '本次更新优化了使用体验。' : info.changelog}',
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () =>
-              Navigator.of(context).pop(_UpdateDialogAction.github),
-          child: const Text('GitHub 下载'),
-        ),
-        if (!required)
-          TextButton(
-            onPressed: () =>
-                Navigator.of(context).pop(_UpdateDialogAction.later),
-            child: const Text('稍后'),
-          ),
-        if (downloadStatus.state == AppUpdateDownloadState.queued)
-          TextButton(
-            onPressed: () =>
-                Navigator.of(context).pop(_UpdateDialogAction.currentNetwork),
-            child: const Text('使用当前网络下载'),
-          ),
-        if (ready)
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(context).pop(_UpdateDialogAction.install),
-            child: const Text('立即安装'),
-          )
-        else if (active && required)
-          TextButton(
-            onPressed: () =>
-                Navigator.of(context).pop(_UpdateDialogAction.later),
-            child: const Text('知道了'),
-          )
-        else if (!active)
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(context).pop(_UpdateDialogAction.download),
-            child: const Text('后台下载'),
-          ),
-      ],
-    );
-  }
-
-  static String _sizeText(int bytes) =>
-      '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
-
-  static String _progressText(NativeUpdateDownloadStatus status) {
-    if (status.totalBytes <= 0) return '';
-    return '${(status.progress * 100).toStringAsFixed(0)}%';
-  }
 }
 
 class _RequiredDownloadBanner extends StatelessWidget {
   const _RequiredDownloadBanner(
-      {required this.info, required this.coordinator});
+      {required this.info, required this.coordinator, required this.onTap});
 
   final AppUpdateInfo info;
   final AppUpdateCoordinator coordinator;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -415,13 +287,7 @@ class _RequiredDownloadBanner extends StatelessWidget {
       child: Material(
         color: Theme.of(context).colorScheme.errorContainer,
         child: InkWell(
-          onTap: external
-              ? () => unawaited(_openStore(context, info))
-              : status.state == AppUpdateDownloadState.ready
-                  ? coordinator.installPreparedUpdate
-                  : status.isActive
-                      ? null
-                      : coordinator.downloadOrInstall,
+          onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(

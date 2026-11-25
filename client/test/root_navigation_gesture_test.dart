@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -59,6 +61,28 @@ class _HomeAuthProvider extends ChangeNotifier implements AuthProvider {
 }
 
 void main() {
+  testWidgets('详情返回与侧栏底栏快速切换重叠时，首页发布按钮不产生重复 Hero', (tester) async {
+    final page = await _pumpHome(tester);
+    await page.themeProvider.setBottomNavStyle(BottomNavStyle.normal);
+    await tester.pumpAndSettle();
+    final navigator = Navigator.of(tester.element(find.byType(HomeScreen)));
+    unawaited(navigator.push<void>(MaterialPageRoute(
+      builder: (_) => const Scaffold(body: Text('详情页')),
+    )));
+    await tester.pumpAndSettle();
+
+    tester.view.physicalSize = const Size(800, 400);
+    await tester.pump();
+    tester.view.physicalSize = const Size(400, 800);
+    await tester.pump(const Duration(milliseconds: 16));
+    navigator.pop();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _disposeHome(tester, page);
+  });
+
   testWidgets('液态底栏接入真实首页后松手切页，Pad 切换保留页面状态', (tester) async {
     final page = await _pumpHome(tester);
     await page.themeProvider.setBottomNavStyle(BottomNavStyle.liquidGlass);

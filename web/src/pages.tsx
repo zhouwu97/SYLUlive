@@ -4,7 +4,7 @@ import { ServerAvatar } from "./server-avatar";
 import { displayName } from "./user-level";
 import { useMobile } from "./mobile";
 import { MobileHome } from "./mobile-home";
-import { useDesktopHomeFeed } from "./desktop-home-feed";
+import { useHomeFeed } from "./home-feed";
 import { feedSourceOf } from "./feed-feedback";
 import { PaperLibrary, PaperUploadButton } from './papers';
 import { teachingWeek, mergeCourses } from "@sylulive/academic-contracts";
@@ -94,7 +94,7 @@ function DesktopDashboard() {
   const nav = useNavigate(), auth = useAuth(), openPostEditor = usePostEditor();
   const [params, setParams] = useSearchParams();
   const sort = params.get("sort") || "all";
-  const posts = useDesktopHomeFeed(sort);
+  const posts = useHomeFeed(sort);
   const briefArticles = useApi("/api/campus/articles?page=1&page_size=4");
   const loadMore = useRef<HTMLDivElement>(null);
   useEffect(() => {

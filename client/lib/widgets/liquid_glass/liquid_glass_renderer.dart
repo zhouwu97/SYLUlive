@@ -313,6 +313,8 @@ class _GlassPainter extends CustomPainter {
     _ensureAtlas(size);
     shader.setImageSampler(0, resources.blurred!);
     shader.setImageSampler(1, resources.atlas!);
+    // 云考导航透镜使用原始背景，底座继续使用用户选择的磨砂材质。
+    shader.setImageSampler(2, capture.image);
     // Inverse of reference jellyMatrix: stretch along velocity, compress across
     // it. Determinant is one, so moving faster does not inflate the glass volume.
     final along = 1 + settings.stretch;

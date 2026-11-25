@@ -19,8 +19,7 @@ class _ResponsiveAuthProvider extends AuthProvider {
           id: 1,
           studentId: '20260001',
           nickname: '测试用户',
-          eduBound: true,
-          studentVerified: verified,
+          academicConfigured: verified,
           createdAt: DateTime(2026),
         ),
         super(Dio());

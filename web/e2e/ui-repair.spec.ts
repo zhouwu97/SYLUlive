@@ -201,3 +201,32 @@ test('工单读取权限拒绝显示错误，恢复后可重试读取',async({pa
   await page.goto('admin/feedback/9');await expect(page.getByText('当前账号无权处理此工单',{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'发送',exact:true})).toHaveCount(0);
   denied=false;await page.locator('#mainContent').getByRole('button',{name:'重试',exact:true}).click();await expect(page.getByRole('heading',{name:'可恢复的工单',exact:true})).toBeVisible();
 });
+
+
+for (const recovered of ['empty','items'] as const) test(`抽奖历史错误可单独重试 ${recovered}`, async ({page},info) => {
+  await setup(page,'user');
+  let currentLoads=0,historyLoads=0;
+  let historyRecovered=false;
+  await page.route('**/api/lottery/current',route=>{
+    currentLoads++;
+    return route.fulfill({json:{event:{id:1,title:'合成当前活动',prize_name:'合成奖品',status:0,draw_time:'2099-01-01T00:00:00Z'},joined:false,academic_configured:true}});
+  });
+  await page.route(/\/api\/lottery\/history(?:\?|$)/,route=>{
+    historyLoads++;
+    return !historyRecovered ? route.fulfill({status:503,json:{code:'lottery_history_failed'}})
+      : route.fulfill({json:{items:recovered==='empty'?[]:[{id:2,title:'合成已结束活动',prize_name:'历史奖品',status:2,participant_count:0}]}});
+  });
+  await page.goto('toolbox');
+  await page.getByRole('button',{name:/抽奖活动/}).click();
+  const dialog=page.getByRole('dialog');
+  await expect(dialog).toContainText('合成当前活动');
+  const history=dialog.locator('section').filter({has:page.getByRole('heading',{name:'往期抽奖记录'})});
+  await expect(history.getByRole('button',{name:'重试',exact:true})).toBeVisible();
+  await dialog.screenshot({path:info.outputPath(`lottery-history-error-${recovered}.png`)});
+  const currentBeforeRetry=currentLoads, historyBeforeRetry=historyLoads;
+  historyRecovered=true;
+  await history.getByRole('button',{name:'重试',exact:true}).click();
+  await expect(history).toContainText(recovered==='empty'?'暂无内容':'合成已结束活动');
+  expect(historyLoads).toBe(historyBeforeRetry+1);expect(currentLoads).toBe(currentBeforeRetry);
+  await expect(dialog.getByRole('button',{name:'参加本期活动'})).toBeEnabled();
+});

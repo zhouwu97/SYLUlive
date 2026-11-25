@@ -36,6 +36,7 @@ func TestCanteenRateConcurrentNoDuplicates(t *testing.T) {
 		t.Fatalf("bind edu: %v", err)
 	}
 	seedVerifiedStudent(t, db, models.User{ID: 1, StudentID: "student-1"})
+	seedAcademicConfig(t, db, models.User{ID: 1, StudentID: "student-1"})
 	handler := NewCanteenHandler(db)
 
 	const goroutines = 10

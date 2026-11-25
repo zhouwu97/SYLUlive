@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -23,6 +24,7 @@ class _Api {
   final filters = <String>[];
   bool fail = false;
   bool empty = false;
+  int unread = 0;
   Completer<void>? gate;
 
   _Api() {
@@ -60,6 +62,7 @@ class _Api {
                       'title': '$filter 工单 ${i + 1}',
                       'status': 'pending',
                       'admin_viewed': true,
+                      'admin_unread_count': i == 0 ? unread : 0,
                       'created_at': '2026-10-25T08:00:00Z',
                       'updated_at': '2026-10-25T08:00:00Z',
                     }),
@@ -131,8 +134,28 @@ Future<({ThemeProvider theme, GlobalKey capture})> _pump(
 }
 
 void main() {
-  setUpAll(loadTestFonts);
+  setUpAll(() async {
+    await loadTestFonts();
+    await (FontLoader('MaterialIcons')
+          ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf')))
+        .load();
+  });
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
+
+  testWidgets('工单会话显示未读消息数，刷新后清除已读标记', (tester) async {
+    final api = _Api()..unread = 3;
+    final env = await _pump(tester, api, 'large');
+    expect(find.text('3条未读'), findsOneWidget);
+    await _capture(tester, env.capture, const Offset(2, 300), 'feedback-unread');
+    api.unread = 0;
+    await tester.runAsync(
+        () => tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh());
+    await tester.pumpAndSettle();
+    expect(find.text('3条未读'), findsNothing);
+    await _capture(tester, env.capture, const Offset(2, 300), 'feedback-read');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   for (final profile in ['light', 'wide', 'dark', 'large', 'reduced']) {
     testWidgets('$profile 工单筛选材质、按压与回退', (tester) async {

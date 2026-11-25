@@ -26,7 +26,7 @@ func newCompetitionServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
-		&models.User{}, &models.AcademicIdentityBinding{}, &models.UserCompetitionPreference{}, &models.UserCompetitionProfile{}, &models.UserCompetitionAward{},
+		&models.User{}, &models.AcademicIdentityBinding{}, &models.AcademicAccountConfig{}, &models.UserCompetitionPreference{}, &models.UserCompetitionProfile{}, &models.UserCompetitionAward{},
 		&models.CompetitionCategory{}, &models.CompetitionCatalogPackage{},
 		&models.CompetitionEvent{}, &models.CompetitionCatalogAuditLog{},
 		&models.CompetitionCatalogLegacyMapping{}, &models.CompetitionCatalogActivationSnapshot{},
@@ -88,6 +88,9 @@ func readyCompetitionUser(t *testing.T, db *gorm.DB) models.User {
 		EduGrade: "本科2023级", EduCollege: "信息科学与工程学院", EduMajor: "计算机科学与技术",
 	}
 	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.AcademicAccountConfig{UserID: user.ID, ProviderID: models.AcademicProviderUndergraduate, StudentID: user.StudentID, State: "active", Revision: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.AcademicIdentityBinding{UserID: user.ID, ProviderID: models.AcademicProviderUndergraduate,

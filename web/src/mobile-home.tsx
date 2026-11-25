@@ -1,40 +1,18 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useHomeFeed } from "./home-feed";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ApiError, query, request, rows, useApi, type Entity } from "./api";
+import { ApiError, query, rows, useApi } from "./api";
 import { useAuth } from "./auth";
 import { isPublicPost } from "./campus-chrome";
 import { PostCard } from "./community";
 import { feedSourceOf } from "./feed-feedback";
 import { Empty, Icon, QueryState } from "./ui";
 
-type FeedPage = { page: number; session?: string; offset?: number; cursor?: string };
-
 export function MobileHome() {
   const auth = useAuth(), navigate = useNavigate();
   const [params] = useSearchParams();
   const sort = params.get("sort") || "all";
   const replies = useApi(auth.user ? "/api/notifications/replies/unread?limit=3" : null);
-  const feed = useInfiniteQuery({
-    queryKey: ["api", "mobile-home", sort, auth.user?.id],
-    initialPageParam: { page: 1 } as FeedPage,
-    enabled: sort !== "following" || !!auth.user,
-    queryFn: ({ pageParam, signal }) => request<Entity>(query(sort === "featured" ? "/api/posts/featured" : "/api/posts", {
-      board: 1, limit: 20, sort, capabilities: "poll_v1",
-      feed_version: ["all", "time"].includes(sort) ? 3 : undefined,
-      page: pageParam.page,
-      scene: pageParam.session ? "loadmore" : undefined,
-      session_id: pageParam.session,
-      offset: pageParam.session ? pageParam.offset : undefined,
-      cursor: pageParam.cursor,
-    }), { signal }),
-    getNextPageParam: (last, pages): FeedPage | undefined => last.has_more ? {
-      page: pages.length + 1,
-      session: sort === "all" ? last.session_id : undefined,
-      offset: last.next_offset,
-      cursor: sort === "time" ? last.next_cursor_token : undefined,
-    } : undefined,
-    retry: false,
-  });
+  const feed = useHomeFeed(sort, sort === "featured" ? "/api/posts/featured" : "/api/posts");
   const pages = feed.data?.pages || [];
   const posts = [...new Map(pages.flatMap(page => rows(page, "posts")).map(post => [post.id, post])).values()];
   const pinned = [...new Map([...rows(pages[0], "pinned_posts"), ...posts].filter(isPublicPost).map(post => [post.id, post])).values()];

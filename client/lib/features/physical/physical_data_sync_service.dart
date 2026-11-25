@@ -63,18 +63,17 @@ class PhysicalDataSyncService {
         password.isEmpty) {
       return const PhysicalDataSyncResult.failure('credential_unavailable');
     }
-    _PhysicalLogin? login;
+    PhysicalLogin login;
     try {
-      login = await _login(sourceAccountId.trim(), password);
+      login = await this.login(sourceAccountId.trim(), password);
+    } on PhysicalLoginException catch (error) {
+      return PhysicalDataSyncResult.failure(error.invalidCredentials
+          ? 'physical_credential_invalid'
+          : 'physical_refresh_failed');
     } on DioException {
       return const PhysicalDataSyncResult.failure('network_unavailable');
     } catch (_) {
       return const PhysicalDataSyncResult.failure('physical_refresh_failed');
-    }
-    if (login == null) {
-      return const PhysicalDataSyncResult.failure(
-        'physical_credential_invalid',
-      );
     }
 
     final now = DateTime.now();
@@ -123,7 +122,7 @@ class PhysicalDataSyncService {
     }
   }
 
-  Future<_PhysicalLogin?> _login(String username, String password) async {
+  Future<PhysicalLogin> login(String username, String password) async {
     final request = <String, dynamic>{
       'username': username,
       'password': md5.convert(utf8.encode(password)).toString(),
@@ -132,44 +131,48 @@ class PhysicalDataSyncService {
       'captchaValue': '',
     };
     request['sign'] = SignUtils.generateSign(request);
-    try {
-      final response = await _dio.post<dynamic>(
-        '/service/login/mobile/check',
-        data: request,
-      );
-      if (response.statusCode != 200) return null;
-      final body = _decodeMap(response.data);
-      if (body == null) return null;
-      final nested = body['data'] is Map
-          ? Map<String, dynamic>.from(body['data'] as Map)
-          : const <String, dynamic>{};
-      String? userId;
-      for (final key in const <String>['user_id', 'userId', 'id']) {
-        userId ??= body[key]?.toString();
-        userId ??= nested[key]?.toString();
-      }
-      if (userId == null || userId.trim().isEmpty) {
-        for (final cookie
-            in response.headers['set-cookie'] ?? const <String>[]) {
-          userId ??= RegExp(r'userid=([^;]+)').firstMatch(cookie)?.group(1);
-        }
-      }
-      if (userId == null || userId.trim().isEmpty) return null;
-      final token = (body['token'] ?? nested['token'])?.toString().trim();
-      final schoolYear =
-          (body['school_date'] ?? nested['school_date'])?.toString();
-      return _PhysicalLogin(
-        userId: userId,
-        token: token == null || token.isEmpty ? userId : token,
-        schoolYear: schoolYear,
-      );
-    } on DioException catch (error) {
-      if (error.response?.statusCode == 401 ||
-          error.response?.statusCode == 403) {
-        return null;
-      }
-      rethrow;
+    final response = await _dio.post<dynamic>(
+      '/service/login/mobile/check',
+      data: request,
+    );
+    if (response.statusCode != 200) throw const PhysicalLoginException();
+    final body = _decodeMap(response.data);
+    if (body == null) throw const PhysicalLoginException();
+    final message = (body['message'] ?? body['msg'])?.toString() ?? '';
+    if (RegExp(r'密码(?:错误|不正确)|(?:用户名|账号)(?:或(?:者)?密码)?(?:错误|不正确|有误)')
+        .hasMatch(message)) {
+      throw const PhysicalLoginException(invalidCredentials: true);
     }
+    if (message == 'noCode' || message.contains('验证码')) {
+      throw const PhysicalLoginException(message: '体测平台要求验证码，请先在学校体测网页完成验证');
+    }
+    if (body['status'] != null && body['status'] != 'PASS') {
+      throw const PhysicalLoginException();
+    }
+    final nested = body['data'] is Map
+        ? Map<String, dynamic>.from(body['data'] as Map)
+        : const <String, dynamic>{};
+    String? userId;
+    for (final key in const <String>['user_id', 'userId', 'id']) {
+      userId ??= body[key]?.toString();
+      userId ??= nested[key]?.toString();
+    }
+    if (userId == null || userId.trim().isEmpty) {
+      for (final cookie in response.headers['set-cookie'] ?? const <String>[]) {
+        userId ??= RegExp(r'userid=([^;]+)').firstMatch(cookie)?.group(1);
+      }
+    }
+    if (userId == null || userId.trim().isEmpty) {
+      throw const PhysicalLoginException();
+    }
+    final token = (body['token'] ?? nested['token'])?.toString().trim();
+    final schoolYear =
+        (body['school_date'] ?? nested['school_date'])?.toString();
+    return PhysicalLogin(
+      userId: userId,
+      token: token == null || token.isEmpty ? userId : token,
+      schoolYear: schoolYear,
+    );
   }
 
   static Map<String, dynamic>? _decodeMap(Object? value) {
@@ -212,8 +215,19 @@ class PhysicalDataSyncService {
   }
 }
 
-class _PhysicalLogin {
-  const _PhysicalLogin({
+class PhysicalLoginException implements Exception {
+  const PhysicalLoginException({
+    this.invalidCredentials = false,
+    String? message,
+  }) : message = message ??
+            (invalidCredentials ? '体测平台提示学号或密码不正确，请修改后重试' : '体测平台未能完成登录，请稍后重试');
+
+  final bool invalidCredentials;
+  final String message;
+}
+
+class PhysicalLogin {
+  const PhysicalLogin({
     required this.userId,
     required this.token,
     this.schoolYear,

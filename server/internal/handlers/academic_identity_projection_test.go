@@ -14,7 +14,7 @@ import (
 
 func TestAcademicIdentityProjectionSurvivesChangeAndPartialUnbind(t *testing.T) {
 	h, db, _, user := newAcademicIdentityTestHandler(t)
-	require.NoError(t, db.AutoMigrate(&models.UserLegalConsent{}, &models.AccountSecurityAuditLog{}, &models.EduCredentialCleanupJob{}))
+	require.NoError(t, db.AutoMigrate(&models.AcademicAccountConfig{}, &models.UserLegalConsent{}, &models.AccountSecurityAuditLog{}, &models.EduCredentialCleanupJob{}))
 	now := time.Now()
 	user.EduAuthorized = true
 	user.EduBound = true
@@ -25,7 +25,7 @@ func TestAcademicIdentityProjectionSurvivesChangeAndPartialUnbind(t *testing.T) 
 	user.StudentID = "STALE"
 	profile, err := selfUserResponseForDB(db, user)
 	require.NoError(t, err)
-	require.True(t, profile.StudentVerified)
+	require.False(t, profile.StudentVerified)
 	require.Equal(t, "U-A", profile.StudentID)
 	require.Len(t, profile.AcademicIdentities, 2)
 	require.False(t, profile.CanResetViaEdu)
@@ -51,7 +51,7 @@ func TestAcademicIdentityProjectionSurvivesChangeAndPartialUnbind(t *testing.T) 
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	profile, err = selfUserResponseForDB(db, user)
 	require.NoError(t, err)
-	require.True(t, profile.StudentVerified)
+	require.False(t, profile.StudentVerified)
 	require.Equal(t, "G-B", profile.StudentID)
 	loggedIn, err = auth.findLoginUser("G-B")
 	require.NoError(t, err)

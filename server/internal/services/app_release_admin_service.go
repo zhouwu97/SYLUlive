@@ -93,7 +93,7 @@ func (s *AppReleaseService) CreateDraft(ctx context.Context, input AppReleaseDra
 
 		size = apkSize
 		sha = apkSha
-		storageKey = buildAppReleaseStorageKey(input.VersionName, input.VersionCode, sha)
+		storageKey = buildAppReleaseStorageKey(input.Channel, input.VersionName, input.VersionCode, sha)
 		fileNameForDb = buildAppReleaseFileName(input.VersionName, input.VersionCode)
 		finalPath = filepath.Join(s.releaseDir, filepath.FromSlash(storageKey))
 
@@ -176,6 +176,9 @@ func (s *AppReleaseService) UpdateDraft(ctx context.Context, releaseID, operator
 			return err
 		}
 		isPublished := release.Status == models.AppReleaseStatusPublished
+		if release.Channel == models.AppReleaseChannelBeta && input.MinimumSupportedVersionCode != nil && *input.MinimumSupportedVersionCode != 1 {
+			return fmt.Errorf("%w: Beta 测试版不设置强制更新门槛", ErrAppReleaseInvalid)
+		}
 		if release.Status != models.AppReleaseStatusDraft && !isPublished {
 			return ErrAppReleaseNotDraft
 		}
@@ -272,7 +275,7 @@ func (s *AppReleaseService) PublishDraft(ctx context.Context, releaseID, operato
 	return &published, nil
 }
 
-// WithdrawPublished 下架已发布版本。唯一可下载版本不可下架，避免把用户锁进无包可装的状态。
+// WithdrawPublished 保留正式通道的回退包；Beta 可全部下架以停止测试分发。
 func (s *AppReleaseService) WithdrawPublished(ctx context.Context, releaseID, operatorID uint) (*models.AppRelease, error) {
 	var withdrawn models.AppRelease
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -290,7 +293,7 @@ func (s *AppReleaseService) WithdrawPublished(ctx context.Context, releaseID, op
 		).Count(&fallbackCount).Error; err != nil {
 			return err
 		}
-		if fallbackCount == 0 {
+		if fallbackCount == 0 && release.Channel != models.AppReleaseChannelBeta {
 			return ErrAppReleaseNoFallback
 		}
 		if err := tx.Model(&release).Update("status", models.AppReleaseStatusWithdrawn).Error; err != nil {
@@ -435,8 +438,11 @@ func validateDraftInput(input *AppReleaseDraftInput) error {
 		return fmt.Errorf("%w: 不支持的 delivery_mode", ErrAppReleaseInvalid)
 	}
 
-	if input.Channel != models.AppReleaseChannelStable {
-		return fmt.Errorf("%w: 当前仅支持 stable 通道", ErrAppReleaseInvalid)
+	if input.Channel != models.AppReleaseChannelStable && input.Channel != models.AppReleaseChannelBeta {
+		return fmt.Errorf("%w: 仅支持 stable 或 beta 通道", ErrAppReleaseInvalid)
+	}
+	if input.Channel == models.AppReleaseChannelBeta {
+		input.MinimumSupportedVersionCode = 1
 	}
 	if input.Platform == models.AppReleasePlatformOhos {
 		if input.DeliveryMode == models.AppReleaseDeliveryModeDirectPackage {
@@ -482,7 +488,7 @@ func validateNewReleaseVersion(tx *gorm.DB, release *models.AppRelease) error {
 	}
 	var sameSHA int64
 	if release.SHA256 != "" {
-		if err := tx.Model(&models.AppRelease{}).Where("sha256 = ?", release.SHA256).Count(&sameSHA).Error; err != nil {
+		if err := tx.Model(&models.AppRelease{}).Where("platform = ? AND channel = ? AND sha256 = ?", release.Platform, release.Channel, release.SHA256).Count(&sameSHA).Error; err != nil {
 			return err
 		}
 		if sameSHA > 0 {
@@ -530,8 +536,8 @@ func writeAppReleaseAdminLog(tx *gorm.DB, adminID uint, action string, release m
 	}).Error
 }
 
-func buildAppReleaseStorageKey(versionName string, versionCode int64, sha string) string {
-	return "android/stable/" + strconv.FormatInt(versionCode, 10) + "/shenliyuan-" + versionName + "-" + strconv.FormatInt(versionCode, 10) + "-" + sha[:12] + ".apk"
+func buildAppReleaseStorageKey(channel, versionName string, versionCode int64, sha string) string {
+	return "android/" + channel + "/" + strconv.FormatInt(versionCode, 10) + "/shenliyuan-" + versionName + "-" + strconv.FormatInt(versionCode, 10) + "-" + sha[:12] + ".apk"
 }
 
 func buildAppReleaseFileName(versionName string, versionCode int64) string {

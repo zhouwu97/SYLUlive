@@ -31,7 +31,7 @@ class ManagedBotScreen extends StatefulWidget {
 class _ManagedBotScreenState extends State<ManagedBotScreen> {
   final _name = TextEditingController(text: '大肥鱼');
   final _blockedTerms = TextEditingController();
-  final _interval = TextEditingController(text: '30');
+  final _interval = TextEditingController(text: '1');
   PublishSessionScope? _session;
   Map<String, dynamic>? _data;
   bool _loading = false, _saving = false, _uploading = false, _dirty = false;
@@ -56,8 +56,8 @@ class _ManagedBotScreenState extends State<ManagedBotScreen> {
         'allowed_post_types': <String>['campus_life', 'course_study'],
         'blocked_terms': <String>[],
         'block_links': true,
-        'daily_reply_limit': 3,
-        'min_reply_interval_minutes': 30,
+        'daily_reply_limit': 100,
+        'min_reply_interval_minutes': 1,
       };
 
   bool get _busy => _saving || _uploading;
@@ -100,7 +100,7 @@ class _ManagedBotScreenState extends State<ManagedBotScreen> {
     _avatar = '';
     _policy = _defaultPolicy();
     _blockedTerms.clear();
-    _interval.text = '30';
+    _interval.text = '1';
     _session = auth.isLoggedIn && auth.user != null
         ? PublishSessionScope(
             accountId: auth.user!.id,
@@ -168,6 +168,9 @@ class _ManagedBotScreenState extends State<ManagedBotScreen> {
           _policy = _defaultPolicy();
           if (bot is Map && bot['policy'] is Map) {
             _policy.addAll(Map<String, dynamic>.from(bot['policy'] as Map));
+          } else if (data['default_policy'] is Map) {
+            _policy.addAll(
+                Map<String, dynamic>.from(data['default_policy'] as Map));
           }
           _blockedTerms.text =
               (_policy['blocked_terms'] as List? ?? []).join('\n');
@@ -626,8 +629,8 @@ class _ManagedBotScreenState extends State<ManagedBotScreen> {
                         .withValues(alpha: 0.15))),
             const SizedBox(height: AppSpacing.xs),
             Text('每日首帖、首评和他人点赞可积累经验，创建者本人点赞不计',
-                style: text.bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant)),
+                style:
+                    text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
           ],
           const SizedBox(height: AppSpacing.md),
           _BotCondition(
@@ -741,7 +744,8 @@ class _ManagedBotScreenState extends State<ManagedBotScreen> {
         .where((term) => term.isNotEmpty)
         .toSet()
         .length;
-    final daily = (_policy['daily_reply_limit'] as int?)?.clamp(1, 100) ?? 3;
+    final daily = (_policy['daily_reply_limit'] as int?)?.clamp(1, 100) ?? 100;
+    final hourly = _policy['hourly_reply_limit'] as int?;
     final interval = _policy['min_reply_interval_minutes'] as int;
     // 能力和节奏控件只编辑草稿，保存后仍由服务端核验实际权限。
     final capabilities = [
@@ -907,6 +911,12 @@ class _ManagedBotScreenState extends State<ManagedBotScreen> {
           if (_speechExpanded) ...[
             const SizedBox(height: AppSpacing.md),
             Text('发言节奏', style: text.titleSmall),
+            Text(
+                hourly != null && hourly > 0
+                    ? '服务端规则：每小时最多 $hourly 条'
+                    : '服务端未设置每小时上限',
+                style:
+                    text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
             const SizedBox(height: AppSpacing.xs),
             Text('快捷选择只修改草稿，保存后生效。',
                 style:
@@ -934,7 +944,8 @@ class _ManagedBotScreenState extends State<ManagedBotScreen> {
                             }
                           })),
             Text('可选1–100条；文字、表情与具体评论回复合计。保存后生效。',
-                style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                style:
+                    text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
             const SizedBox(height: AppSpacing.lg),
             Text('两次发言至少间隔', style: text.labelLarge),
             const SizedBox(height: AppSpacing.sm),
@@ -1206,7 +1217,8 @@ class _ManagedBotScreenState extends State<ManagedBotScreen> {
             const _BotPolicy(
                 icon: Icons.shield_outlined,
                 title: '平台规则始终生效',
-                description: '机器人发言仍受社区审核、禁言和举报管理。顶层评论每帖一次；可回复新的真人评论，每个目标一次，所有回复共享每日额度与间隔。用户设置只能收紧平台限制。'),
+                description:
+                    '机器人发言仍受社区审核、禁言和举报管理。顶层评论每帖一次；可回复新的真人评论，每个目标一次，所有回复共享每日额度与间隔。用户设置只能收紧平台限制。'),
             const SizedBox(height: AppSpacing.lg),
             Text('清除记忆与模型在你部署的 AstrBot 管理。原始聊天和模型服务副本有各自的保存规则。',
                 style: Theme.of(context).textTheme.bodySmall),

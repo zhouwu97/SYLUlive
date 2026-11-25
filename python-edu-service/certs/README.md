@@ -1,11 +1,12 @@
 # 本科学校证书链
 
-学校 HTTPS 端点只发送网站叶证书。随服务提供公开中间证书，使客户端可以构建完整验证链。
+学校 HTTPS 端点只发送网站叶证书。`sylu-academic-chain.pem` 提供公开中间链；Dart 客户端在 `JiaowuTrustChain` 中内置同一组 PEM。学校证书轮换后，两端同步更新。
 
-- 来源为叶证书 Authority Information Access 指定的 `http://cacerts.digicert.cn/TrustAsiaTLSProRSACA2025.crt`。
-- Subject 为 TrustAsia TLS Pro RSA CA 2025。
-- Issuer 为 DigiCert Global Root G2。
-- DER SHA-256 为 `416a2c89515b8bc14e13677024e2a82e8b1b2f4117a88fd11b8bbd25d1a5c517`。
-- 有效期为 2025-01-08 至 2035-01-07。
+| 证书 | 签发者 | AIA 来源 | DER SHA-256 | 有效期（UTC） |
+| --- | --- | --- | --- | --- |
+| TrustAsia OV TLS RSA CA 2024 | TrustAsia TLS RSA Root CA | `http://ica.wt.trustasia.com/TrustAsiaOVTLSRSACA2024.crt` | `d0b626c8ad93962296b3920106ed7fb3818fcb98e0b73e799141b42521335b0f` | 2024-05-15 至 2034-05-15 |
+| TrustAsia TLS RSA Root CA（交叉签名） | Certum Trusted Network CA | `http://ica.wt.trustasia.com/TrustAsiaTLSRSARootCA.crt` | `ce0df856ea6cc0ebe068f55c4cc4de77def45cacb2d4e946d8ade706666f5887` | 2025-10-07 至 2029-01-14 |
 
-部署检查使用系统 CA 根证书库，将本文件作为 untrusted 中间链验证学校证书及 `jxw.sylu.edu.cn` 域名。代码关闭 partial-chain 信任，继续要求系统可信根。证书更新时重新核对来源、签名链、指纹、有效期和域名。
+链路为学校叶证书 → TrustAsia OV TLS RSA CA 2024 → TrustAsia TLS RSA Root CA（交叉签名）→ 系统信任的 Certum Trusted Network CA。包内不加入自签名根证书，也不固定短期的网站叶证书。
+
+部署检查使用系统 CA 根证书库，将 PEM 作为 untrusted 中间链验证学校证书及 `jxw.sylu.edu.cn` 域名。Python 关闭 partial-chain 信任，继续要求系统可信根。证书更新时重新核对 AIA 来源、签名链、指纹、有效期和域名，并执行 Dart 协议回归、Python TLS 测试与 Android 清数据后的首次 CSRF 请求。

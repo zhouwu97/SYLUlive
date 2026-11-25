@@ -56,13 +56,16 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                   ? ListView(
                       children: const [
                         SizedBox(height: 180),
-                        Center(child: AppContentSurface.reading(child: Text('暂无应用版本'))),
+                        Center(
+                            child: AppContentSurface.reading(
+                                child: Text('暂无应用版本'))),
                       ],
                     )
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
                       itemCount: _releases.length,
-                      separatorBuilder: (_, __) => const AppCardDivider(height: 1),
+                      separatorBuilder: (_, __) =>
+                          const AppCardDivider(height: 1),
                       itemBuilder: (_, index) =>
                           _buildReleaseItem(_releases[index]),
                     ),
@@ -86,6 +89,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
     final versionName = release['version_name']?.toString() ?? '-';
     final versionCode = release['version_code']?.toString() ?? '-';
     final title = release['title']?.toString() ?? '未命名版本';
+    final isBeta = release['channel'] == 'beta';
     final minimum =
         release['minimum_supported_version_code']?.toString() ?? '-';
     final size = _formatBytes(_asInt(release['file_size']));
@@ -103,7 +107,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
       ),
       title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        '$versionName+$versionCode  ·  最低支持 $minimum\n$status  ·  $size',
+        '$versionName+$versionCode  ·  ${isBeta ? 'Beta 测试版' : '正式版'}\n$status  ·  ${isBeta ? '独立下载' : '最低支持 $minimum'}  ·  $size',
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
@@ -121,8 +125,9 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                 value: _ReleaseAction.delete, child: Text('删除草稿')),
           ],
           if (status == 'published') ...[
-            const PopupMenuItem(
-                value: _ReleaseAction.edit, child: Text('调整最低支持版本')),
+            if (!isBeta)
+              const PopupMenuItem(
+                  value: _ReleaseAction.edit, child: Text('调整最低支持版本')),
             const PopupMenuItem(
                 value: _ReleaseAction.withdraw, child: Text('下架')),
           ],
@@ -141,7 +146,9 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
       case _ReleaseAction.publish:
         await _confirmAndRun(
           title: '发布 ${release['version_name']}+${release['version_code']}？',
-          content: '发布后客户端将能检测并下载此 APK。请确认版本号、安装包和最低支持构建号均正确。',
+          content: release['channel'] == 'beta'
+              ? '发布后仅向已开启 Beta 通知的用户展示下载入口，用户可选择下载或关闭。请确认测试包和功能说明。'
+              : '发布后客户端将能检测并下载此 APK。请确认版本号、安装包和最低支持构建号均正确。',
           actionText: '发布',
           action: () =>
               widget.dio.post('/super/app-releases/${release['id']}/publish'),
@@ -149,7 +156,9 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
       case _ReleaseAction.withdraw:
         await _confirmAndRun(
           title: '下架 ${release['version_name']}+${release['version_code']}？',
-          content: '下架后不再允许新客户端下载。系统至少必须保留一个已发布版本。',
+          content: release['channel'] == 'beta'
+              ? '下架后停止提供此测试版的新下载，已经下载的文件保留。'
+              : '下架后不再允许新客户端下载。正式通道至少必须保留一个已发布版本。',
           actionText: '下架',
           destructive: true,
           action: () =>
@@ -176,97 +185,257 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
     final minimum = TextEditingController();
     final actionUrl = TextEditingController();
     String selectedPlatform = 'android';
+    String selectedChannel = 'stable';
     String selectedDeliveryMode = 'direct_package';
     final formKey = GlobalKey<FormState>();
+    ModalRoute<_DraftPayload>? dialogRoute;
 
     final payload = await showAppDialog<_DraftPayload>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AppAlertDialog(
-          title: const Text('上传应用版本'),
+        builder: (context, setDialogState) {
+          dialogRoute = ModalRoute.of<_DraftPayload>(context);
+          return AppAlertDialog(
+            title: const Text('上传应用版本'),
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedPlatform,
+                        decoration: const InputDecoration(labelText: '发布平台'),
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'android', child: Text('Android')),
+                          DropdownMenuItem(value: 'ios', child: Text('iOS')),
+                          DropdownMenuItem(
+                              value: 'ohos', child: Text('HarmonyOS')),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) {
+                            setDialogState(() {
+                              selectedPlatform = v;
+                              if (v != 'android') {
+                                selectedDeliveryMode = 'external_market';
+                              }
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedChannel,
+                        decoration: const InputDecoration(labelText: '发布通道'),
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'stable', child: Text('正式版（stable）')),
+                          DropdownMenuItem(
+                              value: 'beta', child: Text('Beta 测试版（beta）')),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setDialogState(() => selectedChannel = value);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey(selectedPlatform),
+                        initialValue: selectedDeliveryMode,
+                        decoration: const InputDecoration(labelText: '交付模式'),
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'direct_package', child: Text('直接安装包')),
+                          DropdownMenuItem(
+                              value: 'external_market', child: Text('外部市场')),
+                        ],
+                        onChanged: selectedPlatform != 'android'
+                            ? null
+                            : (v) {
+                                if (v != null) {
+                                  setDialogState(
+                                      () => selectedDeliveryMode = v);
+                                }
+                              },
+                      ),
+                      const SizedBox(height: 12),
+                      if (selectedDeliveryMode == 'direct_package') ...[
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final selected =
+                                await FilePicker.platform.pickFiles(
+                              type: FileType.custom,
+                              allowedExtensions: const ['apk'],
+                              allowMultiple: false,
+                              withData: false,
+                            );
+                            final file = selected?.files.singleOrNull;
+                            if (file == null) return;
+                            if (file.path == null || file.size <= 0) {
+                              if (dialogContext.mounted) {
+                                ScaffoldMessenger.of(dialogContext)
+                                    .showSnackBar(
+                                  const SnackBar(
+                                      content: Text('无法读取 APK 文件，请重新选择')),
+                                );
+                              }
+                              return;
+                            }
+                            setDialogState(() => apk = file);
+                          },
+                          icon: const Icon(Icons.upload_file_outlined),
+                          label: Text(apk == null ? '选择 APK' : apk!.name),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (selectedDeliveryMode == 'external_market') ...[
+                        _field(
+                            actionUrl,
+                            selectedPlatform == 'ios'
+                                ? 'App Store 或 TestFlight 链接'
+                                : '应用市场 HTTPS 链接'),
+                        const SizedBox(height: 12),
+                      ],
+                      _field(versionName, '展示版本号，例如 1.6.3'),
+                      _field(versionCode, '构建号，例如 1603', numeric: true),
+                      _field(title, '更新标题'),
+                      _field(changelog, '更新说明', maxLines: 4),
+                      if (selectedChannel == 'stable')
+                        _field(minimum, '最低支持构建号', numeric: true)
+                      else
+                        const Text(
+                            '仅通知已订阅 Beta 的用户，提供独立下载入口；功能更丰富，但不建议小白用户下载。'),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (!formKey.currentState!.validate()) return;
+                  if (selectedDeliveryMode == 'direct_package' && apk == null) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      const SnackBar(content: Text('直接安装包模式下必须选择 APK')),
+                    );
+                    return;
+                  }
+                  if (selectedDeliveryMode == 'external_market' &&
+                      actionUrl.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      const SnackBar(content: Text('外部市场模式下必须填写跳转链接')),
+                    );
+                    return;
+                  }
+                  final code = int.tryParse(versionCode.text.trim());
+                  final min = selectedChannel == 'beta'
+                      ? 1
+                      : int.tryParse(minimum.text.trim());
+                  if (code == null || min == null || min > code) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      const SnackBar(content: Text('最低支持构建号必须不大于当前构建号')),
+                    );
+                    return;
+                  }
+                  Navigator.pop(
+                    dialogContext,
+                    _DraftPayload(
+                      apk: apk,
+                      platform: selectedPlatform,
+                      channel: selectedChannel,
+                      deliveryMode: selectedDeliveryMode,
+                      actionUrl: actionUrl.text.trim(),
+                      versionName: versionName.text.trim(),
+                      versionCode: code,
+                      title: title.text.trim(),
+                      changelog: changelog.text.trim(),
+                      minimumSupportedVersionCode: min,
+                    ),
+                  );
+                },
+                child: const Text('创建草稿'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    await dialogRoute?.completed;
+    versionName.dispose();
+    versionCode.dispose();
+    title.dispose();
+    changelog.dispose();
+    minimum.dispose();
+    actionUrl.dispose();
+    if (payload == null || !mounted) return;
+
+    final path = payload.apk?.path;
+    if (payload.deliveryMode == 'direct_package' && path == null) {
+      _showMessage('APK 路径不可用，请重新选择', isError: true);
+      return;
+    }
+    await _run(() async {
+      final Map<String, dynamic> data = {
+        'platform': payload.platform,
+        'channel': payload.channel,
+        'delivery_mode': payload.deliveryMode,
+        'action_url': payload.actionUrl,
+        'version_name': payload.versionName,
+        'version_code': payload.versionCode.toString(),
+        'title': payload.title,
+        'changelog': payload.changelog,
+        'minimum_supported_version_code':
+            payload.minimumSupportedVersionCode.toString(),
+      };
+      if (payload.deliveryMode == 'direct_package') {
+        data['apk'] =
+            await MultipartFile.fromFile(path!, filename: payload.apk!.name);
+      }
+      await widget.dio.post(
+        '/super/app-releases',
+        data: FormData.fromMap(data),
+      );
+      _showMessage('草稿已创建，请核对后发布');
+    });
+  }
+
+  Future<void> _showEditDialog(Map<String, dynamic> release) async {
+    final isDraft = release['status'] == 'draft';
+    final isBeta = release['channel'] == 'beta';
+    final title =
+        TextEditingController(text: release['title']?.toString() ?? '');
+    final changelog =
+        TextEditingController(text: release['changelog']?.toString() ?? '');
+    final minimum = TextEditingController(
+      text: release['minimum_supported_version_code']?.toString() ?? '',
+    );
+    final formKey = GlobalKey<FormState>();
+    ModalRoute<Map<String, dynamic>>? dialogRoute;
+    final update = await showAppDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) {
+        dialogRoute = ModalRoute.of<Map<String, dynamic>>(dialogContext);
+        return AppAlertDialog(
+          title: Text(isDraft ? '编辑草稿' : '调整最低支持版本'),
           content: SizedBox(
             width: 420,
-            child: SingleChildScrollView(
-              child: Form(
-                key: formKey,
+            child: Form(
+              key: formKey,
+              child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedPlatform,
-                      decoration: const InputDecoration(labelText: '发布平台'),
-                      items: const [
-                        DropdownMenuItem(value: 'android', child: Text('Android')),
-                        DropdownMenuItem(value: 'ios', child: Text('iOS')),
-                        DropdownMenuItem(value: 'ohos', child: Text('HarmonyOS')),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) {
-                          setDialogState(() {
-                            selectedPlatform = v;
-                            if (v != 'android') {
-                              selectedDeliveryMode = 'external_market';
-                            }
-                          });
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      key: ValueKey(selectedPlatform),
-                      initialValue: selectedDeliveryMode,
-                      decoration: const InputDecoration(labelText: '交付模式'),
-                      items: const [
-                        DropdownMenuItem(value: 'direct_package', child: Text('直接安装包')),
-                        DropdownMenuItem(value: 'external_market', child: Text('外部市场')),
-                      ],
-                      onChanged: selectedPlatform != 'android'
-                          ? null
-                          : (v) {
-                              if (v != null) {
-                                setDialogState(() => selectedDeliveryMode = v);
-                              }
-                            },
-                    ),
-                    const SizedBox(height: 12),
-                    if (selectedDeliveryMode == 'direct_package') ...[
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          final selected = await FilePicker.platform.pickFiles(
-                            type: FileType.custom,
-                            allowedExtensions: const ['apk'],
-                            allowMultiple: false,
-                            withData: false,
-                          );
-                          final file = selected?.files.singleOrNull;
-                          if (file == null) return;
-                          if (file.path == null || file.size <= 0) {
-                            if (dialogContext.mounted) {
-                              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                const SnackBar(
-                                    content: Text('无法读取 APK 文件，请重新选择')),
-                              );
-                            }
-                            return;
-                          }
-                          setDialogState(() => apk = file);
-                        },
-                        icon: const Icon(Icons.upload_file_outlined),
-                        label: Text(apk == null ? '选择 APK' : apk!.name),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    if (selectedDeliveryMode == 'external_market') ...[
-                      _field(actionUrl, selectedPlatform == 'ios'
-                          ? 'App Store 或 TestFlight 链接'
-                          : '应用市场 HTTPS 链接'),
-                      const SizedBox(height: 12),
-                    ],
-                    _field(versionName, '展示版本号，例如 1.6.3'),
-                    _field(versionCode, '构建号，例如 1603', numeric: true),
-                    _field(title, '更新标题'),
-                    _field(changelog, '更新说明', maxLines: 4),
-                    _field(minimum, '最低支持构建号', numeric: true),
+                    if (isDraft) _field(title, '更新标题'),
+                    if (isDraft) _field(changelog, '更新说明', maxLines: 4),
+                    if (!isBeta) _field(minimum, '最低支持构建号', numeric: true),
                   ],
                 ),
               ),
@@ -280,140 +449,26 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
             FilledButton(
               onPressed: () {
                 if (!formKey.currentState!.validate()) return;
-                if (selectedDeliveryMode == 'direct_package' && apk == null) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(content: Text('直接安装包模式下必须选择 APK')),
-                  );
-                  return;
-                }
-                if (selectedDeliveryMode == 'external_market' && actionUrl.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(content: Text('外部市场模式下必须填写跳转链接')),
-                  );
-                  return;
-                }
-                final code = int.tryParse(versionCode.text.trim());
-                final min = int.tryParse(minimum.text.trim());
-                if (code == null || min == null || min > code) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(content: Text('最低支持构建号必须不大于当前构建号')),
-                  );
-                  return;
-                }
-                Navigator.pop(
-                  dialogContext,
-                  _DraftPayload(
-                    apk: apk,
-                    platform: selectedPlatform,
-                    deliveryMode: selectedDeliveryMode,
-                    actionUrl: actionUrl.text.trim(),
-                    versionName: versionName.text.trim(),
-                    versionCode: code,
-                    title: title.text.trim(),
-                    changelog: changelog.text.trim(),
-                    minimumSupportedVersionCode: min,
-                  ),
-                );
+                final min = isBeta ? 1 : int.tryParse(minimum.text.trim());
+                final versionCode = _asInt(release['version_code']);
+                if (min == null || min <= 0 || min > versionCode) return;
+                Navigator.pop(dialogContext, {
+                  if (isDraft) 'title': title.text.trim(),
+                  if (isDraft) 'changelog': changelog.text.trim(),
+                  'minimum_supported_version_code': min,
+                });
               },
-              child: const Text('创建草稿'),
+              child: const Text('保存'),
             ),
           ],
-        ),
-      ),
+        );
+      },
     );
-    versionName.dispose();
-    versionCode.dispose();
+    await dialogRoute?.completed;
     title.dispose();
     changelog.dispose();
     minimum.dispose();
-    actionUrl.dispose();
-    if (payload == null) return;
-
-    final path = payload.apk?.path;
-    if (payload.deliveryMode == 'direct_package' && path == null) {
-      _showMessage('APK 路径不可用，请重新选择', isError: true);
-      return;
-    }
-    await _run(() async {
-      final Map<String, dynamic> data = {
-        'platform': payload.platform,
-        'channel': 'stable',
-        'delivery_mode': payload.deliveryMode,
-        'action_url': payload.actionUrl,
-        'version_name': payload.versionName,
-        'version_code': payload.versionCode.toString(),
-        'title': payload.title,
-        'changelog': payload.changelog,
-        'minimum_supported_version_code':
-            payload.minimumSupportedVersionCode.toString(),
-      };
-      if (payload.deliveryMode == 'direct_package') {
-        data['apk'] = await MultipartFile.fromFile(path!, filename: payload.apk!.name);
-      }
-      await widget.dio.post(
-        '/super/app-releases',
-        data: FormData.fromMap(data),
-      );
-      _showMessage('草稿已创建，请核对后发布');
-    });
-  }
-
-  Future<void> _showEditDialog(Map<String, dynamic> release) async {
-    final isDraft = release['status'] == 'draft';
-    final title =
-        TextEditingController(text: release['title']?.toString() ?? '');
-    final changelog =
-        TextEditingController(text: release['changelog']?.toString() ?? '');
-    final minimum = TextEditingController(
-      text: release['minimum_supported_version_code']?.toString() ?? '',
-    );
-    final formKey = GlobalKey<FormState>();
-    final update = await showAppDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (dialogContext) => AppAlertDialog(
-        title: Text(isDraft ? '编辑草稿' : '调整最低支持版本'),
-        content: SizedBox(
-          width: 420,
-          child: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (isDraft) _field(title, '更新标题'),
-                  if (isDraft) _field(changelog, '更新说明', maxLines: 4),
-                  _field(minimum, '最低支持构建号', numeric: true),
-                ],
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (!formKey.currentState!.validate()) return;
-              final min = int.tryParse(minimum.text.trim());
-              final versionCode = _asInt(release['version_code']);
-              if (min == null || min <= 0 || min > versionCode) return;
-              Navigator.pop(dialogContext, {
-                if (isDraft) 'title': title.text.trim(),
-                if (isDraft) 'changelog': changelog.text.trim(),
-                'minimum_supported_version_code': min,
-              });
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    title.dispose();
-    changelog.dispose();
-    minimum.dispose();
-    if (update == null) return;
+    if (update == null || !mounted) return;
     await _run(() async {
       await widget.dio
           .patch('/super/app-releases/${release['id']}', data: update);
@@ -513,6 +568,7 @@ enum _ReleaseAction { edit, publish, withdraw, delete }
 class _DraftPayload {
   final PlatformFile? apk;
   final String platform;
+  final String channel;
   final String deliveryMode;
   final String actionUrl;
   final String versionName;
@@ -524,6 +580,7 @@ class _DraftPayload {
   const _DraftPayload({
     required this.apk,
     required this.platform,
+    required this.channel,
     required this.deliveryMode,
     required this.actionUrl,
     required this.versionName,

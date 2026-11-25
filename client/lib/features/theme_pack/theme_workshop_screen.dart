@@ -264,6 +264,7 @@ class ThemeWorkshopStateData {
       themeId: newUuid(),
       light: makeVariant(Brightness.light),
       dark: makeVariant(Brightness.dark),
+      bottomNavStyle: 'liquid_glass',
     );
   }
 
@@ -288,20 +289,17 @@ class ThemeWorkshopStateData {
         brightness: brightness,
         schemeVariant: ThemeResolver.parseSchemeVariant(scheme),
       );
-      final targetTokens = storedColor != null
-          ? Map<String, String>.from(storedColor['tokens'] as Map)
-          : AppPalette.defaults(brightness).toJson();
+      final effectivePalette = appearance.buildTheme(brightness).extension<AppPalette>()!;
+      final targetTokens = effectivePalette.toJson();
       final overrides = <String, String>{
         for (final entry in targetTokens.entries)
           if (derived[entry.key] != entry.value.toUpperCase())
             entry.key: entry.value.toUpperCase(),
       };
-      final palette = storedColor != null
-          ? [
-              for (final c in storedColor['coursePalette'] as List)
-                (c as String).toUpperCase(),
-            ]
-          : const ['#448AFF', '#00C853', '#9C27B0', '#FF5252', '#FF9800'];
+      final palette = [
+        for (final color in effectivePalette.coursePalette)
+          '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+      ];
 
       final walls = <String, Map<String, dynamic>?>{};
       if (wallsGroup != null && wallsGroup['legacy'] == null) {
@@ -363,8 +361,9 @@ class ThemeWorkshopStateData {
     base.shape =
         appearance.group(ThemeGroup.shape)?['value'] as String? ?? 'standard';
     final nav = appearance.group(ThemeGroup.navigation);
+    // 编辑现有外观时，未指定的样式继续由设备偏好决定。
+    base.bottomNavStyle = nav?['style'] as String?;
     if (nav != null) {
-      base.bottomNavStyle = nav['style'] as String?;
       base.iconTint = nav['iconTint'] as String? ?? 'template';
       final rawIcons = nav['icons'] as Map? ?? const {};
       for (final slot in const ['home', 'market', 'schedule', 'campus', 'me']) {
@@ -477,7 +476,7 @@ class ThemeWorkshopStateData {
       },
       'navigation': {
         'source': null,
-        'style': bottomNavStyle ?? 'floating',
+        'style': bottomNavStyle ?? 'liquid_glass',
         'iconTint': iconTint,
         'icons': navIcons,
       },
@@ -581,7 +580,7 @@ class ThemeWorkshopStateData {
     required String appVersion,
     Uint8List? renderedLightPng,
     Uint8List? renderedDarkPng,
-    bool requireContrastPass = true,
+    bool requireContrastPass = false,
   }) async =>
       (await _exportPack(
         appVersion: appVersion,
@@ -787,10 +786,16 @@ class ThemeWorkshopStateData {
       };
     }
 
-    rawFiles['preview/light.png'] =
-        renderedLightPng ?? await _fallbackPreviewPng(lightMap);
-    rawFiles['preview/dark.png'] =
-        renderedDarkPng ?? await _fallbackPreviewPng(darkMap);
+    Future<Uint8List> previewBytes(
+      Uint8List? rendered,
+      Map<String, dynamic> variant,
+    ) =>
+        rendered == null
+            ? _fallbackPreviewJpeg(variant)
+            : Isolate.run(() => ThemeAppearanceExporter.encodePreviewJpeg(
+                img.decodePng(rendered)!));
+    rawFiles['preview/light.jpg'] = await previewBytes(renderedLightPng, lightMap);
+    rawFiles['preview/dark.jpg'] = await previewBytes(renderedDarkPng, darkMap);
 
     final safeVersion =
         RegExp(r'^\d+\.\d+\.\d+$').hasMatch(appVersion) ? appVersion : '1.0.0';
@@ -813,8 +818,8 @@ class ThemeWorkshopStateData {
       'license': license,
       if (tags.isNotEmpty) 'tags': tags.take(5).toList(),
       'preview': {
-        'light': 'preview/light.png',
-        'dark': 'preview/dark.png',
+        'light': 'preview/light.jpg',
+        'dark': 'preview/dark.jpg',
       },
       'shape': shape,
       'light': lightMap,
@@ -868,7 +873,7 @@ class ThemeWorkshopStateData {
     }
   }
 
-  static Future<Uint8List> _fallbackPreviewPng(Map<String, dynamic> variant) =>
+  static Future<Uint8List> _fallbackPreviewJpeg(Map<String, dynamic> variant) =>
       Isolate.run(() {
         final tokens = variant['tokens'] as Map<String, dynamic>;
         img.ColorRgba8 c(String k) {
@@ -936,7 +941,7 @@ class ThemeWorkshopStateData {
           color: c('navBackground'),
           radius: 48,
         );
-        return Uint8List.fromList(img.encodePng(canvas, level: 1));
+        return ThemeAppearanceExporter.encodePreviewJpeg(canvas);
       });
 }
 
@@ -1105,6 +1110,16 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     _scheduleAutosave();
   }
 
+  void _reloadCurrentAppearance() {
+    _mutate(() {
+      _state = _currentDraft(context.read<ThemeProvider>(),
+          draftId: _state.draftId);
+      _appliedGroups = _groupValues(_state.buildAppearance());
+      _seedHexController.text = _currentVariant.seedColor;
+      _highlightedToken = null;
+    });
+  }
+
   void _scheduleAutosave() {
     _autosaveTimer?.cancel();
     _autosaveTimer = Timer(const Duration(milliseconds: 800), _saveDraftNow);
@@ -1252,6 +1267,12 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                   ),
                 ),
                 ListTile(
+                  leading: const Icon(Icons.palette_outlined),
+                  title: const Text('默认主题（经典）'),
+                  subtitle: const Text('从主题商城上线前的原始配色与布局开始'),
+                  onTap: () => Navigator.of(sheetCtx).pop('original'),
+                ),
+                ListTile(
                   leading: const Icon(Icons.auto_fix_high_outlined),
                   title: const Text('默认配色起点'),
                   subtitle: const Text('从干净的种子色与满足对比度的全套默认值开始'),
@@ -1287,7 +1308,12 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     );
     if (!mounted || chosen == null) return;
     setState(() {
-      if (chosen == 'default') {
+      if (chosen == 'original') {
+        _state = ThemeWorkshopStateData.fromAppearance(
+          const ThemeAppearance.originalDefault(),
+          draftId: _state.draftId,
+        );
+      } else if (chosen == 'default') {
         _state = ThemeWorkshopStateData.fromDefault(draftId: _state.draftId);
       } else if (chosen == 'current' && provider != null) {
         _state = _currentDraft(provider, draftId: _state.draftId);
@@ -1311,11 +1337,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
   Future<(Uint8List, Uint8List)> _captureOffscreenPreviews(
     ThemeAppearance appearance,
   ) async {
-    final overlay = Overlay.maybeOf(context);
-    if (overlay == null) {
-      final l = await _state.exportPack(appVersion: '1.0.0');
-      return (l, l);
-    }
+    final overlay = Overlay.of(context);
     final lightKey = GlobalKey();
     final darkKey = GlobalKey();
     final entry = OverlayEntry(
@@ -1366,22 +1388,6 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
 
   Future<void> _openExportSheet() async {
     if (_exporting) return;
-    final issues = _state.checkAllContrast();
-    if (issues.isNotEmpty) {
-      final first = issues.first;
-      setState(() {
-        _brightness = first.brightness;
-        _seedHexController.text = _currentVariant.seedColor;
-        _activeTab = first.background.startsWith('coursePalette')
-            ? WorkshopTab.courses
-            : WorkshopTab.colors;
-        _advancedTokensExpanded = true;
-        _highlightedToken = first.foreground;
-        _bannerMessage =
-            '存在 ${issues.length} 项对比度未达标（已定位到 ${first.foreground} / ${first.background}），请点击“自动修正”或微调后再导出。';
-      });
-      return;
-    }
 
     final nameCtrl = TextEditingController(text: _state.name);
     final authorCtrl = TextEditingController(text: _state.author);
@@ -1418,6 +1424,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   initialValue: selectedLicense,
+                  isExpanded: true,
                   decoration: const InputDecoration(labelText: '授权协议'),
                   items: const [
                     DropdownMenuItem(value: 'CC0-1.0', child: Text('CC0-1.0')),
@@ -1529,16 +1536,17 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
 
     try {
       final provider = context.read<ThemeProvider>();
-      if (applying) {
-        final previous = (await provider.installedThemes())
-            .where((theme) => theme.manifest.id == draft.themeId)
-            .firstOrNull;
-        if (previous != null && previous.manifest.version >= draft.version) {
-          draft.version = previous.manifest.version + 1;
-          _state.version = draft.version;
-        }
-      }
       await _saveDraftNow();
+      if (!mounted) return;
+      if (applying) {
+        await provider.applyEditedAppearance(appearance, groups);
+        if (!mounted) return;
+        setState(() => _appliedGroups = _groupValues(appearance));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('主题已应用')),
+        );
+        return;
+      }
       final appVer = widget.appVersion ?? await _resolveAppVersion();
       if (!mounted) return;
       final (lightPng, darkPng) = await _captureOffscreenPreviews(appearance);
@@ -1546,7 +1554,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
         appVersion: appVer,
         renderedLightPng: lightPng,
         renderedDarkPng: darkPng,
-        requireContrastPass: !applying,
+        requireContrastPass: false,
         applying: groups,
       );
       if (!mounted) return;
@@ -1562,19 +1570,6 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
             ),
           ),
         );
-      } else if (applying) {
-        final installed = await provider.installTheme(prepared);
-        await provider.applyInstalledTheme(
-          installed,
-          groups,
-          resetMissingGroups: true,
-        );
-        if (mounted) {
-          _appliedGroups = _groupValues(appearance);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('主题已应用')),
-          );
-        }
       } else if (action == 'share') {
         final box = context.findRenderObject() as RenderBox?;
         final origin =
@@ -2638,11 +2633,6 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
   List<Widget> _buildColorSegments() {
     final v = _currentVariant;
     final tokens = v.effectiveTokens(_brightness);
-    final issues = ThemeResolver.checkVariant(
-      brightness: _brightness,
-      tokens: tokens,
-      coursePalette: v.coursePalette,
-    );
     final colors = Theme.of(context).colorScheme;
     final appTokens = AppThemeTokens.of(context);
     final seed = v.seedColor.toUpperCase();
@@ -2750,38 +2740,6 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
           trailing: _rowValue(tokens[key]!),
           onTap: () => _editTokenHex(key, tokens[key]!),
         ),
-      _settingRow(
-        leading: Icon(
-          issues.isEmpty ? Icons.check_circle_outline : Icons.error_outline,
-          size: 20,
-          color: issues.isEmpty ? Colors.green.shade700 : colors.error,
-        ),
-        title: issues.isEmpty ? '对比度全部达标' : '${issues.length} 项对比度未达标',
-        subtitle: issues.isEmpty
-            ? '当前${_brightness == Brightness.light ? '浅色' : '深色'}模式文字清晰可读'
-            : [
-                for (final issue in issues)
-                  '${issue.foreground} / ${issue.background}：${issue.ratio.toStringAsFixed(2)}:1（要求 ≥ ${issue.minimum}:1）',
-              ].join('\n'),
-        subtitleColor: issues.isEmpty ? null : colors.error,
-        trailing: issues.isEmpty
-            ? null
-            : FilledButton.tonal(
-                key: const ValueKey('workshop-contrast-autofix'),
-                onPressed: () {
-                  final fixed = ThemeResolver.autoFixVariant(
-                    brightness: _brightness,
-                    tokens: tokens,
-                    coursePalette: v.coursePalette,
-                  );
-                  _mutate(() {
-                    v.overrides.addAll(fixed.changedOverrides);
-                    v.coursePalette = fixed.coursePalette;
-                  });
-                },
-                child: const Text('自动修正'),
-              ),
-      ),
       if (v.overrides.isNotEmpty)
         _settingRow(
           leading: Icon(Icons.restart_alt_rounded,
@@ -3105,7 +3063,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
             trailing: _rowValue(_exporting ? '导出中' : '导出'),
             onTap: _exporting ? null : _openExportSheet,
           ),
-          _embedded(const ThemeSection()),
+          _embedded(ThemeSection(onAppearanceChanged: _reloadCurrentAppearance)),
         ];
     }
   }

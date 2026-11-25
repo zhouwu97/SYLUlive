@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -12,11 +13,14 @@ import '../../providers/theme_provider.dart';
 import '../../screens/user_home_screen.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/app_dialog.dart';
 import '../../widgets/report_sheet.dart';
+import 'theme_appearance.dart';
 import 'theme_manifest.dart';
 import 'theme_pack_store.dart';
 import 'theme_store_repository.dart';
 import 'theme_submission_screen.dart';
+import 'theme_workshop_samples.dart';
 
 abstract final class ThemeShareLink {
   static final RegExp _uuidExpr = RegExp(
@@ -68,7 +72,6 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
   String? _selectedTag;
   String _appliedQuery = '';
 
-  List<ThemeCatalogItem> _officialItems = const [];
   List<ThemeCatalogItem> _items = const [];
   String? _nextCursor;
 
@@ -76,8 +79,15 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
   bool _loadingMore = false;
   bool _storeDisabled = false;
   String? _error;
+  bool _applyingOriginal = false;
+
+  bool get _showOriginalDefault =>
+      (_selectedTag == null ||
+          const ['浅色', '深色', '明暗自适应', '简约', '纯色'].contains(_selectedTag)) &&
+      '默认主题（经典） 原始外观 官方 内置 青绿 纯色 明暗自适应'.contains(_appliedQuery);
 
   Map<String, int> _installedVersions = const {};
+  Map<String, InstalledTheme> _installedThemes = const {};
   int _loadGeneration = 0;
   CancelToken? _cancelToken;
 
@@ -106,14 +116,21 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
     try {
       final installed = await provider.installedThemes();
       final map = <String, int>{};
+      final themes = <String, InstalledTheme>{};
       for (final item in installed) {
         final key = (item.familyId ?? item.manifest.id).toLowerCase();
         final prev = map[key];
         if (prev == null || item.manifest.version > prev) {
           map[key] = item.manifest.version;
+          themes[key] = item;
         }
       }
-      if (mounted) setState(() => _installedVersions = map);
+      if (mounted) {
+        setState(() {
+          _installedVersions = map;
+          _installedThemes = themes;
+        });
+      }
     } catch (_) {}
   }
 
@@ -134,35 +151,33 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
     if (!mounted || generation != _loadGeneration) return;
     final repo = _repo();
     try {
-      final showOfficialShelf =
-          _appliedQuery.isEmpty && (_selectedTag == null || _selectedTag!.isEmpty);
-      final mainFuture = repo.listCatalog(
+      final page = await repo.listCatalog(
         sort: _sort,
         tag: _selectedTag,
         query: _appliedQuery,
         cancelToken: token,
       );
-      final officialFuture = showOfficialShelf
-          ? repo.listCatalog(sort: 'official', cancelToken: token)
-          : Future.value(const ThemeCatalogPage(items: []));
-
-      final results = await Future.wait([mainFuture, officialFuture]);
-      if (!mounted || token.isCancelled || generation != _loadGeneration) return;
+      if (!mounted || token.isCancelled || generation != _loadGeneration) {
+        return;
+      }
       setState(() {
-        _items = results[0].items;
-        _nextCursor = results[0].nextCursor;
-        _officialItems = results[1].items;
+        _items = page.items;
+        _nextCursor = page.nextCursor;
         _loading = false;
       });
     } on ThemeStoreDisabledException catch (e) {
-      if (!mounted || token.isCancelled || generation != _loadGeneration) return;
+      if (!mounted || token.isCancelled || generation != _loadGeneration) {
+        return;
+      }
       setState(() {
         _storeDisabled = true;
         _error = e.message;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted || token.isCancelled || generation != _loadGeneration) return;
+      if (!mounted || token.isCancelled || generation != _loadGeneration) {
+        return;
+      }
       setState(() {
         _error = '加载主题商城失败，请检查网络后重试';
         _loading = false;
@@ -218,9 +233,49 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
 
   String? _badgeFor(ThemeCatalogItem item) {
     final installedVer = _installedVersions[item.familyId.toLowerCase()];
-    if (installedVer == null) return null;
+    if (installedVer == null) return item.source == 'official' ? '官方' : null;
     if (installedVer < item.version) return '可更新';
     return '已安装';
+  }
+
+  Future<void> _applyOriginalDefault() async {
+    if (_applyingOriginal) return;
+    final provider = context.read<ThemeProvider>();
+    setState(() => _applyingOriginal = true);
+    try {
+      final confirmed = await showAppDialog<bool>(
+        context: context,
+        builder: (context) => AppAlertDialog(
+          title: const Text('应用默认主题（经典）？'),
+          content: const Text('恢复原始青绿配色、纯色背景、默认字体和布局。应用后可在主题设置中恢复上一个外观。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('应用'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return;
+      await provider.applyOriginalDefaultAppearance();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已应用默认主题（经典）')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('默认主题未能应用，请重试。')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _applyingOriginal = false);
+    }
   }
 
   @override
@@ -236,62 +291,47 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
         actions: [
           IconButton(
             tooltip: '我的投稿',
-            onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => MyThemeSubmissionsScreen(
-                    repository: widget.repository,
-                  ),
-                ),
-              );
-              if (mounted) await _refreshAll();
-            },
+            onPressed: _storeDisabled
+                ? null
+                : () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => MyThemeSubmissionsScreen(
+                          repository: widget.repository,
+                        ),
+                      ),
+                    );
+                    if (mounted) await _refreshAll();
+                  },
             icon: const Icon(Icons.assignment_ind_outlined),
           ),
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: FilledButton.tonalIcon(
-              onPressed: () async {
-                final created = await Navigator.of(context).push<Object?>(
-                  MaterialPageRoute<Object?>(
-                    builder: (_) => ThemeSubmissionScreen(
-                      repository: widget.repository,
-                      appVersion: widget.appVersion,
-                    ),
-                  ),
-                );
-                if (created != null && mounted) await _refreshAll();
-              },
+              onPressed: _storeDisabled
+                  ? null
+                  : () async {
+                      final created = await Navigator.of(context).push<Object?>(
+                        MaterialPageRoute<Object?>(
+                          builder: (_) => ThemeSubmissionScreen(
+                            repository: widget.repository,
+                            appVersion: widget.appVersion,
+                          ),
+                        ),
+                      );
+                      if (created != null && mounted) await _refreshAll();
+                    },
               icon: const Icon(Icons.upload_outlined, size: 16),
               label: const Text('投稿'),
             ),
           ),
         ],
       ),
-      body: _storeDisabled
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.storefront_outlined, size: 48),
-                    const SizedBox(height: 12),
-                    Text(_error ?? '主题商城暂未开放'),
-                    const SizedBox(height: 12),
-                    FilledButton.tonal(
-                      onPressed: _refreshAll,
-                      child: const Text('重试'),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: _refreshAll,
-              child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
+      body: RefreshIndicator(
+        onRefresh: _refreshAll,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
                   // 搜索栏 + 排序切换 + 标签筛选
                   SliverToBoxAdapter(
                     child: AppCardSurface(
@@ -397,196 +437,180 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
                     ),
                   ),
 
-                  // 官方主题横向滑动区
-                  if (!_loading && _officialItems.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 6, bottom: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 16),
-                              child: Text(
-                                '官方主题',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
+            if (!_loading && _error != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_off_outlined, size: 42),
+                      const SizedBox(height: 8),
+                      Text(_error!),
+                      const SizedBox(height: 8),
+                      FilledButton.tonal(
+                        key: const ValueKey('theme-store-retry'),
+                        onPressed: _refreshAll,
+                        child: const Text('重试'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (_showOriginalDefault || (!_storeDisabled && _items.isNotEmpty))
+              SliverPadding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                sliver: SliverLayoutBuilder(
+                  builder: (context, constraints) {
+                    final localCount = _showOriginalDefault ? 1 : 0;
+                    return SliverGrid(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount:
+                            constraints.crossAxisExtent >= 620 ? 3 : 2,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 0.62,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          if (index < localCount) {
+                            return _ThemeCatalogCard(
+                              key: const ValueKey(
+                                  'theme-store-original-default'),
+                              name: '默认主题（经典）',
+                              subtitle:
+                                  _applyingOriginal ? '正在应用…' : '官方 · 恢复原始外观',
+                              badge: '内置',
+                              preview: IgnorePointer(
+                                child: ExcludeSemantics(
+                                  child: FittedBox(
+                                    fit: BoxFit.cover,
+                                    alignment: Alignment.topCenter,
+                                    child: ThemeWorkshopExportStage(
+                                      appearance: const ThemeAppearance
+                                          .originalDefault(),
+                                      brightness: Theme.of(context).brightness,
+                                      assetResolver: (_) => null,
+                                    ),
+                                  ),
                                 ),
                               ),
+                              onTap: _applyingOriginal
+                                  ? null
+                                  : _applyOriginalDefault,
+                            );
+                          }
+                          final item = _items[index - localCount];
+                          final installed =
+                              _installedThemes[item.familyId.toLowerCase()];
+                          return _ThemeCatalogCard(
+                            name: item.name,
+                            subtitle:
+                                '${item.source == 'official' ? '官方 · ' : ''}${item.author.nickname} · ${item.downloads} 次下载',
+                            preview: _ThemeCover(
+                              url: repo.resolveUrl(isDark
+                                  ? item.previewDark
+                                  : item.previewLight),
+                              alignment: Alignment.topCenter,
+                              installed: installed?.manifest.version == item.version
+                                  ? installed
+                                  : null,
                             ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              height: 215,
-                              child: ListView.separated(
-                                key: const ValueKey('theme-store-official-shelf'),
-                                scrollDirection: Axis.horizontal,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 14),
-                                itemCount: _officialItems.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(width: 10),
-                                itemBuilder: (context, index) {
-                                  final item = _officialItems[index];
-                                  return SizedBox(
-                                    width: 132,
-                                    child: _ThemeCatalogCard(
-                                      item: item,
-                                      previewUrl: repo.resolveUrl(
-                                        isDark
-                                            ? item.previewDark
-                                            : item.previewLight,
-                                      ),
-                                      badge: _badgeFor(item),
-                                      onTap: () => _openDetail(item),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                  // 骨架屏 / 错误重试 / 空状态 / 双列网格
-                  if (_loading && _items.isEmpty)
-                    SliverPadding(
-                      padding: const EdgeInsets.all(14),
-                      sliver: SliverGrid(
-                        key: const ValueKey('theme-store-skeleton'),
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: 0.62,
-                        ),
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) => Container(
-                            decoration: BoxDecoration(
-                              color: tokens.surfaceMuted,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          childCount: 4,
-                        ),
-                      ),
-                    )
-                  else if (_error != null && _items.isEmpty)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.cloud_off_outlined, size: 42),
-                            const SizedBox(height: 8),
-                            Text(_error!),
-                            const SizedBox(height: 8),
-                            FilledButton.tonal(
-                              key: const ValueKey('theme-store-retry'),
-                              onPressed: _refreshAll,
-                              child: const Text('重试'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  else if (_items.isEmpty)
-                    const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.palette_outlined, size: 44),
-                            SizedBox(height: 8),
-                            Text('暂无符合条件的主题'),
-                          ],
-                        ),
-                      ),
-                    )
-                  else ...[
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      sliver: SliverLayoutBuilder(
-                        builder: (context, constraints) {
-                          final cols =
-                              constraints.crossAxisExtent >= 620 ? 3 : 2;
-                          return SliverGrid(
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: cols,
-                              mainAxisSpacing: 12,
-                              crossAxisSpacing: 12,
-                              childAspectRatio: 0.62,
-                            ),
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) {
-                                final item = _items[index];
-                                return _ThemeCatalogCard(
-                                  item: item,
-                                  previewUrl: repo.resolveUrl(
-                                    isDark
-                                        ? item.previewDark
-                                        : item.previewLight,
-                                  ),
-                                  badge: _badgeFor(item),
-                                  onTap: () => _openDetail(item),
-                                );
-                              },
-                              childCount: _items.length,
-                            ),
+                            badge: _badgeFor(item),
+                            onTap: () => _openDetail(item),
                           );
                         },
+                        childCount:
+                            localCount + (_storeDisabled ? 0 : _items.length),
                       ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 18),
-                        child: Center(
-                          child: _nextCursor != null
-                              ? OutlinedButton(
-                                  key: const ValueKey('theme-store-load-more'),
-                                  onPressed: _loadingMore ? null : _loadMore,
-                                  child: Text(
-                                    _loadingMore ? '加载中…' : '加载更多',
-                                  ),
-                                )
-                              : Text(
-                                  '已加载全部主题',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: tokens.textTertiary,
-                                  ),
-                                ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
+                    );
+                  },
+                ),
               ),
-            ),
+
+            // 在线目录状态不影响内置主题的使用。
+            if (_loading && _items.isEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.all(14),
+                sliver: SliverGrid(
+                  key: const ValueKey('theme-store-skeleton'),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.62,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => Container(
+                      decoration: BoxDecoration(
+                        color: tokens.surfaceMuted,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    childCount: 4,
+                  ),
+                ),
+              )
+            else if (_error == null && _items.isEmpty && !_showOriginalDefault)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.palette_outlined, size: 44),
+                      SizedBox(height: 8),
+                      Text('暂无符合条件的主题'),
+                    ],
+                  ),
+                ),
+              ),
+            if (!_loading && _error == null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  child: Center(
+                    child: _nextCursor != null
+                        ? OutlinedButton(
+                            key: const ValueKey('theme-store-load-more'),
+                            onPressed: _loadingMore ? null : _loadMore,
+                            child: Text(
+                              _loadingMore ? '加载中…' : '加载更多',
+                            ),
+                          )
+                        : Text(
+                            '已加载全部主题',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: tokens.textTertiary,
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
 
 class _ThemeCatalogCard extends StatelessWidget {
   const _ThemeCatalogCard({
-    required this.item,
-    required this.previewUrl,
+    super.key,
+    required this.name,
+    required this.subtitle,
+    required this.preview,
     required this.badge,
     required this.onTap,
   });
 
-  final ThemeCatalogItem item;
-  final String previewUrl;
+  final String name;
+  final String subtitle;
+  final Widget preview;
   final String? badge;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -631,7 +655,7 @@ class _ThemeCatalogCard extends StatelessWidget {
                       ),
                       child: ClipRRect(
                         borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                        child: _ThemeCover(url: previewUrl, alignment: Alignment.topCenter),
+                        child: preview,
                       ),
                     ),
                   ),
@@ -668,7 +692,7 @@ class _ThemeCatalogCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  item.name,
+                  name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -678,7 +702,7 @@ class _ThemeCatalogCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${item.author.nickname} · ${item.downloads} 次下载',
+                  subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -697,10 +721,15 @@ class _ThemeCatalogCard extends StatelessWidget {
 }
 
 class _ThemeCover extends StatelessWidget {
-  const _ThemeCover({required this.url, this.alignment = Alignment.center});
+  const _ThemeCover({
+    required this.url,
+    this.alignment = Alignment.center,
+    this.installed,
+  });
 
   final String url;
   final Alignment alignment;
+  final InstalledTheme? installed;
 
   @override
   Widget build(BuildContext context) {
@@ -711,7 +740,7 @@ class _ThemeCover extends StatelessWidget {
         child: Icon(Icons.palette_outlined, color: tokens.textSecondary),
       ),
     );
-    return url.isEmpty
+    Widget remotePreview() => url.isEmpty
         ? placeholder
         : Image.network(
             url,
@@ -722,6 +751,17 @@ class _ThemeCover extends StatelessWidget {
                 synchronouslyLoaded || frame != null ? child : placeholder,
             errorBuilder: (_, __, ___) => placeholder,
           );
+    final local = installed;
+    if (local == null) return remotePreview();
+    final mode = Theme.of(context).brightness == Brightness.dark ? 'dark' : 'light';
+    final preview = (local.manifest.data['preview'] as Map)[mode] as String;
+    return Image.file(
+      File('${local.directory}/$preview'),
+      fit: BoxFit.cover,
+      alignment: alignment,
+      excludeFromSemantics: true,
+      errorBuilder: (_, __, ___) => remotePreview(),
+    );
   }
 }
 
@@ -905,7 +945,7 @@ class _ThemeDetailScreenState extends State<ThemeDetailScreen> {
         provider: provider,
         appVersion: _currentAppVersion,
       );
-      await provider.applyInstalledTheme(installed, ThemeGroup.applicable);
+      await provider.applyInstalledTheme(installed, ThemeGroup.defaultApply);
       await _refreshLocalInstallState();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -942,7 +982,7 @@ class _ThemeDetailScreenState extends State<ThemeDetailScreen> {
     try {
       await context.read<ThemeProvider>().applyInstalledTheme(
             _installedExact!,
-            ThemeGroup.applicable,
+            ThemeGroup.defaultApply,
           );
       if (mounted) setState(() {});
     } finally {
@@ -967,7 +1007,7 @@ class _ThemeDetailScreenState extends State<ThemeDetailScreen> {
       await _refreshLocalInstallState();
       await provider.startTrial(
         installed: installed,
-        groups: ThemeGroup.applicable,
+        groups: ThemeGroup.defaultApply,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1274,7 +1314,7 @@ class _ThemeDetailScreenState extends State<ThemeDetailScreen> {
                         '大小 ${ThemeReviewReasons.formatBytes(item.packageSize)}',
                         style: const TextStyle(fontSize: 12.5),
                       ),
-                      Text('许可 ${item.license}',
+                      Text(ThemeReviewReasons.licenseLabel(item.license),
                           style: const TextStyle(fontSize: 12.5)),
                       Text('下载 ${item.downloads}',
                           style: const TextStyle(fontSize: 12.5)),

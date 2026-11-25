@@ -98,7 +98,7 @@ func TestGetMembersReturnsAdminFieldsWithoutUsingUserMarshalJSON(t *testing.T) {
 		if member["edu_bound"] != (member["id"] == float64(2)) {
 			t.Fatalf("成员教务认证状态错误: %v", member["edu_bound"])
 		}
-		if member["academic_configured"] != (member["id"] == float64(1)) || member["student_verified"] != false {
+		if member["academic_configured"] != (member["id"] == float64(1)) || member["student_verified"] != member["academic_configured"] {
 			t.Fatalf("管理员配置状态与身份认证混淆: %s", recorder.Body.String())
 		}
 	}
@@ -124,7 +124,7 @@ func TestGetMembersUsesVerifiedAcademicStudentIDWhenLegacyFieldIsEmpty(t *testin
 	if len(response) != 1 || response[0]["student_id"] != "2408010115" {
 		t.Fatalf("管理员列表未显示已验证教务学号: %s", recorder.Body.String())
 	}
-	if response[0]["student_verified"] != true {
+	if response[0]["student_verified"] != false {
 		t.Fatalf("管理员列表身份状态错误: %s", recorder.Body.String())
 	}
 }
@@ -223,8 +223,8 @@ func TestGetCandidatesReportsConfigurationWithoutVerifyingIdentity(t *testing.T)
 		if candidate["id"] == float64(446) {
 			expectedStudentID = "2408010446"
 		}
-		if candidate["student_verified"] != false || candidate["student_id"] != expectedStudentID {
-			t.Fatalf("自报配置不能授予学生身份认证: %s", recorder.Body.String())
+		if candidate["student_verified"] != candidate["academic_configured"] || candidate["student_id"] != expectedStudentID {
+			t.Fatalf("兼容字段应反映配置准入: %s", recorder.Body.String())
 		}
 	}
 
@@ -285,7 +285,7 @@ func TestGetCandidatesKeepsLegacyStudentVerificationWithoutNewBinding(t *testing
 		t.Fatalf("历史认证候选人查询失败: %s", recorder.Body.String())
 	}
 	candidate, ok := items[0].(map[string]interface{})
-	if !ok || candidate["student_verified"] != true {
+	if !ok || candidate["student_verified"] != false {
 		t.Fatalf("历史认证状态不应因候选查询字段缺失而丢失: %s", recorder.Body.String())
 	}
 }
@@ -306,8 +306,8 @@ func TestGetCandidatesStatsCountsVerifiedAcademicIdentities(t *testing.T) {
 	context.Request = httptest.NewRequest(http.MethodGet, "/api/admin/candidates/stats", nil)
 	NewInvitationHandler(db, "test-secret").GetCandidatesStats(context)
 	response := decodePaginatedResponse(t, recorder)
-	if response["edu"] != float64(1) || response["other"] != float64(0) {
-		t.Fatalf("教务账号统计未使用身份表: %s", recorder.Body.String())
+	if response["edu"] != float64(0) || response["other"] != float64(1) {
+		t.Fatalf("仅有历史身份应计入未配置账号: %s", recorder.Body.String())
 	}
 }
 

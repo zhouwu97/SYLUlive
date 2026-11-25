@@ -28,6 +28,7 @@ func prepareReviewV2DB(t *testing.T) (*CanteenHandler, models.Canteen, models.Us
 		t.Fatalf("create user: %v", err)
 	}
 	seedVerifiedStudent(t, db, user)
+	seedAcademicConfig(t, db, user)
 	canteen := models.Canteen{ID: 88, Name: "一食堂", Image: "/uploads/canteen.png", CreatedBy: user.ID, Verified: true}
 	if err := db.Create(&canteen).Error; err != nil {
 		t.Fatalf("create canteen: %v", err)
@@ -1184,6 +1185,7 @@ func TestDeleteReviewKeepsDishReferencedByAnotherActiveReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedVerifiedStudent(t, h.db, other)
+	seedAcademicConfig(t, h.db, other)
 	second := performCanteenRequest(t, h.CreateReview, http.MethodPost,
 		"/api/canteens/88/reviews", mapParams("id", "88"), other.ID,
 		fmt.Sprintf(`{"taste_score":4,"value_score":4,"queue_score":3,"hygiene_score":4,"service_score":4,"comment":"同款菜","dishes":[{"dish_id":%d}]}`, dish.ID))

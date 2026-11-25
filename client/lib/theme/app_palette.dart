@@ -165,7 +165,7 @@ class AppPalette extends ThemeExtension<AppPalette> {
     feedSectionSurface: Color(0xFFE8F5F1),
     feedFeaturedSurface: Color(0xFFFFF3E0),
     feedFeaturedText: Color(0xFFD97706),
-    courseCardText: Color(0xFF1F2328),
+    courseCardText: Color(0xFFFFFFFF),
     timetableGrid: Color(0x0D000000),
     timetableToday: Color(0x00000000),
     coursePalette: [

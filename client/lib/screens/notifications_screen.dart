@@ -22,7 +22,10 @@ import '../services/publish_session_scope.dart';
 import 'my_content_screen.dart';
 import 'post_detail_screen.dart';
 import 'court_screen.dart';
+import 'lottery_screen.dart';
 import 'feedback/feedback_detail_screen.dart';
+import '../features/theme_pack/admin_theme_review_screen.dart';
+import '../features/theme_pack/theme_submission_screen.dart';
 
 @visibleForTesting
 bool canLoadMoreNotifications({
@@ -544,6 +547,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       actionText = '食堂审核结果';
     } else if (type == 'course_evaluation_result') {
       actionText = '学科评价审核结果';
+    } else if (type == 'theme_pending') {
+      actionText = '主题上线申请待审核';
+    } else if (type == 'theme_review') {
+      actionText = '主题审核结果';
     } else if (type == 'content_governed') {
       actionText = '内容处理通知';
     } else if (type == 'rectification_approved') {
@@ -568,6 +575,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       actionText = '反馈工单有新回复';
     } else if (type == 'feedback_admin_update') {
       actionText = '有新的用户工单';
+    } else if (type == 'lottery_won') {
+      actionText = '恭喜中奖';
     }
 
     return InkWell(
@@ -582,7 +591,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         if (id != null && !_openingNotificationIds.add(id)) return;
         try {
           // 已读历史也要校准其他入口，不能因本页红点已消失而跳过系统清理。
-          if ((type == 'reply' || !isRead) && id != null) {
+          if ((type == 'reply' || !isRead) &&
+              id != null &&
+              type != 'feedback_update' &&
+              type != 'feedback_admin_update') {
             final accountId = session.accountId;
             if (accountId == null) return;
             try {
@@ -649,6 +661,20 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 builder: (_) => CourtScreen(appealId: relatedId),
               ),
             );
+          } else if (type == 'theme_pending' || type == 'theme_review') {
+            if (!mounted) return;
+            if (type == 'theme_pending' && auth.user?.isAdmin != true) {
+              AppFeedback.showSnackBar(context, '需要管理员权限', isError: true);
+              return;
+            }
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => type == 'theme_pending'
+                    ? const AdminThemeReviewScreen()
+                    : const MyThemeSubmissionsScreen(),
+              ),
+            );
           } else if (postId != null) {
             try {
               final response = await auth.dio.get('/posts/$postId');
@@ -691,6 +717,15 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 ),
               ),
             );
+            if (mounted && _isCurrentSession(auth, session)) {
+              await _loadReplies();
+            }
+          } else if (type == 'lottery_won') {
+            if (!mounted) return;
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const LotteryScreen()),
+            );
           }
         } finally {
           if (id != null) _openingNotificationIds.remove(id);
@@ -728,7 +763,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                       ? Icons.admin_panel_settings_outlined
                       : type == 'course_evaluation_result'
                           ? Icons.rate_review_outlined
-                          : Icons.notifications,
+                          : type == 'lottery_won'
+                              ? Icons.card_giftcard_rounded
+                              : Icons.notifications,
                   color: Theme.of(context).primaryColor,
                   size: 20,
                 ),
@@ -790,8 +827,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                       color: isDark ? Colors.white70 : Colors.black87,
                       height: 1.4,
                     ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                    maxLines: type == 'theme_pending' || type == 'theme_review'
+                        ? null
+                        : 3,
+                    overflow: type == 'theme_pending' || type == 'theme_review'
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
                   ),
                 ],
               ),

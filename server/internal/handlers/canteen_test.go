@@ -23,7 +23,7 @@ func newCanteenTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Notification{}, &models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
+	if err := db.AutoMigrate(&models.AcademicAccountConfig{}, &models.Notification{}, &models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{}, &models.AcademicIdentityBinding{},
 		&models.File{},
 		&models.FileUploadGrant{},
@@ -72,7 +72,7 @@ func createCanteenTestUser(t *testing.T, db *gorm.DB, id uint, nickname string) 
 	return user
 }
 
-func TestCanteenRateUsesEduAuthorizationWithoutStudentProjection(t *testing.T) {
+func TestCanteenRateDeniesLegacyAuthorizationWithoutConfig(t *testing.T) {
 	db := newCanteenTestDB(t)
 	createCanteenTestUser(t, db, 1, "EduOnly")
 	if err := db.Model(&models.User{}).Where("id = ?", 1).Updates(map[string]interface{}{
@@ -90,8 +90,8 @@ func TestCanteenRateUsesEduAuthorizationWithoutStudentProjection(t *testing.T) {
 		fmt.Sprintf("/api/canteens/%d/rate", canteen.ID),
 		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}}, 1,
 		`{"star":5,"comment":"教务认证用户评价"}`)
-	if response.Code != http.StatusOK {
-		t.Fatalf("仅有教务授权的用户应可评价食堂: status=%d body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("缺少配置应禁止评价: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -403,6 +403,7 @@ func TestCanteenApprovalControlsVisibilityAndRating(t *testing.T) {
 		t.Fatalf("bind edu account: %v", err)
 	}
 	seedVerifiedStudent(t, db, models.User{ID: 2, StudentID: "student-2"})
+	seedAcademicConfig(t, db, models.User{ID: 2, StudentID: "student-2"})
 	ratingAfterApproval := performCanteenRequest(
 		t,
 		handler.Rate,
@@ -704,6 +705,7 @@ func TestCanteenRateWithTagsAndDishRecommendations(t *testing.T) {
 		t.Fatalf("bind edu: %v", err)
 	}
 	seedVerifiedStudent(t, db, models.User{ID: 1, StudentID: "student-1"})
+	seedAcademicConfig(t, db, models.User{ID: 1, StudentID: "student-1"})
 
 	canteen := models.Canteen{Name: "第一食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
 	if err := db.Create(&canteen).Error; err != nil {
@@ -830,6 +832,7 @@ func TestCanteenRateValidationRules(t *testing.T) {
 		t.Fatalf("bind edu: %v", err)
 	}
 	seedVerifiedStudent(t, db, models.User{ID: 1, StudentID: "student-1"})
+	seedAcademicConfig(t, db, models.User{ID: 1, StudentID: "student-1"})
 
 	c1 := models.Canteen{Name: "食堂1", Image: "/uploads/c1.png", CreatedBy: 1, Verified: true}
 	db.Create(&c1)
@@ -1039,6 +1042,7 @@ func TestCanteenRateUpdatesTimestampAndOptimisticLock(t *testing.T) {
 	user.EduBound = true
 	db.Save(&user)
 	seedVerifiedStudent(t, db, user)
+	seedAcademicConfig(t, db, user)
 
 	canteen := models.Canteen{Name: "第一食堂", Verified: true, CreatedBy: 1}
 	db.Create(&canteen)

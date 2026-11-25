@@ -87,17 +87,16 @@ abstract final class ThemeAppearanceExporter {
 
     Map<String, dynamic> buildVariant(Brightness brightness) {
       final mode = brightness == Brightness.dark ? 'dark' : 'light';
-      final defaultPalette = AppPalette.defaults(brightness);
+      final effectivePalette = appearance.buildTheme(brightness).extension<AppPalette>()!;
       final storedColors = colorsGroup?[mode] as Map<String, dynamic>?;
-      final tokens = storedColors != null
-          ? Map<String, dynamic>.from(storedColors['tokens'] as Map)
-          : defaultPalette.toJson();
+      final tokens = effectivePalette.toJson();
       final seedColor = storedColors?['seedColor'] as String? ?? '#147C72';
       final schemeVariant =
           storedColors?['schemeVariant'] as String? ?? 'tonalSpot';
-      final coursePalette = storedColors != null
-          ? List<String>.from(storedColors['coursePalette'] as List)
-          : const ['#448AFF', '#00C853', '#9C27B0', '#FF5252', '#FF9800'];
+      final coursePalette = [
+        for (final color in effectivePalette.coursePalette)
+          '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+      ];
 
       Map<String, dynamic>? exportedWallpapers;
       if (wallpapersGroup != null && wallpapersGroup['legacy'] == null) {
@@ -389,8 +388,8 @@ abstract final class ThemeAppearanceExporter {
       'description': '从本机当前外观导出的混搭主题包',
       'license': 'personal-use',
       'preview': {
-        'light': 'preview/light.png',
-        'dark': 'preview/dark.png',
+        'light': 'preview/light.jpg',
+        'dark': 'preview/dark.jpg',
       },
       'shape': shapeGroup?['value'] as String? ?? 'standard',
       'light': lightVariant,
@@ -411,8 +410,8 @@ abstract final class ThemeAppearanceExporter {
               _normalizeWallpaperBytes(normalizedContents[key]!, key);
         }
       }
-      normalizedContents['preview/light.png'] = _renderPreviewPng(lightVariant);
-      normalizedContents['preview/dark.png'] = _renderPreviewPng(darkVariant);
+      normalizedContents['preview/light.jpg'] = _renderPreviewJpeg(lightVariant);
+      normalizedContents['preview/dark.jpg'] = _renderPreviewJpeg(darkVariant);
       return normalizedContents;
     });
 
@@ -499,7 +498,17 @@ abstract final class ThemeAppearanceExporter {
     return Uint8List.fromList(img.encodePng(current));
   }
 
-  static Uint8List _renderPreviewPng(Map<String, dynamic> variant) {
+  static Uint8List encodePreviewJpeg(img.Image image) {
+    for (final quality in const [88, 78, 68, 58]) {
+      final bytes = img.encodeJpg(image,
+          quality: quality, chroma: img.JpegChroma.yuv420);
+      if (bytes.length <= ThemePackCodec.maxPreviewBytes) return bytes;
+    }
+    throw const ThemePackError(
+        'theme_image_invalid', 'preview', '预览图压缩后仍超过 2MB');
+  }
+
+  static Uint8List _renderPreviewJpeg(Map<String, dynamic> variant) {
     final tokens = variant['tokens'] as Map<String, dynamic>;
     img.ColorRgba8 parse(String key) {
       final c = ThemeContrast.parseColor(tokens[key] as String);
@@ -569,7 +578,7 @@ abstract final class ThemeAppearanceExporter {
         y2: 2268,
         color: parse('navBackground'),
         radius: 48);
-    return Uint8List.fromList(img.encodePng(canvas, level: 1));
+    return encodePreviewJpeg(canvas);
   }
 
   static String _clampRunes(String input,

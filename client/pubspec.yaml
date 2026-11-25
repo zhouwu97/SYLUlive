@@ -75,6 +75,7 @@ flutter:
   uses-material-design: true
   shaders:
     - shaders/liquid_glass.frag
+    - shaders/liquid_glass_switch.frag
   assets:
     - assets/beta-theme/
     - assets/images/bg-mobile.png

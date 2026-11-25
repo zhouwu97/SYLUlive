@@ -8,7 +8,7 @@ enum AppUpdateType {
   /// 客户端已是最新或更新版本，不需要任何动作。
   none,
 
-  /// 客户端版本低于最新但高于最低支持版本，可延迟升级。
+  /// 正式版可延迟升级；Beta 响应中仅表示测试版下载入口可用。
   optional,
 
   /// 客户端版本低于最低支持版本，必须升级才能继续使用。
@@ -99,6 +99,9 @@ DateTime? _parseNullableDate(String? value) {
 /// 协议变更时的双名称映射。`downloadUrl` 已经通过 [ApiConstants.fullUrl]
 /// 变成完整 URL，下游代码不需要再拼接 base。
 class AppUpdateInfo {
+  final String channel;
+  bool get isBeta => channel == 'beta';
+  String get releaseKey => '$channel:$latestVersionCode';
   final bool updateAvailable;
   final AppUpdateType updateType;
 
@@ -123,6 +126,7 @@ class AppUpdateInfo {
   final int checkAfterSeconds;
 
   AppUpdateInfo({
+    this.channel = 'stable',
     required this.updateAvailable,
     required this.updateType,
     required this.currentVersionName,
@@ -148,23 +152,24 @@ class AppUpdateInfo {
         ? 'external_market'
         : 'direct_package';
     return {
-        'update_available': updateAvailable,
-        'update_type': updateType.name,
-        'current_version_name': currentVersionName,
-        'current_version_code': currentVersionCode,
-        'latest_version_name': latestVersionName,
-        'latest_version_code': latestVersionCode,
-        'minimum_supported_version_code': minimumSupportedVersionCode,
-        'title': title,
-        'changelog': changelog,
-        'file_size': fileSize,
-        'sha256': sha256,
-        'download_url': downloadUrl,
-        'delivery_mode': modeString,
-        'action_url': actionUrl,
-        if (publishedAt != null) 'published_at': publishedAt!.toIso8601String(),
-        'check_after_seconds': checkAfterSeconds,
-      };
+      'channel': channel,
+      'update_available': updateAvailable,
+      'update_type': updateType.name,
+      'current_version_name': currentVersionName,
+      'current_version_code': currentVersionCode,
+      'latest_version_name': latestVersionName,
+      'latest_version_code': latestVersionCode,
+      'minimum_supported_version_code': minimumSupportedVersionCode,
+      'title': title,
+      'changelog': changelog,
+      'file_size': fileSize,
+      'sha256': sha256,
+      'download_url': downloadUrl,
+      'delivery_mode': modeString,
+      'action_url': actionUrl,
+      if (publishedAt != null) 'published_at': publishedAt!.toIso8601String(),
+      'check_after_seconds': checkAfterSeconds,
+    };
   }
 
   /// 从服务端 JSON 构造 AppUpdateInfo。
@@ -175,6 +180,10 @@ class AppUpdateInfo {
   ///   - 当 update_available 为 true 时 sha256 必须 64 位 hex；
   ///   - 相对 download_url 自动转绝对；空字符串保留为空。
   factory AppUpdateInfo.fromJson(Map<String, dynamic> json) {
+    final channel = json['channel'] ?? 'stable';
+    if (channel != 'stable' && channel != 'beta') {
+      throw FormatException('channel 必须是 stable 或 beta，收到: $channel');
+    }
     final updateType = _parseUpdateType(json['update_type']);
     final updateAvailable = json['update_available'] is bool
         ? json['update_available'] as bool
@@ -224,7 +233,7 @@ class AppUpdateInfo {
 
     final deliveryMode = _parseDeliveryMode(json['delivery_mode']);
     String actionUrl = '';
-    
+
     if (json['action_url'] is String) {
       actionUrl = (json['action_url'] as String).trim();
     }
@@ -232,11 +241,12 @@ class AppUpdateInfo {
     if (updateAvailable) {
       title = (json['title'] ?? '') as String;
       changelog = (json['changelog'] ?? '') as String;
-      
+
       if (deliveryMode == AppUpdateDeliveryMode.directPackage) {
         fileSize = _parseInt(json['file_size'], 'file_size');
         if (fileSize <= 0) {
-          throw FormatException('direct_package 模式下 file_size 必须为正，收到: $fileSize');
+          throw FormatException(
+              'direct_package 模式下 file_size 必须为正，收到: $fileSize');
         }
         final rawSha = json['sha256'];
         if (rawSha is! String || rawSha.isEmpty) {
@@ -244,7 +254,7 @@ class AppUpdateInfo {
         }
         _validateSha256Hex(rawSha);
         sha256 = rawSha;
-  
+
         final rawUrl = json['download_url'];
         if (rawUrl is! String || rawUrl.isEmpty) {
           throw const FormatException('direct_package 模式下 download_url 必须存在');
@@ -266,6 +276,7 @@ class AppUpdateInfo {
     );
 
     return AppUpdateInfo(
+      channel: channel as String,
       updateAvailable: updateAvailable,
       updateType: updateType,
       currentVersionName: currentVersionName,

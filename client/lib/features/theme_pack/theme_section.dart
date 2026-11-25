@@ -26,9 +26,11 @@ class ThemeSection extends StatefulWidget {
     this.onEditTheme,
     this.saveExportFile,
     this.shareExportFile,
+    this.onAppearanceChanged,
   });
 
   final VoidCallback? onEditTheme;
+  final VoidCallback? onAppearanceChanged;
   final Future<String?> Function(String fileName, Uint8List bytes)?
       saveExportFile;
   final Future<void> Function(String fileName, Uint8List bytes, Rect? origin)?
@@ -42,7 +44,8 @@ class _ThemeSectionState extends State<ThemeSection> {
   bool _busy = false;
   String? _error;
 
-  Future<void> _change(Future<void> Function(ThemeProvider) action) async {
+  Future<void> _change(Future<void> Function(ThemeProvider) action,
+      {bool appearanceChanged = true}) async {
     if (_busy) return;
     setState(() {
       _busy = true;
@@ -50,6 +53,7 @@ class _ThemeSectionState extends State<ThemeSection> {
     });
     try {
       await action(context.read<ThemeProvider>());
+      if (mounted && appearanceChanged) widget.onAppearanceChanged?.call();
     } catch (_) {
       if (mounted) setState(() => _error = '外观未能恢复，请重试。');
     } finally {
@@ -211,6 +215,15 @@ class _ThemeSectionState extends State<ThemeSection> {
           maxSubtitleLines: 2,
           enabled: !_busy,
         ),
+        SettingsTile(
+          key: const ValueKey('theme-original-default'),
+          icon: Icons.palette_outlined,
+          title: '默认主题（经典）',
+          subtitle: '使用主题商城上线前的配色、纯色背景和默认布局',
+          enabled: !_busy,
+          onTap: () =>
+              _change((provider) => provider.applyOriginalDefaultAppearance()),
+        ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Align(
@@ -341,7 +354,8 @@ class _ThemeSectionState extends State<ThemeSection> {
             trailing: TextButton(
               onPressed: _busy
                   ? null
-                  : () => _change((theme) => theme.retryThemeFileCleanup()),
+                  : () => _change((theme) => theme.retryThemeFileCleanup(),
+                      appearanceChanged: false),
               child: const Text('重试'),
             ),
           ),

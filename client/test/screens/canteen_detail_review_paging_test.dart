@@ -111,9 +111,7 @@ class _LoggedInAuth extends Fake with ChangeNotifier implements AuthProvider {
         nickname: '同学',
         avatar: '',
         createdAt: DateTime(2026, 1, 1),
-        studentVerified: true,
-        eduAuthorized: true,
-        eduBound: true,
+        academicConfigured: true,
       );
 }
 

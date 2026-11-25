@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../helpers/active_backdrop_filters.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -462,6 +464,21 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(summary(), '液态玻璃底栏 · 高性能');
+    for (final (style, label) in [
+      ('normal', '标准底栏'),
+      ('floating', '悬浮底栏'),
+    ]) {
+      final prefs = await AppPreferencesStore.getInstance();
+      await prefs.setString(ThemeProvider.appearanceKey, jsonEncode({
+        'navigation': {'style': style, 'iconTint': 'template', 'icons': {}},
+      }));
+      final themed = ThemeProvider(loadOnStart: false);
+      addTearDown(themed.dispose);
+      await themed.loadThemeForTesting();
+      await tester.pumpWidget(_buildTestApp(auth: authProvider, theme: themed));
+      await tester.pumpAndSettle();
+      expect(summary(), label);
+    }
     expect(tester.takeException(), isNull);
   });
 

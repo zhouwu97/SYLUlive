@@ -1321,28 +1321,8 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		return
 	}
 
-	userIDValue, exists := c.Get("user_id")
-	userID, validUserID := userIDValue.(uint)
-	if !exists || !validUserID || userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "请先登录后评价",
-			"code":  "authentication_required",
-		})
-		return
-	}
-	var user models.User
-	if err := h.db.Select("id", "student_verified_at", "edu_authorized", "edu_bound").First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "登录状态无效，请重新登录",
-			"code":  "authentication_required",
-		})
-		return
-	}
-	if !user.HasEduAccess() {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "请先完成教务认证后评价",
-			"code":  "edu_binding_required",
-		})
+	userID, ok := requireAcademicConfig(c, h.db, "评价")
+	if !ok {
 		return
 	}
 	if muted, err := services.IsCanteenMuted(h.db, userID); err == nil && muted {

@@ -31,7 +31,8 @@ for (const dataset of ["grades", "erke"] as const) {
         writes.push({ path, body: request.postDataJSON() });
         return route.fulfill({ json: { message: "已同步" } });
       }
-      return route.fulfill({ json: {} });
+      if (path === "/api/academic-account-configs") return route.fulfill({ json: { configs: [] } });
+    return route.fulfill({ json: {} });
     });
     await page.addInitScript(() => {
       window.addEventListener("message", event => {
@@ -90,6 +91,7 @@ test("二课接口退役时不声称副本已删除", async ({ page }) => {
     if (path === "/api/user/profile") return route.fulfill({ json: { id: 7, nickname: "合成用户", role: "user" } });
     if (path === "/api/connected-apps") return route.fulfill({ json: { bindings: [], personal_data_enabled: false } });
     if (path === "/api/personal-snapshots/erke") return route.fulfill({ status: 410, json: { code: "SCHOOL_AUTHORITY_RETIRED" } });
+    if (path === "/api/academic-account-configs") return route.fulfill({ json: { configs: [] } });
     return route.fulfill({ json: {} });
   });
   await page.goto("/web/connected-apps");
@@ -118,6 +120,7 @@ async function syncFixture(page: Page, options: { stale?: boolean; holdWrite?: b
       await gate;
       return writeFailed ? route.fulfill({ status: 503, json: { code: "temporary_unavailable" } }) : route.fulfill({ json: { message: "已同步" } });
     }
+    if (path === "/api/academic-account-configs") return route.fulfill({ json: { configs: [] } });
     return route.fulfill({ json: {} });
   });
   await page.addInitScript(stale => {

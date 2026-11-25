@@ -10,7 +10,7 @@ pnpm test
 pnpm --filter @sylulive/extension build
 pnpm --filter @sylulive/extension dev
 pnpm --filter @sylulive/extension package:store
-pnpm exec playwright test web/e2e/extension-store.spec.ts web/e2e/extension-reenable.spec.ts
+pnpm test:e2e web/e2e/extension-store.spec.ts web/e2e/extension-reenable.spec.ts
 ```
 
 `dist/` 为生产站点手动安装包，`dist-dev/` 另含本机 5173 站点；`dist-store/` 是商店专用构建，`release-store/` 含 ZIP 和 SHA-256 清单。商店包只包含生产 HTTPS 站点和三个可选 HTTPS 学校域名，不包含 HTTP 体测或 cookies 权限。学校身份仍在每次读取前后核验；本科和二课请求不再额外枚举浏览器标签页，研究生保留 ASP 会话前缀查找。

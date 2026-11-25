@@ -309,6 +309,25 @@ func (s *ThemePackService) submit(ctx context.Context, userID uint, opts ThemeSu
 			return err
 		}
 		if releaseCommit == "" {
+			var adminIDs []uint
+			if err := tx.Model(&models.User{}).
+				Where("role IN ? AND (account_status = ? OR account_status = ?) AND id <> ?",
+					[]models.Role{models.RoleAdmin, models.RoleSuperAdmin}, "active", "", userID).
+				Pluck("id", &adminIDs).Error; err != nil {
+				return err
+			}
+			notifications := make([]models.Notification, 0, len(adminIDs))
+			for _, adminID := range adminIDs {
+				notifications = append(notifications, models.Notification{
+					UserID:  adminID,
+					Type:    "theme_pending",
+					Content: fmt.Sprintf("有新的主题上线申请：《%s》v%d，请前往主题审核处理", created.Name, created.Version),
+					FromUID: userID,
+				})
+			}
+			if len(notifications) > 0 {
+				return tx.CreateInBatches(&notifications, 200).Error
+			}
 			return nil
 		}
 		return tx.Create(&models.AdminLog{

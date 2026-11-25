@@ -8,6 +8,7 @@ import '../helpers/mock_public_image_http.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/user.dart';
@@ -18,6 +19,7 @@ import 'package:shenliyuan/providers/social_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/shuitie_screen.dart';
+import 'package:shenliyuan/theme/app_theme_tokens.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:shenliyuan/widgets/community_post_card.dart';
@@ -357,43 +359,105 @@ void main() {
   });
   for (final dark in [false, true]) {
     for (final glass in [false, true]) {
-      testWidgets('水贴搜索框滚动时保持可见和可输入 dark=$dark glass=$glass',
+      testWidgets('水贴分类和搜索栏固定在滚动区外 dark=$dark glass=$glass',
           (tester) async {
+        final narrow = dark && glass;
         auditFeedRail = false;
-        auditFeedSize = GoldenViewports.phone390x844;
+        auditFeedSize =
+            narrow ? const Size(320, 760) : GoldenViewports.phone390x844;
+        if (narrow) {
+          tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        }
         final page = await _pumpFeed(tester,
             dark: dark,
             timePosts: List.generate(
                 12, (i) => _post(100 + i, '测试帖 $i', DateTime(2026))));
         await page.themeProvider.setBackgroundImage('morenbeijing.jpeg');
         await page.themeProvider.setFrostedGlass(glass);
+        tester.view.padding = const FakeViewPadding(top: 24);
         await tester.pumpAndSettle();
         await tester.tap(find.text('最新').first);
         await tester.pumpAndSettle();
         final field = find.byKey(const ValueKey('feed-search-field'));
-        final header = find.ancestor(
-            of: field, matching: find.byType(SliverPersistentHeader));
-        final scroll = tester.widget<CustomScrollView>(find.byKey(
-            const PageStorageKey<String>('home-feed-scroll-new')));
+        final topBar = find.byKey(const ValueKey('home-feed-top-bar'));
+        final header = find.byKey(const ValueKey('home-feed-search'));
+        final searchSurface =
+            find.ancestor(of: field, matching: find.byType(AppCardSurface));
+        final viewport =
+            find.byKey(const PageStorageKey<String>('home-feed-scroll-new'));
+        final scroll = tester.widget<CustomScrollView>(viewport);
         expect(scroll.controller!.position.maxScrollExtent, greaterThan(80));
-        final fieldHeight = tester.getSize(field).height;
-        expect(fieldHeight, greaterThanOrEqualTo(44));
-        for (final offset in [0.0, 25.0, 80.0, 25.0, 0.0]) {
+        expect(find.descendant(of: viewport, matching: topBar), findsNothing);
+        expect(find.descendant(of: viewport, matching: header), findsNothing);
+        expect(tester.getTopLeft(topBar).dy, 24);
+        expect(
+          tester.getTopLeft(viewport).dy,
+          tester.getBottomLeft(searchSurface).dy + 8,
+        );
+        final indicator = tester.getRect(
+          find.byKey(const ValueKey('home-feed-tab-indicator')),
+        );
+        expect(indicator.size, Size(narrow ? 38 : 52, 32));
+        final selectedLabel = tester.getRect(find.text('最新').first);
+        expect(selectedLabel.left - indicator.left, greaterThanOrEqualTo(1));
+        expect(indicator.right - selectedLabel.right, greaterThanOrEqualTo(1));
+        final status = find.ancestor(
+          of: topBar,
+          matching: find.byType(AnnotatedRegion<SystemUiOverlayStyle>),
+        );
+        expect(
+          tester
+              .widget<AnnotatedRegion<SystemUiOverlayStyle>>(status)
+              .value
+              .statusBarIconBrightness,
+          Brightness.light,
+        );
+
+        final topBarRect = tester.getRect(topBar);
+        final fieldRect = tester.getRect(field);
+        expect(fieldRect.height, greaterThanOrEqualTo(44));
+        final tokens = AppThemeTokens.of(tester.element(field));
+        final bar = Color.alphaBlend(tokens.appBarBackground, tokens.background);
+        for (final offset in [0.0, 25.0, 80.0, 0.0]) {
           scroll.controller!.jumpTo(offset);
           await tester.pump();
-          expect(tester.getSize(field).height, fieldHeight);
+          expect(tester.getRect(topBar), topBarRect);
+          expect(tester.getRect(field), fieldRect);
+          expect(
+            find.descendant(
+              of: header,
+              matching: find.byWidgetPredicate((widget) =>
+                  widget is ColoredBox &&
+                  widget.color.withValues(alpha: 1).toARGB32() ==
+                      bar.toARGB32()),
+            ),
+            findsNothing,
+          );
           expect(
               find.descendant(
                   of: header,
                   matching: find.byWidgetPredicate(
                       (widget) => widget is Opacity && widget.opacity < 1)),
               findsNothing);
-          expect(find.ancestor(of: field, matching: find.byType(AppCardSurface)),
-              findsOneWidget);
           expect(tester.takeException(), isNull);
         }
         await tester.enterText(field, '校园');
-        expect(tester.widget<TextField>(field).controller!.text, '校园');
+        final searchInput = tester.widget<TextField>(field);
+        expect(searchInput.controller!.text, '校园');
+        expect(searchInput.focusNode!.hasFocus, isTrue);
+        await tester.dragFrom(tester.getCenter(viewport), const Offset(0, -96));
+        await tester.pumpAndSettle();
+        expect(searchInput.focusNode!.hasFocus, isFalse);
+
+        await page.themeProvider.clearBackground();
+        await tester.pumpAndSettle();
+        expect(tester.getRect(topBar), topBarRect);
+        expect(
+          tester.widget<AnnotatedRegion<SystemUiOverlayStyle>>(status)
+              .value.statusBarIconBrightness,
+          dark ? Brightness.light : Brightness.dark,
+        );
         await _dispose(tester, page);
       });
     }

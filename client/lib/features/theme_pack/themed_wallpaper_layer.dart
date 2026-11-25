@@ -9,9 +9,13 @@ import '../../theme/app_theme_tokens.dart';
 
 class ThemedWallpaperLayer extends StatelessWidget {
   const ThemedWallpaperLayer(
-      {super.key, required this.settings, this.imageProvider, this.backdrop});
+      {super.key, required this.settings, this.imageProvider, this.backdrop,
+      this.intrinsicSize = false});
   final Map<String, dynamic>? settings;
   final ImageProvider? imageProvider;
+
+  /// 内嵌页头沿用图片原始比例，由父级限制最大宽高；全屏壁纸继续填满视口。
+  final bool intrinsicSize;
 
   /// 没有壁纸图片的页面使用的氛围背景；有壁纸图片时被图片完整覆盖，不绘制。
   final Map<String, dynamic>? backdrop;
@@ -131,10 +135,11 @@ class ThemedWallpaperLayer extends StatelessWidget {
     }
     return ClipRect(
       child: Stack(
-        fit: StackFit.expand,
+        fit: intrinsicSize ? StackFit.loose : StackFit.expand,
         children: [
           ColoredBox(color: background, child: image),
-          if (scrim > 0) ColoredBox(color: background.withValues(alpha: scrim)),
+          if (scrim > 0)
+            Positioned.fill(child: ColoredBox(color: background.withValues(alpha: scrim))),
         ],
       ),
     );

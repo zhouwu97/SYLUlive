@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,7 +15,7 @@ import (
 	"shenliyuan/internal/models"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -63,6 +64,247 @@ func TestFeedbackSnippetForColumnLimitsRunes(t *testing.T) {
 	}
 	if !strings.HasSuffix(snippet, "...") {
 		t.Fatalf("超长摘要应保留截断标记: %q", snippet[len(snippet)-minInt(len(snippet), 10):])
+	}
+}
+
+func TestFeedbackConversationReadNotifications(t *testing.T) {
+	for _, admin := range []bool{false, true} {
+		for _, arrivesDuringRead := range []bool{false, true} {
+			t.Run(fmt.Sprintf("admin=%v/late=%v", admin, arrivesDuringRead), func(t *testing.T) {
+				db, h := setupTestFeedbackDB(t)
+				ticket := models.FeedbackTicket{UserID: 10, TicketNo: "READ-1", AdminViewed: true, UserUnreadCount: 2}
+				other := models.FeedbackTicket{UserID: 10, TicketNo: "READ-2"}
+				for _, item := range []*models.FeedbackTicket{&ticket, &other} {
+					if err := db.Create(item).Error; err != nil {
+						t.Fatal(err)
+					}
+				}
+				recipient, notificationType, sender := uint(10), "feedback_update", "admin"
+				if admin {
+					recipient, notificationType, sender = 99, "feedback_admin_update", "user"
+				}
+				message := models.FeedbackMessage{TicketID: ticket.ID, SenderType: sender, SenderID: 10, Content: "已加载的消息", VisibleToUser: true}
+				if err := db.Create(&message).Error; err != nil {
+					t.Fatal(err)
+				}
+				notifications := []models.Notification{
+					{UserID: recipient, Type: notificationType, RelatedID: ticket.ID},
+					{UserID: recipient, Type: notificationType, RelatedID: ticket.ID},
+					{UserID: recipient, Type: notificationType, RelatedID: other.ID},
+					{UserID: recipient + 1, Type: notificationType, RelatedID: ticket.ID},
+					{UserID: recipient, Type: "reply", RelatedID: ticket.ID},
+				}
+				if err := db.Create(&notifications).Error; err != nil {
+					t.Fatal(err)
+				}
+				var late models.Notification
+				if arrivesDuringRead {
+					inserted := false
+					if err := db.Callback().Query().After("gorm:query").Register("test:late_feedback", func(tx *gorm.DB) {
+						if inserted || tx.Statement.Table != "feedback_messages" {
+							return
+						}
+						inserted = true
+						incoming := models.FeedbackMessage{TicketID: ticket.ID, SenderType: sender, SenderID: 10, Content: "读取期间新消息", VisibleToUser: true}
+						if err := db.Create(&incoming).Error; err != nil {
+							t.Fatal(err)
+						}
+						late = models.Notification{UserID: recipient, Type: notificationType, RelatedID: ticket.ID}
+						if err := db.Create(&late).Error; err != nil {
+							t.Fatal(err)
+						}
+						if admin {
+							db.Model(&ticket).UpdateColumn("admin_viewed", false)
+						} else {
+							db.Model(&ticket).UpdateColumn("user_unread_count", gorm.Expr("user_unread_count + 1"))
+						}
+					}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				before := ticket.UpdatedAt
+				w := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(w)
+				c.Set("user_id", recipient)
+				c.Params = gin.Params{{Key: "id", Value: fmt.Sprint(ticket.ID)}}
+				c.Request = httptest.NewRequest(http.MethodGet, "/feedback/tickets/1", nil)
+				if admin {
+					h.AdminGetTicketDetail(c)
+				} else {
+					h.GetTicketDetail(c)
+				}
+				if w.Code != http.StatusOK {
+					t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+				}
+				for index, notification := range notifications {
+					var got models.Notification
+					if err := db.First(&got, notification.ID).Error; err != nil {
+						t.Fatal(err)
+					}
+					if got.IsRead != (index < 2) {
+						t.Errorf("notification %d read=%v", index, got.IsRead)
+					}
+				}
+				var stored models.FeedbackTicket
+				if err := db.First(&stored, ticket.ID).Error; err != nil {
+					t.Fatal(err)
+				}
+				if !stored.UpdatedAt.Equal(before) {
+					t.Error("已读操作不能改变工单更新时间")
+				}
+				if arrivesDuringRead {
+					var got models.Notification
+					db.First(&got, late.ID)
+					if got.IsRead {
+						t.Error("读取期间的新通知被误标已读")
+					}
+					if admin && stored.AdminViewed {
+						t.Error("新用户消息的未查看状态被覆盖")
+					}
+					if !admin && stored.UserUnreadCount == 0 {
+						t.Error("新回复未读被覆盖")
+					}
+				} else if !admin && stored.UserUnreadCount != 0 {
+					t.Error("已加载回复仍未读")
+				}
+			})
+		}
+	}
+}
+
+func TestFeedbackAdminUnreadCountsAndGeneralReadIsolation(t *testing.T) {
+	db, h := setupTestFeedbackDB(t)
+	tickets := []models.FeedbackTicket{
+		{UserID: 10, TicketNo: "COUNT-1", AdminViewed: true},
+		{UserID: 10, TicketNo: "COUNT-2", AdminViewed: true},
+	}
+	if err := db.Create(&tickets).Error; err != nil {
+		t.Fatal(err)
+	}
+	notifications := []models.Notification{
+		{UserID: 99, Type: models.NotificationTypeFeedbackAdminUpdate, RelatedID: tickets[0].ID},
+		{UserID: 99, Type: models.NotificationTypeFeedbackAdminUpdate, RelatedID: tickets[0].ID},
+		{UserID: 99, Type: models.NotificationTypeFeedbackAdminUpdate, RelatedID: tickets[1].ID},
+		{UserID: 100, Type: models.NotificationTypeFeedbackAdminUpdate, RelatedID: tickets[0].ID},
+		{UserID: 99, Type: models.NotificationTypeFeedbackAdminUpdate, RelatedID: 999},
+		{UserID: 99, Type: "reply", RelatedID: tickets[0].ID},
+	}
+	if err := db.Create(&notifications).Error; err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("user_id", uint(99)); c.Next() })
+	router.GET("/admin/feedback/tickets/stats", h.AdminGetStats)
+	router.GET("/admin/feedback/tickets", h.AdminListTickets)
+	router.GET("/admin/feedback/tickets/:id", h.AdminGetTicketDetail)
+	router.POST("/notifications/read", NewNotificationHandler(db).MarkAllRead)
+	server := httptest.NewServer(router)
+	t.Cleanup(server.Close)
+	request := func(method, path string) []byte {
+		req, err := http.NewRequest(method, server.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("status=%d body=%s", response.StatusCode, body)
+		}
+		return body
+	}
+	check := func(want int) {
+		stats := request(http.MethodGet, "/admin/feedback/tickets/stats")
+		var counts map[string]int
+		if err := json.Unmarshal(stats, &counts); err != nil {
+			t.Fatal(err)
+		}
+		if counts["unread_count"] != want {
+			t.Fatalf("stats=%v want unread_count=%d", counts, want)
+		}
+	}
+	check(2)
+	list := request(http.MethodGet, "/admin/feedback/tickets")
+	var page struct {
+		Tickets []models.FeedbackTicket `json:"tickets"`
+	}
+	if err := json.Unmarshal(list, &page); err != nil {
+		t.Fatal(err)
+	}
+	for _, ticket := range page.Tickets {
+		want := int64(1)
+		if ticket.ID == tickets[0].ID {
+			want = 2
+		}
+		if ticket.AdminUnreadCount != want {
+			t.Fatalf("ticket=%d unread=%d want=%d", ticket.ID, ticket.AdminUnreadCount, want)
+		}
+	}
+	request(http.MethodPost, "/notifications/read")
+	check(2)
+	request(http.MethodGet, fmt.Sprintf("/admin/feedback/tickets/%d", tickets[0].ID))
+	check(1)
+	var other models.Notification
+	if err := db.First(&other, notifications[3].ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if other.IsRead {
+		t.Error("清除了其他管理员的未读")
+	}
+}
+
+func TestFeedbackReadFailureKeepsUnread(t *testing.T) {
+	for _, failure := range []string{"permission", "load", "read_write"} {
+		t.Run(failure, func(t *testing.T) {
+			db, h := setupTestFeedbackDB(t)
+			ticket := models.FeedbackTicket{UserID: 10, TicketNo: "FAIL-1", UserUnreadCount: 2}
+			if err := db.Create(&ticket).Error; err != nil {
+				t.Fatal(err)
+			}
+			notification := models.Notification{UserID: 10, Type: models.NotificationTypeFeedbackUpdate, RelatedID: ticket.ID}
+			if err := db.Create(&notification).Error; err != nil {
+				t.Fatal(err)
+			}
+			uid, wantStatus := uint(10), http.StatusInternalServerError
+			switch failure {
+			case "permission":
+				uid, wantStatus = 99, http.StatusNotFound
+			case "load":
+				if err := db.Migrator().DropTable(&models.FeedbackStatusHistory{}); err != nil {
+					t.Fatal(err)
+				}
+			case "read_write":
+				if err := db.Callback().Update().Before("gorm:update").Register("test:read_failure", func(tx *gorm.DB) {
+					if tx.Statement.Table == "notifications" {
+						tx.AddError(fmt.Errorf("read unavailable"))
+					}
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Set("user_id", uid)
+			c.Params = gin.Params{{Key: "id", Value: fmt.Sprint(ticket.ID)}}
+			c.Request = httptest.NewRequest(http.MethodGet, "/feedback/tickets/1", nil)
+			h.GetTicketDetail(c)
+			if w.Code != wantStatus {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			var stored models.FeedbackTicket
+			db.First(&stored, ticket.ID)
+			var storedNotification models.Notification
+			db.First(&storedNotification, notification.ID)
+			if stored.UserUnreadCount != 2 || storedNotification.IsRead {
+				t.Fatal("失败请求改变了未读状态")
+			}
+		})
 	}
 }
 

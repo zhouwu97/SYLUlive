@@ -46,9 +46,8 @@ func TestAdminAcademicDisplayPrefersTrustedIdentityThenLatestActiveConfig(t *tes
 	for _, test := range []struct {
 		user      models.User
 		studentID string
-		verified  bool
-	}{{users[0], "trusted-1", true}, {users[1], "latest-2", false}, {users[2], "legacy-3", false}} {
-		if adminStudentID(test.user, identities) != test.studentID || adminStudentVerified(test.user, identities) != test.verified {
+	}{{users[0], "trusted-1"}, {users[1], "latest-2"}, {users[2], "legacy-3"}} {
+		if adminStudentID(test.user, identities) != test.studentID {
 			t.Fatalf("用户 %d 的管理摘要错误: %+v", test.user.ID, identities)
 		}
 	}
@@ -91,7 +90,7 @@ func TestGetCandidatesStatsCountsExistingAcademicAccountOwnersOnce(t *testing.T)
 	context.Request = httptest.NewRequest(http.MethodGet, "/api/admin/candidates/stats", nil)
 	NewInvitationHandler(db, "test-secret").GetCandidatesStats(context)
 	stats := decodePaginatedResponse(t, recorder)
-	if stats["total"] != float64(7) || stats["edu"] != float64(4) || stats["other"] != float64(3) {
+	if stats["total"] != float64(7) || stats["edu"] != float64(2) || stats["other"] != float64(5) {
 		t.Fatalf("配置/身份/授权应按现存用户去重，删除、空值和孤儿记录不得计入: %s", recorder.Body.String())
 	}
 }
@@ -120,8 +119,8 @@ func TestGetCandidatesSearchesConfiguredStudentIDAndKeepsEligibilityFilter(t *te
 		t.Fatalf("配置学号搜索不得绕过候选人筛选: %s", recorder.Body.String())
 	}
 	candidate := items[0].(map[string]interface{})
-	if candidate["id"] != float64(901) || candidate["student_id"] != "configured-shared" || candidate["student_verified"] != false {
-		t.Fatalf("配置搜索/展示不得授予身份: %s", recorder.Body.String())
+	if candidate["id"] != float64(901) || candidate["student_id"] != "configured-shared" || candidate["student_verified"] != true {
+		t.Fatalf("有效配置应开放校内功能: %s", recorder.Body.String())
 	}
 }
 
@@ -142,7 +141,7 @@ func TestAdminAcademicConfigWorksWithoutLegacyIdentityTable(t *testing.T) {
 	context.Request = httptest.NewRequest(http.MethodGet, "/api/super/users?search=configured-901", nil)
 	NewSuperAdminHandler(db).GetUsers(context)
 	users := decodeInvitationResponse(t, recorder)
-	if len(users) != 1 || users[0]["student_id"] != "configured-901" || users[0]["student_verified"] != false {
+	if len(users) != 1 || users[0]["student_id"] != "configured-901" || users[0]["student_verified"] != true {
 		t.Fatalf("无旧身份表时有效配置仍应支持学号展示及搜索: %s", recorder.Body.String())
 	}
 	var count int64

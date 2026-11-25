@@ -256,7 +256,8 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
     shape:      { source, value } | null,
     wallpapers: { source, light: {global, home, schedule, me}, dark: {...} } | null,
     material:   { source, light: {componentOpacity, frostedGlass, cardStyle}, dark: {...} } | null,
-    navigation: { source, style, icons, iconTint } | null,
+    navigation: { source, style, icons, iconTint, motion } | null,
+    courseSettings: { source, textColor, courseColor } | null,
     layout:     { source, value } | null,
     decoration: { source, light, dark } | null,
     font:       { source, name, regular, bold } | null,
@@ -277,7 +278,7 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
 
 1. **应用主题**：
    1. 把当前的完整外观写入 `theme_previous_v1`；
-   2. 把勾选分组的值合并进 `theme_appearance_v1`，被写入分组的 `source` 设为这个主题；未勾选的分组保持不变；
+   2. 默认勾选除桌面启动图标外的全部分组。把勾选分组的值合并进 `theme_appearance_v1`，主题未提供的分组恢复默认值，未勾选的分组保持不变。导航样式与 motion 同时应用，液态样式使用高画质、100% 强度和主题着色材质，旧手动效果不覆盖新主题；配色应用同时把 `courseSettings` 的两项设为 `theme`。`courseSettings` 仅存本机课表颜色选择，不扩展公开包格式；导出时折入最终 Token 与课程色板；
    3. 按 4.3 节的规则清理不再被引用的文件。
 2. **手动修改**：
    - 用户在外观设置里改了壁纸，`wallpapers` 设为 null，回到现有的壁纸偏好，也就是用户刚设置的那张；
@@ -322,7 +323,7 @@ cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|
   - 解析中；
   - 无效（显示提示、错误码和字段，以及"重新选择"）；
   - 需要升级（跳转到现有的更新入口）；
-  - 预览（明暗切换、按分组勾选（主题里没有的分组置灰，`launcherIcon` 默认不勾选）、对比度警告、"试用"和"应用"）；
+  - 预览（明暗切换、默认勾选除 `launcherIcon` 外全部分组，未提供组显示恢复默认说明、未提供的 `launcherIcon` 置灰、对比度警告、"试用"和"应用"）；
   - 已应用（显示 Snackbar，带"撤销"，撤销等于恢复上一个外观）。
   - 点"试用"后进入全局试用会话，可以返回去浏览其他页面；结束试用通过顶部横条操作。
 - **本机主题页**：每项可以应用、导出分享、删除（删除需要二次确认）。

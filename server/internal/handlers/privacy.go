@@ -616,6 +616,13 @@ func (h *PrivacyHandler) cancelAccountTx(tx *gorm.DB, user models.User, randomPa
 	if err := tx.Where("follower_id = ? OR following_id = ?", userID, userID).Delete(&models.UserFollow{}).Error; err != nil {
 		return err
 	}
+	if tx.Migrator().HasTable(&models.LotteryParticipant{}) && tx.Migrator().HasTable(&models.LotteryEvent{}) {
+		ongoingEvents := tx.Model(&models.LotteryEvent{}).Select("id").Where("status = ?", models.LotteryStatusOngoing)
+		if err := tx.Where("user_id = ? AND lottery_id IN (?)", userID, ongoingEvents).
+			Delete(&models.LotteryParticipant{}).Error; err != nil {
+			return err
+		}
+	}
 	if err := tx.Model(&models.EmailVerificationChallenge{}).
 		Where("user_id = ? AND consumed_at IS NULL", userID).
 		Update("consumed_at", now).Error; err != nil {

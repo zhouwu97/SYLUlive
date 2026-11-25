@@ -2,6 +2,19 @@
 
 本文件旨在提供沈理校园后端的 HTTP API 接口概览。所有的接口均基于 RESTful 风格设计，通过 JSON 格式进行数据交互。
 
+## 应用更新与测试通道
+
+| 方法与路径 | 权限 | 说明 |
+| --- | --- | --- |
+| `GET /api/app/update` | 公开 | Query 或 `X-App-*` 请求头提供 `platform`、`channel`、`version_name`、`version_code`；平台为 `android`／`ohos`，通道为 `stable`／`beta` |
+| `GET/HEAD /api/app/releases/:id/download` | 公开 | 仅已发布记录可下载；沿用 Range、完整性与撤回校验 |
+| `GET/POST /api/super/app-releases` | 超级管理员 | 列表／上传草稿；multipart 的 `channel` 缺省 `stable`，可选 `beta` |
+| `GET/PATCH/DELETE /api/super/app-releases/:id` | 超级管理员 | 查看／修改草稿或正式版最低支持构建号／删除未发布草稿；平台、通道、包体与构建号不可修改 |
+| `POST /api/super/app-releases/:id/publish` | 超级管理员 | 显式发布已校验的草稿 |
+| `POST /api/super/app-releases/:id/withdraw` | 超级管理员 | 停止新下载；Beta 可全部下架，正式通道保留可用回退版本 |
+
+更新响应新增 `channel`，表示目标版本所属通道。`stable` 只返回正式版并执行既有构建号与最低支持策略；`beta` 只返回测试版下载信息，不比较当前构建号、不回退正式版。已发布 Beta 的 `update_available=true`、`update_type=optional` 仅表示下载入口可用，客户端独立保存，不进入应用内更新或安装流程。创建 Beta 时最低支持构建号规范化为 1，不能提高。对应通道没有已发布版本时返回 `update_available=false`。客户端始终另查 `stable`，其强制更新优先。其余版本字段、交付方式和错误码沿用既有协议。完整功能边界见[应用更新通道契约](../docs/design/app-update-channels.md)，发布入口见[发布手册](../docs/ops/app-release.md)。
+
 ## 安全中心预警来源
 
 `GET /api/admin/security/events` 与 `GET /api/admin/security/events/:id` 延续管理员鉴权；普通用户不可访问。`source_key` 仍只提供给超级管理员，用于既有 HMAC 来源封禁。
@@ -230,7 +243,8 @@ AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人�
 FEED-H1 加固：
 - `not_interested` 有效期 90 天（`expires_at`），重复标记刷新有效期；历史无 `expires_at` 记录视为仍有效。
 - 不能隐藏自己、不能对自己的帖子标记不感兴趣（返回 `400`）。
-- 综合推荐 Snapshot 绑定用户：`loadmore` 时归属不匹配返回 `409 feed_session_expired`；隐藏作者 / 不感兴趣 / 撤销 / 恢复后，旧综合快照立即失效。
+- 帖子列表、详情与评论等读取在每个 Go 实例内共享一分钟额度，登录账号 600 次、匿名来源 IP 240 次。网关另按出口限流；应用层超额返回 429 `read_rate_limited` 及 `Retry-After`。
+- 综合推荐 Snapshot 在连接同一数据库的实例间共享，有效期 10 分钟。Snapshot 绑定用户：`loadmore` 时归属不匹配返回 `409 feed_session_expired`；隐藏作者 / 不感兴趣 / 撤销 / 恢复后，旧综合快照立即失效。
 
 ## 4.2 Feed 行为事件采集 (Feed Events) — FEED-2
 
@@ -400,15 +414,27 @@ FEED-H1 加固：
 | `POST`| `/api/messages/:user_id` | 发送私信，首次发送时自动创建会话 |
 | `POST`| `/api/messages/conversations/:id/read` | 将会话中的接收消息标记为已读 |
 | `GET` | `/api/messages/unread_count` | 获取私信未读总数 |
-| `GET` | `/api/user/notifications/unread_count`| 获取未读系统通知和互动红点数 |
-| `POST`| `/api/user/notifications/read` | 标记所有通知为已读 |
+| `GET` | `/api/user/notifications/unread_count`| 获取未读系统通知和互动红点数，不包含工单更新 |
+| `POST`| `/api/user/notifications/read` | 将当前账号的通用通知标为已读，不消费工单会话更新 |
 | `POST`| `/api/notifications/read-selected` | 以当前登录用户为接收者。支持 `{"ids":[通知ID]}`（最多100个），或成功打开目标回复后发送 `{"post_id":帖子ID,"reply_id":回复ID}`；只消费匹配的回复通知 |
+| `POST` | `/api/notifications/replies/read` | 将当前账号全部回复通知标为已读，包含未加载分页；不影响其他类型通知。旧服务端无此路径返回 `404`，客户端保留提醒且提示重试，不降级为全部通知已读 |
 | `GET` | `/api/user/likes/received` | 当前用户的帖子、评论收到的有效点赞；`limit` 默认30、最大50，`cursor` 为上一页返回的点赞ID。响应 `{items,has_more,next_cursor}`，每项含 `id,user_id,nickname,avatar,target_type,target_id,post_id,post_title,created_at`；过滤自赞、取消的赞、已删除/受限内容和注销账号 |
 
 用户资料的 `total_likes_received` 与此明细采用同一有效点赞查询：统计他人对本人公开帖子（`normal/sold/closed`）及这些帖子下本人正常评论的现存点赞，每个“点赞人 + 内容类型 + 内容 ID”计一次。同一人赞三条不同内容计 3 次。整帖删除或治理隐藏时，其下各评论作者的获赞也不再计入；恢复公开后仍存在的有效赞重新计入。自赞、已撤回的赞、已删除评论以及点赞账号非 `active`（兼容空状态）的记录不计。本人资料、会话刷新、公开资料及关联作者加载均从事实投影，不直接展示数据库兼容列的历史数值；无有效记录时返回 `0`。分页协议和字段类型不变。
 
-通知已读接口在原有响应上附加 `read_receipt`：`recipient_user_id` 表示接收账号，单条/目标回复读取返回实际归属该账号的 `ids` 和 `reply_ids`，全部已读返回 `all_before_id`。全部已读只处理该水位之前的通知，新产生的通知保持未读。旧客户端可忽略此附加字段。Android 用回执清理系统通知并阻止延迟重放；新回复推送附带 `notification_id`，使用 `reply_notifications_v1` 高优先级渠道，仍遵从用户的系统通知权限。
-| `POST` | `/api/notifications/replies/read` | 将当前账号全部回复通知标为已读，包含未加载分页；不影响其他类型通知。旧服务端无此路径返回 `404`，客户端保留提醒且提示重试，不降级为全部通知已读 |
+通知已读接口在原有响应上附加 `read_receipt`：`recipient_user_id` 表示接收账号，单条/目标回复读取返回实际归属该账号的 `ids` 和 `reply_ids`，全部已读返回 `all_before_id`。全部已读只处理该水位之前的通用通知，新产生的通知保持未读。旧客户端可忽略此附加字段。Android 用回执清理系统通知并阻止延迟重放；新回复推送附带 `notification_id`，使用 `reply_notifications_v1` 高优先级渠道，仍遵从用户的系统通知权限。
+
+`GET /api/notifications` 的列表与上述通用未读计数均排除 `feedback_update`、`feedback_admin_update`；历史工单通知保留在库内，由工单详情消费，不删除或批量改写历史。用户与管理员的工单入口分别使用以下计数：
+
+| 方法 | 路径 | 未读语义 |
+| --- | --- | --- |
+| `GET` | `/api/feedback/tickets/unread-count` | 本人存在未读管理员回复的工单数，响应 `unread_count` |
+| `GET` | `/api/admin/feedback/tickets/stats` | 原业务队列统计保留；新增 `unread_count` 为当前管理员未读更新关联的不同工单数 |
+| `GET` | `/api/admin/feedback/tickets` | 每项新增 `admin_unread_count`，为当前管理员在该会话内的未读更新条数，不新增数据库列 |
+| `GET` | `/api/feedback/tickets/:id` | 仅本人可查看；成功读取完整详情后在同一事务更新工单未读与本账号该会话的通知 |
+| `GET` | `/api/admin/feedback/tickets/:id` | 沿用管理员权限；成功读取完整详情后消费当前管理员在该会话的通知，不替其他管理员已读 |
+
+详情读取先固定本账号该会话的通知 ID 水位。读取期间新增的消息和通知继续保留未读；读取失败、无权访问或已读写入失败均不消费工单未读。已读操作不推进工单业务 `updated_at`。客户端从旧缓存工单通知进入详情时，返回后重新读取通用通知列表。
 
 ## 6.1 统一搜索 (Search)
 
@@ -601,7 +627,7 @@ FEED-H1 加固：
 
 助手凭证不能调用普通 App API，App JWT 也不能调用集成 API。允许的 scope 为 `profile:read_minimal community:read content:read_own_public actions:read_own community:propose checkin:write community:bot_reply community:bot_post academic:grades:read academic:erke:read` 的子集；提案必须同时批准读取和结果查询，自动评论和发帖分别需独立 scope，旧连接不自动扩权。个人查询需 `INTEGRATION_PERSONAL_DATA_ENABLED` 开启，Web/App 不因同步成功自动选择查询 scope。QQ 连接和本站签到不要求学校身份；本人同步资料不会因此获得可信学生资格。缺少学校资料返回 `academic_sync_required`，在官网「个人资料同步」修复，不撤销基础连接；无权限失败返回稳定 `code`，OAuth 错误使用 `error`。所有含授权数据的响应设置 `Cache-Control: no-store`。
 
-机器人 `policy` 字段包括 `public_read_enabled`、`reply_enabled`、`sticker_enabled`、`post_enabled`、`image_enabled`、`allowed_post_types`、`blocked_terms`、`block_links`、`daily_reply_limit`（1–100）和 `min_reply_interval_minutes`（1–1440）。默认只读，新增发帖与配图字段缺省为 false，旧评论权限不扩大为发帖权限。允许板块为校园生活／课程学习，禁链接，默认评论日限3条且至少30分钟，已有设置保持不变；本人可保存更高频率，平台最高100条／滚动24小时、至少间隔1分钟；投诉、迎新求助、敏感或停用板块不可授权。屏蔽词最多20个，每个1–24字，按全角ASCII、零宽及空白规范化后匹配；不是语义审核。认证社区读取受机器人启停与白名单约束，最终自动发布事务复核规则、scope、信誉、社区禁言和平台开关。发帖来源版本重新核验，图片只接受 bot 自有或获上传授权的有效文件，发布与图片绑定原子提交。普通人工确认路径拒绝 bot 来源/配图载荷。公开用户 `ai_bot` 只返回创建者公开ID与昵称，普通用户昵称不会产生系统标记。
+机器人 `policy` 字段包括 `public_read_enabled`、`reply_enabled`、`sticker_enabled`、`post_enabled`、`image_enabled`、`allowed_post_types`、`blocked_terms`、`block_links`、`hourly_reply_limit`（可选，0–60，0或缺省表示无小时上限）、`daily_reply_limit`（1–100）和 `min_reply_interval_minutes`（1–1440）。默认只读，新增发帖与配图字段缺省为 false，旧评论权限不扩大为发帖权限。允许板块为校园生活／课程学习，禁链接，新建默认每滚动1小时15条、每滚动24小时100条且至少间隔1分钟；`GET /api/connected-apps/bot` 的 `default_policy` 是新建表单的默认规则，已有机器人使用 `bot.policy`，保存后重新读取服务端确认结果。已有设置保持不变；本人可保存更高频率，平台最高100条／滚动24小时、至少间隔1分钟；投诉、迎新求助、敏感或停用板块不可授权。屏蔽词最多20个，每个1–24字，按全角ASCII、零宽及空白规范化后匹配；不是语义审核。认证社区读取受机器人启停与白名单约束，最终自动发布事务复核规则、scope、信誉、社区禁言和平台开关。发帖来源版本重新核验，图片只接受 bot 自有或获上传授权的有效文件，发布与图片绑定原子提交。普通人工确认路径拒绝 bot 来源/配图载荷。公开用户 `ai_bot` 只返回创建者公开ID与昵称，普通用户昵称不会产生系统标记。
 
 **AI 等级**：机器人账号的 `exp` 与公开用户 `exp` 字段同源，`GET /api/connected-apps/bot` 也返回 `exp`。机器人与用户一样获得每日首帖 10、首评 3 经验；他人点赞机器人帖子或评论每次 +2，取消对称扣回且不低于 0，创建者本人点赞不计。客户端对带 `ai_bot` 的作者使用独立阈值 0/30/100/250/600/1200/2500/5000 计算 AI Lv.1–8，并以「创建者昵称创建的 ✦ AI Lv.N」胶囊代替普通等级徽章。
 
@@ -609,7 +635,7 @@ FEED-H1 加固：
 
 运行状态协议：管理响应新增 `runtime_supported:true` 与 `runtime`；`/bot/policy` 同时返回本人 binding 的不透明ID／代次及 bot `revision`。资料、权限或启停保存递增版本。心跳只接受 `session_id`（UUID）、`sequence`（递增正整数）、`revision`、`state`、`error_code`、`round_id`（可空UUID）、`read_count`（0–5）与 `next_run_in_seconds`（0–86400），拒绝额外字段／查询参数；每绑定每分钟最多12次。状态限定 idle/waiting/loading/completed/empty/error/paused/disabled/scope_required/cooldown/stopped，错误码限定为空或固定的执行／网络／模型配置错误，不接受正文、账号参数或客户端发布结果。
 
-`GET /bot/policy?reply_targets=1` 可为已启用文字自动评论的本人机器人返回最近24小时内最多8条待处理的公开评论。每项目仅包含 `post_id`、`post_type`、`reply_id` 和 `source_version`。候选来自对机器人评论的明确回复、机器人帖子下的顶层评论，以及公开评论中以空格或标点分隔的唯一机器人昵称 `@名称`。排除已答复、已删除、AI 发送和当前不可读的来源。未获得 `community:bot_reply` 或仍处于发言额度限制时无候选。执行端沿用公开上下文与原发布接口复核来源。
+`GET /bot/policy?reply_targets=1` 可为已启用文字自动评论的本人机器人返回最近24小时内最多8条待处理的公开评论。同一响应的 `mention_name` 提供服务端已核实唯一的机器人显示名（小写），无可用名称时为空，供定时浏览与优先互动一致识别点名。每项目仅包含 `post_id`、`post_type`、`reply_id` 和 `source_version`。候选来自对机器人评论的明确回复、机器人帖子下的顶层评论，以及公开评论中以空格或标点分隔的唯一机器人昵称 `@名称`。排除已答复、已删除、AI 发送和当前不可读的来源。未获得 `community:bot_reply` 或仍处于发言额度限制时无候选。执行端沿用公开上下文与原发布接口复核来源。
 
 同一有效 binding 的不同执行会话在两分钟占用内返回 `bot_runtime_busy`；旧序号返回 `stale_bot_runtime`，旧规则版本返回 `bot_policy_changed`。正常 stopped 释放占用，异常退出等待过期。首次加入运行协议后，自动评论／发帖必须携带当前 `runtime_session_id` 和 `bot_revision`，最终事务验证 binding、会话、占用和版本；旧插件省略这些字段返回 `bot_runtime_required`，普通本人确认发布拒绝这些机器人载荷。历史未加入的安装保留兼容入口，不自动获得新 scope。
 
@@ -625,7 +651,7 @@ FEED-H1 加固：
 
 ### 集成公开阅读字段与排名
 
-`GET /api/integrations/v1/community/posts` 新增 `sort=newest|likes|replies`（默认 newest）、`cursor`。最新按 ID 倒序用 `next_after_id`；排名按真实计数与 ID 倒序用 `next_cursor`，不与 after_id 混用，游标绑定排序和查询条件。错误组合返回 422，统计变化不保证列表快照。
+`GET /api/integrations/v1/community/posts` 与对应匿名公开路由支持 `sort=newest|oldest|likes|replies`（默认 newest）、`cursor`。最新按 ID 倒序、最早按 ID 升序，均用 `next_after_id` 续页；查询最早帖子直接使用 `sort=oldest`，无需倒翻最新列表。排名按真实计数与 ID 倒序用 `next_cursor`，不与 after_id 混用，游标绑定排序和查询条件。错误组合返回 422，统计变化不保证列表快照。
 
 公开帖子和正常评论新增 `author.nickname`、`like_count`、`images`；帖子含 `reply_count`。图片只包含当前可见内容关联且 public/active 的图片 URL、MIME、尺寸与序号，不返回上传者、存储元数据或私有文件。详情正文上限 10000 字；列表仍为 600 字摘要，评论分页不变。新增展示字段不参与草稿 source_version，统计／改名不使草稿失效。删除评论仍只留墓碑；所有路径保留 scope、当前资格和授权复核，不增加浏览量。
 
@@ -634,6 +660,8 @@ AstrBot 食堂工具直接匿名复用现有 `/api/canteens/rankings`、`/search
 ## 主题商城投稿与审核
 
 错误响应统一为 `{"error": "...", "code": "theme_*"}`（字段校验错误附带 `"field"`）。`POST /api/reports` 新增 `target_type="theme"`，`target_id` 传版本族 `familyId`（UUID）。
+
+新投稿在同一事务内向有效管理员和超级管理员发送 `theme_pending` 站内通知，排除投稿者本人；同一幂等键重试不重复通知。审核通过上架、拒绝及低版本被取代时向作者发送 `theme_review` 站内通知，拒绝通知包含原因中文说明和管理员填写的补充说明。两类通知均计入通用未读数；App 点击待审通知进入主题审核，点击结果通知进入我的主题投稿。管理处入口及主题审核入口显示待审数量。
 
 | 方法与路径 | 权限 | 说明 |
 | --- | --- | --- |

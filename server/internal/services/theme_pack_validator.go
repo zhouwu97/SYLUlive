@@ -312,7 +312,6 @@ func ValidateAndNormalizeThemePack(rawZip []byte, overrides ThemeMetadataOverrid
 	if err != nil {
 		return nil, err
 	}
-
 	if err := checkManifestContrast(parsedManifest); err != nil {
 		return nil, err
 	}

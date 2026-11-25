@@ -25,6 +25,15 @@ void main() {
     expect(item.id, 'local-1');
   });
 
+  test('提交编号保留界面顺序和重复项，未上传的本地图阻止提交', () {
+    final existing = PublishImageItem.existing(_existing(1, 10))..fileId = 99;
+    final local = PublishImageItem.local(XFile('local.jpg'), 'local')..fileId = 30;
+    final pending = PublishImageItem.local(XFile('pending.jpg'), 'pending');
+    expect(uploadedFileIdsInOrder([]), isEmpty);
+    expect(uploadedFileIdsInOrder([local, existing, local]), [30, 10, 30]);
+    expect(uploadedFileIdsInOrder([existing, pending, local]), isNull);
+  });
+
   group('reorderImages 语义', () {
     List<PublishImageItem> list(List<String> ids) => [
           for (final id in ids)

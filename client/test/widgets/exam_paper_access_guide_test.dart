@@ -27,7 +27,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('完成教务认证后使用'), findsOneWidget);
-    expect(find.text('去认证'), findsOneWidget);
+    expect(find.text('登记教务配置后使用'), findsOneWidget);
+    expect(find.text('去配置教务'), findsOneWidget);
   });
 }

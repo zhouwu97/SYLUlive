@@ -88,6 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _unreadReplyCount = 0;
   int _unreadMessageCount = 0;
   int _feedbackUnreadCount = 0;
+  int _unreadCountRequest = 0;
   StartupDestinationMode _startupDestination = StartupDestinationMode.home;
   int? _postCount;
   int _contentCountRequest = 0;
@@ -188,7 +189,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return;
     final epoch = auth.accountSessionEpoch;
-    bool isCurrent() => mounted && auth.accountSessionEpoch == epoch;
+    final accountId = auth.user?.id;
+    final request = ++_unreadCountRequest;
+    bool isCurrent() => mounted && request == _unreadCountRequest &&
+        auth.accountSessionEpoch == epoch && auth.user?.id == accountId;
     try {
       final repliesFuture = auth.dio.get('/user/notifications/unread_count');
       final feedbackFuture = auth.dio.get('/feedback/tickets/unread-count');
@@ -630,7 +634,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ],
           );
-          return Container(
+          return AppCardSurface(
+            blur: 0,
+            surfaceOpacity: 1,
+            themeArt: false,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: tokens.card,
@@ -703,7 +710,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             'end' => WrapAlignment.end,
             _ => WrapAlignment.start,
           };
-          return Container(
+          return AppCardSurface(
+            blur: 0,
+            surfaceOpacity: 1,
+            themeArt: false,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: tokens.card,
@@ -934,6 +944,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final adminTodo = overview['admin'] ?? 0;
         final superTodo = overview['super'] ?? 0;
         final feedbackTodo = overview['feedback'] ?? 0;
+        final feedbackUnread = overview['feedbackUnread'] ?? 0;
         final items = [
           _buildAdminEntry(
             context: context,
@@ -941,17 +952,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             icon: Icons.confirmation_number_outlined,
             iconColor: Colors.teal,
             title: '工单管理',
-            subtitle: feedbackTodo > 0
-                ? '用户问题、建议与待处理反馈 · $feedbackTodo 条待办'
-                : '用户问题、建议与待处理反馈',
-            badgeText: feedbackTodo > 0
-                ? (feedbackTodo > 99 ? '99+' : '$feedbackTodo')
+            subtitle: feedbackUnread > 0
+                ? '$feedbackUnread 个工单有新消息 · $feedbackTodo 条待办'
+                : feedbackTodo > 0
+                    ? '用户问题、建议与待处理反馈 · $feedbackTodo 条待办'
+                    : '用户问题、建议与待处理反馈',
+            badgeText: feedbackUnread > 0
+                ? (feedbackUnread > 99 ? '99+' : '$feedbackUnread')
                 : null,
             onTap: () {
               _openProfilePage(
                 MaterialPageRoute(builder: (_) => const AdminFeedbackScreen()),
               ).then((_) {
                 _refreshAdminOverview();
+                _loadUnreadCount();
               });
             },
           ),
@@ -1094,6 +1108,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       loadCount('/admin/course-evaluations/pending',
           queryParameters: {'limit': 50}),
       loadCount('/admin/exam-papers/pending-count'),
+      loadCount('/admin/themes', queryParameters: {'status': 'pending'}),
       loadCount('/admin/water/section-icon-reviews',
           queryParameters: {'status': 'pending'}),
       loadList('/admin/invitations/pending')
@@ -1110,12 +1125,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     var feedbackPendingCount = 0;
+    var feedbackUnreadCount = 0;
     try {
       final feedbackStatsResp =
           await auth.dio.get('/admin/feedback/tickets/stats');
       if (feedbackStatsResp.data != null) {
         feedbackPendingCount =
             (feedbackStatsResp.data['pending_count'] as num?)?.toInt() ?? 0;
+        feedbackUnreadCount =
+            ((feedbackStatsResp.data['unread_count'] ??
+                        feedbackStatsResp.data['unviewed_count']) as num?)
+                    ?.toInt() ??
+                0;
       }
     } catch (_) {}
 
@@ -1123,6 +1144,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       'admin': adminCount,
       'super': superCount,
       'feedback': feedbackPendingCount,
+      'feedbackUnread': feedbackUnreadCount,
     };
   }
 

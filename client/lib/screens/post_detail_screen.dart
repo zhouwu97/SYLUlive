@@ -2915,7 +2915,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
             flex: 4,
             child: _buildPostContentDismissWrapper(
               child: p.images.isNotEmpty
-                  ? _buildMarketHeroImage(p, isDark, forceFitHeight: true)
+                  ? _buildMarketHeroImage(p)
                   : Container(
                       color: isDark
                           ? const Color(0xFF131720)
@@ -2961,7 +2961,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                       ? _buildPostContentDismissWrapper(
                           child: _MarketImageOverlap(
                             overlap: 24,
-                            child: _buildMarketHeroImage(p, isDark),
+                            child: _buildMarketHeroImage(p),
                           ),
                         )
                       : SizedBox(
@@ -3114,82 +3114,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     );
   }
 
-  Widget _buildMarketHeroImage(
-    Post p,
-    bool isDark, {
-    bool forceFitHeight = false,
-  }) {
+  Widget _buildMarketHeroImage(Post p) {
     return PostMediaView(
       images: p.images,
       variant: PostMediaVariant.detail,
       access: resolvePostMediaAccess(context, p),
     );
-    /*
-    final urls = _resolvedImageUrls(p);
-    if (urls.isEmpty) return const SizedBox.shrink();
-    return Stack(
-      children: [
-        Container(
-          width: double.infinity,
-          height: forceFitHeight ? double.infinity : 400,
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : Colors.black.withValues(alpha: 0.04),
-          child: PageView.builder(
-            itemCount: urls.length,
-            onPageChanged: (index) => setState(() => _marketImageIndex = index),
-            itemBuilder: (_, index) => GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      ImageViewerScreen(imageUrls: urls, initialIndex: index),
-                ),
-              ),
-              onLongPress: () => _showImageFavoriteAction(urls[index]),
-              child: CachedNetworkImage(
-                cacheManager: PostImageCache.manager,
-                imageUrl: urls[index],
-                width: double.infinity,
-                fit: forceFitHeight ? BoxFit.contain : BoxFit.cover,
-                placeholder: (_, __) => Container(
-                  color: isDark ? Colors.white10 : Colors.grey[200],
-                ),
-                errorWidget: (_, __, ___) => Container(
-                  color: isDark ? Colors.white10 : Colors.grey[200],
-                  child: const Icon(
-                    Icons.broken_image,
-                    size: 40,
-                    color: Colors.grey,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        if (urls.length > 1)
-          Positioned(
-            bottom: 40,
-            right: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                '${_marketImageIndex + 1}/${urls.length}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-    */
   }
 
   // ===================================================================
@@ -3224,7 +3154,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                   ],
                   if (p.images.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    _buildAdaptiveWaterImages(p, isDark),
+                    _buildAdaptiveWaterImages(p),
                   ],
                   const SizedBox(height: 6),
                   _buildWaterActionBar(isDark),
@@ -3468,7 +3398,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
   // ---- 自适应图片布局 ----
 
-  Widget _buildAdaptiveWaterImages(Post p, bool isDark) {
+  Widget _buildAdaptiveWaterImages(Post p) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: PostMediaView(
@@ -3478,142 +3408,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       ),
     );
   }
-
-  /*
-  /// 单张图：按图片原比例展示，不额外生成虚化或裁切背景。
-  Widget _buildSingleWaterImage(String url, bool isDark) {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ImageViewerScreen(
-            imageUrls: [url],
-            initialIndex: 0,
-          ),
-        ),
-      ),
-      onLongPress: () => _showImageFavoriteAction(url),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: CachedNetworkImage(
-          cacheManager: PostImageCache.manager,
-          imageUrl: url,
-          width: double.infinity,
-          fit: BoxFit.fitWidth,
-          placeholder: (_, __) => Container(
-            height: 220,
-            color: isDark ? Colors.white10 : const Color(0xFFF0F1F3),
-          ),
-          errorWidget: (_, __, ___) => Container(
-            height: 220,
-            color: isDark ? Colors.white10 : const Color(0xFFF0F1F3),
-            child: const Icon(
-              Icons.broken_image,
-              size: 40,
-              color: Colors.grey,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 两张图：左右并排的等宽方格。
-  Widget _buildTwoWaterImages(List<String> urls, bool isDark) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: Row(
-        children: List.generate(urls.length, (index) {
-          final url = urls[index];
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ImageViewerScreen(
-                    imageUrls: urls,
-                    initialIndex: index,
-                  ),
-                ),
-              ),
-              onLongPress: () => _showImageFavoriteAction(url),
-              child: Container(
-                margin: EdgeInsets.only(
-                  right: index == 0 ? 2 : 0,
-                  left: index == 1 ? 2 : 0,
-                ),
-                child: AspectRatio(
-                  aspectRatio: 1,
-                  child: CachedNetworkImage(
-                    cacheManager: PostImageCache.manager,
-                    imageUrl: url,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(
-                      color: isDark ? Colors.white10 : Colors.grey[200],
-                    ),
-                    errorWidget: (_, __, ___) => Container(
-                      color: isDark ? Colors.white10 : Colors.grey[200],
-                      child: const Icon(Icons.broken_image,
-                          size: 32, color: Colors.grey),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
-
-  /// 三张及以上普通帖子图片：最多 9 张，统一按 3 列方格展示。
-  Widget _buildMultiWaterImageGrid(List<String> urls, bool isDark) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          mainAxisSpacing: 4,
-          crossAxisSpacing: 4,
-          childAspectRatio: 1,
-        ),
-        itemCount: urls.length,
-        itemBuilder: (context, index) {
-          return GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    ImageViewerScreen(imageUrls: urls, initialIndex: index),
-              ),
-            ),
-            onLongPress: () => _showImageFavoriteAction(urls[index]),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                CachedNetworkImage(
-                  cacheManager: PostImageCache.manager,
-                  imageUrl: urls[index],
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                  ),
-                  errorWidget: (_, __, ___) => Container(
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                    child: const Icon(Icons.broken_image,
-                        size: 24, color: Colors.grey),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-  */
 
   // ---- 水帖操作栏 ----
 

@@ -30,7 +30,7 @@ func newDishPhotoTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(
+	if err := db.AutoMigrate(&models.AcademicAccountConfig{},
 		&models.User{},
 		&models.File{},
 		&models.FileUploadGrant{},
@@ -120,6 +120,7 @@ func createVerifiedUser(t *testing.T, db *gorm.DB, id uint, nickname string) mod
 		t.Fatalf("create user: %v", err)
 	}
 	seedVerifiedStudent(t, db, u)
+	seedAcademicConfig(t, db, u)
 	return u
 }
 

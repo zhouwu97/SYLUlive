@@ -75,13 +75,13 @@ String academicIdentityStandingLabel(
       (readStatus == AcademicIdentityReadStatus.unknown ||
           readStatus == AcademicIdentityReadStatus.loading ||
           readStatus == AcademicIdentityReadStatus.error)) {
-    return '本机已配置，教务认证状态暂未确认';
+    return '学号归属记录暂未确认';
   }
   final label = binding.isSchoolVerified
-      ? '教务认证已完成'
+      ? '学校已核验此学号'
       : binding.verificationMethod == academicVerificationMethodLegacyMigration
-          ? (binding.verified ? '已继承历史教务认证' : '历史教务认证待重新确认')
-          : '仅本机连接，未完成教务认证';
+          ? (binding.verified ? '历史学号绑定' : '历史学号绑定待确认')
+          : '尚无学号归属核验记录';
   return readStatus == AcademicIdentityReadStatus.error && hasServerBinding
       ? '上次成功确认：$label'
       : label;

@@ -40,11 +40,10 @@ type AdminUserResponse struct {
 
 type adminAcademicIdentity struct {
 	StudentID string
-	Verified  bool
 }
 
 // loadAdminAcademicStudentIDs 优先展示可信身份学号，再展示用户已登记的有效配置学号。
-// 配置只补全管理员可见的账号标识，不授予身份；users.student_id 仅用于旧账号兼容。
+// 配置提供校内准入，仍与学号登录身份分别读取；users.student_id 仅用于旧账号兼容。
 func loadAdminAcademicStudentIDs(db *gorm.DB, users []models.User) (map[uint]adminAcademicIdentity, error) {
 	studentIDs := make(map[uint]adminAcademicIdentity, len(users))
 	if db == nil || len(users) == 0 {
@@ -70,13 +69,13 @@ func loadAdminAcademicStudentIDs(db *gorm.DB, users []models.User) (map[uint]adm
 				continue
 			}
 			if studentID := strings.TrimSpace(binding.StudentID); studentID != "" {
-				studentIDs[binding.UserID] = adminAcademicIdentity{StudentID: studentID, Verified: true}
+				studentIDs[binding.UserID] = adminAcademicIdentity{StudentID: studentID}
 			}
 		}
 	}
 	if db.Migrator().HasTable(&models.AcademicAccountConfig{}) {
 		var configs []models.AcademicAccountConfig
-		if err := activeAdminAcademicConfigs(db).
+		if err := models.ActiveAcademicConfigs(db).
 			Select("user_id", "provider_id", "student_id").
 			Where("user_id IN ?", userIDs).
 			Order("user_id ASC, updated_at DESC, provider_id DESC").
@@ -90,11 +89,6 @@ func loadAdminAcademicStudentIDs(db *gorm.DB, users []models.User) (map[uint]adm
 		}
 	}
 	return studentIDs, nil
-}
-
-func activeAdminAcademicConfigs(db *gorm.DB) *gorm.DB {
-	return db.Model(&models.AcademicAccountConfig{}).
-		Where("state = ? AND TRIM(student_id) <> ''", "active")
 }
 
 // loadAdminAcademicConfigured 只反映配置表中存在可用的 active 记录，
@@ -112,7 +106,7 @@ func loadAdminAcademicConfigured(db *gorm.DB, users []models.User) (map[uint]boo
 	var rows []struct {
 		UserID uint `gorm:"column:user_id"`
 	}
-	if err := activeAdminAcademicConfigs(db).
+	if err := models.ActiveAcademicConfigs(db).
 		Select("user_id").
 		Where("user_id IN ?", userIDs).
 		Group("user_id").
@@ -132,13 +126,6 @@ func adminStudentID(user models.User, academicStudentIDs map[uint]adminAcademicI
 		}
 	}
 	return strings.TrimSpace(user.StudentID)
-}
-
-func adminStudentVerified(user models.User, academicStudentIDs map[uint]adminAcademicIdentity) bool {
-	if identity, ok := academicStudentIDs[user.ID]; ok && identity.Verified {
-		return true
-	}
-	return user.IsStudentVerified()
 }
 
 // withAdminUserSearch 让管理端可按内部 ID、旧账号字段、昵称及可信/已登记教务学号搜索。
@@ -163,7 +150,7 @@ func withAdminUserSearch(query, db *gorm.DB, keyword string) *gorm.DB {
 		args = append(args, identityOwners)
 	}
 	if db != nil && db.Migrator().HasTable(&models.AcademicAccountConfig{}) {
-		configOwners := activeAdminAcademicConfigs(db).
+		configOwners := models.ActiveAcademicConfigs(db).
 			Select("user_id").Where("LOWER(student_id) LIKE ?", like)
 		conditions += " OR id IN (?)"
 		args = append(args, configOwners)
@@ -171,30 +158,17 @@ func withAdminUserSearch(query, db *gorm.DB, keyword string) *gorm.DB {
 	return query.Where(conditions, args...)
 }
 
-// withAdminAcademicAccounts 只统计仍存在的 App 用户，多 Provider/多来源不重复计数。
-// 教务配置登记、可信学生身份和旧教务授权是独立事实，任一存在即有教务账号记录。
+// withAdminAcademicAccounts 按有有效配置的本站账号计数，多教务类型只计一次。
 func withAdminAcademicAccounts(db *gorm.DB) *gorm.DB {
-	conditions := "edu_authorized = ?"
-	args := []interface{}{true}
-	if db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
-		identityOwners := models.TrustedAcademicBindingScope(db.Model(&models.AcademicIdentityBinding{})).
-			Select("user_id").Where("verified_at > ? AND TRIM(student_id) <> ''", time.Time{})
-		conditions += " OR id IN (?)"
-		args = append(args, identityOwners)
-	}
-	if db.Migrator().HasTable(&models.AcademicAccountConfig{}) {
-		conditions += " OR id IN (?)"
-		args = append(args, activeAdminAcademicConfigs(db).Select("user_id"))
-	}
-	return db.Model(&models.User{}).Where(conditions, args...)
+	return db.Model(&models.User{}).Where("id IN (?)", models.ActiveAcademicConfigs(db).Select("user_id"))
 }
 
-func adminUserBriefResponse(user models.User, studentID string, studentVerified bool, academicConfigured bool) AdminUserBriefResponse {
+func adminUserBriefResponse(user models.User, studentID string, academicConfigured bool) AdminUserBriefResponse {
 	return AdminUserBriefResponse{
-		EduBound:           user.HasEduAccess(),
+		EduBound:           user.EduAuthorized || user.EduBound,
 		ID:                 user.ID,
 		StudentID:          studentID,
-		StudentVerified:    studentVerified,
+		StudentVerified:    academicConfigured,
 		AcademicConfigured: academicConfigured,
 		Nickname:           user.Nickname,
 		Avatar:             user.Avatar,
@@ -202,7 +176,7 @@ func adminUserBriefResponse(user models.User, studentID string, studentVerified 
 	}
 }
 
-func adminUserResponse(user models.User, studentID string, studentVerified bool, academicConfigured bool) AdminUserResponse {
+func adminUserResponse(user models.User, studentID string, academicConfigured bool) AdminUserResponse {
 	return AdminUserResponse{
 		ID:                 user.ID,
 		StudentID:          studentID,
@@ -211,8 +185,8 @@ func adminUserResponse(user models.User, studentID string, studentVerified bool,
 		Role:               user.Role,
 		CreditScore:        user.CreditScore,
 		ReportCount:        user.ReportCount,
-		EduBound:           user.HasEduAccess(),
-		StudentVerified:    studentVerified,
+		EduBound:           user.EduAuthorized || user.EduBound,
+		StudentVerified:    academicConfigured,
 		AcademicConfigured: academicConfigured,
 		CreatedAt:          user.CreatedAt,
 	}

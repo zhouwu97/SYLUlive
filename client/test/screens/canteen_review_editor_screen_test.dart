@@ -114,8 +114,7 @@ Widget _buildEditorTestApp({
       User(
         id: 101,
         studentId: '2023001',
-        studentVerified: true,
-        eduAuthorized: true,
+        academicConfigured: true,
         nickname: '测试小周',
         createdAt: DateTime.now(),
       );
@@ -758,8 +757,7 @@ void main() {
     final user = User(
       id: 101,
       studentId: '2023001',
-      studentVerified: true,
-      eduAuthorized: true,
+      academicConfigured: true,
       nickname: '测试小周',
       creditScore: 100,
       createdAt: DateTime.now(),
@@ -885,8 +883,7 @@ void multiDishEditorTests() {
     final user = User(
       id: 101,
       studentId: '2023001',
-      studentVerified: true,
-      eduAuthorized: true,
+      academicConfigured: true,
       nickname: '测试小周',
       createdAt: DateTime.now(),
     );

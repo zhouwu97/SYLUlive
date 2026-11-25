@@ -204,6 +204,38 @@ void main() {
     );
     semantics.dispose();
   });
+
+  testWidgets('手动添加考试保存后弹窗退场不触发控制器已释放异常', (tester) async {
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ThemeProvider>(
+        create: (_) => ThemeProvider(loadOnStart: false),
+        child: const MaterialApp(home: ExamScheduleScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('添加考试'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('手动添加'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, '科目名称'),
+      '计算机网络',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, '考试地点'),
+      'A201',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, '添加'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('计算机网络'), findsOneWidget);
+    final saved = await ExamScheduleRepository().load();
+    expect(saved.map((e) => e.name), contains('计算机网络'));
+  });
 }
 
 /// 保存永远失败的仓储桩：用于验证删除失败路径不破坏界面与数据一致性。

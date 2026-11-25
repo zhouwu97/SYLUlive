@@ -1,16 +1,22 @@
 import {test,expect,chromium} from '@playwright/test';
 import {resolve} from 'node:path';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,cp,readFile,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 
-test('开发扩展真实加载、握手及非业务命令隔离',async()=>{
+test('开发扩展真实加载、握手及非业务命令隔离',async({baseURL})=>{
   const profile=await mkdtemp(resolve(tmpdir(),'sylulive-extension-test-'));
-  const extension=resolve('browser-extension/dist-dev');
+  const extension=resolve(profile,'extension');
+  await cp(resolve('browser-extension/dist-dev'),extension,{recursive:true});
+  const origin=new URL(baseURL!).origin;
+  const manifest=JSON.parse(await readFile(resolve(extension,'manifest.json'),'utf8'));
+  manifest.host_permissions.push(`${origin}/*`);
+  for(const script of manifest.content_scripts)script.matches.push(`${origin}/*`);
+  await writeFile(resolve(extension,'manifest.json'),JSON.stringify(manifest));
   const context=await chromium.launchPersistentContext(profile,{channel:'chromium',headless:true,args:[`--disable-extensions-except=${extension}`,`--load-extension=${extension}`]});
   try{
     const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
     expect(worker.url()).toContain('background.js');
-    const page=await context.newPage();await page.goto('http://127.0.0.1:5173/web/schedule');
+    const page=await context.newPage();await page.goto(`${origin}/web/schedule`);
     const response=await page.evaluate(()=>new Promise<any>((resolve,reject)=>{
       const id=crypto.randomUUID();const timer=setTimeout(()=>reject(new Error('扩展握手超时')),5000);
       const listener=(e:MessageEvent)=>{if(e.data?.id===id&&e.data?.direction==='response'){clearTimeout(timer);window.removeEventListener('message',listener);resolve(e.data)}};

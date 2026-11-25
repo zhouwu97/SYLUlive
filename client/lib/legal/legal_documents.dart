@@ -20,7 +20,7 @@ class LegalDocument {
 
 /// 法律文档版本必须和服务端 models.LegalDocumentVersion 同步更新。
 class LegalDocuments {
-  static const version = '2026-11-11-r1';
+  static const version = '2026-11-23-r1';
 
   static const userAgreement = LegalDocument(
     id: 'user_agreement',
@@ -56,6 +56,7 @@ ${AppContacts.legalContactText}
 注册与使用服务时，可能处理学号或 QQ 号、昵称、头像、账号密码摘要、设备推送标识、你主动发布的内容和图片。使用教务功能时，还会按专项授权处理教务账号、认证凭证、课表、成绩、学籍相关信息。
 
 二、处理目的与最小化
+你登记的本科或研究生教务配置用于跨设备同步和判断试卷库、集市发布、食堂评价等校内功能资格。删除最后一项配置后，这些功能将关闭。登记学号不会自动授权读取个人教务资料。
 账号信息用于身份认证和服务提供；设备推送标识仅用于消息提醒；教务数据仅用于已启用的教务功能。服务端 verify-only 核验时，教务密码仅在本次 HTTPS 请求中经由服务端用于学校身份核验，不持久化保存。密码、Cookie 和会话令牌不出现在个人数据导出文件中。
 
 三、保存期限

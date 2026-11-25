@@ -51,6 +51,8 @@ class _NotificationBackgroundSettingsScreenState
   String? _pushErrorMessage;
   final AppUpdatePreferences _updatePreferences = AppUpdatePreferences();
   AppUpdatePreferencesSnapshot? _updatePreferencesSnapshot;
+  bool _betaUpdatesBusy = false;
+  String? _updatePreferencesError;
 
   @override
   void initState() {
@@ -61,8 +63,38 @@ class _NotificationBackgroundSettingsScreenState
   }
 
   Future<void> _loadUpdatePreferences() async {
-    final snapshot = await _updatePreferences.read();
-    if (mounted) setState(() => _updatePreferencesSnapshot = snapshot);
+    try {
+      final snapshot = await _updatePreferences.read();
+      if (mounted) {
+        setState(() {
+          _updatePreferencesSnapshot = snapshot;
+          _updatePreferencesError = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _updatePreferencesError = '读取更新设置失败，点击重试');
+      }
+    }
+  }
+
+  Future<void> _setBetaUpdates(bool value) async {
+    if (_betaUpdatesBusy) return;
+    final coordinator = context.read<AppUpdateCoordinator>();
+    setState(() => _betaUpdatesBusy = true);
+    try {
+      await coordinator.setBetaUpdates(value);
+      await _loadUpdatePreferences();
+      if (mounted &&
+          (coordinator.errorMessage != null ||
+              coordinator.betaErrorMessage != null)) {
+        AppFeedback.error('设置已保存，检查更新失败，请下拉重试', context: context);
+      }
+    } catch (_) {
+      if (mounted) AppFeedback.error('保存 Beta 通知设置失败，请重试', context: context);
+    } finally {
+      if (mounted) setState(() => _betaUpdatesBusy = false);
+    }
   }
 
   Future<void> _setSilentDownload(bool value) async {
@@ -351,6 +383,10 @@ class _NotificationBackgroundSettingsScreenState
         await _loadKeepAliveStatus();
         await _loadPushState();
         await _loadUpdatePreferences();
+        if (context.mounted &&
+            PlatformCapabilities.current.supportsInAppPackageInstall) {
+          await context.read<AppUpdateCoordinator>().check(force: true);
+        }
       },
       children: [
         // 远程推送
@@ -416,10 +452,32 @@ class _NotificationBackgroundSettingsScreenState
           SettingsSection(
             title: '应用更新',
             children: [
+              if (_updatePreferencesError != null)
+                SettingsTile(
+                  icon: Icons.refresh,
+                  title: _updatePreferencesError!,
+                  onTap: _loadUpdatePreferences,
+                ),
+              SettingsTile(
+                icon: Icons.science_outlined,
+                title: '接收 Beta 测试版通知',
+                subtitle: _betaUpdatesBusy
+                    ? '正在更新通知设置…'
+                    : '功能更丰富，但仍在测试，不建议小白用户下载；由你选择下载或关闭通知',
+                maxSubtitleLines: 3,
+                trailing: SettingsSwitch(
+                  value: _updatePreferencesSnapshot?.betaUpdates ?? false,
+                  onChanged:
+                      _updatePreferencesSnapshot == null || _betaUpdatesBusy
+                          ? null
+                          : _setBetaUpdates,
+                ),
+              ),
               SettingsTile(
                 icon: Icons.download_for_offline_outlined,
                 title: '自动静默下载更新',
-                subtitle: '发现普通新版本后在后台准备安装包',
+                subtitle: '发现正式版更新后在后台准备安装包，Beta 测试版需手动下载',
+                maxSubtitleLines: 3,
                 trailing: SettingsSwitch(
                   value: _updatePreferencesSnapshot?.silentDownload ?? true,
                   onChanged: _updatePreferencesSnapshot == null

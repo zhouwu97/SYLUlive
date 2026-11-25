@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +9,8 @@ import 'package:shenliyuan/screens/settings/bottom_navigation_settings_screen.da
 import 'package:shenliyuan/widgets/liquid_bottom_nav.dart';
 import 'package:shenliyuan/widgets/floating_bottom_nav.dart';
 import 'package:shenliyuan/widgets/bottom_nav_setup_hint.dart';
+import 'package:shenliyuan/widgets/theme_store_setup_hint.dart';
+import 'package:shenliyuan/widgets/settings/settings_slider_tile.dart';
 
 Widget app(ThemeProvider theme) => ChangeNotifierProvider.value(
     value: theme,
@@ -41,6 +45,35 @@ void main() {
     await tester.pumpWidget(host(restarted, true));
     await tester.pump(const Duration(seconds: 2));
     expect(find.text('首次使用建议'), findsNothing);
+  });
+  testWidgets('未到首页不消费主题商城首次提示；展示后即使未确认重启也不重复', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    final provider = ThemeProvider(loadOnStart: false);
+    addTearDown(provider.dispose);
+    await provider.loadThemeForTesting();
+    Widget host(ThemeProvider theme, bool eligible) =>
+        ChangeNotifierProvider.value(
+            value: theme,
+            child: MaterialApp(
+                home: Scaffold(body: ThemeStoreSetupHint(eligible: eligible))));
+    await tester.pumpWidget(host(provider, false));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('发现主题商城'), findsNothing);
+    expect(provider.showThemeStoreSetupHint, isTrue);
+    await tester.pumpWidget(host(provider, true));
+    await tester.pump(const Duration(milliseconds: 850));
+    await tester.pumpAndSettle();
+    expect(find.text('发现主题商城'), findsOneWidget);
+    expect(find.text('去试用'), findsOneWidget);
+    final prefs = await AppPreferencesStore.getInstance();
+    expect(prefs.getBool('theme_store_setup_hint_seen'), isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    final restarted = ThemeProvider(loadOnStart: false);
+    addTearDown(restarted.dispose);
+    await restarted.loadThemeForTesting();
+    await tester.pumpWidget(host(restarted, true));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('发现主题商城'), findsNothing);
   });
   test('强度与预设联动，并修复旧版不一致记录', () async {
     AppPreferencesStore.setMockInitialValues({
@@ -171,6 +204,46 @@ void main() {
     await theme.loadThemeForTesting();
   });
   tearDown(() => theme.dispose());
+
+  for (final (style, label) in [
+    ('normal', '标准底栏'),
+    ('floating', '悬浮底栏'),
+    ('liquid_glass', '液态玻璃底栏'),
+  ]) {
+    testWidgets('主题 $style 的设置预览和当前效果一致，重新选择预设可启用液态玻璃', (tester) async {
+      final prefs = await AppPreferencesStore.getInstance();
+      await prefs.setString(ThemeProvider.appearanceKey, jsonEncode({
+        'navigation': {'style': style, 'iconTint': 'template', 'icons': {}},
+      }));
+      theme.dispose();
+      theme = ThemeProvider(loadOnStart: false);
+      await theme.loadThemeForTesting();
+      await tester.pumpWidget(app(theme));
+      await tester.pumpAndSettle();
+      final liquid = style == 'liquid_glass';
+      expect(find.byType(LiquidBottomNav), liquid ? findsOneWidget : findsNothing);
+      expect(find.byType(FloatingBottomNav), liquid ? findsNothing : findsOneWidget);
+      expect(find.textContaining('当前效果：$label'), findsOneWidget);
+      expect(tester.widget<RadioGroup<BottomNavPerformanceMode>>(
+        find.byType(RadioGroup<BottomNavPerformanceMode>)).groupValue,
+        liquid ? BottomNavPerformanceMode.highQuality : BottomNavPerformanceMode.off);
+      expect(tester.widget<SettingsSliderTile>(
+        find.byKey(const ValueKey('bottom-nav-intensity'))).value, liquid ? 1 : 0);
+      if (!liquid) {
+        expect(tester.widget<FloatingBottomNav>(find.byType(FloatingBottomNav)).docked,
+            style == 'normal');
+        await tester.scrollUntilVisible(find.text('高画质'), 180,
+            scrollable: find.byType(Scrollable).first);
+        await tester.ensureVisible(find.text('高画质'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('高画质'));
+        await tester.pumpAndSettle();
+        expect(theme.bottomNavStyle, BottomNavStyle.liquidGlass);
+        expect(theme.appearance.data['navigation']['icons'], isEmpty);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('新底栏默认完整画质，设置页不再提供旧样式', (tester) async {
     await tester.pumpWidget(app(theme));

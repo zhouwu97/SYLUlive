@@ -1,8 +1,11 @@
 package models
 
-import "time"
+import (
+	"gorm.io/gorm"
+	"time"
+)
 
-// AcademicAccountConfig 是用户自报的跨设备配置，不授予任何学生身份权限。
+// AcademicAccountConfig 记录跨设备教务配置，也是校内功能的准入依据。配置不证明学号归属。
 // 删除保留原行及 revision，避免离线旧写入在重建后重新生效。
 type AcademicAccountConfig struct {
 	ID         uint       `gorm:"primaryKey" json:"id"`
@@ -24,4 +27,15 @@ type AcademicConfigReceipt struct {
 	RequestHash string `gorm:"size:64;not null"`
 	Result      string `gorm:"type:text;not null"`
 	CreatedAt   time.Time
+}
+
+// ActiveAcademicConfigs 只从受支持的教务配置判断校内准入。删除墓碑保留版本，但不授予资格。
+func ActiveAcademicConfigs(db *gorm.DB) *gorm.DB {
+	return db.Model(&AcademicAccountConfig{}).Where("state = ? AND TRIM(student_id) <> '' AND provider_id IN ?", "active", []string{AcademicProviderUndergraduate, AcademicProviderGraduate})
+}
+
+func HasAcademicConfig(db *gorm.DB, userID uint) (bool, error) {
+	var count int64
+	err := ActiveAcademicConfigs(db).Where("user_id = ?", userID).Count(&count).Error
+	return count > 0, err
 }

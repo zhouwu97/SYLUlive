@@ -87,11 +87,13 @@ func TestIntegrationRealAIManagedBotRuntime(t *testing.T) {
 		}
 		var bot models.ManagedBot
 		require.NoError(t, db.Where("owner_id = ?", 129002).Take(&bot).Error)
+		var actor models.User
+		require.NoError(t, db.First(&actor, bot.UserID).Error)
 		var own models.Post
 		require.NoError(t, db.Where("author_id = ?", bot.UserID).Order("id DESC").Take(&own).Error)
 		root := models.Reply{PostID: own.ID, AuthorID: 129001, Content: "谢谢分享这个学习方法。", Status: models.ReplyStatusNormal}
 		require.NoError(t, db.Create(&root).Error)
-		target := models.Reply{PostID: own.ID, AuthorID: 129001, ParentReplyID: &root.ID, ReplyToReplyID: &root.ID, Content: "想继续问楼中楼：如果每天只有二十分钟，怎么挑出最该复习的两个知识点？请针对这个问题给一个简单步骤。", Status: models.ReplyStatusNormal}
+		target := models.Reply{PostID: own.ID, AuthorID: 129001, ParentReplyID: &root.ID, ReplyToReplyID: &root.ID, Content: fmt.Sprintf("@%s 想继续问楼中楼：如果每天只有二十分钟，怎么挑出最该复习的两个知识点？请针对这个问题给一个简单步骤。", actor.Nickname), Status: models.ReplyStatusNormal}
 		require.NoError(t, db.Create(&target).Error)
 		c.JSON(200, gin.H{"post_id": own.ID, "root_reply_id": root.ID, "target_reply_id": target.ID})
 	})

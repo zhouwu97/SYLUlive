@@ -1,27 +1,23 @@
-import { CompetitionPersonal } from "./competition-personal";
-import { CampusMap } from './campus-map';
-import { SchoolCalendar } from './school-calendar';
-import { CanteenDetailActions, CanteenReviewForm, CanteenReviews, CanteenContributions, CanteenArchiveManagement, DishDetail, OFFLINE_READONLY_TEXT } from './canteen';
-import { formatScore } from './canteen-data';
-import { CanteenDetailPage } from './canteen-detail';
+import { formatScore } from './canteen/canteen-data';
+import { CanteenDetailPage } from './canteen/canteen-detail';
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { entity, query, rows, time, useApi, write, asset } from "./api";
+import { entity, query, rows, useApi, write, asset } from "./api";
 import { Empty, Form, Head, Pagination, QueryState, Tabs, useUI } from "./ui";
 import { useAuth } from "./auth";
 import { useMobile } from "./mobile";
-const sources = {
-  campus: ["校园服务", "/api/campus/articles", "articles"],
-  competition: ["竞赛中心", "/api/competitions/events", "events"],
-  canteen: ["食堂与菜品", "/api/canteens", "canteens"],
-  ratings: ["教师 · 专业评价", "/api/teachers", "teachers"],
+const detailPaths = {
+  campus: "/api/campus/articles",
+  competition: "/api/competitions/events",
+  canteen: "/api/canteens",
+  ratings: "/api/teachers",
 } as const;
-export type CatalogKind = keyof typeof sources;
-export function Catalog({ kind }: { kind: CatalogKind }) {
-  const [params, setParams] = useSearchParams(),
-    ui = useUI();
-  const [title, base, key] = sources[kind];
-  const majors = kind === "ratings" && params.get("tab") === "majors";
-  const path = majors ? "/api/majors" : base;
+export type CatalogKind = keyof typeof detailPaths;
+
+export function RatingsList() {
+  const title = "教师 · 专业评价";
+  const [params, setParams] = useSearchParams();
+  const majors = params.get("tab") === "majors";
+  const path = majors ? "/api/majors" : detailPaths.ratings;
   const page = Number(params.get("page")) || 1;
   const q = useApi(
     query(path, {
@@ -31,52 +27,18 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
       search: params.get("q"),
     }),
   );
-  const data = rows(q.data, majors ? "majors" : key);
+  const data = rows(q.data, majors ? "majors" : "teachers");
   return (
     <>
-      <Head
-        title={title}
-        description={
-          kind === "campus"
-            ? "学校公告、校历与服务信息"
-            : kind === "competition"
-              ? "竞赛目录与个人参赛计划"
-              : kind === "canteen"
-                ? "发现食堂，分享真实的就餐体验"
-                : "查询教师和专业，分享学习体验"
-        }
-      >
-        {kind === 'canteen' && <button className="btn" onClick={() => ui.open('我的食堂贡献', <CanteenContributions />)}>我的贡献</button>}
-        {kind === "competition" && (
-          <button
-            className="btn"
-            onClick={() => ui.open("我的竞赛计划", <CompetitionPersonal />)}
-          >
-            我的计划
-          </button>
-        )}
-        {kind === "campus" && (
-          <button className="btn" onClick={() => ui.open('校园地图', <CampusMap />)}>校园地图</button>
-        )}
-        {kind === "campus" && (
-          <button
-            className="btn"
-            onClick={() => ui.open("学校校历", <SchoolCalendar />)}
-          >
-            查看校历
-          </button>
-        )}
-      </Head>
-      {kind === "ratings" && (
-        <Tabs
-          tabs={[
-            ["teachers", "教师评价"],
-            ["majors", "专业评价"],
-          ]}
-          value={majors ? "majors" : "teachers"}
-          onChange={(tab) => setParams({ tab })}
-        />
-      )}
+      <Head title={title} description="查询教师和专业，分享学习体验" />
+      <Tabs
+        tabs={[
+          ["teachers", "教师评价"],
+          ["majors", "专业评价"],
+        ]}
+        value={majors ? "majors" : "teachers"}
+        onChange={(tab) => setParams({ tab })}
+      />
       <form
         className="filter-row catalog-search"
         onSubmit={(e) => {
@@ -96,24 +58,14 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
         <button className="btn">搜索</button>
       </form>
       <QueryState query={q}>
-        <div className={kind === "canteen" ? "dish-list" : "panel"}>
+        <div className="panel">
           {data.map((x) => (
             <Link
-              className={
-                kind === "competition"
-                  ? "comp-row"
-                  : kind === "canteen"
-                    ? "dish"
-                    : "list-row"
-              }
+              className="list-row"
               key={x.id}
-              to={`/${kind}/${x.id}${majors ? "?tab=majors" : ""}`}
+              to={`/ratings/${x.id}${majors ? "?tab=majors" : ""}`}
             >
-              <div
-                className={
-                  kind === "competition" ? "comp-logo" : "author-avatar"
-                }
-              >
+              <div className="author-avatar">
                 {(x.name || x.title || title).slice(0, 2)}
               </div>
               <div className="list-main">
@@ -148,31 +100,18 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
     </>
   );
 }
-function Plans() {
-  const q = useApi("/api/user/competition-calendar");
-  return (
-    <QueryState query={q}>
-      {rows(q.data, "items").map((x) => (
-        <div className="list-row" key={x.id}>
-          <b>{x.title || x.name}</b>
-          <p>{x.start_date || x.status}</p>
-        </div>
-      ))}
-      {!rows(q.data, "items").length && <Empty title="暂无个人计划" />}
-    </QueryState>
-  );
-}
+
 export function CatalogDetail({ kind }: { kind: CatalogKind }) {
   return kind === 'canteen' ? <CanteenDetailPage /> : <CatalogRecordDetail kind={kind} />;
 }
-function CatalogRecordDetail({ kind }: { kind: CatalogKind }) {
+function CatalogRecordDetail({ kind }: { kind: Exclude<CatalogKind, "canteen"> }) {
   const { id } = useParams(),
     [params] = useSearchParams(),
     ui = useUI(),
     auth = useAuth(),
     mobile = useMobile();
   const majors = kind === "ratings" && params.get("tab") === "majors";
-  const base = majors ? "/api/majors" : sources[kind][1];
+  const base = majors ? "/api/majors" : detailPaths[kind];
   const q = useApi(`${base}/${id}`);
   const d = entity(
     q.data,
@@ -180,20 +119,14 @@ function CatalogRecordDetail({ kind }: { kind: CatalogKind }) {
       ? "major"
       : kind === "ratings"
         ? "teacher"
-        : kind === "canteen"
-          ? "canteen"
-          : kind === "competition"
-            ? "event"
-            : "article",
+        : kind === "competition"
+          ? "event"
+          : "article",
     ...(kind === "campus" ? ["item"] : []),
     "data",
   );
-  const dishes = useApi(
-    kind === "canteen" ? `/api/canteens/${id}/dishes` : null,
-  );
-  // 商家下架后评价、图片和投票只读，与 App 和服务端保持一致。
-  const canteenOffline =
-    kind === "canteen" && (d.is_offline === true || d.operating_status === "offline");
+  // 保留通用详情原有的禁用查询订阅及缓存生命周期。
+  useApi(null);
   const subtitle = [
     d.course || d.category || d.location || [d.location_area, d.location_floor].filter(Boolean).join(" · ") || d.author_department,
     typeof d.publish_date === "string" && d.publish_date.slice(0, 10),
@@ -201,7 +134,7 @@ function CatalogRecordDetail({ kind }: { kind: CatalogKind }) {
   return (
     <>
       <Head title={d.title || d.name || "详情"} description={subtitle || undefined}>
-        <Link className="btn" to={canteenOffline ? '/canteen?tab=nostalgia' : `/${kind}`}>
+        <Link className="btn" to={`/${kind}`}>
           返回列表
         </Link>
         {kind === "competition" && (
@@ -220,18 +153,14 @@ function CatalogRecordDetail({ kind }: { kind: CatalogKind }) {
             加入计划
           </button>
         )}
-        {kind === "canteen" && q.data && (
-          <CanteenDetailActions id={id!} name={String(d.name || "")} favorite={q.data.is_favorite === true} />
-        )}
-        {canteenOffline && <CanteenArchiveManagement id={id!} item={d} onSaved={() => void q.refetch()} />}
-        {(kind === "ratings" || (kind === "canteen" && !canteenOffline)) && (
+        {kind === "ratings" && (
           <button
             className="btn primary"
             onClick={() =>
               auth.requireUser() &&
               ui.open(
                 "发表评价",
-                kind === 'canteen' ? <CanteenReviewForm id={id!} onSaved={() => void q.refetch()} /> : <Form
+                <Form
                   fields={[
                     {
                       name: "star",
@@ -267,7 +196,6 @@ function CatalogRecordDetail({ kind }: { kind: CatalogKind }) {
       </Head>
       <QueryState query={q}>
         <div className="panel panel-pad catalog-detail-body">
-          {canteenOffline && <p className="notice">{OFFLINE_READONLY_TEXT}{d.offline_reason ? `下架原因：${d.offline_reason}` : ""}</p>}
           {mobile && subtitle && <p className="muted catalog-detail-meta">{subtitle}</p>}
           <p className="details-text">
             {d.content_text || d.description || d.summary || ""}
@@ -284,8 +212,7 @@ function CatalogRecordDetail({ kind }: { kind: CatalogKind }) {
               </a>
             </div>
           )}
-          {/* 食堂评价在下方“就餐评价”单独分页展示，这里只用于教师/专业评价。 */}
-          {kind !== "canteen" && rows(q.data, "ratings", "reviews").map((r) => (
+          {rows(q.data, "ratings", "reviews").map((r) => (
             <div className="comment-row" key={r.id}>
               <b>{r.user_name || r.user?.nickname || "同学"}</b>
               <span> · {formatScore(r.star || r.overall_score)} 分</span>
@@ -321,24 +248,6 @@ function CatalogRecordDetail({ kind }: { kind: CatalogKind }) {
             </div>
           ))}
         </div>
-        {kind === "canteen" && (
-          <div className="section">
-            <h2>就餐评价</h2><CanteenReviews id={id!} offline={canteenOffline} />
-            <h2>菜品</h2>
-            <QueryState query={dishes}>
-              <div className="dish-list">
-                {rows(dishes.data, "dishes").map((dish) => (
-                  <div className="dish" key={dish.id}>
-                    <h3>{dish.name}</h3>
-                    <p>{dish.description}</p>
-                    <span>{Number(dish.average_star) > 0 ? `${formatScore(dish.average_star)} 分` : "暂无评分"}</span>
-                    <button className="btn" onClick={() => ui.open(dish.name, <DishDetail canteenId={id!} id={dish.id} />)}>查看菜品</button>
-                  </div>
-                ))}
-              </div>
-            </QueryState>
-          </div>
-        )}
       </QueryState>
     </>
   );

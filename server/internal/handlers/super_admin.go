@@ -6,12 +6,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
@@ -78,7 +79,7 @@ func (h *SuperAdminHandler) GetUsers(c *gin.Context) {
 
 	response := make([]AdminUserResponse, 0, len(users))
 	for _, user := range users {
-		response = append(response, adminUserResponse(user, adminStudentID(user, academicStudentIDs), adminStudentVerified(user, academicStudentIDs), academicConfigured[user.ID]))
+		response = append(response, adminUserResponse(user, adminStudentID(user, academicStudentIDs), academicConfigured[user.ID]))
 	}
 	c.JSON(http.StatusOK, response)
 
@@ -281,7 +282,16 @@ func (h *SuperAdminHandler) DeleteUser(c *gin.Context) {
 
 	}
 
-	if err := h.db.Delete(&user).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&models.LotteryParticipant{}) && tx.Migrator().HasTable(&models.LotteryEvent{}) {
+			ongoingEvents := tx.Model(&models.LotteryEvent{}).Select("id").Where("status = ?", models.LotteryStatusOngoing)
+			if err := tx.Where("user_id = ? AND lottery_id IN (?)", user.ID, ongoingEvents).
+				Delete(&models.LotteryParticipant{}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Delete(&user).Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
@@ -535,7 +545,83 @@ type CreateLotteryEventInput struct {
 	DrawTime    string `json:"draw_time" binding:"required"`
 }
 
-// CreateLotteryEvent 发布抽奖活动。发布新活动时会结束旧的未开奖活动，保证前台只有一个当前活动。
+const (
+	maxLotteryTitleRunes       = 100
+	maxLotteryPrizeNameRunes   = 100
+	maxLotteryDescriptionRunes = 2000
+)
+
+func validateLotteryEventInput(input CreateLotteryEventInput) (title, prizeName, description string, drawTime time.Time, errMsg string) {
+	title = strings.TrimSpace(input.Title)
+	prizeName = strings.TrimSpace(input.PrizeName)
+	description = strings.TrimSpace(input.Description)
+	if title == "" || prizeName == "" {
+		return "", "", "", time.Time{}, "抽奖标题和奖品不能为空"
+	}
+	if utf8.RuneCountInString(title) > maxLotteryTitleRunes {
+		return "", "", "", time.Time{}, "抽奖标题不能超过 100 个字符"
+	}
+	if utf8.RuneCountInString(prizeName) > maxLotteryPrizeNameRunes {
+		return "", "", "", time.Time{}, "奖品名称不能超过 100 个字符"
+	}
+	if utf8.RuneCountInString(description) > maxLotteryDescriptionRunes {
+		return "", "", "", time.Time{}, "活动说明不能超过 2000 个字符"
+	}
+
+	parsedTime, err := time.Parse(time.RFC3339, strings.TrimSpace(input.DrawTime))
+	if err != nil {
+		return "", "", "", time.Time{}, "开奖时间格式无效，请使用 RFC3339 格式"
+	}
+	if !parsedTime.After(time.Now()) {
+		return "", "", "", time.Time{}, "开奖时间必须晚于当前时间"
+	}
+	return title, prizeName, description, parsedTime, ""
+}
+
+// GetLotteryEvents 分页获取全部抽奖活动列表（含进行中、已开奖、已流拍、已取消）。
+func (h *SuperAdminHandler) GetLotteryEvents(c *gin.Context) {
+	page, pageSize := parseLotteryPagination(c, 20, 50)
+
+	var total int64
+	if err := h.db.Model(&models.LotteryEvent{}).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取抽奖列表失败"})
+		return
+	}
+
+	var events []models.LotteryEvent
+	if err := h.db.Preload("Winner").
+		Order("CASE WHEN status = 0 THEN 0 ELSE 1 END ASC, created_at DESC, id DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&events).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取抽奖列表失败"})
+		return
+	}
+
+	eventIDs := make([]uint, len(events))
+	for i, ev := range events {
+		eventIDs[i] = ev.ID
+	}
+	counts, err := countParticipantsByLotteryIDs(h.db, eventIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取抽奖列表失败"})
+		return
+	}
+
+	items := make([]LotteryEventResponse, len(events))
+	for i, ev := range events {
+		items[i] = toLotteryEventResponse(ev, counts[ev.ID], false)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":     items,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
+// CreateLotteryEvent 发布抽奖活动。发布新活动时将旧的未开奖活动标记为已取消，保证前台只有一个进行中活动。
 func (h *SuperAdminHandler) CreateLotteryEvent(c *gin.Context) {
 	var input CreateLotteryEventInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -543,22 +629,15 @@ func (h *SuperAdminHandler) CreateLotteryEvent(c *gin.Context) {
 		return
 	}
 
-	title := strings.TrimSpace(input.Title)
-	prizeName := strings.TrimSpace(input.PrizeName)
-	description := strings.TrimSpace(input.Description)
-	if title == "" || prizeName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "抽奖标题和奖品不能为空"})
+	title, prizeName, description, drawTime, errMsg := validateLotteryEventInput(input)
+	if errMsg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 		return
 	}
 
-	drawTime, err := time.Parse(time.RFC3339, strings.TrimSpace(input.DrawTime))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "开奖时间格式无效"})
-		return
-	}
-	if !drawTime.After(time.Now()) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "开奖时间必须晚于当前时间"})
-		return
+	var createdBy *uint
+	if operatorID := c.GetUint("user_id"); operatorID != 0 {
+		createdBy = &operatorID
 	}
 
 	event := models.LotteryEvent{
@@ -566,13 +645,24 @@ func (h *SuperAdminHandler) CreateLotteryEvent(c *gin.Context) {
 		Description: description,
 		PrizeName:   prizeName,
 		DrawTime:    drawTime,
-		Status:      0,
+		Status:      models.LotteryStatusOngoing,
+		CreatedBy:   createdBy,
 	}
 
+	now := time.Now()
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "postgres" {
+			// 首次发布也没有可锁的旧活动；事务锁覆盖所有实例的发布入口。
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", "sylulive-lottery-publish").Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Model(&models.LotteryEvent{}).
-			Where("status = ?", 0).
-			Update("status", 1).Error; err != nil {
+			Where("status = ?", models.LotteryStatusOngoing).
+			Updates(map[string]interface{}{
+				"status":   models.LotteryStatusCancelled,
+				"drawn_at": now,
+			}).Error; err != nil {
 			return err
 		}
 		return tx.Create(&event).Error
@@ -581,9 +671,89 @@ func (h *SuperAdminHandler) CreateLotteryEvent(c *gin.Context) {
 		return
 	}
 
+	recordLotteryAdminLog(
+		h.db,
+		c,
+		"发布抽奖活动",
+		fmt.Sprintf("抽奖 #%d（%s）", event.ID, event.Title),
+		fmt.Sprintf("奖品：%s，开奖时间：%s", event.PrizeName, event.DrawTime.Format(time.RFC3339)),
+	)
+
 	c.JSON(http.StatusCreated, gin.H{
-		"event":   event,
+		"event":   toLotteryEventResponse(event, 0, false),
 		"message": "抽奖已发布",
+	})
+}
+
+// UpdateLotteryEvent 编辑进行中的抽奖活动。
+func (h *SuperAdminHandler) UpdateLotteryEvent(c *gin.Context) {
+	eventID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
+	if err != nil || eventID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的抽奖ID"})
+		return
+	}
+
+	var input CreateLotteryEventInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请完整填写抽奖标题、奖品和开奖时间"})
+		return
+	}
+
+	title, prizeName, description, drawTime, errMsg := validateLotteryEventInput(input)
+	if errMsg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
+		return
+	}
+
+	var event models.LotteryEvent
+	if err := h.db.First(&event, uint(eventID)).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "抽奖活动不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询抽奖活动失败"})
+		return
+	}
+	if event.Status != models.LotteryStatusOngoing {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "仅进行中的抽奖活动可以编辑", "code": "lottery_not_ongoing"})
+		return
+	}
+
+	res := h.db.Model(&models.LotteryEvent{}).
+		Where("id = ? AND status = ?", event.ID, models.LotteryStatusOngoing).
+		Updates(map[string]interface{}{
+			"title":       title,
+			"prize_name":  prizeName,
+			"description": description,
+			"draw_time":   drawTime,
+		})
+	if res.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新抽奖活动失败"})
+		return
+	}
+	if res.RowsAffected == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该抽奖活动已结束，无法编辑", "code": "lottery_not_ongoing"})
+		return
+	}
+
+	if err := h.db.First(&event, event.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取更新后的抽奖活动失败"})
+		return
+	}
+	var participantCount int64
+	_ = h.db.Model(&models.LotteryParticipant{}).Where("lottery_id = ?", event.ID).Count(&participantCount).Error
+
+	recordLotteryAdminLog(
+		h.db,
+		c,
+		"编辑抽奖活动",
+		fmt.Sprintf("抽奖 #%d（%s）", event.ID, event.Title),
+		fmt.Sprintf("奖品：%s，开奖时间：%s", event.PrizeName, event.DrawTime.Format(time.RFC3339)),
+	)
+
+	c.JSON(http.StatusOK, gin.H{
+		"event":   toLotteryEventResponse(event, participantCount, false),
+		"message": "抽奖活动已更新",
 	})
 }
 
@@ -595,7 +765,13 @@ func (h *SuperAdminHandler) DeleteLotteryEvent(c *gin.Context) {
 		return
 	}
 
+	var deletedTitle string
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var event models.LotteryEvent
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&event, eventID).Error; err != nil {
+			return err
+		}
+		deletedTitle = event.Title
 		if err := tx.Where("lottery_id = ?", eventID).Delete(&models.LotteryParticipant{}).Error; err != nil {
 			return err
 		}
@@ -616,31 +792,96 @@ func (h *SuperAdminHandler) DeleteLotteryEvent(c *gin.Context) {
 		return
 	}
 
+	recordLotteryAdminLog(
+		h.db,
+		c,
+		"删除抽奖活动",
+		fmt.Sprintf("抽奖 #%d（%s）", eventID, deletedTitle),
+		"已删除活动及其全部参与记录",
+	)
+
 	c.JSON(http.StatusOK, gin.H{"message": "抽奖已删除"})
 }
 
-// GetLotteryParticipants 获取当前抽奖的参与者
+// GetLotteryParticipants 获取指定活动或当前抽奖活动的参与者（支持分页并裁剪用户敏感字段）。
 func (h *SuperAdminHandler) GetLotteryParticipants(c *gin.Context) {
 	var event models.LotteryEvent
-	err := h.db.Order("status ASC, created_at DESC").First(&event).Error
+	var err error
+	if eventIDStr := strings.TrimSpace(c.Query("event_id")); eventIDStr != "" {
+		eventID, parseErr := strconv.ParseUint(eventIDStr, 10, strconv.IntSize)
+		if parseErr != nil || eventID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的抽奖ID"})
+			return
+		}
+		err = h.db.Preload("Winner").First(&event, uint(eventID)).Error
+	} else {
+		event, err = findCurrentLotteryEvent(h.db, true)
+	}
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "暂无抽奖活动"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "暂无抽奖活动", "code": "lottery_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取抽奖活动失败"})
 		return
 	}
 
-	var participants []models.LotteryParticipant
-	if err := h.db.Where("lottery_id = ?", event.ID).Preload("User").Find(&participants).Error; err != nil {
+	page, pageSize := parseLotteryPagination(c, 50, 100)
+	var total int64
+	if err := h.db.Model(&models.LotteryParticipant{}).Where("lottery_id = ?", event.ID).Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取参与者列表失败"})
 		return
 	}
 
+	var participants []models.LotteryParticipant
+	if err := h.db.Where("lottery_id = ?", event.ID).
+		Preload("User").
+		Order("created_at DESC, id DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&participants).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取参与者列表失败"})
+		return
+	}
+
+	items := make([]LotteryParticipantResponse, len(participants))
+	for i, p := range participants {
+		level := services.CalculateUserLevel(p.User.Exp)
+		currentWeight := p.Weight
+		if event.Status == models.LotteryStatusOngoing {
+			currentWeight = services.CalculateLotteryWeightByLevel(p.User.Exp)
+		}
+		nickname := p.User.Nickname
+		if nickname == "" {
+			nickname = "已注销/已删除用户"
+		}
+		items[i] = LotteryParticipantResponse{
+			ID:            p.ID,
+			CreatedAt:     p.CreatedAt,
+			LotteryID:     p.LotteryID,
+			UserID:        p.UserID,
+			Weight:        p.Weight,
+			CurrentWeight: currentWeight,
+			User: LotteryParticipantUserResponse{
+				ID:       p.UserID,
+				Nickname: nickname,
+				Avatar:   p.User.Avatar,
+				Exp:      p.User.Exp,
+				Level:    level,
+			},
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"event":        event,
-		"participants": participants,
+		"event":        toLotteryEventResponse(event, total, false),
+		"participants": items,
+		"total":        total,
+		"page":         page,
+		"page_size":    pageSize,
 	})
 }
 
-// KickLotteryParticipant 踢出参与者
+// KickLotteryParticipant 踢出参与者（仅进行中活动可操作，踢出后用户可重新参与）。
 func (h *SuperAdminHandler) KickLotteryParticipant(c *gin.Context) {
 	eventIDStr := c.Param("event_id")
 	userIDStr := c.Param("user_id")
@@ -648,21 +889,49 @@ func (h *SuperAdminHandler) KickLotteryParticipant(c *gin.Context) {
 	eventID, err1 := strconv.ParseUint(eventIDStr, 10, strconv.IntSize)
 	userID, err2 := strconv.ParseUint(userIDStr, 10, strconv.IntSize)
 
-	if err1 != nil || err2 != nil {
+	if err1 != nil || err2 != nil || eventID == 0 || userID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的参数"})
 		return
 	}
 
-	result := h.db.Where("lottery_id = ? AND user_id = ?", eventID, userID).Delete(&models.LotteryParticipant{})
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "踢出失败"})
+	var event models.LotteryEvent
+	var removed int64
+	err := h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&event, uint(eventID)).Error; err != nil {
+			return err
+		}
+		if event.Status != models.LotteryStatusOngoing {
+			return nil
+		}
+		result := tx.Where("lottery_id = ? AND user_id = ?", eventID, userID).Delete(&models.LotteryParticipant{})
+		removed = result.RowsAffected
+		return result.Error
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "抽奖活动不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询抽奖活动失败"})
+		return
+	}
+	if event.Status != models.LotteryStatusOngoing {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "活动已结束，无法踢出参与者", "code": "lottery_not_ongoing"})
 		return
 	}
 
-	if result.RowsAffected == 0 {
+	if removed == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "该用户未参与该抽奖"})
 		return
 	}
+
+	recordLotteryAdminLog(
+		h.db,
+		c,
+		"踢出抽奖参与者",
+		fmt.Sprintf("抽奖 #%d / 用户 #%d", eventID, userID),
+		fmt.Sprintf("从活动【%s】移除参与记录", event.Title),
+	)
 
 	c.JSON(http.StatusOK, gin.H{"message": "已成功踢出"})
 }

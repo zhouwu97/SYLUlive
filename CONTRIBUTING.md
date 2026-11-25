@@ -15,12 +15,16 @@
 
 ### Flutter 客户端
 
+Windows 上双击根目录的 [一键配置本地环境.bat](一键配置本地环境.bat) 可为 Flutter App 选择本地 Go 服务地址，启动方式见 [客户端运行说明](client/README.md#运行)。
+
 ~~~bash
 cd client
 flutter pub get
 flutter analyze
 flutter test --reporter compact
 ~~~
+
+Flutter 引用的教务协议库在 `experiments/jiaowu_dart_poc/` 内执行 `dart pub get` 和 `dart test`。
 
 ### Go 服务端
 
@@ -30,6 +34,8 @@ go vet ./...
 go test ./...
 go build ./...
 ~~~
+
+MCP 适配器使用独立 Go 模块，在仓库根目录执行 `go -C _mcp test ./...`。
 
 涉及并发、共享状态或请求取消时，补充适用的 go test -race；涉及数据库、迁移或上传时，只能在隔离的可丢弃测试环境执行集成检查。
 

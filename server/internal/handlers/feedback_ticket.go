@@ -93,6 +93,21 @@ func (h *FeedbackTicketHandler) createAdminFeedbackNotifications(
 	return nil
 }
 
+func (h *FeedbackTicketHandler) feedbackNotificationBoundary(userID, ticketID uint) (uint, error) {
+	var maxID uint
+	err := h.db.Model(&models.Notification{}).
+		Where("user_id = ? AND related_id = ? AND type IN ?", userID, ticketID, models.FeedbackNotificationTypes).
+		Select("COALESCE(MAX(id), 0)").Scan(&maxID).Error
+	return maxID, err
+}
+
+func markFeedbackNotificationsRead(tx *gorm.DB, userID, ticketID, maxID uint) error {
+	return tx.Model(&models.Notification{}).
+		Where("user_id = ? AND related_id = ? AND type IN ? AND id <= ? AND is_read = ?",
+			userID, ticketID, models.FeedbackNotificationTypes, maxID, false).
+		UpdateColumn("is_read", true).Error
+}
+
 // feedbackInitialSubmissionResponse 让客户端可以把初始提交和后续对话分开渲染。
 // 旧客户端仍通过 ticket.attachments 读取初始附件，因此该字段只做向后兼容扩展。
 type feedbackInitialSubmissionResponse struct {
@@ -470,6 +485,11 @@ func (h *FeedbackTicketHandler) GetTicketDetail(c *gin.Context) {
 	}
 
 	// 读取对用户可见的消息流水，并将初始提交从普通对话中剥离。
+	maxNotificationID, err := h.feedbackNotificationBoundary(userID, ticket.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单未读状态失败"})
+		return
+	}
 	messages, initialSubmission, err := h.loadFeedbackConversation(ticket.ID, true)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单消息失败"})
@@ -502,21 +522,36 @@ func (h *FeedbackTicketHandler) GetTicketDetail(c *gin.Context) {
 	}
 
 	// 只清除本次响应已读到的边界；若期间出现新的管理员消息，保留未读提示。
-	if ticket.UserUnreadCount > 0 {
-		readThroughID := uint(0)
-		for _, message := range messages {
-			if message.ID > readThroughID {
-				readThroughID = message.ID
-			}
-		}
-		result := h.db.Model(&models.FeedbackTicket{}).
-			Where("id = ? AND user_unread_count > 0", ticket.ID).
-			Where("NOT EXISTS (SELECT 1 FROM feedback_messages WHERE ticket_id = ? AND sender_type = ? AND visible_to_user = ? AND id > ?)", ticket.ID, "admin", true, readThroughID).
-			Update("user_unread_count", 0)
-		if result.Error == nil && result.RowsAffected > 0 {
-			ticket.UserUnreadCount = 0
+	readThroughID := uint(0)
+	for _, message := range messages {
+		if message.ID > readThroughID {
+			readThroughID = message.ID
 		}
 	}
+	unreadCount := ticket.UserUnreadCount
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		// 与消息写入使用同一工单行锁，等待在途写入提交后再检查消息边界。
+		var current models.FeedbackTicket
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, ticket.ID).Error; err != nil {
+			return err
+		}
+		unreadCount = current.UserUnreadCount
+		result := tx.Model(&models.FeedbackTicket{}).
+			Where("id = ? AND user_unread_count > 0", ticket.ID).
+			Where("NOT EXISTS (SELECT 1 FROM feedback_messages WHERE ticket_id = ? AND sender_type IN ? AND visible_to_user = ? AND id > ?)", ticket.ID, []string{"admin", "system"}, true, readThroughID).
+			UpdateColumn("user_unread_count", 0)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
+			unreadCount = 0
+		}
+		return markFeedbackNotificationsRead(tx, userID, ticket.ID, maxNotificationID)
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "标记工单已读失败"})
+		return
+	}
+	ticket.UserUnreadCount = unreadCount
 
 	c.JSON(http.StatusOK, gin.H{
 		"ticket":             ticket,

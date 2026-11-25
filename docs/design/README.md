@@ -4,6 +4,7 @@
 
 - [Emoji 资源契约](./emoji-resource-contract.md)
 - [Web 图文发帖与草稿契约](./post-composer-contract.md)
+- [正式版更新与 Beta 下载通道契约](./app-update-channels.md)
 - [表情导入与投稿初版背景](./emoji-import-review-plan.md)
 - [免费表情商城与创作者流程](./emoji-creator-store-plan.md)
 - [主题商城实施计划](./theme-store-plan.md)、[主题包格式契约](./theme-pack-contract.md)、[主题制作与审核细则](./theme-creation-guide.md)（决策见 [ADR-005](./adr/005-theme-package-and-store.md)）

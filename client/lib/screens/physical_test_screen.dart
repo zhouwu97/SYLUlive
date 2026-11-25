@@ -2,11 +2,15 @@ import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'dart:convert';
 import 'package:cookie_jar/cookie_jar.dart';
-import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/edu_provider.dart';
+import '../services/publish_session_scope.dart';
+import '../features/physical/physical_data_sync_service.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../widgets/app_page_background.dart';
 import '../providers/theme_provider.dart';
@@ -25,12 +29,18 @@ class PhysicalTestPage extends StatefulWidget {
   final String appUserId;
   final String username;
   final String password;
+  final Dio? dio;
+  final PhysicalCredentialStore? credentialStore;
+  final PhysicalCacheStore? cacheStore;
 
   const PhysicalTestPage({
     super.key,
     required this.appUserId,
     required this.username,
     required this.password,
+    this.dio,
+    this.credentialStore,
+    this.cacheStore,
   });
 
   @override
@@ -39,7 +49,10 @@ class PhysicalTestPage extends StatefulWidget {
 
 class _PhysicalTestPageState extends State<PhysicalTestPage> {
   static const String _baseUrl = 'http://47.92.231.221';
-  final PhysicalCredentialStore _credentialStore = PhysicalCredentialStore();
+  late final PhysicalCredentialStore _credentialStore =
+      widget.credentialStore ?? PhysicalCredentialStore();
+  late final PublishSessionScope _session;
+  bool _initializing = false;
   late final PhysicalCacheStore _cacheStore;
 
   static const _headers = {
@@ -52,6 +65,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   late final Dio _dio;
 
   bool _loggingIn = true;
+  bool _passwordSaveFailed = false;
   bool _loadingYear = false;
   String? _errorMessage;
   String? _userId;
@@ -69,28 +83,65 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   @override
   void initState() {
     super.initState();
-    _cacheStore = PhysicalCacheStore(
-      appUserId: widget.appUserId,
-      sourceAccountId: widget.username,
-    );
+    final auth = context.read<AuthProvider>();
+    _session = PublishSessionScope(
+        accountId: auth.user!.id,
+        accountSessionEpoch: auth.accountSessionEpoch);
+    _cacheStore = widget.cacheStore ??
+        PhysicalCacheStore(
+          appUserId: widget.appUserId,
+          sourceAccountId: widget.username,
+        );
     // 动态生成可用年份列表：当年份优先，递减
     final now = DateTime.now();
     final currentYear = now.month >= 9 ? now.year + 1 : now.year;
     _availableYears = List.generate(4, (i) => (currentYear - i).toString());
 
-    _dio = Dio(
-      BaseOptions(
-        baseUrl: _baseUrl,
-        headers: _headers,
-        connectTimeout: const Duration(seconds: 10),
-        receiveTimeout: const Duration(seconds: 15),
-      ),
-    );
-    _dio.interceptors.add(CookieManager(CookieJar()));
+    _dio = widget.dio ??
+        Dio(
+          BaseOptions(
+            baseUrl: _baseUrl,
+            headers: _headers,
+            connectTimeout: const Duration(seconds: 10),
+            receiveTimeout: const Duration(seconds: 15),
+          ),
+        );
+    if (widget.dio == null) _dio.interceptors.add(CookieManager(CookieJar()));
     WidgetsBinding.instance.addPostFrameCallback((_) => _init());
   }
 
-  String _md5(String input) => md5.convert(utf8.encode(input)).toString();
+  bool get _isCurrent {
+    if (!mounted) return false;
+    final auth = context.read<AuthProvider>();
+    final studentId = context.read<EduProvider?>()?.studentId.trim() ?? '';
+    return auth.isLoggedIn &&
+        auth.user?.id.toString() == widget.appUserId &&
+        _session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch) &&
+        (studentId.isEmpty ? auth.user?.studentId : studentId) ==
+            widget.username;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    context.watch<AuthProvider>();
+    context.watch<EduProvider?>();
+    if (!_isCurrent) {
+      _yearData.clear();
+      _testCode = '';
+      _userId = null;
+      _token = null;
+      _loggingIn = false;
+      _errorMessage = '账号已切换，请返回重新打开体测';
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.dio == null) _dio.close(force: true);
+    super.dispose();
+  }
 
   void _debugLog(String message) {
     if (kDebugMode) {
@@ -99,40 +150,48 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   }
 
   Future<void> _init() async {
-    final ok = await _login();
-    if (!ok) {
-      if (mounted) setState(() => _loggingIn = false);
-      return;
-    }
-    if (mounted) setState(() => _loggingIn = false);
+    if (_initializing || !_isCurrent) return;
+    _initializing = true;
+    setState(() {
+      _loggingIn = true;
+      _errorMessage = null;
+      _passwordSaveFailed = false;
+    });
+    try {
+      final ok = await _login();
+      if (!ok) {
+        if (mounted) setState(() => _loggingIn = false);
+        return;
+      }
+      if (!_isCurrent) return;
+      setState(() => _loggingIn = false);
 
-    // 获取学生信息（含 testCode 二维码内容）
-    await _fetchStudentInfo();
+      // 获取学生信息（含 testCode 二维码内容）
+      await _fetchStudentInfo();
+      if (!_isCurrent) return;
 
-    // 尝试从本地缓存加载已有的年份数据
-    await _loadCached();
-    // 自动选中最新有数据的年份：优先当前学年，无数据则取最近有缓存的
-    final now = DateTime.now();
-    final academicYear = now.month >= 9 ? now.year + 1 : now.year;
-    final currentYearStr = academicYear.toString();
-    // 服务端的 school_date 可能返回旧年份，不要直接信任
-    if (mounted) {
-      setState(() {
-        _currentYear = _yearData[currentYearStr] != null
-            ? currentYearStr // 当前学年有数据，优先用
-            : _availableYears.firstWhere(
-                (y) => _yearData[y] != null,
-                orElse: () => currentYearStr, // 都没数据，用当前学年
-              );
-      });
-    }
+      // 尝试从本地缓存加载已有的年份数据
+      await _loadCached();
+      if (!_isCurrent) return;
+      // 自动选中最新有数据的年份：优先当前学年，无数据则取最近有缓存的
+      final now = DateTime.now();
+      final academicYear = now.month >= 9 ? now.year + 1 : now.year;
+      final currentYearStr = academicYear.toString();
+      // 服务端的 school_date 可能返回旧年份，不要直接信任
+      if (mounted) {
+        setState(() {
+          _currentYear = _yearData[currentYearStr] != null
+              ? currentYearStr // 当前学年有数据，优先用
+              : _availableYears.firstWhere(
+                  (y) => _yearData[y] != null,
+                  orElse: () => currentYearStr, // 都没数据，用当前学年
+                );
+        });
+      }
 
-    // 如果选中年份没有缓存，自动拉取；优先拉取当前年份
-    if (_yearData[_currentYear] == null) {
-      _fetchYear(_currentYear);
-    } else {
-      // 当前年有缓存，后台静默拉取最新数据
-      _fetchYear(_currentYear);
+      await _fetchYear(_currentYear);
+    } finally {
+      _initializing = false;
     }
   }
 
@@ -140,6 +199,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     await _cacheStore.discardUnownedLegacy(_availableYears);
     for (final year in _availableYears) {
       final map = await _cacheStore.readYear(year);
+      if (!_isCurrent) return;
       if (map != null) {
         try {
           _yearData[year] = _YearData(
@@ -173,92 +233,42 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   }
 
   Future<bool> _login() async {
-    final md5Password = _md5(widget.password);
-    final requestData = <String, dynamic>{
-      'username': widget.username,
-      'password': md5Password,
-      'sys_id': 'iscpMobile',
-      'nonceStr': '',
-      'captchaValue': '',
-    };
-    requestData['sign'] = SignUtils.generateSign(requestData);
-
-    _debugLog('--- [体测登录] 请求开始 ---');
-    _debugLog('URL: $_baseUrl/service/login/mobile/check');
-    _debugLog('Payload keys: ${requestData.keys.toList()}');
-
     try {
-      final resp = await _dio.post(
-        '/service/login/mobile/check',
-        data: requestData,
-      );
-      final bodyText = resp.data?.toString() ?? '';
-      _debugLog('Status Code: ${resp.statusCode}');
-      _debugLog('Response header names: ${resp.headers.map.keys.toList()}');
-      _debugLog('Response bodyLength: ${bodyText.length}');
-
-      if (resp.statusCode == 200) {
-        var data = resp.data;
-        if (data is String) {
-          try {
-            data = jsonDecode(data);
-          } catch (_) {}
-        }
-        if (data is Map) {
-          String? uid;
-          for (final key in ['user_id', 'userId', 'id']) {
-            if (data[key] != null) uid = data[key].toString();
-          }
-          if (uid == null && data['data'] is Map) {
-            for (final key in ['user_id', 'userId', 'id']) {
-              if (data['data'][key] != null) {
-                uid = data['data'][key].toString();
-              }
-            }
-          }
-          if (uid == null) {
-            final cookies = resp.headers['set-cookie'];
-            if (cookies != null) {
-              for (final c in cookies) {
-                final m = RegExp(r'userid=([^;]+)').firstMatch(c);
-                if (m != null) uid = m.group(1);
-              }
-            }
-          }
-          if (uid != null) {
-            _userId = uid;
-            _token = data['token']?.toString();
-            if (data['school_date'] != null) {
-              _currentYear = data['school_date'].toString();
-            }
-            await _credentialStore.write(widget.username, widget.password);
-            _debugLog(
-              '登录成功！UserId: $_userId, Token: <redacted>, Year: $_currentYear',
-            );
-            return true;
-          } else {
-            _debugLog('登录返回了数据，但未能解析到 userId');
-          }
-        } else {
-          _debugLog('登录返回的数据不是 Map 类型');
-        }
+      final login = await PhysicalDataSyncService(dio: _dio)
+          .login(widget.username, widget.password);
+      if (!_isCurrent) return false;
+      _userId = login.userId;
+      _token = login.token;
+      _currentYear = login.schoolYear ?? '';
+    } on PhysicalLoginException catch (error) {
+      if (_isCurrent) setState(() => _errorMessage = error.message);
+      return false;
+    } on DioException {
+      if (_isCurrent) {
+        setState(() => _errorMessage = '体测服务连接失败或响应超时，请检查网络后重试');
       }
-    } catch (e, st) {
-      _debugLog('登录发生异常: ${e.runtimeType}');
-      if (kDebugMode) debugPrintStack(stackTrace: st);
+      return false;
+    } catch (_) {
+      if (_isCurrent) {
+        setState(() => _errorMessage = '体测登录未完成，请稍后重试');
+      }
+      return false;
     }
+    // 登录结果与本机保存分开处理，存储失败不能抹掉已建立的会话。
     try {
-      await _credentialStore.delete(widget.username);
-    } catch (_) {}
-    if (mounted) {
-      setState(() => _errorMessage = '登录失败，请检查学号或体测密码');
+      await _credentialStore.write(widget.username, widget.password);
+    } catch (_) {
+      if (mounted && _isCurrent) {
+        _passwordSaveFailed = true;
+        AppFeedback.showSnackBar(context, '登录成功，但密码未能安全保存，请稍后重试');
+      }
     }
-    return false;
+    return _isCurrent;
   }
 
   /// 获取学生信息（含 testCode 作为二维码内容）
   Future<void> _fetchStudentInfo() async {
-    if (_userId == null) return;
+    if (!_isCurrent || _userId == null) return;
     final bodyData = <String, dynamic>{'userId': _userId};
     bodyData['sign'] = SignUtils.generateSign(bodyData);
     try {
@@ -272,6 +282,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           },
         ),
       );
+      if (!_isCurrent) return;
       if (resp.statusCode == 200 && resp.data is Map) {
         final data = resp.data['data'];
         if (data is Map) {
@@ -292,7 +303,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   }
 
   Future<void> _fetchYear(String year) async {
-    if (_userId == null) {
+    if (!_isCurrent || _userId == null) {
       _debugLog('获取成绩失败: _userId 为空！');
       return;
     }
@@ -320,6 +331,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
       _debugLog('Status Code: ${resp.statusCode}');
       _debugLog('Response bodyLength: ${bodyText.length}');
 
+      if (!_isCurrent) return;
       if (resp.statusCode == 200) {
         var data = resp.data;
         if (data is String) {
@@ -349,7 +361,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           );
           _yearData[year] = yearData;
           await _saveCache(year, yearData);
-          if (mounted) {
+          if (mounted && _isCurrent && !_passwordSaveFailed) {
             AppFeedback.showSnackBar(context, '成绩已更新');
           }
         } else {
@@ -371,10 +383,12 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
+      backgroundColor: AppPageBackground.color(context,
+          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
       appBar: AppBar(
         title: const Text('体测成绩查询'),
-        backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
+        backgroundColor: AppPageBackground.color(context,
+            isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
         elevation: 0,
         actions: [
           IconButton(
@@ -385,7 +399,11 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh),
-            onPressed: _loadingYear ? null : () => _fetchYear(_currentYear),
+            onPressed: _loggingIn || _loadingYear
+                ? null
+                : _errorMessage != null
+                    ? _init
+                    : () => _fetchYear(_currentYear),
             tooltip: '刷新当前学年',
           ),
         ],
@@ -1005,7 +1023,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
   Widget _buildError(bool isDark) {
     return Center(
-      child: AppContentSurface.card(child: Padding(
+      child: AppContentSurface.card(
+          child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1025,7 +1044,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
-              onPressed: _init,
+              onPressed: _isCurrent ? _init : null,
               icon: const Icon(Icons.refresh),
               label: const Text('重试'),
               style: ElevatedButton.styleFrom(
@@ -1035,6 +1054,10 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('返回修改密码'),
             ),
           ],
         ),

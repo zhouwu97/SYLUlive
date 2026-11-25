@@ -233,6 +233,7 @@ type BotPolicy = {
   blocked_terms: string[];
   block_links: boolean;
   daily_reply_limit: number;
+  hourly_reply_limit?: number;
   min_reply_interval_minutes: number;
 };
 type ManagedBot = {
@@ -245,6 +246,7 @@ type ManagedBot = {
 };
 type BotStatus = {
   bot: ManagedBot | null;
+  default_policy?: BotPolicy;
   policy_supported?: boolean;
   sections?: { slug: string; name: string }[];
   auto_reply_server_enabled: boolean;
@@ -309,7 +311,7 @@ function BotRuntimePanel({ initial, supported, enabled, onConnect }: { initial?:
 const initialBotPolicy = (): BotPolicy => ({
   public_read_enabled: true, reply_enabled: false, sticker_enabled: false, post_enabled: false, image_enabled: false,
   allowed_post_types: ["campus_life", "course_study"], blocked_terms: [],
-  block_links: true, daily_reply_limit: 3, min_reply_interval_minutes: 30,
+  block_links: true, daily_reply_limit: 100, min_reply_interval_minutes: 1,
 });
 function botAvatar(value: string) {
   const source = asset(value);
@@ -338,8 +340,9 @@ function BotPanel({ active, onConnect }: { active: boolean; onConnect: () => voi
     setName(bot?.name || "大肥鱼");
     setAvatar(bot?.avatar || "");
     setAvatarFailed(false);
-    setPolicy({...initialBotPolicy(),...bot?.policy});
-    setTerms((bot?.policy?.blocked_terms || []).join("\n"));
+    const savedPolicy = {...initialBotPolicy(),...(bot?.policy || q.data.default_policy)};
+    setPolicy(savedPolicy);
+    setTerms(savedPolicy.blocked_terms.join("\n"));
     setPaused(false);
   }, [q.data]);
   function edited() { dirty.current = true; setNotice(""); }
@@ -473,6 +476,7 @@ function BotPanel({ active, onConnect }: { active: boolean; onConnect: () => voi
                 <label className="field">每 24 小时最多评论数<select value={policy.daily_reply_limit} onChange={event => changePolicy("daily_reply_limit", Number(event.target.value))}>{Array.from({length:100}, (_, i) => i + 1).map(value => <option key={value} value={value}>{value} 条</option>)}</select></label>
                 <label className="field">评论间隔（分钟）<input type="number" min={1} max={1440} step={1} value={policy.min_reply_interval_minutes} onChange={event => changePolicy("min_reply_interval_minutes", Number(event.target.value))} required /></label>
               </div>
+              <p className="integration-hint">{policy.hourly_reply_limit ? `服务端规则：每小时最多 ${policy.hourly_reply_limit} 条。` : '服务端未设置每小时上限。'}</p>
               <p className="integration-hint">文字、表情和具体评论回复合计计数，每条最多 300 字；顶层评论同帖一次，具体评论按目标去重，不回复自己或其他 AI。平台上限为 100 条／24 小时、至少间隔 1 分钟；按你保存的频率执行，实际参与也取决于浏览计划与合适的讨论。</p>
             </section>
           </fieldset>

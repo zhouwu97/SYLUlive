@@ -249,71 +249,55 @@ void main() {
     expect(coordinator.downloadCalls, 0);
   });
 
-  testWidgets('默认静默下载排队时仍显示新版，并可在下载完成后安装', (tester) async {
+  testWidgets(
+      'silent preparation prompts only when ready and install requires a tap',
+      (tester) async {
     final api = _PublishedUpdateApi()..latestVersionCode = 1712;
     final bridge = _QueuedUpdateBridge();
     final coordinator = androidCoordinator(api, bridge);
     await _pumpGate(tester, coordinator);
-
-    await coordinator.startDeferredInitialCheck();
+    await coordinator.initialize();
     await tester.pumpAndSettle();
-
     expect(coordinator.downloadState, AppUpdateDownloadState.queued);
-    expect(find.text('发现新版本 1.7.10'), findsOneWidget);
-    expect(find.text('使用当前网络下载'), findsOneWidget);
-
+    expect(find.byType(Dialog), findsNothing);
+    expect(bridge.installedVersion, isNull);
     bridge.state = AppUpdateDownloadState.ready;
     await tester.pump(const Duration(milliseconds: 750));
     await tester.pumpAndSettle();
+    expect(find.text('新版本已准备好'), findsOneWidget);
+    expect(bridge.installedVersion, isNull);
     await tester.tap(find.text('立即安装'));
     await tester.pumpAndSettle();
     expect(bridge.installedVersion, 1712);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('前台自动检查失败后恢复，新版弹出且稍后处理不重复提醒', (tester) async {
+  testWidgets(
+      'offline check recovers silently and later install is deferred once',
+      (tester) async {
     final api = _PublishedUpdateApi()..offline = true;
     final bridge = _QueuedUpdateBridge();
     final coordinator = androidCoordinator(api, bridge);
     await _pumpGate(tester, coordinator);
-    await coordinator.startDeferredInitialCheck();
+    await coordinator.initialize();
     await tester.pumpAndSettle();
-    expect(find.text('首页'), findsOneWidget);
     expect(coordinator.errorMessage, isNotNull);
-    expect(api.requests, 1);
-
     api.offline = false;
     api.latestVersionCode = 1712;
-    await tester.pump(const Duration(minutes: 5));
-    await tester.pumpAndSettle();
-    expect(find.text('发现新版本 1.7.10'), findsOneWidget);
-
-    await tester.tap(find.text('稍后'));
-    await tester.pumpAndSettle();
-    await tester.pump(const Duration(minutes: 5));
-    await tester.pumpAndSettle();
-    expect(find.text('发现新版本 1.7.10'), findsNothing);
-
-    api.latestVersionCode = 1713;
-    await tester.pump(const Duration(minutes: 5));
-    await tester.pumpAndSettle();
-    expect(find.text('发现新版本 1.7.11'), findsOneWidget);
-
-    api.latestVersionCode = 1714;
     await coordinator.check(force: true);
     await tester.pumpAndSettle();
-    expect(find.text('发现新版本 1.7.11'), findsOneWidget);
-    expect(find.text('发现新版本 1.7.12'), findsNothing);
-    await tester.tap(find.text('稍后'));
-    await tester.pumpAndSettle();
-    expect(find.text('发现新版本 1.7.12'), findsOneWidget);
-
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    final requests = api.requests;
+    expect(coordinator.errorMessage, isNull);
+    expect(find.byType(Dialog), findsNothing);
     bridge.state = AppUpdateDownloadState.ready;
-    await tester.pump(const Duration(minutes: 10));
-    expect(api.requests, requests);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(const Duration(milliseconds: 750));
     await tester.pumpAndSettle();
+    expect(find.text('立即安装'), findsOneWidget);
+    await tester.tap(find.text('稍后安装'));
+    await tester.pumpAndSettle();
+    await coordinator.refreshDownloadStatus();
+    await tester.pumpAndSettle();
+    expect(find.text('立即安装'), findsNothing);
+    expect(bridge.installedVersion, isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -351,32 +335,24 @@ void main() {
     expect(coordinator.isBlocking, isFalse);
   });
 
-  testWidgets('低于最低支持版本时显示紧凑更新下载对话框', (tester) async {
-    final navigatorKey = GlobalKey<NavigatorState>();
+  testWidgets(
+      'required update uses the current download action and rejects dismissal',
+      (tester) async {
+    AppPlatforms.currentOverrides = AppPlatform.android;
+    addTearDown(() => AppPlatforms.currentOverrides = null);
     final coordinator = _RequiredAppUpdateCoordinator();
     addTearDown(coordinator.dispose);
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AppUpdateCoordinator>.value(
-        value: coordinator,
-        child: MaterialApp(
-          navigatorKey: navigatorKey,
-          builder: (context, child) => AppUpdateGate(
-            navigatorKey: navigatorKey,
-            child: child ?? const SizedBox.shrink(),
-          ),
-          home: const Scaffold(body: Text('首页')),
-        ),
-      ),
-    );
-
+    await _pumpGate(tester, coordinator);
+    expect(find.text('需要更新沈理校园'), findsOneWidget);
+    await tester.tapAt(const Offset(2, 2));
     await tester.pumpAndSettle();
     expect(find.text('需要更新沈理校园'), findsOneWidget);
-    expect(find.text('后台下载'), findsOneWidget);
-
-    await tester.tap(find.text('后台下载'));
-    await tester.pump();
+    expect(find.text('下载更新'), findsOneWidget);
+    await tester.tap(find.text('下载更新'));
+    await tester.pumpAndSettle();
     expect(coordinator.downloadCalls, 1);
+    expect(find.text('需要更新沈理校园'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('静默后台下载失败不弹窗打断当前操作', (tester) async {

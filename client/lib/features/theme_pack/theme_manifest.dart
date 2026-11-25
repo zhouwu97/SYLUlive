@@ -29,6 +29,8 @@ enum ThemeGroup {
     layout,
     decoration,
   };
+
+  static final defaultApply = applicable.difference({launcherIcon});
 }
 
 class ThemePackError implements Exception {
@@ -44,7 +46,8 @@ class ThemePackError implements Exception {
         'theme_format_unsupported' => '这个主题需要更新版本的 App',
         'theme_app_too_old' => '请升级到 $detail 后再使用',
         'theme_asset_missing' => '主题缺少资源：$field',
-        'theme_image_invalid' => '主题图片不符合要求：$field',
+        'theme_image_invalid' =>
+          '主题图片不符合要求：$field${detail.isEmpty ? '' : '（$detail）'}',
         'theme_font_invalid' => '主题字体无法使用：$field',
         _ => detail.isNotEmpty ? detail : '主题设置有误：$field',
       };

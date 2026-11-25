@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
@@ -22,12 +23,30 @@ type hiddenAuthorRow struct {
 
 // FeedHandler 处理 /api/feed 下推荐相关的用户控制接口（FEED-1）。
 type FeedHandler struct {
-	db         *gorm.DB
-	visibility *services.FeedVisibilityService
+	db *gorm.DB
 }
 
 func NewFeedHandler(db *gorm.DB) *FeedHandler {
-	return &FeedHandler{db: db, visibility: services.NewFeedVisibilityService(db)}
+	return &FeedHandler{db: db}
+}
+
+// 只在登记快照与提交反馈时锁定用户行，排序和翻页不持锁。
+func lockFeedUser(tx *gorm.DB, userID uint, strength string) error {
+	var id uint
+	return tx.Model(&models.User{}).Clauses(clause.Locking{Strength: strength}).Where("id = ?", userID).Pluck("id", &id).Error
+}
+
+// 用户反馈写入与旧快照失效共同提交，各实例看到一致的翻页结果。
+func (h *FeedHandler) updateVisibility(c *gin.Context, userID uint, update func(*services.FeedVisibilityService) error) error {
+	return h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := lockFeedUser(tx, userID, "UPDATE"); err != nil {
+			return err
+		}
+		if err := update(services.NewFeedVisibilityService(tx)); err != nil {
+			return err
+		}
+		return tx.Where("user_id = ?", userID).Delete(&models.FeedSnapshot{}).Error
+	})
 }
 
 func requireFeedUser(c *gin.Context) (uint, bool) {
@@ -77,11 +96,12 @@ func (h *FeedHandler) MarkNotInterested(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不能对自己的帖子标记不感兴趣"})
 		return
 	}
-	if err := h.visibility.MarkNotInterested(userID, postID, source); err != nil {
+	if err := h.updateVisibility(c, userID, func(visibility *services.FeedVisibilityService) error {
+		return visibility.MarkNotInterested(userID, postID, source)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
-	invalidateUserFeedSnapshots(userID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -95,11 +115,12 @@ func (h *FeedHandler) UndoNotInterested(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.visibility.UndoNotInterested(userID, postID); err != nil {
+	if err := h.updateVisibility(c, userID, func(visibility *services.FeedVisibilityService) error {
+		return visibility.UndoNotInterested(userID, postID)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
-	invalidateUserFeedSnapshots(userID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -125,11 +146,12 @@ func (h *FeedHandler) HideAuthor(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不能隐藏自己"})
 		return
 	}
-	if err := h.visibility.HideAuthor(userID, authorID); err != nil {
+	if err := h.updateVisibility(c, userID, func(visibility *services.FeedVisibilityService) error {
+		return visibility.HideAuthor(userID, authorID)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
-	invalidateUserFeedSnapshots(userID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -143,11 +165,12 @@ func (h *FeedHandler) RestoreAuthor(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.visibility.RestoreAuthor(userID, authorID); err != nil {
+	if err := h.updateVisibility(c, userID, func(visibility *services.FeedVisibilityService) error {
+		return visibility.RestoreAuthor(userID, authorID)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
-	invalidateUserFeedSnapshots(userID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

@@ -75,7 +75,7 @@ func TestRegisterWithEduIssuesUsableCurrentAuthSession(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("解析注册响应失败: %v", err)
 	}
-	if response.Token == "" || !response.User.StudentVerified || !response.User.EduAuthorized || response.User.EduSessionState != "active" {
+	if response.Token == "" || response.User.AcademicConfigured || response.User.StudentVerified || !response.User.EduAuthorized || response.User.EduSessionState != "active" {
 		t.Fatalf("注册响应未反映已提交的教务身份: %#v", response)
 	}
 

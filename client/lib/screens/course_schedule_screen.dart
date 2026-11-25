@@ -181,6 +181,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Future<bool>? _cachePrimeFuture;
   double _scheduleCardOpacity = 0.4;
   double _scheduleSlotHeight = defaultSlotHeight;
+  double _scheduleFontScale = 1;
   bool _courseReminderEnabled = false;
   int _reminderAdvanceMinutes = 5;
   bool _courseReminderBusy = false;
@@ -1954,6 +1955,17 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   // ====== App 内课表显示设置 ======
   static const _scheduleOpacityKey = 'card_opacity';
   static const _scheduleSlotHeightKey = 'slot_height';
+  static const _scheduleFontScaleKey = 'schedule_font_scale';
+
+  void _readScheduleFontScale(AppPreferencesStore prefs) {
+    _scheduleFontScale =
+        (prefs.getDouble(_scheduleFontScaleKey) ?? 1).clamp(0.8, 1.5);
+  }
+
+  ScheduleColorOption get _effectiveScheduleTextColor =>
+      context.read<ThemeProvider>().scheduleTextColorPreference;
+  ScheduleColorOption get _effectiveScheduleCourseColor =>
+      context.read<ThemeProvider>().scheduleCourseColorPreference;
 
   Future<void> _loadSettings() async {
     try {
@@ -1965,6 +1977,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _scheduleCardOpacity = prefs.getDouble(_scheduleOpacityKey) ?? 0.55;
         _scheduleSlotHeight =
             prefs.getDouble(_scheduleSlotHeightKey) ?? defaultSlotHeight;
+        _readScheduleFontScale(prefs);
         _reminderAdvanceMinutes =
             prefs.getInt('course_reminder_advance_minutes') ?? 5;
         _settingsLoaded = true; // 立即放行 UI 渲染
@@ -2047,6 +2060,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             openHomeWidgets: () => _openHomeWidgetSettings(context, sc),
             updateScheduleOpacity: _updateScheduleOpacityFromSettings,
             updateScheduleSlotHeight: _updateScheduleSlotHeightFromSettings,
+            updateScheduleFontScale: _updateScheduleFontScaleFromSettings,
+            updateScheduleTextColor: _updateScheduleTextColorFromSettings,
+            updateScheduleCourseColor: _updateScheduleCourseColorFromSettings,
             resetScheduleDisplay: _resetScheduleDisplayFromSettings,
             scanToWeb: () => Navigator.of(context).push<void>(
               MaterialPageRoute(
@@ -2073,6 +2089,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _scheduleCardOpacity = prefs.getDouble(_scheduleOpacityKey) ?? 0.55;
         _scheduleSlotHeight =
             prefs.getDouble(_scheduleSlotHeightKey) ?? defaultSlotHeight;
+        _readScheduleFontScale(prefs);
         _reminderAdvanceMinutes =
             prefs.getInt('course_reminder_advance_minutes') ?? 5;
       });
@@ -2102,6 +2119,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       backgroundKeepAliveBusy: _backgroundKeepAliveBusy,
       scheduleCardOpacity: _scheduleCardOpacity,
       scheduleSlotHeight: _effectiveSlotHeight(),
+      scheduleFontScale: _scheduleFontScale,
+      scheduleTextColor: _effectiveScheduleTextColor,
+      scheduleCourseColor: _effectiveScheduleCourseColor,
       defaultSlotHeight: defaultSlotHeight,
       minimumSlotHeight: 55,
       maximumSlotHeight: 120,
@@ -2254,6 +2274,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   Future<void> _resetScheduleDisplayFromSettings() async {
+    await _updateScheduleFontScaleFromSettings(1);
+    await _updateScheduleTextColorFromSettings(ScheduleColorOption.theme);
+    await _updateScheduleCourseColorFromSettings(ScheduleColorOption.theme);
     if (mounted) {
       setState(() {
         _scheduleCardOpacity = 0.55;
@@ -2262,6 +2285,30 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
     await _saveOpacity(0.55);
     await _saveSlotHeight(defaultSlotHeight);
+  }
+
+  Future<void> _updateScheduleFontScaleFromSettings(double value) async {
+    final prefs = await AppPreferencesStore.getInstance();
+    if (!await prefs.setDouble(_scheduleFontScaleKey, value)) {
+      throw StateError('字体大小未保存');
+    }
+    if (mounted) setState(() => _scheduleFontScale = value);
+  }
+
+  Future<void> _updateScheduleTextColorFromSettings(
+    ScheduleColorOption value,
+  ) async {
+    if (!await context.read<ThemeProvider>().setScheduleColorPreference(text: true, value: value)) {
+      throw StateError('文字颜色未保存');
+    }
+  }
+
+  Future<void> _updateScheduleCourseColorFromSettings(
+    ScheduleColorOption value,
+  ) async {
+    if (!await context.read<ThemeProvider>().setScheduleColorPreference(text: false, value: value)) {
+      throw StateError('课程块颜色未保存');
+    }
   }
 
   String _backgroundKeepAliveSubtitle() {
@@ -4236,7 +4283,7 @@ $classFilterRule
                       '${courses.length}门课程冲突',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 9.5 * scale,
+                        fontSize: 9.5 * scale * _scheduleFontScale,
                         fontWeight: FontWeight.bold,
                       ),
                       maxLines: 1,
@@ -4251,7 +4298,7 @@ $classFilterRule
                   courses.map((c) => c.name).join(' / '),
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 10 * scale,
+                    fontSize: 10 * scale * _scheduleFontScale,
                     fontWeight: FontWeight.w600,
                     height: 1.15,
                   ),
@@ -4372,20 +4419,25 @@ $classFilterRule
     int? wn,
     double slotHeight,
   ) {
+    final tokens = AppThemeTokens.of(context);
     final cardOpacity = isActive ? _scheduleCardOpacity : 0.2;
+    // 非本周课程使用半透明灰底，文字跟随页面前景色。
+    final textColor = _effectiveScheduleTextColor.color ??
+        (isActive ? tokens.courseCardText : tokens.textPrimary);
     final top = (c.startSection - 1) * slotHeight;
     final h = c.span * slotHeight - 2;
     String? inactiveLabel;
     if (!isActive && wn != null && c.weeks.isNotEmpty) {
       inactiveLabel = c.weeks.first > wn ? '后期' : '前期';
     }
-    final base = getCourseColor(
-      c.name,
-      palette: AppThemeTokens.of(context).coursePalette,
-      isActive: isActive,
-      courseCode: c.courseCode,
-      location: c.location,
-    ).withValues(alpha: 1);
+    final base = (isActive ? _effectiveScheduleCourseColor.color : null) ??
+        getCourseColor(
+          c.name,
+          palette: tokens.coursePalette,
+          isActive: isActive,
+          courseCode: c.courseCode,
+          location: c.location,
+        ).withValues(alpha: 1);
 
     // 独立透明度由 AppCardSurface 应用；底色再次设 alpha 会使简洁模式变成平方。
 
@@ -4428,19 +4480,18 @@ $classFilterRule
                 Text(
                   inactiveLabel,
                   style: TextStyle(
-                    fontSize: 8 * scale,
+                    fontSize: 8 * scale * _scheduleFontScale,
                     fontWeight: FontWeight.w700,
-                    color: AppThemeTokens.of(context)
-                        .courseCardText
-                        .withValues(alpha: Colors.white54.a),
+                    color: textColor.withValues(alpha: Colors.white54.a),
                   ),
                 ),
               Flexible(
                 child: Text(
                   c.name.isNotEmpty ? c.name : '未知课名',
                   style: TextStyle(
-                    color: AppThemeTokens.of(context).courseCardText,
-                    fontSize: (isCompact ? 11 : 13) * scale,
+                    color: textColor,
+                    fontSize:
+                        (isCompact ? 11 : 13) * scale * _scheduleFontScale,
                     fontWeight: FontWeight.bold,
                     height: 1.15,
                   ),
@@ -4454,8 +4505,8 @@ $classFilterRule
                 Text(
                   c.location!,
                   style: TextStyle(
-                    color: AppThemeTokens.of(context).courseCardText,
-                    fontSize: (isCompact ? 9 : 11) * scale,
+                    color: textColor,
+                    fontSize: (isCompact ? 9 : 11) * scale * _scheduleFontScale,
                     fontWeight: FontWeight.w600,
                     height: 1.15,
                   ),
@@ -4472,10 +4523,8 @@ $classFilterRule
                 Text(
                   c.teacher!,
                   style: TextStyle(
-                      color: AppThemeTokens.of(context)
-                          .courseCardText
-                          .withValues(alpha: 0.6),
-                      fontSize: 10 * scale),
+                      color: textColor.withValues(alpha: 0.6),
+                      fontSize: 10 * scale * _scheduleFontScale),
                   textAlign: TextAlign.left,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

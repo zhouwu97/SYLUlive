@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 
 async function openConnectionDialog(page: import('@playwright/test').Page) {
-  await page.route('**/api/**',route=>route.fulfill({json:{items:[]}}));
+  await page.route('**/api/**',route=>route.request().url().includes('/api/academic-account-configs') ? route.fallback() : route.fulfill({json:{items:[]}}));
   await page.route('**/api/user/profile', route => route.fulfill({json:{id:7,nickname:'测试用户',role:'user'}}));
   await page.route('**/assistant/assistant.json', route => route.fulfill({status:404,body:'not found'}));
   await page.goto('schedule?week=1');
@@ -11,7 +11,8 @@ async function openConnectionDialog(page: import('@playwright/test').Page) {
 
 test('本机授权完成后不刷新页面自动恢复，且不自动读取资料', async ({page}) => {
   let bindCalls = 0;
-  await page.route('**/api/student-identity/bind', route => {bindCalls++;return route.fulfill({json:{ok:true}});});
+  await page.route('**/api/academic-account-configs', route => route.fulfill({json:{configs:[]}}));
+  await page.route('**/api/academic-account-configs/sylu_undergraduate', route => {bindCalls++;return route.fulfill({json:{ok:true}});});
   await page.addInitScript(() => {
     const state = window as unknown as {__bridgeOperations:string[]};
     state.__bridgeOperations = [];
@@ -43,7 +44,8 @@ test('本机授权完成后不刷新页面自动恢复，且不自动读取资�
 
 test('未获授权时按错误码给出授权引导，只保留一条状态播报', async ({page}) => {
   let bindCalls = 0;
-  await page.route('**/api/student-identity/bind', route => {bindCalls++;return route.fulfill({json:{ok:true}});});
+  await page.route('**/api/academic-account-configs', route => route.fulfill({json:{configs:[]}}));
+  await page.route('**/api/academic-account-configs/sylu_undergraduate', route => {bindCalls++;return route.fulfill({json:{ok:true}});});
   await page.addInitScript(() => {
     window.addEventListener('message', event => {
       const request = event.data;
@@ -66,7 +68,8 @@ test('未获授权时按错误码给出授权引导，只保留一条状态播�
 });
 
 test('学校对该学期没有排课时保留本机课表', async ({page}) => {
-  await page.route('**/api/student-identity/bind', route => route.fulfill({json:{ok:true}}));
+  await page.route('**/api/academic-account-configs', route => route.fulfill({json:{configs:[]}}));
+  await page.route('**/api/academic-account-configs/sylu_undergraduate', route => route.fulfill({json:{ok:true}}));
   await page.addInitScript(() => {
     let queries = 0;
     window.addEventListener('message', event => {
@@ -119,7 +122,8 @@ test('本站 access 会话过期时先由网页刷新，再交给助手读取', 
   await page.route('**/api/**',route=>route.fulfill({json:{items:[]}}));
   await page.route('**/api/user/profile', route => route.fulfill({status:expired?401:200,json:expired?{error:'expired'}:{id:7,nickname:'测试用户',role:'user'}}));
   await page.route('**/api/refresh', route => {refreshed++;expired=false;return route.fulfill({json:{ok:true}})});
-  await page.route('**/api/student-identity/bind', route => route.fulfill({json:{ok:true}}));
+  await page.route('**/api/academic-account-configs', route => route.fulfill({json:{configs:[]}}));
+  await page.route('**/api/academic-account-configs/sylu_undergraduate', route => route.fulfill({json:{ok:true}}));
   await page.addInitScript(() => {
     window.addEventListener('message', event => {
       const r=event.data;if(r?.direction!=='request')return;
@@ -143,7 +147,8 @@ test('等待学校登录时本站会话过期，刷新后继续同一个登录�
   await page.exposeFunction('__expireSiteSession',()=>{trace.push('connect');expired=true;connects++});
   await page.route('**/api/user/profile',route=>{trace.push(`profile:${expired?401:200}`);return route.fulfill({status:expired?401:200,json:expired?{error:'expired'}:{id:7,nickname:'测试用户',role:'user'}})});
   await page.route('**/api/refresh',route=>{trace.push('refresh');refreshes++;expired=false;return route.fulfill({json:{ok:true}})});
-  await page.route('**/api/student-identity/bind',route=>route.fulfill({json:{ok:true}}));
+  await page.route('**/api/academic-account-configs', route => route.fulfill({json:{configs:[]}}));
+  await page.route('**/api/academic-account-configs/sylu_undergraduate',route=>route.fulfill({json:{ok:true}}));
   await page.addInitScript(()=>{
     let ready=false,failed=false;
     window.addEventListener('message',async event=>{

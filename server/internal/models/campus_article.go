@@ -51,3 +51,11 @@ type JWCSyncState struct {
 func (JWCSyncState) TableName() string {
 	return "jwc_sync_states"
 }
+
+// CampusSyncSchedule 每个来源只保留一行。两个轮次共用租约，避免增量与对账并发抓取。
+type CampusSyncSchedule struct {
+	Source         string    `gorm:"size:32;primaryKey"`
+	RegularRound   int64     `gorm:"not null;default:0"`
+	ReconcileRound int64     `gorm:"not null;default:0"`
+	LeaseUntil     time.Time `gorm:"not null"`
+}

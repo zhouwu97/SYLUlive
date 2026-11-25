@@ -24,10 +24,19 @@ class LiquidGlassDynamics extends ChangeNotifier {
   double _itemWidth = 1;
   double _angle = 0;
   bool _held = false;
+  bool _tapActive = false, _tapPosition = false;
+  double _heldSeconds = 0,
+      _tapSeconds = 0,
+      _tapLift = 0,
+      _tapFrom = 0,
+      _tapTo = 0;
   bool reduced = false;
   double intensity = 1;
   bool get isMoving =>
+      _tapActive ||
       [_x, _y, _press, _stretch, _bendX, _bendY].any((s) => s.moving);
+  bool get isTapping => _tapActive;
+  double get tapDestination => _tapTo / _itemWidth;
   double get position => _x.value / _itemWidth;
   double get pressure => reduced ? 0 : _press.value.clamp(0, 1.16) * intensity;
   double get stretch =>
@@ -50,6 +59,8 @@ class LiquidGlassDynamics extends ChangeNotifier {
   }
 
   void grab({double pressure = 1}) {
+    _tapActive = _tapPosition = false;
+    _heldSeconds = 0;
     _held = true;
     _x.target = _x.value;
     _press.target = pressure;
@@ -65,6 +76,7 @@ class LiquidGlassDynamics extends ChangeNotifier {
   }
 
   void releaseTo(double index) {
+    _tapActive = _tapPosition = false;
     _held = false;
     _x.target = index * _itemWidth;
     _y.target = 0;
@@ -73,7 +85,27 @@ class LiquidGlassDynamics extends ChangeNotifier {
     _wake();
   }
 
+  /// Complete a quick tap as a compressed press, travel and release gesture.
+  /// The native switch still owns the semantic commit on pointer-up.
+  void tapTo(double index) {
+    if (reduced) {
+      snapTo(index);
+      return;
+    }
+    _held = false;
+    _tapFrom = _x.value;
+    _tapTo = index * _itemWidth;
+    _tapSeconds = 0;
+    _tapLift = math.max(0, .14 - _heldSeconds);
+    _tapActive = _tapPosition = true;
+    _x.target = _tapFrom;
+    _y.target = 0;
+    _press.target = 1;
+    _wake();
+  }
+
   void snapTo(double index) {
+    _tapActive = _tapPosition = false;
     _held = false;
     _x.snap(index * _itemWidth);
     for (final spring in [_y, _press, _stretch, _bendX, _bendY]) {
@@ -100,7 +132,7 @@ class LiquidGlassDynamics extends ChangeNotifier {
     // lerp and no restart of the clock when a new pointer event arrives.
     advance(dt.clamp(0, .08));
     notifyListeners();
-    if (![_x, _y, _press, _stretch, _bendX, _bendY].any((s) => s.moving)) {
+    if (!isMoving) {
       _ticker.stop();
       _last = null;
     }
@@ -110,19 +142,32 @@ class LiquidGlassDynamics extends ChangeNotifier {
   void advance(double dt) {
     var remaining = dt;
     while (remaining > 1e-9) {
-      final h = math.min(remaining, 1 / 180);
+      final realStep = math.min(remaining, 1 / 180);
+      final h = realStep * (_tapPosition ? 1.15 : 1);
+      if (_held) _heldSeconds += realStep;
+      if (_tapActive) {
+        _tapSeconds += h;
+        final t = ((_tapSeconds - _tapLift) / .28).clamp(0.0, 1.0);
+        _x.target = _tapFrom + (_tapTo - _tapFrom) * t * t * (3 - 2 * t);
+        if (t == 1 &&
+            (_tapTo - _x.value).abs() < .4 &&
+            _x.velocity.abs() < 12) {
+          _tapActive = false;
+          _press.target = 0;
+        }
+      }
       final damping = _held ? 22.0 : 17.0;
-      _x.step(h, 260, damping);
+      _x.step(h, _tapPosition ? 700 : 260, _tapPosition ? 54 : damping);
       _y.step(h, 260, damping);
-      _press.step(h, 310, 18);
+      _press.step(h, 310, _tapPosition && !_tapActive ? 24 : 18);
       if (speed > 16) _angle = math.atan2(_y.velocity, _x.velocity);
       _stretch.target = math.min(speed / 2400, .25);
-      _stretch.step(h, 230, 15);
+      _stretch.step(h, _tapPosition ? 300 : 230, _tapPosition ? 24 : 15);
       _bendX.target = ((_x.target - _x.value) * .12).clamp(-11, 11);
       _bendY.target = ((_y.target - _y.value) * .12).clamp(-11, 11);
-      _bendX.step(h, 190, 14);
+      _bendX.step(h, _tapPosition ? 300 : 190, _tapPosition ? 24 : 14);
       _bendY.step(h, 190, 14);
-      remaining -= h;
+      remaining -= realStep;
     }
   }
 

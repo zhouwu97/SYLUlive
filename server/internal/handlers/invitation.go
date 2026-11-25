@@ -89,7 +89,7 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 
 	items := make([]AdminUserBriefResponse, 0, len(candidates))
 	for _, candidate := range candidates {
-		items = append(items, adminUserBriefResponse(candidate, adminStudentID(candidate, academicStudentIDs), adminStudentVerified(candidate, academicStudentIDs), academicConfigured[candidate.ID]))
+		items = append(items, adminUserBriefResponse(candidate, adminStudentID(candidate, academicStudentIDs), academicConfigured[candidate.ID]))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -156,7 +156,7 @@ func (h *InvitationHandler) GetMembers(c *gin.Context) {
 
 	response := make([]AdminUserBriefResponse, 0, len(members))
 	for _, member := range members {
-		response = append(response, adminUserBriefResponse(member, adminStudentID(member, academicStudentIDs), adminStudentVerified(member, academicStudentIDs), academicConfigured[member.ID]))
+		response = append(response, adminUserBriefResponse(member, adminStudentID(member, academicStudentIDs), academicConfigured[member.ID]))
 	}
 	c.JSON(http.StatusOK, response)
 
@@ -604,9 +604,9 @@ func (h *InvitationHandler) GetApprovalList(c *gin.Context) {
 
 			"accepted_at": invitation.AcceptedAt,
 
-			"user": adminUserResponse(invitation.User, adminStudentID(invitation.User, academicStudentIDs), adminStudentVerified(invitation.User, academicStudentIDs), academicConfigured[invitation.User.ID]),
+			"user": adminUserResponse(invitation.User, adminStudentID(invitation.User, academicStudentIDs), academicConfigured[invitation.User.ID]),
 
-			"inviter": adminUserBriefResponse(invitation.Inviter, adminStudentID(invitation.Inviter, academicStudentIDs), adminStudentVerified(invitation.Inviter, academicStudentIDs), academicConfigured[invitation.Inviter.ID]),
+			"inviter": adminUserBriefResponse(invitation.Inviter, adminStudentID(invitation.Inviter, academicStudentIDs), academicConfigured[invitation.Inviter.ID]),
 
 			"votes": votes,
 

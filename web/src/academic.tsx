@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { NavLink, useSearchParams } from "react-router-dom";
 import {
   bridgeErrorCode,
@@ -24,7 +25,7 @@ import { bridge } from "./bridge";
 import { useAssistantProbe } from "./use-assistant-probe";
 import { AssistantInstallGuide } from "./assistant-guide";
 import { waitForSchoolLogin } from "./assistant-login";
-import { downloadJSON, errorText, write, request, entity } from "./api";
+import { ApiError, downloadJSON, errorText, write, request, entity } from "./api";
 import { Form, Head, Empty, Icon, Stats, Tabs, useUI } from "./ui";
 import { useAuth } from "./auth";
 import { mobileTermLabel, useMobile } from "./mobile";
@@ -128,15 +129,33 @@ export function PhoneSync() {
   return <PhoneScanForm onPayload={(payload) => applyTransfer(store, payload)} onClose={ui.close} />;
 }
 const openPhoneSync = (ui: ReturnType<typeof useUI>) => ui.open("手机 App 扫码同步", <PhoneSync />);
+type AcademicConfig = { provider_id: string; student_id: string; state: "active" | "deleted"; revision: number };
+
+async function readAcademicConfig(provider: string, owner: number, signal: AbortSignal) {
+  const { configs } = await request<{ configs: AcademicConfig[] }>("/api/academic-account-configs", {
+    headers: { "X-Expected-App-User": String(owner) }, signal,
+  });
+  return configs.find(config => config.provider_id === provider);
+}
+
+async function writeAcademicConfig(provider: string, owner: number, student: string | null, revision: number, signal: AbortSignal) {
+  await request("/api/academic-account-configs/" + provider, {
+    method: student === null ? "DELETE" : "PUT", signal,
+    headers: { "X-Expected-App-User": String(owner), "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify({ expected_revision: revision, ...(student === null ? {} : { student_id: student }) }),
+  });
+}
+
 export function ConnectionForm({
   dataset,
   onData,
   successMessage = "学校资料已更新",
 }: {
   dataset: AcademicDataset;
-  onData: (value: unknown, snapshot: AcademicSnapshot) => string | void;
+  onData?: (value: unknown, snapshot: AcademicSnapshot) => string | void;
   successMessage?: string | null;
 }) {
+  const queryClient = useQueryClient();
   const { requireUser, user } = useAuth(),
     ui = useUI(),
     store = useAcademic(),
@@ -231,24 +250,43 @@ export function ConnectionForm({
   async function readSchoolData(signal: AbortSignal, known?: AssistantConnection, retryLogin = true): Promise<void> {
     try {
       setStatus("正在获取学校身份…");
-      const value = known || await bridge<AcademicConnection>("session", { provider }, signal);
-      if (!known && 'appUserId' in value && value.appUserId !== user?.id)
+      const value = (onData && known) || await bridge<AcademicConnection>("session", { provider }, signal);
+      if ('appUserId' in value && value.appUserId !== user?.id)
         throw new BridgeFailure("connection_stale", "本站账号已改变，本次学校连接未写入。");
-      if (!known && (provider === "undergraduate" || provider === "graduate")) {
-        await request("/api/student-identity/bind", {
-          method: "POST", signal, headers: {"X-Expected-App-User": String(user!.id)},
-          body: JSON.stringify({ provider_id: `sylu_${provider}`, student_id: value.studentId, verification_method: "local_academic_login" }),
-        });
-      }
+      const configProvider = provider === "undergraduate" || provider === "graduate" ? `sylu_${provider}` : null;
       if (signal.aborted) return;
       setConnection(value);
       setStatus(`已连接 ${value.displayName || value.studentId}，正在读取资料…`);
-      const snapshot = await bridge<AcademicSnapshot>("query", { provider, dataset, term: store.data.term, epoch: value.epoch }, signal);
+      const snapshot = onData ? await bridge<AcademicSnapshot>("query", { provider, dataset, term: store.data.term, epoch: value.epoch }, signal) : null;
       if (signal.aborted) return;
-      const note = onData(snapshot.data, snapshot);
-      if (note) { setStatus(note); return; }
-      store.setUpdated(snapshot.fetchedAt);
-      if (dataset === "courses") store.setSource("assistant");
+      let configWarning = "";
+      if (configProvider) {
+        try {
+          const config = await readAcademicConfig(configProvider, user!.id, signal);
+          if (config?.state !== "active" || config.student_id !== value.studentId) {
+            // 已删除或换号的配置须由本人确认后再登记；旧连接不能静默覆盖其他设备的操作。
+            if (!config || window.confirm("云端教务配置已删除或使用其他学号。要将当前教务账号登记为校内功能配置吗？")) {
+              await writeAcademicConfig(configProvider, user!.id, value.studentId, config?.revision ?? 0, signal);
+            } else if (!onData) {
+              setStatus("已保留原配置。");
+              return;
+            }
+          }
+          await queryClient.invalidateQueries({ queryKey: ["api", "/api/user/profile"] });
+        } catch (error) {
+          if (!snapshot || signal.aborted || (error instanceof ApiError &&
+              (error.status === 401 || error.code === "APP_USER_CHANGED" || error.code === "auth_session_changed"))) throw error;
+          configWarning = "学校资料已读取，教务配置尚未同步。请重试登记。";
+        }
+      }
+      if (signal.aborted) return;
+      if (snapshot && onData) {
+        const note = onData(snapshot.data, snapshot);
+        if (note) { setStatus(note); return; }
+        store.setUpdated(snapshot.fetchedAt);
+        if (dataset === "courses") store.setSource("assistant");
+      }
+      if (configWarning) { setStatus(configWarning); return; }
       if (successMessage) ui.notify(successMessage);
       ui.close();
     } catch (error) {
@@ -303,7 +341,7 @@ export function ConnectionForm({
         </select>
       </label>
       <p className="muted">
-        课表、成绩等资料只在本机助手中读取。本科或研究生首次连接时，会向 SYLUlive 同步教务类型和学号，用于记录本机身份声明；学校密码和会话不会上传。
+        课表、成绩等资料只在本机助手中读取。连接本科或研究生教务时，会向 SYLUlive 登记教务类型和学号，用于试卷库等校内功能。学校密码和会话保存在本机。
       </p>
       <ol className="academic-steps" aria-label="教务连接步骤">
         <li className={assistant.state === "ready" ? "done" : "active"}><b>1</b><span>检测助手</span></li>
@@ -318,7 +356,7 @@ export function ConnectionForm({
             act(signal => readSchoolData(signal))
           }
         >
-          {busy ? "正在连接并读取…" : "连接并读取资料"}
+          {onData ? (busy ? "正在连接并读取…" : "连接并读取资料") : (busy ? "正在登记…" : "连接并登记配置")}
         </button>
         <button
           className="btn ghost"
@@ -346,8 +384,8 @@ export function ConnectionForm({
           <p className="source-line">
             已连接：{connection.displayName} · {connection.studentId}
           </p>
-          <label className="check-label"><input type="checkbox" disabled={busy} onChange={e=>{const enabled=e.target.checked;void act(async()=>{await bridge('persistence',{provider,epoch:connection.epoch,enabled});setStatus(enabled?'后续查询结果将保存在此电脑的扩展中':'已清除此身份的持久缓存')})}}/>在此电脑保存结构化资料</label>
-          <button className="btn" disabled={busy} onClick={()=>act(async()=>{const snapshot=await bridge<AcademicSnapshot|null>('cache',{provider,epoch:connection.epoch,dataset,term:store.data.term});if(!snapshot)throw new Error('此身份和学期没有保存的资料');const note=onData(snapshot.data,snapshot);if(note){setStatus(note);return}store.setUpdated(snapshot.fetchedAt);setStatus('已恢复本地资料，请留意获取时间')})}>恢复本机资料</button>
+          {onData && <><label className="check-label"><input type="checkbox" disabled={busy} onChange={e=>{const enabled=e.target.checked;void act(async()=>{await bridge('persistence',{provider,epoch:connection.epoch,enabled});setStatus(enabled?'后续查询结果将保存在此电脑的扩展中':'已清除此身份的持久缓存')})}}/>在此电脑保存结构化资料</label>
+          <button className="btn" disabled={busy} onClick={()=>act(async()=>{const snapshot=await bridge<AcademicSnapshot|null>('cache',{provider,epoch:connection.epoch,dataset,term:store.data.term});if(!snapshot)throw new Error('此身份和学期没有保存的资料');const note=onData(snapshot.data,snapshot);if(note){setStatus(note);return}store.setUpdated(snapshot.fetchedAt);setStatus('已恢复本地资料，请留意获取时间')})}>恢复本机资料</button></>}
           <button
             className="btn primary"
             disabled={busy}
@@ -355,7 +393,7 @@ export function ConnectionForm({
               act(signal => readSchoolData(signal, connection))
             }
           >
-            {busy ? "正在读取…" : "查询并更新资料"}
+            {onData ? (busy ? "正在读取…" : "查询并更新资料") : (busy ? "正在登记…" : "登记当前教务配置")}
           </button>
           <button
             className="btn ghost"
@@ -371,6 +409,20 @@ export function ConnectionForm({
           >
             断开并清除当前资料
           </button>
+          {(provider === "undergraduate" || provider === "graduate") && (
+            <button className="btn ghost" disabled={busy} onClick={() => act(async signal => {
+              const id = `sylu_${provider}`;
+              const config = await readAcademicConfig(id, user!.id, signal);
+              if (config?.state !== "active" || config.student_id !== connection.studentId) {
+                setStatus("当前学号没有已登记的云端配置。");
+                return;
+              }
+              if (!window.confirm("移除此教务配置？移除最后一项后，试卷库等校内功能将关闭。")) return;
+              await writeAcademicConfig(id, user!.id, null, config.revision, signal);
+              await queryClient.invalidateQueries({ queryKey: ["api", "/api/user/profile"] });
+              setStatus("已移除此教务配置。");
+            })}>移除云端教务配置</button>
+          )}
         </>
       )}
       {status && <p role="status">{status}</p>}

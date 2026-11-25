@@ -65,6 +65,7 @@ type FeedbackTicket struct {
 	AdminViewed        bool       `gorm:"default:false;index" json:"admin_viewed"`
 	AdminFirstViewedAt *time.Time `json:"admin_first_viewed_at,omitempty"`
 	UserUnreadCount    int        `gorm:"default:0" json:"user_unread_count"`
+	AdminUnreadCount   int64      `gorm:"-" json:"admin_unread_count"`
 
 	// 设备诊断信息快照（严格清洗，禁止包含 JWT/Cookie/密码/请求鉴权信息）
 	AppVersion      string `gorm:"size:50" json:"app_version,omitempty"`

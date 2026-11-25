@@ -162,8 +162,8 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
       AppFeedback.info('请先登录后评价', context: context);
       return;
     }
-    if (auth.user?.hasEduAccess != true) {
-      AppFeedback.info('请先绑定教务账号后再评价', context: context);
+    if (auth.user?.academicConfigured != true) {
+      AppFeedback.info('请先登记教务配置后再评价', context: context);
       return;
     }
     final published = await Navigator.of(context).push<bool>(

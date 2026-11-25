@@ -11,6 +11,7 @@ import (
 
 	"shenliyuan/internal/config"
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 	"shenliyuan/internal/tasks"
 )
 
@@ -56,7 +57,7 @@ func main() {
 	participant := models.LotteryParticipant{
 		LotteryID: event.ID,
 		UserID:    testUser.ID,
-		Weight:    1 + (testUser.Exp / 10),
+		Weight:    services.CalculateLotteryWeightByLevel(testUser.Exp),
 	}
 	if err := db.Create(&participant).Error; err != nil {
 		log.Fatal("创建参与记录失败:", err)

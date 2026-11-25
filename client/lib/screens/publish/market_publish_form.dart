@@ -294,8 +294,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     }
   }
 
-  Future<bool> _uploadLocalImages(
-    PostProvider postProvider, {
+  Future<bool> _uploadLocalImages({
     required AuthProvider auth,
     required PublishSessionScope scope,
   }) async {
@@ -308,7 +307,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     return success;
   }
 
-  /// 本机是否已连接教务，服务端教务认证仍由账号状态决定。
+  /// 本机是否已连接教务，云端教务配置仍由账号状态决定。
   ///
   /// 发布表单也可能在没有教务模块的宿主里打开，所以这里必须容错，
   /// 不能因为取不到控制器就把发布拦死。
@@ -346,21 +345,6 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   void _retryImage(String id) {
     if (_isLoading) return;
     _preuploadImages(retryId: id);
-  }
-
-  /// 按 UI 顺序组装 file_ids（上传完成后调用；未成功上传的 local 返回 null）。
-  List<int>? _orderedFileIds() {
-    final fileIds = <int>[];
-    for (final item in _images) {
-      switch (item.source) {
-        case PublishImageSource.existing:
-          fileIds.add(item.existingImage!.fileId);
-        case PublishImageSource.local:
-          if (item.fileId == null) return null;
-          fileIds.add(item.fileId!);
-      }
-    }
-    return fileIds;
   }
 
   // ---------------------------------------------------------------------------
@@ -640,7 +624,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
     // 本地资料可能早于另一设备完成的认证，拒绝前刷新一次服务端投影。
     // 刷新只更新当前会话；切号或离开页面后不得继续本次发布。
-    if (auth.user?.hasEduAccess != true) {
+    if (auth.user?.academicConfigured != true) {
       final epoch = auth.accountSessionEpoch;
       setState(() => _checkingEligibility = true);
       try {
@@ -654,8 +638,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       }
     }
 
-    // 缺少教务认证时明确引导到教务入口，不再展示独立的学生认证概念。
-    if (auth.user?.hasEduAccess != true) {
+    // 缺少教务配置时明确引导到教务入口，不再展示独立的学生认证概念。
+    if (auth.user?.academicConfigured != true) {
       final hasLocalAcademicConnection = _hasLocalAcademicConnection();
       if (mounted) {
         AppFeedback.error(
@@ -688,7 +672,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       final postProvider = context.read<PostProvider>();
 
       // 复用选图时的预上传任务；仅等待未完成项，失败项由图片上的重试恢复。
-      if (!await _uploadLocalImages(postProvider, auth: auth, scope: scope)) {
+      if (!await _uploadLocalImages(auth: auth, scope: scope)) {
         if (mounted) {
           AppFeedback.error(
             _lastUploadError?.message ?? '图片上传失败，请点击图片重试',
@@ -704,7 +688,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       }
 
       // C-2：file_ids 严格等于 UI 图片顺序（existing + local 混合）。
-      final fileIds = _orderedFileIds();
+      final fileIds = uploadedFileIdsInOrder(_images);
       if (fileIds == null) {
         if (mounted) {
           AppFeedback.error(

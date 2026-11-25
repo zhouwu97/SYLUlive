@@ -18,7 +18,15 @@ async function setup(page: Page, guest = false) {
     if (url.pathname === "/api/posts" || url.pathname === "/api/posts/featured") {
       state.queries.push(url);
       if (url.searchParams.get("board") === "2") return route.fulfill({ json: { posts: [{ ...normal, id: 301, board_id: 2, post_type: "sell", title: "二手教材", price: 20 }, { ...normal, id: 302, board_id: 2, post_type: "found", title: "捡到耳机" }], has_more: false } });
-      if (url.searchParams.get("page") === "2") return state.nextError ? route.fulfill({ status: 503, json: { message: "测试后续加载失败" } }) : route.fulfill({ json: { posts: [{ ...normal, id: 204, title: "第二页内容" }], has_more: false } });
+      const pageNumber = url.searchParams.get("page");
+      if (pageNumber === "2" && state.nextError) return route.fulfill({ status: 503, json: { message: "测试后续加载失败" } });
+      if (pageNumber === "2" && url.searchParams.get("sort") === "all") {
+        if (!url.searchParams.get("capabilities")?.split(",").includes("feed_pagination_meta_v1")) {
+          return route.fulfill({ status: 409, json: { code: "feed_session_expired" } });
+        }
+        return route.fulfill({ json: { posts: [], has_more: true, next_offset: 40 } });
+      }
+      if (pageNumber === "2" || pageNumber === "3") return route.fulfill({ json: { posts: [{ ...normal, id: 204, title: "后续内容" }], has_more: false } });
       return route.fulfill({ json: { pinned_posts: [{ id: 200, title: "电费缴费", is_pinned: true }], posts: [poll, normal, { ...normal, id: 203, title: "图书馆的日常" }], has_more: true, session_id: "mobile-session", next_offset: 3, next_cursor_token: "latest-cursor" } });
     }
     if (url.pathname === "/api/polls/91/ballot") {
@@ -76,8 +84,9 @@ test("手机首页接入新版信息流、完整投票选项、失败重试和�
   await page.goto("./");
   await expect(page.locator(".mobile-reply-reminder")).toContainText("1 条新回复");
   await expect(page.locator(".mobile-feed-poll .poll-choice")).toHaveCount(3);
-  expect(state.queries[0].searchParams.get("feed_version")).toBe("3");
-  expect(state.queries[0].searchParams.get("capabilities")).toBe("poll_v1");
+  const home = state.queries.find(url => url.searchParams.get("board") === "1" && url.searchParams.get("sort") === "all" && url.searchParams.get("limit") === "20");
+  expect(home?.searchParams.get("feed_version")).toBe("3");
+  expect(home?.searchParams.get("capabilities")?.split(",")).toEqual(expect.arrayContaining(["poll_v1", "feed_pagination_meta_v1"]));
   await page.getByRole("button", { name: "还有 1 个选项" }).click();
   await expect(page.locator(".mobile-feed-poll .poll-choice")).toHaveCount(4);
   await page.getByRole("checkbox", { name: "摄影", exact: true }).check();
@@ -115,7 +124,12 @@ test("手机后续加载失败保留已读内容，快照与最新游标继续�
   expect(state.queries.at(-1)?.searchParams.get("offset")).toBe("3");
   state.nextError = false;
   await page.getByRole("button", { name: "重试加载", exact: true }).click();
+  await expect(page.getByRole("button", { name: "加载更多", exact: true })).toBeEnabled();
+  await expect(page.locator(".mobile-app-feed > article")).toHaveCount(3);
+  await page.getByRole("button", { name: "加载更多", exact: true }).click();
   await expect(page.locator(".mobile-app-feed > article")).toHaveCount(4);
+  expect(state.queries.at(-1)?.searchParams.get("offset")).toBe("40");
+  expect(state.queries.at(-1)?.searchParams.get("session_id")).toBe("mobile-session");
   await page.getByRole("tab", { name: "最新", exact: true }).click();
   await page.getByRole("button", { name: "加载更多", exact: true }).click();
   await expect.poll(() => state.queries.at(-1)?.searchParams.get("cursor")).toBe("latest-cursor");

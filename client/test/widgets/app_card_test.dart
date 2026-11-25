@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/theme/app_colors.dart';
+import 'package:shenliyuan/theme/app_palette.dart';
+import 'package:shenliyuan/theme/app_theme.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:shenliyuan/widgets/glass_container.dart';
 
@@ -26,6 +28,75 @@ class _Stripes extends CustomPainter {
 
 void main() {
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
+
+  for (final brightness in Brightness.values) {
+    testWidgets('主题染色在两种内容卡片和玻璃开关下保持一致 $brightness', (tester) async {
+      final settings = ThemeProvider(loadOnStart: false);
+      addTearDown(settings.dispose);
+      await settings.setBackgroundImage('morenbeijing.jpeg');
+      await settings.setComponentOpacityLevel(1);
+      final palette = AppPalette.defaults(brightness);
+      final tinted = Color.lerp(palette.card, palette.primaryContainer, .32)!;
+      const semantic = Color(0xFFB47635);
+      final capture = GlobalKey();
+      for (final glass in [false, true]) {
+        await settings.setFrostedGlass(glass);
+        await tester.pumpWidget(ChangeNotifierProvider.value(
+          value: settings,
+          child: MaterialApp(
+            theme: AppTheme.build(
+              brightness: brightness,
+              palette: palette,
+              cardStyle: const AppCardStyle(fill: 'tint', shadow: 'none'),
+            ),
+            home: Scaffold(
+              body: RepaintBoundary(
+                key: capture,
+                child: SizedBox(
+                  width: 100,
+                  height: 320,
+                  child: Column(children: [
+                    for (final color in [palette.card, semantic]) ...[
+                      AppCardSurface(
+                        width: 100,
+                        height: 80,
+                        decoration: BoxDecoration(color: color),
+                      ),
+                      AppCard(
+                        color: color,
+                        margin: EdgeInsets.zero,
+                        surfaceTintColor: Colors.transparent,
+                        child: const SizedBox(width: 100, height: 80),
+                      ),
+                    ],
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        ));
+        await tester.pumpAndSettle();
+        final pixels = (await tester.runAsync(() async {
+          final boundary = capture.currentContext!.findRenderObject()!
+              as RenderRepaintBoundary;
+          final image = await boundary.toImage();
+          final pixels =
+              await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+          image.dispose();
+          return pixels;
+        }))!;
+        for (var row = 0; row < 4; row++) {
+          final expected = row < 2 ? tinted : semantic;
+          final offset = ((40 + row * 80) * 100 + 50) * 4;
+          for (var channel = 0; channel < 3; channel++) {
+            expect(pixels.getUint8(offset + channel),
+                closeTo([expected.r, expected.g, expected.b][channel] * 255, 1),
+                reason: 'glass=$glass row=$row channel=$channel');
+          }
+        }
+      }
+    });
+  }
 
   testWidgets('切换毛玻璃不改变封面边缘和显式内边距', (tester) async {
     final theme = ThemeProvider(loadOnStart: false);
@@ -154,8 +225,8 @@ void main() {
           }
           // 直边中部也不能绘制额外的白色描边。
           final edge = ((50 + row * 90) * 320 + 61) * 4;
-          final edgeColor = theme.isCleanBackgroundMode && row < 2
-              ? Colors.white : color;
+          final edgeColor =
+              theme.isCleanBackgroundMode && row < 2 ? Colors.white : color;
           expect(bytes.getUint8(edge),
               closeTo(edgeColor.r * 255 * alpha + 127.5 * (1 - alpha), 3));
         }

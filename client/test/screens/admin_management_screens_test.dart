@@ -106,6 +106,31 @@ Future<Widget> _buildApp(Widget home, Map<String, Object> responses) async {
 }
 
 void main() {
+  testWidgets('主题待办加载失败显示重试，恢复后清除错误并显示空队列', (tester) async {
+    var fail = true;
+    final app = await tester.runAsync(() => _buildApp(
+      const AdminPanelScreen(),
+      {
+        '/admin/themes': (RequestOptions _) => fail ? null : {'items': []},
+      },
+    ));
+    await tester.pumpWidget(app!);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('主题审核'), 200,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.text('主题待办加载失败，请刷新重试'), findsOneWidget);
+    fail = false;
+    await tester.scrollUntilVisible(find.text('重试'), -200,
+        scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('主题审核'), 200,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.text('主题待办加载失败，请刷新重试'), findsNothing);
+    expect(find.text('待审主题跨页试用、审核与下架管理'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('管理员接口返回六条时页面显示六名管理人员', (tester) async {
     final members = List.generate(
       6,
@@ -429,6 +454,11 @@ void main() {
             '/admin/exam-papers/pending-count': {'count': 5},
             '/admin/appeals/review': {'items': <Object>[]},
             '/admin/security/overview': {'actionable_high_count': 3},
+            '/admin/themes': (RequestOptions opt) {
+              expect(opt.extra['expectedAuthUserId'], 7);
+              expect(opt.queryParameters['status'], 'pending');
+              return {'items': [{'id': 'pending-theme'}]};
+            },
             '/canteens/pending': {'items': <Object>[]},
             '/admin/course-evaluations/pending': {
               'items': [
@@ -445,6 +475,7 @@ void main() {
 
     // 顶部待办指标栏
     expect(find.text('待处理'), findsOneWidget);
+    expect(find.text('1 个主题待审核'), findsOneWidget);
     expect(find.text('举报'), findsOneWidget);
     expect(find.text('精华'), findsOneWidget);
     expect(find.text('审核'), findsOneWidget);

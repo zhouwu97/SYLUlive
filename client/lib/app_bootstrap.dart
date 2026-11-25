@@ -1492,6 +1492,13 @@ class MyApp extends StatelessWidget {
               legacy: legacy,
               registry: context.read<AcademicProviderRegistry>(),
               identityClient: context.read<AcademicIdentityClient>(),
+              onAcademicConfigSynced: (owner, configured) {
+                final auth = context.read<AuthProvider>();
+                if (auth.user?.id.toString() == owner &&
+                    auth.user?.academicConfigured != configured) {
+                  unawaited(auth.refreshUser());
+                }
+              },
               onIdentityVerified: () =>
                   context.read<AuthProvider>().refreshUser(),
               configClient: AcademicAccountConfigClient(dio),

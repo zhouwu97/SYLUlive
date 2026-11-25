@@ -9,6 +9,7 @@ import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import 'frosted_glass.dart';
 import 'app_surface_transition.dart';
+import 'liquid_glass/liquid_glass_scene.dart';
 
 /// 卡片及系统弹层共用的最终底色，透明度只应用一次。
 Color appGlassSurfaceColor(BuildContext context, Color? color, double opacity) {
@@ -181,6 +182,8 @@ class AppContentSurface extends StatelessWidget {
 ///
 /// 卡片只模糊背后的内容；文字、图标、封面和点击区域仍按原样绘制。
 class AppCardSurface extends Container {
+  /// Records only the material and artwork; controls remain outside the source.
+  final LiquidGlassSceneSource? glassSource;
   final double blur;
 
   /// 课表等已有独立透明度设置的表面保留自己的设置。
@@ -210,6 +213,7 @@ class AppCardSurface extends Container {
     this.surfaceOpacity,
     this.applyCardStyle,
     this.themeArt = true,
+    this.glassSource,
   });
 
   bool _shouldApplyCardStyle(BuildContext context, BoxDecoration? box) {
@@ -219,9 +223,7 @@ class AppCardSurface extends Container {
     final br = box?.borderRadius;
     if (br is BorderRadius) {
       final r = br.topLeft.x;
-      if (br.topRight.x != r ||
-          br.bottomLeft.x != r ||
-          br.bottomRight.x != r) {
+      if (br.topRight.x != r || br.bottomLeft.x != r || br.bottomRight.x != r) {
         return false;
       }
       if (r >= 99) return false;
@@ -265,10 +267,10 @@ class AppCardSurface extends Container {
     final box =
         decoration is BoxDecoration ? decoration! as BoxDecoration : null;
     final extCardStyle = AppCardStyle.of(context);
-    final cardStyle = _shouldApplyCardStyle(context, box) &&
-            extCardStyle.hasOverrides
-        ? extCardStyle
-        : null;
+    final cardStyle =
+        _shouldApplyCardStyle(context, box) && extCardStyle.hasOverrides
+            ? extCardStyle
+            : null;
     final tokens = AppThemeTokens.of(context);
     final resolvedBorder = cardStyle?.resolveBoxBorder(tokens.cardBorder);
     final outerShadows = cardStyle?.resolveBoxShadows(
@@ -285,7 +287,7 @@ class AppCardSurface extends Container {
     final radius = box?.borderRadius ?? BorderRadius.zero;
     final plain = box == null
         ? BoxDecoration(color: surface)
-        : box.color == null && box.gradient == null
+        : box.gradient == null
             ? box.copyWith(color: surface)
             : box;
     final shape = box?.shape == BoxShape.circle
@@ -302,10 +304,10 @@ class AppCardSurface extends Container {
             image: box?.image,
             borderRadius: box?.shape == BoxShape.circle ? null : radius,
             shape: box?.shape ?? BoxShape.rectangle,
-            border: (cardStyle?.borderWidth != null &&
-                    cardStyle!.borderWidth! > 0)
-                ? resolvedBorder
-                : null,
+            border:
+                (cardStyle?.borderWidth != null && cardStyle!.borderWidth! > 0)
+                    ? resolvedBorder
+                    : null,
           )
         : plain.copyWith(
             color: plain.gradient != null
@@ -346,25 +348,48 @@ class AppCardSurface extends Container {
           sigmaX: blur * progress,
           sigmaY: blur * progress,
           // 材质只替换绘制，保留原 Container 的边框占位和显式内容间距。
-          child: DecoratedBox(
-            decoration: material,
-            child: _withArt(
-              context,
-              box,
-              Container(
-                alignment: alignment,
-                padding: decoration?.padding == null
-                    ? padding
-                    : decoration!.padding.add(padding ?? EdgeInsets.zero),
-                foregroundDecoration: foregroundDecoration,
-                child: AppSurfaceTransition.foreground(
-                  context,
-                  progress: progress,
-                  child: child,
+          child: glassSource == null
+              ? DecoratedBox(
+                  decoration: material,
+                  child: _withArt(
+                    context,
+                    box,
+                    Container(
+                      alignment: alignment,
+                      padding: decoration?.padding == null
+                          ? padding
+                          : decoration!.padding.add(padding ?? EdgeInsets.zero),
+                      foregroundDecoration: foregroundDecoration,
+                      child: AppSurfaceTransition.foreground(
+                        context,
+                        progress: progress,
+                        child: child,
+                      ),
+                    ),
+                  ),
+                )
+              : Stack(
+                  fit: StackFit.passthrough,
+                  children: [
+                    Positioned.fill(
+                        child: LiquidGlassBackground(
+                      source: glassSource,
+                      child: DecoratedBox(
+                          decoration: material,
+                          child:
+                              _withArt(context, box, const SizedBox.expand())),
+                    )),
+                    Container(
+                      alignment: alignment,
+                      padding: decoration?.padding == null
+                          ? padding
+                          : decoration!.padding.add(padding ?? EdgeInsets.zero),
+                      foregroundDecoration: foregroundDecoration,
+                      child: AppSurfaceTransition.foreground(context,
+                          progress: progress, child: child),
+                    ),
+                  ],
                 ),
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -410,7 +435,8 @@ class AppCard extends Card {
         RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(
                 Theme.of(context).useMaterial3 ? AppRadius.md : 4));
-    final extCardStyle = theme.extension<AppCardStyle>() ?? const AppCardStyle();
+    final extCardStyle =
+        theme.extension<AppCardStyle>() ?? const AppCardStyle();
     final cardStyle = (applyCardStyle ??
                 context.findAncestorWidgetOfExactType<Dialog>() == null) &&
             extCardStyle.hasOverrides
@@ -431,7 +457,10 @@ class AppCard extends Card {
     final outerShadows = cardStyle?.resolveBoxShadows(
       theme.brightness == Brightness.dark,
     );
-    final surface = color ?? cardTheme.color ?? tokens.card;
+    final baseSurface = color ?? cardTheme.color ?? tokens.card;
+    final surface = cardStyle?.tinted == true && baseSurface == tokens.card
+        ? Color.lerp(tokens.card, tokens.primaryContainer, 0.32)!
+        : baseSurface;
     Widget clipped = ClipPath(
       clipper: ShapeBorderClipper(shape: effectiveShape),
       child: FrostedGlass(
@@ -445,8 +474,11 @@ class AppCard extends Card {
               : settings?.canCustomizeCardMaterial == true
                   ? appGlassSurfaceColor(context, surface, alpha)
                   : alpha == 1
-                      ? color
-                      : fill.withValues(alpha: fill.a * alpha),
+                      ? surface != baseSurface
+                          ? surface
+                          : color
+                      : (surface != baseSurface ? surface : fill)
+                          .withValues(alpha: fill.a * alpha),
           shape: effectiveShape,
           shadowColor: (glass || outerShadows != null)
               ? Colors.transparent

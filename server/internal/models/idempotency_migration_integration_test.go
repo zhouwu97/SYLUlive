@@ -26,7 +26,7 @@ func TestIdempotencySchemaUpgradeFromLegacyFixtures(t *testing.T) {
 		"idempotency_current_minus_one.sql",
 	} {
 		t.Run(fixture, func(t *testing.T) {
-			db, cleanup := openIdempotencyMigrationDB(t, dsn)
+			db, cleanup := openIsolatedMigrationDB(t, dsn)
 			defer cleanup()
 
 			path := migrationFixturePath(t, fixture)
@@ -96,7 +96,7 @@ func readMigrationFixtureCounts(t *testing.T, db *gorm.DB) migrationFixtureCount
 	return counts
 }
 
-func openIdempotencyMigrationDB(t *testing.T, dsn string) (*gorm.DB, func()) {
+func openIsolatedMigrationDB(t *testing.T, dsn string) (*gorm.DB, func()) {
 	t.Helper()
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
@@ -112,11 +112,11 @@ func openIdempotencyMigrationDB(t *testing.T, dsn string) (*gorm.DB, func()) {
 	if err := sqlDB.Ping(); err != nil {
 		t.Fatalf("连接 PostgreSQL 迁移数据库失败: %v", err)
 	}
-	schema := fmt.Sprintf("idempotency_migration_%d", time.Now().UnixNano())
+	schema := fmt.Sprintf("schema_migration_%d", time.Now().UnixNano())
 	if err := db.Exec("CREATE SCHEMA " + schema).Error; err != nil {
 		t.Fatalf("创建迁移 schema 失败: %v", err)
 	}
-	if err := db.Exec("SET search_path TO " + schema + ", public").Error; err != nil {
+	if err := db.Exec("SET search_path TO " + schema).Error; err != nil {
 		t.Fatalf("设置迁移 schema 失败: %v", err)
 	}
 	return db, func() {

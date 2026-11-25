@@ -180,13 +180,6 @@ func (u User) IsEduAuthorized() bool {
 	return u.EduAuthorized
 }
 
-// HasEduAccess 是校内功能的统一准入口径。
-// EduAuthorized 是当前权威状态，EduBound 只兼容旧版本已经写入的等价投影。
-// 本机教务登录声明不会写入这些字段，因此不会获得服务端准入权限。
-func (u User) HasEduAccess() bool {
-	return u.EduAuthorized || u.EduBound
-}
-
 // IsAdmin 统一判断用户是否具有管理员或超级管理员权限。
 func (u User) IsAdmin() bool {
 	return u.Role == RoleAdmin || u.Role == RoleSuperAdmin

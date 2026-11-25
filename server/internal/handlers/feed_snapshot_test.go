@@ -25,7 +25,7 @@ func newFeedSnapshotTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	// 回归目标包含“真实存在的公开帖子”这一情形，因此需要帖子图片相关表，
 	// 否则 loadPostsInOrder 的 Preload("Images") 会因缺表而直接失败。
-	require.NoError(t, db.AutoMigrate(
+	require.NoError(t, db.AutoMigrate(&models.FeedSnapshot{},
 		&models.Post{}, &models.User{}, &models.FeedFeedback{}, &models.UserHiddenAuthor{},
 		&models.PostImage{}, &models.File{}, &models.ImageVariant{},
 	))
@@ -57,10 +57,10 @@ func TestHomeFeedV2SnapshotUserIDBinding(t *testing.T) {
 	require.NoError(t, db.Create(&snapPost).Error)
 
 	// 用户 1 创建综合快照。
-	storeSnapshot("sessA", Snapshot{
+	require.NoError(t, db.Create(&models.FeedSnapshot{SessionID: "sessA",
 		UserID: 1, PostIDs: []uint{snapPost.ID}, ExpiredAt: now.Add(10 * time.Minute),
 		AlgorithmVersion: "home_all_v2", Sort: "all", FeedKind: "home_v2",
-	})
+	}).Error)
 
 	// 用户 1 loadmore → 通过归属校验。
 	cA, wA := feedCtx(1, nil)
@@ -71,6 +71,11 @@ func TestHomeFeedV2SnapshotUserIDBinding(t *testing.T) {
 	cB, wB := feedCtx(2, nil)
 	h.getHomeFeedV2(cB, "all", "loadmore", "sessA", 1, 20, 0, now, false)
 	require.Equal(t, http.StatusConflict, wB.Code, "跨用户 loadmore 应 409")
+
+	// 不匹配的请求不能删除归属人的快照。
+	cAgain, wAgain := feedCtx(1, nil)
+	h.getHomeFeedV2(cAgain, "all", "loadmore", "sessA", 1, 20, 0, now, false)
+	require.Equal(t, http.StatusOK, wAgain.Code)
 
 	// 匿名（userID=0）loadmore 用户 1 的快照 → 409。
 	cC, wC := feedCtx(0, nil)
@@ -89,10 +94,10 @@ func TestHomeFeedV2SnapshotInvalidatedByFeedback(t *testing.T) {
 	require.NoError(t, db.Create(&hider).Error)
 	require.NoError(t, db.Create(&target).Error)
 
-	storeSnapshot("sessA", Snapshot{
+	require.NoError(t, db.Create(&models.FeedSnapshot{SessionID: "sessA",
 		UserID: hider.ID, PostIDs: []uint{99}, ExpiredAt: now.Add(10 * time.Minute),
 		AlgorithmVersion: "home_all_v2", Sort: "all", FeedKind: "home_v2",
-	})
+	}).Error)
 
 	// 隐藏者隐藏目标作者 → 触发快照失效。
 	cHide, wHide := feedCtx(hider.ID, gin.Params{{Key: "author_id", Value: fmt.Sprintf("%d", target.ID)}})
@@ -118,10 +123,10 @@ func TestHomeFeedV2SnapshotInvalidatedByNotInterested(t *testing.T) {
 	otherPost := models.Post{BoardID: models.BoardShuitie, AuthorID: other.ID, Title: "别人帖", Content: "x", Status: models.PostStatusNormal}
 	require.NoError(t, db.Create(&otherPost).Error)
 
-	storeSnapshot("sessA", Snapshot{
+	require.NoError(t, db.Create(&models.FeedSnapshot{SessionID: "sessA",
 		UserID: me.ID, PostIDs: []uint{99}, ExpiredAt: now.Add(10 * time.Minute),
 		AlgorithmVersion: "home_all_v2", Sort: "all", FeedKind: "home_v2",
-	})
+	}).Error)
 
 	cMark, wMark := feedCtx(me.ID, gin.Params{{Key: "post_id", Value: fmt.Sprintf("%d", otherPost.ID)}})
 	feedH.MarkNotInterested(cMark)
@@ -157,28 +162,53 @@ func TestFeedSelfFeedbackGuards(t *testing.T) {
 	require.Zero(t, fbCount, "自反馈不应写入 FeedFeedback")
 }
 
-func TestSnapshotUserIndexLifecycle(t *testing.T) {
+func TestFeedSnapshotInvalidationDuringBuild(t *testing.T) {
 	db := newFeedSnapshotTestDB(t)
-	_ = db
+	post := NewPostHandler(db, "", "")
+	feed := NewFeedHandler(db)
+	c, w := feedCtx(7, nil)
+	pending := post.beginSnapshot(c, models.FeedSnapshot{FeedKind: "home_v2"})
+	require.NotNil(t, pending)
+	restore, resp := feedCtx(7, gin.Params{{Key: "author_id", Value: "8"}})
+	feed.RestoreAuthor(restore)
+	require.Equal(t, 200, resp.Code)
+	require.False(t, post.finishSnapshot(c, pending, []uint{1, 2}))
+	require.Equal(t, 409, w.Code)
+}
 
-	storeSnapshot("s1", Snapshot{UserID: 7, PostIDs: []uint{1}, ExpiredAt: time.Now().Add(time.Minute)})
-	storeSnapshot("s2", Snapshot{UserID: 7, PostIDs: []uint{2}, ExpiredAt: time.Now().Add(time.Minute)})
-	storeSnapshot("s3", Snapshot{UserID: 0, PostIDs: []uint{3}, ExpiredAt: time.Now().Add(time.Minute)})
+func TestHomeSnapshotAcrossInstances(t *testing.T) {
+	dbA := newFeedSnapshotTestDB(t)
+	dbB, err := gorm.Open(dbA.Dialector, &gorm.Config{})
+	require.NoError(t, err)
+	pool, err := dbB.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pool.Close()) })
+	testHomeSnapshotPages(t, dbA, dbB)
+}
 
-	_, ok := ActiveSnapshots.Load("s1")
-	require.True(t, ok)
-	_, ok = ActiveSnapshots.Load("s3")
-	require.True(t, ok)
-
-	// 单条删除：s2 从快照与索引中移除。
-	deleteSnapshot("s2")
-	_, ok = ActiveSnapshots.Load("s2")
-	require.False(t, ok)
-
-	// 全量失效用户 7：s1 删除，generic s3 保留。
-	invalidateUserFeedSnapshots(7)
-	_, ok = ActiveSnapshots.Load("s1")
-	require.False(t, ok)
-	_, ok = ActiveSnapshots.Load("s3")
-	require.True(t, ok, "匿名/generic 快照不应被用户失效误伤")
+func testHomeSnapshotPages(t *testing.T, a, b *gorm.DB) {
+	require.NoError(t, a.AutoMigrate(&models.FeedSnapshot{}, &models.User{}, &models.Post{}, &models.PostImage{}, &models.File{}, &models.ImageVariant{}, &models.WaterTeamRecruitment{}, &models.Reply{}, &models.FeedFeedback{}, &models.UserHiddenAuthor{}, &models.Like{}, &models.Topic{}, &models.PostTopic{}))
+	author := seedFeedAuthor(t, a)
+	for _, title := range []string{"第一页", "第二页"} {
+		seedFeedPost(t, a, author, models.BoardShuitie, models.PostStatusNormal, title)
+	}
+	const query = "board=1&sort=all&feed_version=2&limit=1"
+	first := getListRequest(t, NewPostHandler(a, "", ""), author.ID, query)
+	require.Equal(t, 200, first.Code, first.Body.String())
+	page := decodeFeedList(t, first)
+	require.NotEmpty(t, page.SessionID)
+	require.Len(t, page.Posts, 1)
+	next := query + "&scene=loadmore&offset=1&session_id=" + page.SessionID
+	h := NewPostHandler(b, "", "")
+	require.Equal(t, 409, getListRequest(t, h, 0, next).Code)
+	second := getListRequest(t, h, author.ID, next)
+	require.Equal(t, 200, second.Code, second.Body.String())
+	more := decodeFeedList(t, second)
+	require.Len(t, more.Posts, 1)
+	require.NotEqual(t, page.Posts[0].ID, more.Posts[0].ID)
+	require.Equal(t, page.SessionID, more.SessionID)
+	require.NoError(t, a.Model(&models.FeedSnapshot{}).Where("session_id = ?", page.SessionID).Update("expired_at", time.Now().UTC().Add(-time.Minute)).Error)
+	expired := getListRequest(t, h, author.ID, next)
+	require.Equal(t, 409, expired.Code)
+	require.Equal(t, "feed_session_expired", decodeFeedList(t, expired).Code)
 }

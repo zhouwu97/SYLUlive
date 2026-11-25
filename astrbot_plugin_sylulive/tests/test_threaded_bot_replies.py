@@ -6,7 +6,7 @@ import pytest
 from test_public_agent import config, post
 from astrbot_plugin_sylulive.client import IntegrationProblem
 from astrbot_plugin_sylulive.community_publisher import CommunityPublisher
-from astrbot_plugin_sylulive.public_agent import PublicAgent, PublicMemory
+from astrbot_plugin_sylulive.public_agent import PublicAgent, PublicMemory, participation_percent
 
 
 def reply(ident=11, **changes):
@@ -276,4 +276,46 @@ async def test_incremental_nested_target_requires_actual_thread_context_then_can
         assert result["state"]=="published"
     assert (await agent.browse(SimpleNamespace(tool_loop_agent=model)))["state"]=="completed"
     assert client.call.call_args.kwargs["payload"]["reply_to_reply_id"]==81
+    await agent.close()
+
+@pytest.mark.parametrize(("source", "percent"), [
+    (post(), 65), (reply(content="我也去了"), 1),
+    (post(title="求助", content="饭卡丢了"), 85), (reply(content="请问在哪补卡"), 85),
+    (post(title="@[AI] 测试鱼，请问"), 100), (reply(content="@测试鱼 帮帮忙"), 100),
+    (reply(content="@测试鱼小号 你好"), 1), (reply(content="我也拿到了", author={"nickname": "@测试鱼"}), 1),
+])
+def test_comment_participation_uses_only_the_addressed_source(source, percent):
+    assert participation_percent(source, "测试鱼") == percent
+
+
+@pytest.mark.asyncio
+async def test_each_post_and_comment_keeps_its_draw_across_browse_priority_and_restart(tmp_path):
+    target = reply(content="我也去了")
+    for _ in range(2):
+        agent, client, _ = fixture(tmp_path, target)
+        agent.mention_name = "测试鱼"
+        assert agent.selects_comment(reply(66, content="我也去了"))
+        assert not agent.selects_comment(post(4))
+        assert agent.selects_comment(post(4, title="请问几点开始"))
+        async def model(**request):
+            tools, event = request["tools"], request["event"]
+            read = json.loads(await tools.get_tool("read_public_post").handler(event, 1))
+            assert read["top_level_comment_eligible"]
+            page = json.loads(await tools.get_tool("read_public_replies").handler(event, 1, after_id=0))
+            assert not page["items"][0]["reply_target_eligible"]
+            result = json.loads(await tools.get_tool("comment_public_post").handler(event, 1, "回复", reply_to_reply_id=11))
+            assert "error" in result
+        context = SimpleNamespace(tool_loop_agent=model)
+        assert (await agent.browse(context))["state"] == "completed"
+        assert (await agent.browse(context, reply_target=target))["state"] == "empty"
+        assert not client.call.called
+        await agent.close()
+    target.update(content="@测试鱼 你也来吗？", source_version="c"*64)
+    agent, client, _ = fixture(tmp_path, target)
+    agent.mention_name = "测试鱼"
+    async def answer(**request):
+        tool = request["tools"].get_tool("answer_addressed_comment")
+        assert json.loads(await tool.handler(request["event"], "收到"))["state"] == "published"
+    assert (await agent.browse(SimpleNamespace(tool_loop_agent=answer), reply_target=target))["state"] == "completed"
+    assert client.call.call_args.kwargs["payload"]["reply_to_reply_id"] == 11
     await agent.close()

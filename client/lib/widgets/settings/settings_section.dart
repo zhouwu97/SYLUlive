@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../app_card.dart';
+import '../liquid_glass/liquid_glass_scene.dart';
+import 'settings_page_scaffold.dart';
 
 /// 设置页分组卡片组件
 class SettingsSection extends StatelessWidget {
@@ -52,32 +54,40 @@ class SettingsSection extends StatelessWidget {
           if (!showCard)
             Column(children: children)
           else
-            AppCardSurface(
-              decoration: BoxDecoration(
-                color: AppThemeTokens.of(context).card,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : AppThemeTokens.of(context).divider,
-                ),
-                boxShadow: isDark
-                    ? null
-                    : [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.025),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
+            LiquidGlassScope(
+              composeWithParent: context
+                      .findAncestorWidgetOfExactType<SettingsPageScaffold>() !=
+                  null,
+              child: Builder(
+                  builder: (context) => AppCardSurface(
+                        glassSource: LiquidGlassScene.maybeOf(context),
+                        decoration: BoxDecoration(
+                          color: AppThemeTokens.of(context).card,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.08)
+                                : AppThemeTokens.of(context).divider,
+                          ),
+                          boxShadow: isDark
+                              ? null
+                              : [
+                                  BoxShadow(
+                                    color:
+                                        Colors.black.withValues(alpha: 0.025),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
                         ),
-                      ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: cardItems,
-                ),
-              ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: cardItems,
+                          ),
+                        ),
+                      )),
             ),
         ],
       ),

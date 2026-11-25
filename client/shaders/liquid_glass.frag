@@ -9,6 +9,9 @@
 // All positions are LOCAL LOGICAL PIXELS. These are Paint.shader samplers,
 // NOT engine-owned ImageFilter textures. The two offscreen render targets need
 // an OpenGLES Y correction (including the two-row atlas, before row selection).
+// Clear navigation optics adapted from YunKao 6578d132: untinted scene,
+// bounded dispersion and no interior wash. Dock optics stay fixed;
+// the moving lens follows the host press spring.
 uniform vec2 uSize;
 uniform vec4 uCapture;
 uniform vec4 uLens;
@@ -30,6 +33,7 @@ uniform float uVertical;
 uniform vec3 uNavBackground;
 uniform sampler2D uScene;
 uniform sampler2D uTabs;
+uniform sampler2D uLensScene;
 out vec4 fragColor;
 
 float sdCapsule(vec2 p, vec2 halfSize) {
@@ -79,18 +83,29 @@ vec3 scene(vec2 p) {
 #endif
   return texture(uScene, clamp(uv, vec2(.001), vec2(.999))).rgb;
 }
-float surfaceLight(float d, vec2 n, vec2 center, float strength) {
-  vec2 l = normalize(vec2(-.65, -1.) + (uPointer - center) / max(max(uSize.x, uSize.y), 1.) * .8);
+vec3 clearScene(vec2 p) {
+  vec2 uv = (p - uCapture.xy) / uCapture.zw;
+#ifdef IMPELLER_TARGET_OPENGLES
+  uv.y = 1.0 - uv.y;
+#endif
+  return texture(uLensScene, clamp(uv, vec2(.001), vec2(.999))).rgb;
+}
+float gaussian(float x) {
+  // GLSL pow is undefined for negative bases, even for a square exponent.
+  return exp(-x * x);
+}
+float surfaceLight(float d, vec2 n, vec2 center, float strength, vec2 pointer) {
+  vec2 l = normalize(vec2(-.65, -1.) + (pointer - center) / max(max(uSize.x, uSize.y), 1.) * .8);
   float a = pow(max(dot(n, l), 0.0), 7.0);
   float b = pow(max(dot(n, -l), 0.0), 7.0) * .52;
   float edge = clamp(1.0 + d / 8.0, 0.0, 1.0);
   float slope = pow(edge, 1.65) * .94;
   float nz = sqrt(max(1.0 - slope * slope, .001));
   float fresnel = .04 + .96 * pow(1.0 - nz, 5.0);
-  float outline = exp(-pow((d + .7) / .65, 2.0));
-  float bloom = exp(-pow((d + 1.4) / 2.0, 2.0));
-  float caustic = exp(-pow((d + 3.0) / 1.65, 2.0));
-  return (outline * (.04 + a * .62 + b * .32) + bloom * (a + b) * .12
+  float outline = gaussian((d + .7) / .65);
+  float bloom = gaussian((d + 1.4) / 2.0);
+  float caustic = gaussian((d + 3.0) / 1.65);
+  return (outline * (.14 + a * .62 + b * .32) + bloom * (.025 + a + b) * .12
     + caustic * b * .07 + fresnel * .045) * strength * (1.0 - uCompare);
 }
 vec4 tabs(vec2 p, float accent) {
@@ -106,25 +121,29 @@ vec4 tabs(vec2 p, float accent) {
 #endif
   return texture(uTabs, uv);
 }
+vec3 lensSample(vec2 p) {
+  vec4 ink = tabs(p, 1.0);
+  return ink.rgb + clearScene(p) * (1.0 - ink.a);
+}
 vec3 dock(vec2 p, float accent) {
   vec2 halfSize = uSize * .5;
-  float scale = 1.0 + 16.0 / mix(uSize.x, uSize.y, uVertical) * uPress;
-  vec2 h = halfSize * scale;
   vec2 q = p - halfSize;
-  float d = sdCapsule(q, h);
-  vec2 at = p + bend(q, h, uDockHeight, uDockAmount, 0.0);
+  float d = sdCapsule(q, halfSize);
+  vec2 at = p + bend(q, halfSize, uDockHeight, uDockAmount, 0.0);
   vec3 c = scene(at);
   float luma = dot(c, vec3(.2126, .7152, .0722));
   c = mix(vec3(luma), c, 1.12);
   c = mix(c, uNavBackground, uTint);
-  c += surfaceLight(d, normalAt(q, h), halfSize, .75);
+  // 底座沿用静态光源，手指只驱动胶囊高光。
+  c += surfaceLight(d, normalAt(q, halfSize), halfSize, .75, vec2(40, 0));
   c = mix(scene(p), c, coverage(d));
   vec4 ink = tabs(p, accent);
   return ink.rgb + c * (1.0 - ink.a);
 }
 void main() {
   vec2 p = FlutterFragCoord().xy;
-  vec2 dockHalf = uSize * .5 * (1.0 + 16.0 / mix(uSize.x, uSize.y, uVertical) * uPress);
+  float activation = clamp(uPress, 0.0, 1.0);
+  vec2 dockHalf = uSize * .5;
   float dd = sdCapsule(p - uSize * .5, dockHalf);
   vec2 lc = uLens.xy + uLens.zw * .5;
   vec2 halfSize = uLens.zw * .5;
@@ -134,39 +153,36 @@ void main() {
   float mask = max(coverage(dd), lm);
   if (mask <= .0001) { fragColor = vec4(0); return; }
   vec3 c = dock(p, 0.0);
-  // Contact shading follows the deformed boundary; it also keeps the moving
-  // lens readable over pale content without adding an opaque panel.
-  c *= 1.0 - exp(-max(ld, 0.0)/5.0) * .12 * clamp(uPress+uEnergy,0.,1.)
-    * (1.0-lm) * (1.0-uCompare);
   if (lm > .0001) {
-    vec2 n = lensNormal(q, halfSize);
-    float band = clamp(1.0 + ld / max(uLensHeight * uPress, .001), 0.0, 1.0);
-    float circle = 1.0 - sqrt(max(0.0, 1.0 - band * band));
-    vec2 radial = q / max(length(q), .0001);
-    vec2 refractionNormal = n + radial;
-    refractionNormal /= max(length(refractionNormal), .0001);
-    vec2 offset = -refractionNormal * circle * uLensAmount * uPress
-      * (1.0+uEnergy*.12) * (1.0-uCompare);
-    vec2 at = p + offset;
-    float dispersion = uDispersion * q.x * q.y / max(halfSize.x * halfSize.y, 1.0);
-    vec2 split = offset * dispersion;
-    vec3 r = dock(at + split, 1.0);
-    vec3 o = dock(at + split * (2.0/3.0), 1.0);
-    vec3 y = dock(at + split * (1.0/3.0), 1.0);
-    vec3 g = dock(at, 1.0);
-    vec3 cyan = dock(at - split * (1.0/3.0), 1.0);
-    vec3 b = dock(at - split * (2.0/3.0), 1.0);
-    vec3 v = dock(at - split, 1.0);
-    vec3 lens = vec3((r.r+o.r+y.r)/3.5+v.r/7.0,
-      o.g/7.0+(y.g+g.g+cyan.g)/3.5, (cyan.b+b.b+v.b)/3.0);
-    lens = mix(lens, vec3(uDark), mix(.08, .12, uDark) * (1.0-clamp(uPress,0.,1.)));
-    lens *= 1.0 - .03 * uPress;
-    // Inner occlusion and two light peaks make the thickness readable.
-    lens -= exp(-pow((ld+3.0)/5.0,2.0)) * .10 * uPress * (1.0-uCompare);
-    lens += surfaceLight(ld, n, lc, uPress);
-    float glint = exp(-length((p-uPointer)/vec2(90,70))*2.0);
-    lens += glint * .035 * uPress * (1.0-uCompare);
-    c = mix(c, lens, lm);
+    // 静止时保留普通选中底色，按压弹簧同时控制透镜出现和退场。
+    vec3 selected = mix(dock(p, 1.0), vec3(uDark), mix(.08, .12, uDark));
+    if (activation > .0001) {
+      vec2 n = lensNormal(q, halfSize);
+      float height = min(16.0, min(uLens.z, uLens.w) * .30) * activation;
+      float band = clamp(1.0 + ld / max(height, .001), 0.0, 1.0);
+      float circle = 1.0 - sqrt(max(0.0, 1.0 - band * band));
+      vec2 radial = q / max(length(q), .0001);
+      vec2 refractionNormal = n + radial;
+      refractionNormal /= max(length(refractionNormal), .0001);
+      vec2 offset = -refractionNormal * circle * uLensAmount * activation
+        * (1.0+uEnergy*.12) * (1.0-uCompare);
+      vec2 at = p + offset;
+      float dispersion = uDispersion * q.x * q.y / max(halfSize.x * halfSize.y, 1.0);
+      vec2 split = offset * dispersion;
+      split *= min(1.0, 2.5 / max(length(split), .0001));
+      vec3 r = lensSample(at + split);
+      vec3 o = lensSample(at + split * (2.0/3.0));
+      vec3 y = lensSample(at + split * (1.0/3.0));
+      vec3 g = lensSample(at);
+      vec3 cyan = lensSample(at - split * (1.0/3.0));
+      vec3 b = lensSample(at - split * (2.0/3.0));
+      vec3 v = lensSample(at - split);
+      vec3 lens = vec3((r.r+o.r+y.r)/3.5+v.r/7.0,
+        o.g/7.0+(y.g+g.g+cyan.g)/3.5, (cyan.b+b.b+v.b)/3.0);
+      lens += surfaceLight(ld, n, lc, .85 * activation, uPointer);
+      selected = mix(selected, lens, activation);
+    }
+    c = mix(c, selected, lm);
   }
   fragColor = vec4(clamp(c, 0.0, 1.0) * mask, mask);
 }

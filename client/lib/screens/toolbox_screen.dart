@@ -14,6 +14,7 @@ import '../providers/theme_provider.dart';
 import '../theme/app_palette.dart';
 import '../widgets/glass_container.dart';
 import '../services/physical_credential_store.dart';
+import '../services/publish_session_scope.dart';
 import 'erke_score_screen.dart';
 import 'physical_test_screen.dart';
 import 'lottery_screen.dart';
@@ -112,10 +113,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final useCustomBackground = themeProvider.needsPhotoContrast;
-    // 试卷库只对完成教务认证的账号和管理员开放。
-    final user = context.watch<AuthProvider?>()?.user;
-    final canOpenExamPapers =
-        user != null && (user.isAdmin || user.hasEduAccess);
     final cleanLightMode = !useCustomBackground && !isDark;
     final foregroundColor = useCustomBackground
         ? Colors.white // theme: fixed 壁纸覆盖层对比前景
@@ -262,7 +259,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                   ),
                                 ),
                               ),
-                              if (canOpenExamPapers)
                               _buildToolCard(
                                 context,
                                 icon: Icons.library_books_outlined,
@@ -278,6 +274,15 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                         const ExamPaperLibraryScreen(),
                                   ),
                                 ),
+                              ),
+                              _buildToolCard(
+                                context,
+                                icon: Icons.file_download_outlined,
+                                color: const Color(
+                                    0xFF5B8DEF), // theme: fixed 工具入口、网站入口分类识别色
+                                title: '融智云考',
+                                subtitle: '题库导出 · GitHub',
+                                onTap: () => _openYunkao(context),
                               ),
                               _buildToolCard(
                                 context,
@@ -320,11 +325,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 title: '抽奖活动',
                                 themeKey: 'lottery',
                                 subtitle: '公平福利派送',
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => const LotteryScreen()),
-                                ),
+                                onTap: () => _openLottery(context),
                               ),
                             ],
                           ),
@@ -458,6 +459,18 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
         MaterialPageRoute(builder: (_) => const ErkeScoreScreen()));
   }
 
+  void _openLottery(BuildContext context) {
+    if (context.read<AuthProvider>().user == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请先登录')));
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const LotteryScreen()),
+    );
+  }
+
   void _openPhysicalTest(BuildContext context) {
     final auth = context.read<AuthProvider>();
     final academicStudentId =
@@ -504,6 +517,15 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
           context,
         ).showSnackBar(const SnackBar(content: Text('无法打开链接')));
       }
+    }
+  }
+
+  Future<void> _openYunkao(BuildContext context) async {
+    final opened = await ExternalNavigator.current()
+        .open(Uri.parse('https://github.com/zhouwu97/yunkao/releases'));
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('无法打开链接')));
     }
   }
 
@@ -827,12 +849,18 @@ class _PhysicalTestGate extends StatefulWidget {
 class _PhysicalTestGateState extends State<_PhysicalTestGate> {
   final _pwdCtrl = TextEditingController();
   bool _obscurePwd = true;
-  String _realPwd = '';
+  bool _restoringPassword = true;
+  bool _querying = false;
+  late final PublishSessionScope _session;
   final PhysicalCredentialStore _credentialStore = PhysicalCredentialStore();
 
   @override
   void initState() {
     super.initState();
+    final auth = context.read<AuthProvider>();
+    _session = PublishSessionScope(
+        accountId: auth.user!.id,
+        accountSessionEpoch: auth.accountSessionEpoch);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadSavedPassword());
   }
 
@@ -842,48 +870,55 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
     super.dispose();
   }
 
+  bool get _isCurrent {
+    if (!mounted) return false;
+    final auth = context.read<AuthProvider>();
+    final studentId = context.read<EduProvider?>()?.studentId.trim() ?? '';
+    return auth.isLoggedIn &&
+        auth.user?.id.toString() == widget.appUserId &&
+        _session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch) &&
+        (studentId.isEmpty ? auth.user?.studentId : studentId) ==
+            widget.username;
+  }
+
   Future<void> _loadSavedPassword() async {
-    final pwd = await _credentialStore.read(widget.username);
-    if (!mounted) return;
-    if (pwd != null && pwd.isNotEmpty) {
-      _realPwd = pwd;
-      _pwdCtrl.text = '•' * pwd.length;
-      if (mounted) setState(() {});
+    try {
+      final pwd = await _credentialStore.read(widget.username);
+      if (!_isCurrent) return;
+      setState(() => _restoringPassword = false);
+      if (pwd != null && pwd.isNotEmpty) {
+        _pwdCtrl.text = pwd;
+        await _queryManual();
+      }
+    } catch (_) {
+      if (!mounted || !_isCurrent) return;
+      setState(() => _restoringPassword = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('本机保存的密码暂时无法读取，请手动输入后重试')));
     }
   }
 
-  void _onPwdChanged(String val) {
-    final placeholder = '•' * _realPwd.length;
-    if (_realPwd.isNotEmpty && val != placeholder) {
-      final newText = val.replaceAll('•', '');
-      _realPwd = '';
-      _pwdCtrl.value = TextEditingValue(
-        text: newText,
-        selection: TextSelection.collapsed(offset: newText.length),
-      );
-    }
-  }
-
-  void _queryManual() {
-    final inputPwd = _pwdCtrl.text;
-    final pwd = inputPwd == ('•' * _realPwd.length) ? _realPwd : inputPwd;
-
+  Future<void> _queryManual() async {
+    if (_restoringPassword || _querying || !_isCurrent) return;
+    final pwd = _pwdCtrl.text;
     if (pwd.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请输入体测密码')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请输入体测密码')));
       return;
     }
-    Navigator.pushReplacement(
+    setState(() => _querying = true);
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PhysicalTestPage(
-          appUserId: context.read<AuthProvider>().user!.id.toString(),
+          appUserId: widget.appUserId,
           username: widget.username,
           password: pwd,
         ),
       ),
     );
+    if (mounted) setState(() => _querying = false);
   }
 
   @override
@@ -963,7 +998,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                             const SizedBox(height: 16),
                             TextField(
                               controller: _pwdCtrl,
-                              onChanged: _onPwdChanged,
+                              enabled: !_restoringPassword && !_querying,
                               obscureText: _obscurePwd,
                               style: const TextStyle(fontSize: 14),
                               decoration: InputDecoration(
@@ -996,7 +1031,9 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                         width: double.infinity,
                         height: 52,
                         child: ElevatedButton(
-                          onPressed: _queryManual,
+                          onPressed: _restoringPassword || _querying
+                              ? null
+                              : _queryManual,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Theme.of(context).primaryColor,
                             foregroundColor:
@@ -1006,9 +1043,9 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                             ),
                             elevation: 0,
                           ),
-                          child: const Text(
-                            '开始查询',
-                            style: TextStyle(
+                          child: Text(
+                            _restoringPassword ? '正在读取已保存密码…' : '开始查询',
+                            style: const TextStyle(
                                 fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                         ),

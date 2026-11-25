@@ -191,7 +191,7 @@ func newMarketTagsTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
+	if err := db.AutoMigrate(&models.AcademicAccountConfig{}, &models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
 		&models.AcademicIdentityBinding{},
 		&models.ExpLog{},
@@ -222,6 +222,7 @@ func createMarketTagsTestUser(t *testing.T, db *gorm.DB, studentID string) model
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	seedAcademicConfig(t, db, user)
 	if err := db.Create(&models.AcademicIdentityBinding{
 		UserID:              user.ID,
 		ProviderID:          models.AcademicProviderUndergraduate,

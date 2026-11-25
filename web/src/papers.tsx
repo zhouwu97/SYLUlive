@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ApiError, query, requestBlob, rows, useApi, write, type Entity } from "./api";
+import { ConnectionForm } from "./academic";
 import { Empty, Form, Pagination, QueryState, useUI } from "./ui";
 import { useAuth } from "./auth";
 import { displayName } from "./user-level";
@@ -17,8 +18,13 @@ export const paperFields = (paper: Entity = {}) => [
   { name: "exam_type", label: "考试类型", value: paper.exam_type, options: [["final", "期末"], ["midterm", "期中"], ["makeup", "补考"], ["retake", "重修"], ["other", "其他"]] as [string, string][] },
 ];
 
+function openPaperConfiguration(ui: ReturnType<typeof useUI>) {
+  ui.open("登记教务配置", <ConnectionForm dataset="courses" successMessage="教务配置已登记" />);
+}
+
 export function PaperUploadButton() {
   const ui = useUI(), auth = useAuth();
+  if (auth.user?.academic_configured === false && !["admin", "super_admin"].includes(auth.user.role)) return null;
   return <button className="btn primary" onClick={() => auth.requireUser() && ui.open("上传试卷", <PaperUpload />)}>上传 PDF</button>;
 }
 
@@ -29,7 +35,8 @@ export function PaperLibrary() {
   const page = Number(params.get("paper_page")) || 1;
   const path = mine ? "/api/exam-papers/my-submissions" : "/api/exam-papers";
   const guestBlocked = !auth.loading && !auth.user;
-  const q = useApi(guestBlocked ? null : query(path, { page, page_size: 20, keyword: params.get("keyword"), academic_year: params.get("academic_year"), semester: params.get("semester"), exam_type: params.get("exam_type"), status: mine ? params.get("paper_status") : undefined, sort: params.get("sort") }));
+  const needsConfig = auth.user?.academic_configured === false && !["admin", "super_admin"].includes(auth.user.role);
+  const q = useApi(!auth.user || needsConfig ? null : query(path, { page, page_size: 20, keyword: params.get("keyword"), academic_year: params.get("academic_year"), semester: params.get("semester"), exam_type: params.get("exam_type"), status: mine ? params.get("paper_status") : undefined, sort: params.get("sort") }));
   const update = (values: Record<string, string>) => { const next = new URLSearchParams(params); Object.entries(values).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key)); setParams(next); };
   const academicYears = Array.isArray(q.data?.academic_years) ? q.data.academic_years : [];
   const papers = rows(q.data);
@@ -44,8 +51,12 @@ export function PaperLibrary() {
       <button className="btn">搜索</button>
     </form>
     {guestBlocked ? (
-      <Empty icon="lock" title={mine ? "登录后查看我的提交" : "登录后访问试卷库"} description="历史试卷经授权向登录同学开放，登录后可检索、预览与上传投稿。">
+      <Empty icon="lock" title={mine ? "登录后查看我的提交" : "登录后访问试卷库"} description="登录并登记本科或研究生教务配置后，可检索、预览与投稿。">
         <button className="btn primary" onClick={auth.login}>登录</button>
+      </Empty>
+    ) : needsConfig || (q.error instanceof ApiError && q.error.code === "edu_verification_required") ? (
+      <Empty icon="lock" title="登记教务配置后使用试卷库" description="连接本科或研究生教务账号，完成登记后即可访问。">
+        <button className="btn primary" onClick={() => openPaperConfiguration(ui)}>去配置教务</button>
       </Empty>
     ) : (
       <QueryState query={q}>

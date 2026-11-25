@@ -1,0 +1,35 @@
+{
+    "name": "液态玻璃 · 同步对照",
+    "short_name": "玻璃对照",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#f5f6f8",
+    "theme_color": "#f5f6f8",
+    "description": "Flutter 液态玻璃原版与改进方案同步对照。",
+    "orientation": "any",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}

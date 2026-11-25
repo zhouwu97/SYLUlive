@@ -30,6 +30,7 @@ import 'package:shenliyuan/widgets/campus/campus_header.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/theme/app_palette.dart';
+import 'package:shenliyuan/models/schedule_color_option.dart';
 import 'package:shenliyuan/utils/app_navigator.dart';
 import 'package:shenliyuan/widgets/global_background_wrapper.dart';
 import 'package:shenliyuan/widgets/floating_bottom_nav.dart';
@@ -74,7 +75,8 @@ PreparedThemePack _pack(
     String color = '#A02080',
     bool wallpaper = false,
     bool material = false,
-    bool navigation = false}) {
+    bool navigation = false,
+    String navigationStyle = 'normal'}) {
   final json = themeFixture(
       id: '00000000-0000-4000-8000-00000000000$suffix', version: version)
     ..['shape'] = 'rounded';
@@ -104,7 +106,7 @@ PreparedThemePack _pack(
   }
   if (navigation) {
     json['bottomNav'] = {
-      'style': 'normal',
+      'style': navigationStyle,
       'iconTint': 'template',
       'icons': {
         'home': {'normal': 'icons/home.png', 'selected': 'icons/selected.png'},
@@ -153,6 +155,88 @@ void main() {
     provider.dispose();
     AppPreferencesStore.setCustomInstance(null);
     await temp.delete(recursive: true);
+  });
+
+  test('完整应用主题同步全部外观设置，覆盖旧液态关闭状态并在重启后保持', () async {
+    await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
+    await provider.setBottomNavClearMaterial(true);
+    final theme = await provider.installTheme(_pack(
+      wallpaper: true,
+      material: true,
+      navigation: true,
+      navigationStyle: 'liquid_glass',
+    ));
+    await provider.applyInstalledTheme(theme, ThemeGroup.applicable);
+    expect(provider.bottomNavStyle, BottomNavStyle.liquidGlass);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.bottomNavAnimationIntensity, 1);
+    expect(provider.bottomNavClearMaterial, isFalse);
+    expect(provider.bottomNavShaderEnabled, isTrue);
+    expect(provider.backgroundMode, AppBackgroundMode.custom);
+    expect(provider.componentOpacity, .8);
+    expect(provider.frostedGlassStrength, .3);
+    expect(provider.frostedGlassCustomStrength, .3);
+    expect(provider.customComponentOpacityLevel, closeTo(.2, .0001));
+    await provider.setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode.custom);
+    expect(provider.componentOpacity, .8);
+    expect(provider.frostedGlassStrength, .3);
+    await provider.setThemeMode(ThemeMode.dark);
+    expect(provider.componentOpacity, .95);
+    expect(provider.frostedGlassStrength, .7);
+    final restarted = ThemeProvider(loadOnStart: false, themePackStore: store);
+    addTearDown(restarted.dispose);
+    await restarted.loadThemeForTesting();
+    expect(restarted.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(restarted.bottomNavAnimationIntensity, 1);
+    expect(restarted.bottomNavClearMaterial, isFalse);
+    expect(restarted.backgroundMode, AppBackgroundMode.custom);
+    expect(restarted.componentOpacity, .95);
+  });
+
+  test('完整切换简洁主题还原未提供的外观分组，部分混搭保留未勾选分组', () async {
+    await provider.setBackgroundImage('morenbeijing.jpeg');
+    await provider.setFrostedGlassStrength(.8);
+    final detailed = await provider.installTheme(_pack(
+      wallpaper: true, material: true, navigation: true));
+    final simple = await provider.installTheme(_pack(suffix: '2'));
+    await provider.applyInstalledTheme(detailed, ThemeGroup.applicable);
+    await provider.applyInstalledTheme(simple, {ThemeGroup.colors});
+    expect(provider.backgroundImage, contains(detailed.directory));
+    expect(provider.componentOpacity, .8);
+    await provider.applyInstalledTheme(simple, ThemeGroup.applicable);
+    expect(provider.backgroundImage, isNull);
+    expect(provider.isCleanBackgroundMode, isTrue);
+    expect(provider.effectiveComponentOpacity, 1);
+    expect(provider.frostedGlass, isFalse);
+    expect(provider.bottomNavStyle, BottomNavStyle.liquidGlass);
+    expect(provider.appearance.group(ThemeGroup.navigation)!['icons'], isEmpty);
+    await provider.restorePreviousAppearance();
+    expect(provider.backgroundImage, contains(detailed.directory));
+    expect(provider.componentOpacity, .8);
+    expect(provider.bottomNavStyle, BottomNavStyle.normal);
+  });
+
+  test('工坊修改导航样式同步效果，同样式的图标编辑保留当前强度', () async {
+    final theme = await provider.installTheme(_pack(navigation: true));
+    await provider.applyInstalledTheme(theme, ThemeGroup.defaultApply);
+    final navigation = provider.appearance.group(ThemeGroup.navigation)!;
+    await provider.applyEditedAppearance(ThemeAppearance({
+      'navigation': {...navigation, 'style': 'liquid_glass', 'motion': null},
+    }), {ThemeGroup.navigation});
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.bottomNavAnimationIntensity, 1);
+    await provider.setBottomNavAnimationIntensity(.4);
+    await provider.applyEditedAppearance(ThemeAppearance({
+      'navigation': {
+        ...provider.appearance.group(ThemeGroup.navigation)!,
+        'style': 'liquid_glass',
+        'motion': null,
+        'iconTint': 'original',
+      },
+    }), {ThemeGroup.navigation});
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.custom);
+    expect(provider.bottomNavAnimationIntensity, .4);
+    expect(provider.appearance.group(ThemeGroup.navigation)!['iconTint'], 'original');
   });
 
   test('按组混搭、明暗切换和重启，保留手动偏好及来源', () async {
@@ -374,15 +458,26 @@ void main() {
   test('存储失败不应用一半外观，队列失败后可重试且只保留一个上次快照', () async {
     final preferences = _FailingPreferences();
     AppPreferencesStore.setCustomInstance(preferences);
-    final theme = await provider.installTheme(_pack());
+    await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
+    final theme = await provider.installTheme(_pack(material: true));
+    await provider.startTrial(installed: theme, groups: ThemeGroup.defaultApply);
     preferences.fail = true;
-    await expectLater(provider.applyInstalledTheme(theme, {ThemeGroup.colors}),
+    await expectLater(provider.applyInstalledTheme(theme, ThemeGroup.defaultApply),
         throwsA(isA<FileSystemException>()));
+    expect(provider.isInTrial, isTrue);
+    expect(provider.persistedAppearance.group(ThemeGroup.colors), isNull);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    await provider.endTrial();
     expect(provider.hasThemeColors, isFalse);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
+    expect(provider.componentOpacity, 1);
     expect(preferences.getString(ThemeProvider.previousAppearanceKey), isNull);
     preferences.fail = false;
-    await provider.applyInstalledTheme(theme, {ThemeGroup.colors});
+    await provider.applyInstalledTheme(theme, ThemeGroup.defaultApply);
     expect(provider.hasThemeColors, isTrue);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.componentOpacity, .8);
+    expect(provider.frostedGlassStrength, .3);
     expect(
         preferences.getString(ThemeProvider.previousAppearanceKey), isNotNull);
   });
@@ -402,6 +497,28 @@ void main() {
     expect(restarted.backgroundImage, 'last.jpg');
     expect(restarted.hasThemeColors, isTrue);
     restarted.dispose();
+  });
+
+  test('快速连续完整应用主题按顺序提交，最后一套生效且可撤回完整前一套', () async {
+    final preferences = _FailingPreferences();
+    AppPreferencesStore.setCustomInstance(preferences);
+    final a = await provider.installTheme(_pack(wallpaper: true, material: true));
+    final b = await provider.installTheme(_pack(suffix: '2', color: '#43A047'));
+    preferences.hold = Completer<void>();
+    final first = provider.applyInstalledTheme(a, ThemeGroup.defaultApply);
+    await preferences.entered.future;
+    final second = provider.applyInstalledTheme(b, ThemeGroup.defaultApply);
+    preferences.hold!.complete();
+    await Future.wait([first, second]);
+    expect(provider.buildAppTheme(Brightness.light).colorScheme.primary,
+        const Color(0xFF43A047));
+    expect(provider.backgroundImage, isNull);
+    expect(provider.componentOpacity, 1);
+    await provider.restorePreviousAppearance();
+    expect(provider.buildAppTheme(Brightness.light).colorScheme.primary,
+        const Color(0xFFA02080));
+    expect(provider.backgroundImage, contains(a.directory));
+    expect(provider.componentOpacity, .8);
   });
 
   test('分享安装包后可重新校验，重复安装不覆盖旧版本', () async {
@@ -593,6 +710,10 @@ void main() {
   });
 
   testWidgets('完整文件导入预览、按组应用与重复点击门禁', (tester) async {
+    await tester.runAsync(() async {
+      await provider.setBackgroundImage('morenbeijing.jpeg');
+      await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
+    });
     final source = File(path.join(temp.path, 'import.sltheme'));
     await tester
         .runAsync(() => source.writeAsBytes(themeArchive(themeFixture())));
@@ -623,6 +744,8 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(provider.hasThemeColors, isTrue);
+    expect(provider.backgroundImage, isNull);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
     expect(find.text('打开导入'), findsOneWidget);
     expect((await tester.runAsync(provider.installedThemes))!.length, 1);
     final confirmation = tester.widget<SnackBar>(find.byType(SnackBar));
@@ -633,6 +756,8 @@ void main() {
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 80)));
     await tester.pumpAndSettle();
     expect(provider.hasThemeColors, isFalse);
+    expect(provider.backgroundImage, 'morenbeijing.jpeg');
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -740,10 +865,11 @@ void main() {
   test('全局试用会话不写偏好、重启自动结束，applyTrial 保存试用前快照', () async {
     final prefs = await AppPreferencesStore.getInstance();
     await provider.setBackgroundImage('before_trial.jpg');
+    await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
     final uninstalled = _pack(suffix: '3', color: '#D84315', wallpaper: true);
     await provider.startTrial(
       pack: uninstalled,
-      groups: {ThemeGroup.colors, ThemeGroup.wallpapers},
+      groups: ThemeGroup.defaultApply,
     );
     expect(provider.isInTrial, isTrue);
     expect(
@@ -751,6 +877,8 @@ void main() {
       const Color(0xffd84315),
     );
     expect(provider.usesThemeWallpapers, isTrue);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.bottomNavShaderEnabled, isTrue);
     expect(prefs.getString(ThemeProvider.appearanceKey), isNull);
     expect(prefs.getString(ThemeProvider.previousAppearanceKey), isNull);
 
@@ -760,12 +888,13 @@ void main() {
     expect(restarted.isInTrial, isFalse);
     expect(restarted.hasThemeColors, isFalse);
     expect(restarted.backgroundImage, 'before_trial.jpg');
+    expect(restarted.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
     restarted.dispose();
 
     // 重新开始试用并结束：恢复原外观且暂存目录清理
     await provider.startTrial(
       pack: uninstalled,
-      groups: {ThemeGroup.colors, ThemeGroup.wallpapers},
+      groups: ThemeGroup.defaultApply,
     );
     final stagingDir = provider.trial!.stagingDirectory!;
     expect(await Directory(stagingDir).exists(), isTrue);
@@ -773,20 +902,23 @@ void main() {
     expect(provider.isInTrial, isFalse);
     expect(provider.hasThemeColors, isFalse);
     expect(provider.backgroundImage, 'before_trial.jpg');
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
     expect(await Directory(stagingDir).exists(), isFalse);
 
     // 再次试用并应用：持久化写入且可撤销回试用前外观
     await provider.startTrial(
       pack: uninstalled,
-      groups: {ThemeGroup.colors, ThemeGroup.wallpapers},
+      groups: ThemeGroup.defaultApply,
     );
     await provider.applyTrial();
     expect(provider.isInTrial, isFalse);
     expect(provider.hasThemeColors, isTrue);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
     expect(prefs.getString(ThemeProvider.appearanceKey), isNotNull);
     await provider.restorePreviousAppearance();
     expect(provider.hasThemeColors, isFalse);
     expect(provider.backgroundImage, 'before_trial.jpg');
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
   });
 
   test('导出当前混搭外观包含最终生效参数与资源，并可在新环境重新导入', () async {
@@ -806,6 +938,8 @@ void main() {
     );
     await provider.setThemeMode(ThemeMode.light);
     await provider.setComponentOpacity(.86);
+    await provider.setScheduleColorPreference(text: true, value: ScheduleColorOption.purple);
+    await provider.setScheduleColorPreference(text: false, value: ScheduleColorOption.green);
     expect(provider.currentAppearanceSummary, contains('混搭外观'));
 
     final exportedBytes = await provider.exportCurrentAppearance(
@@ -842,6 +976,9 @@ void main() {
       AppShapePreset.rounded,
     );
     expect(cleanProvider.effectiveComponentOpacity, .86);
+    final palette = cleanProvider.buildAppTheme(Brightness.light).extension<AppPalette>()!;
+    expect(palette.courseCardText, ScheduleColorOption.purple.color);
+    expect(palette.coursePalette, everyElement(ScheduleColorOption.green.color));
     expect(cleanProvider.usesThemeWallpapers, isTrue);
     expect(
       cleanProvider.appearance.group(ThemeGroup.navigation)!['icons']['home'],

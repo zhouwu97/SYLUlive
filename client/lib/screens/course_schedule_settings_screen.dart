@@ -2,32 +2,14 @@ import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../providers/theme_provider.dart';
 import '../widgets/app_page_background.dart';
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/app_card.dart';
-
-enum ScheduleColorOption {
-  theme('默认', null),
-  dark('深色', Color(0xFF1F2937)),
-  white('白色', Colors.white),
-  blue('蓝色', Color(0xFF2563EB)),
-  green('绿色', Color(0xFF15803D)),
-  purple('紫色', Color(0xFF7E22CE)),
-  orange('橙色', Color(0xFFC2410C));
-
-  const ScheduleColorOption(this.label, this.color);
-
-  final String label;
-  final Color? color;
-
-  static ScheduleColorOption fromStorage(String? value) {
-    for (final option in values) {
-      if (option.name == value) return option;
-    }
-    return theme;
-  }
-}
+import '../models/schedule_color_option.dart';
+export '../models/schedule_color_option.dart';
 
 class CourseScheduleSettingsSnapshot {
   const CourseScheduleSettingsSnapshot({
@@ -194,57 +176,62 @@ class _CourseScheduleSettingsScreenState
     final selected = await showAppModalBottomSheet<ScheduleColorOption>(
       context: context,
       showDragHandle: true,
-      builder: (context) => Theme(
-        data: sheetTheme,
-        child: SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      forText ? '课表文字颜色' : '课程块颜色',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
+      builder: (context) {
+        final theme = context.watch<ThemeProvider?>();
+        return Theme(
+          data: sheetTheme,
+          child: SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        forText ? '课表文字颜色' : '课程块颜色',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                for (final option in ScheduleColorOption.values)
-                  ListTile(
-                    leading: option.color == null
-                        ? const Icon(Icons.palette_outlined)
-                        : Container(
-                            width: 24,
-                            height: 24,
-                            decoration: BoxDecoration(
-                              color: option.color,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Theme.of(context).colorScheme.outline,
+                  for (final option in ScheduleColorOption.values)
+                    ListTile(
+                      leading: option.color == null
+                          ? const Icon(Icons.palette_outlined)
+                          : Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: option.color,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Theme.of(context).colorScheme.outline,
+                                ),
                               ),
                             ),
-                          ),
-                    title: Text(option == ScheduleColorOption.theme
-                        ? (forText ? '默认（跟随主题）' : '默认（按课程配色）')
-                        : option.label),
-                    trailing: option ==
-                            (forText
-                                ? _snapshot.scheduleTextColor
-                                : _snapshot.scheduleCourseColor)
-                        ? const Icon(Icons.check)
-                        : null,
-                    onTap: () => Navigator.of(context).pop(option),
-                  ),
-              ],
+                      title: Text(option == ScheduleColorOption.theme
+                          ? (forText ? '默认（跟随主题）' : '默认（按课程配色）')
+                          : option.label),
+                      trailing: option ==
+                              (forText
+                                  ? theme?.scheduleTextColorPreference ??
+                                      _snapshot.scheduleTextColor
+                                  : theme?.scheduleCourseColorPreference ??
+                                      _snapshot.scheduleCourseColor)
+                          ? const Icon(Icons.check)
+                          : null,
+                      onTap: () => Navigator.of(context).pop(option),
+                    ),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
     if (!mounted || selected == null) return;
     await _runAndRefresh(() => forText
@@ -300,6 +287,11 @@ class _CourseScheduleSettingsScreenState
   Widget _buildPageWithBackground(BuildContext context) {
     final baseTheme = Theme.of(context);
     final pageBackground = CampusTheme.pageBackground(context);
+    final theme = context.watch<ThemeProvider?>();
+    final textColor =
+        theme?.scheduleTextColorPreference ?? _snapshot.scheduleTextColor;
+    final courseColor =
+        theme?.scheduleCourseColorPreference ?? _snapshot.scheduleCourseColor;
 
     return Theme(
       data: CampusTheme.withBrandAccent(baseTheme),
@@ -449,20 +441,18 @@ class _CourseScheduleSettingsScreenState
                 _CourseSettingsTile(
                   icon: Icons.format_color_text,
                   title: '课表文字颜色',
-                  subtitle:
-                      _snapshot.scheduleTextColor == ScheduleColorOption.theme
-                          ? '默认，跟随当前主题'
-                          : _snapshot.scheduleTextColor.label,
+                  subtitle: textColor == ScheduleColorOption.theme
+                      ? '默认，跟随当前主题'
+                      : textColor.label,
                   enabled: !_busy,
                   onTap: () => _pickDisplayColor(forText: true),
                 ),
                 _CourseSettingsTile(
                   icon: Icons.palette_outlined,
                   title: '课程块颜色',
-                  subtitle:
-                      _snapshot.scheduleCourseColor == ScheduleColorOption.theme
-                          ? '默认，按课程配色'
-                          : '${_snapshot.scheduleCourseColor.label}，统一用于本周课程',
+                  subtitle: courseColor == ScheduleColorOption.theme
+                      ? '默认，按课程配色'
+                      : '${courseColor.label}，统一用于本周课程',
                   enabled: !_busy,
                   onTap: () => _pickDisplayColor(forText: false),
                 ),

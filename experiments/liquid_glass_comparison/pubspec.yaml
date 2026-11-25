@@ -1,0 +1,22 @@
+name: liquid_glass_comparison
+description: Synchronized FlutterLiquidglass reference and refined optical demo.
+publish_to: none
+version: 1.0.0+1
+environment:
+  sdk: ^3.11.5
+dependencies:
+  flutter:
+    sdk: flutter
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
+  shaders:
+    - shaders/liquid_glass.frag
+    - shaders/refined_glass.frag
+  fonts:
+    - family: NotoSansCJKsc
+      fonts:
+        - asset: assets/fonts/NotoSansCJKsc-Regular.otf

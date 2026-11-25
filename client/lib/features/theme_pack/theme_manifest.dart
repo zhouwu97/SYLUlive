@@ -29,6 +29,8 @@ enum ThemeGroup {
     layout,
     decoration,
   };
+
+  static final defaultApply = applicable.difference({launcherIcon});
 }
 
 class ThemePackError implements Exception {

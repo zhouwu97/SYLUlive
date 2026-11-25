@@ -31,6 +31,17 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/services/publish_session_scope.dart';
 
 import '../helpers/load_test_fonts.dart';
+import '../helpers/emoji_flow_qa.dart' show captureEmojiQA;
+
+class _DefaultThemePreferences extends MemoryPreferencesStore {
+  bool failAppearanceWrite = false;
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    if (key == ThemeProvider.appearanceKey && failAppearanceWrite) return false;
+    return super.setString(key, value);
+  }
+}
 
 class _TestAuth extends AuthProvider {
   _TestAuth(super.dio, {int id = 1, String role = 'user'})
@@ -235,6 +246,8 @@ Widget _wrapWithProviders({
   required _TestAuth auth,
   required ThemeProvider themeProvider,
   required Widget home,
+  ThemeMode? themeMode,
+  double textScale = 1,
 }) {
   return MultiProvider(
     providers: [
@@ -244,8 +257,12 @@ Widget _wrapWithProviders({
     child: MaterialApp(
       theme: themeProvider.buildAppTheme(Brightness.light),
       darkTheme: themeProvider.buildAppTheme(Brightness.dark),
-      builder: (context, child) => ThemeTrialBannerHost(
-        child: child ?? const SizedBox.shrink(),
+      themeMode: themeMode,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+        child: ThemeTrialBannerHost(
+          child: child ?? const SizedBox.shrink(),
+        ),
       ),
       home: home,
     ),
@@ -653,6 +670,155 @@ void main() {
     await streamCtrl.close();
   });
 
+  testWidgets('商城内置经典主题离线应用、取消、失败重试与筛选', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final prefs = _DefaultThemePreferences();
+    AppPreferencesStore.setCustomInstance(prefs);
+    final pending = Completer<void>();
+    final dio = Dio(BaseOptions(baseUrl: 'https://fixture.test/api'));
+    dio.httpClientAdapter = _StreamStubAdapter((options) async {
+      await pending.future;
+      return ResponseBody.fromString('offline', 502);
+    });
+    final auth = _TestAuth(dio)..active = null;
+    final boundary = GlobalKey();
+    await themeProvider.setBackgroundImage('morenbeijing.jpeg');
+    await themeProvider.setComponentOpacity(.8);
+    await tester.pumpWidget(_wrapWithProviders(
+      auth: auth,
+      themeProvider: themeProvider,
+      home: RepaintBoundary(
+        key: boundary,
+        child: ThemeStoreScreen(repository: ThemeStoreRepository(dio)),
+      ),
+    ));
+    await _settleIo(tester);
+    final classic = find.byKey(const ValueKey('theme-store-original-default'));
+    expect(classic, findsOneWidget);
+    expect(find.byKey(const ValueKey('theme-store-skeleton')), findsOneWidget);
+    await tester.tap(classic);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(themeProvider.effectiveComponentOpacity, .8);
+
+    pending.complete();
+    await _settleIo(tester);
+    expect(find.textContaining('加载主题商城失败'), findsOneWidget);
+    await captureEmojiQA(tester, boundary, 'theme-store-classic-offline');
+    prefs.failAppearanceWrite = true;
+    await tester.ensureVisible(classic);
+    await tester.tap(classic);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('应用'));
+    await _settleIo(tester);
+    expect(find.text('默认主题未能应用，请重试。'), findsOneWidget);
+    expect(themeProvider.effectiveComponentOpacity, .8);
+
+    prefs.failAppearanceWrite = false;
+    ScaffoldMessenger.of(tester.element(classic)).clearSnackBars();
+    await tester.pumpAndSettle();
+    await tester.tap(classic);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('应用'));
+    await _settleIo(tester);
+    expect(find.text('已应用默认主题（经典）'), findsOneWidget);
+    expect(themeProvider.effectiveComponentOpacity, 1);
+
+    ScaffoldMessenger.of(tester.element(classic)).clearSnackBars();
+    await tester.pumpAndSettle();
+    final search = find.byKey(const ValueKey('theme-store-search-input'));
+    await tester.ensureVisible(search);
+    await tester.enterText(search, '经典');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await _settleIo(tester);
+    expect(classic, findsOneWidget);
+    await tester.enterText(search, '不存在的主题');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await _settleIo(tester);
+    expect(classic, findsNothing);
+    await tester.tap(find.byTooltip('清除搜索'));
+    await _settleIo(tester);
+    await tester.tap(find.text('浅色'));
+    await _settleIo(tester);
+    expect(classic, findsOneWidget);
+    final cute = find.text('可爱');
+    await tester.ensureVisible(cute);
+    await tester.tap(cute);
+    await _settleIo(tester);
+    expect(classic, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('主题商城深色大字号显示内置主题和官方主题各一次', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final requestedSorts = <String>[];
+    var catalogVersion = 1;
+    final installed = await tester.runAsync(() async {
+      final pack = await ThemePackCodec.decode(sharedPackBytes, appVersion: '1.7.15');
+      return themeProvider.installTheme(pack);
+    });
+    final dio = Dio(BaseOptions(baseUrl: 'https://fixture.test/api'));
+    dio.httpClientAdapter = _StreamStubAdapter((options) async {
+      requestedSorts.add(options.queryParameters['sort'] as String);
+      return ResponseBody.fromString(jsonEncode({
+        'items': [{
+          'familyId': '11111111-2222-4333-8444-555555555555',
+          'version': catalogVersion,
+          'name': '明风 · 晴蓝 V2',
+          'previewDark': '/unavailable-preview.jpg',
+          'source': 'official',
+          'author': {'nickname': '超级管理员'},
+        }],
+      }), 200, headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      });
+    });
+    final boundary = GlobalKey();
+    await tester.pumpWidget(_wrapWithProviders(
+      auth: _TestAuth(dio),
+      themeProvider: themeProvider,
+      themeMode: ThemeMode.dark,
+      textScale: 2,
+      home: RepaintBoundary(
+        key: boundary,
+        child: ThemeStoreScreen(repository: ThemeStoreRepository(dio)),
+      ),
+    ));
+    for (var i = 0; i < 40 && requestedSorts.isEmpty; i++) {
+      await _settleIo(tester);
+    }
+    await _settleIo(tester);
+    expect(requestedSorts, ['latest']);
+    expect(find.text('默认主题（经典）'), findsOneWidget);
+    expect(find.text('明风 · 晴蓝 V2'), findsOneWidget);
+    final localPreview = FileImage(File(
+      '${installed!.directory}/${(installed.manifest.data['preview'] as Map)['dark']}',
+    ));
+    expect(find.image(localPreview), findsOneWidget);
+    expect(find.byWidgetPredicate(
+      (widget) => widget is Image && widget.image is NetworkImage,
+    ), findsNothing);
+    await captureEmojiQA(tester, boundary, 'theme-store-classic-dark-large');
+    expect(tester.takeException(), isNull);
+    catalogVersion = 2;
+    await tester.tap(find.text('热门'));
+    for (var i = 0; i < 40 && find.image(localPreview).evaluate().isNotEmpty; i++) {
+      await _settleIo(tester);
+    }
+    await _settleIo(tester);
+    expect(find.image(localPreview), findsNothing);
+    expect(find.byWidgetPredicate(
+      (widget) => widget is Image && widget.image is NetworkImage,
+    ), findsOneWidget);
+  });
+
   testWidgets('分页期间切换排序后可继续翻页', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(800, 1400);
@@ -820,6 +986,7 @@ void main() {
     );
     await _settleIo(tester);
     expect(find.text('主题商城暂未开放'), findsOneWidget);
+    expect(find.byKey(const ValueKey('theme-store-original-default')), findsOneWidget);
 
     storeState = 'error';
     await tester.tap(find.text('重试'));
@@ -829,13 +996,14 @@ void main() {
     storeState = 'empty';
     await tester.tap(find.text('重试'));
     await _settleIo(tester);
-    expect(find.textContaining('暂无符合条件的主题'), findsOneWidget);
+    expect(find.text('默认主题（经典）'), findsOneWidget);
+    expect(find.textContaining('暂无符合条件的主题'), findsNothing);
 
     storeState = 'loaded';
     await tester.tap(find.text('热门'));
     await _settleIo(tester);
-    expect(find.text('官方主题'), findsOneWidget);
-    expect(find.text('海盐蓝'), findsWidgets);
+    expect(find.byKey(const ValueKey('theme-store-official-shelf')), findsNothing);
+    expect(find.text('海盐蓝'), findsOneWidget);
     final qaDirectory = Platform.environment['THEME_WORKSHOP_QA_DIR'];
     if (qaDirectory != null) {
       await tester.binding.setSurfaceSize(const Size(390, 844));

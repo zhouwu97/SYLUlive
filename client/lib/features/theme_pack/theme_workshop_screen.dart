@@ -264,6 +264,7 @@ class ThemeWorkshopStateData {
       themeId: newUuid(),
       light: makeVariant(Brightness.light),
       dark: makeVariant(Brightness.dark),
+      bottomNavStyle: 'liquid_glass',
     );
   }
 
@@ -288,20 +289,17 @@ class ThemeWorkshopStateData {
         brightness: brightness,
         schemeVariant: ThemeResolver.parseSchemeVariant(scheme),
       );
-      final targetTokens = storedColor != null
-          ? Map<String, String>.from(storedColor['tokens'] as Map)
-          : AppPalette.defaults(brightness).toJson();
+      final effectivePalette = appearance.buildTheme(brightness).extension<AppPalette>()!;
+      final targetTokens = effectivePalette.toJson();
       final overrides = <String, String>{
         for (final entry in targetTokens.entries)
           if (derived[entry.key] != entry.value.toUpperCase())
             entry.key: entry.value.toUpperCase(),
       };
-      final palette = storedColor != null
-          ? [
-              for (final c in storedColor['coursePalette'] as List)
-                (c as String).toUpperCase(),
-            ]
-          : const ['#448AFF', '#00C853', '#9C27B0', '#FF5252', '#FF9800'];
+      final palette = [
+        for (final color in effectivePalette.coursePalette)
+          '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+      ];
 
       final walls = <String, Map<String, dynamic>?>{};
       if (wallsGroup != null && wallsGroup['legacy'] == null) {
@@ -363,8 +361,9 @@ class ThemeWorkshopStateData {
     base.shape =
         appearance.group(ThemeGroup.shape)?['value'] as String? ?? 'standard';
     final nav = appearance.group(ThemeGroup.navigation);
+    // 编辑现有外观时，未指定的样式继续由设备偏好决定。
+    base.bottomNavStyle = nav?['style'] as String?;
     if (nav != null) {
-      base.bottomNavStyle = nav['style'] as String?;
       base.iconTint = nav['iconTint'] as String? ?? 'template';
       final rawIcons = nav['icons'] as Map? ?? const {};
       for (final slot in const ['home', 'market', 'schedule', 'campus', 'me']) {
@@ -477,7 +476,7 @@ class ThemeWorkshopStateData {
       },
       'navigation': {
         'source': null,
-        'style': bottomNavStyle ?? 'floating',
+        'style': bottomNavStyle ?? 'liquid_glass',
         'iconTint': iconTint,
         'icons': navIcons,
       },

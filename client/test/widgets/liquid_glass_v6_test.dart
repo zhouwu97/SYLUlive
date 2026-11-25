@@ -49,9 +49,10 @@ void main() {
       double dpr = 1,
       double flow = 0,
       bool expanded = false,
+      ui.Image? source,
     }) async {
       final shader = program.fragmentShader();
-      shader.setImageSampler(0, scene);
+      shader.setImageSampler(0, source ?? scene);
       shader.setImageSampler(1, tabs);
       final values = <double>[
         360,
@@ -109,6 +110,7 @@ void main() {
     final refracted = await render(false);
     final blurred = await render(true);
     final retina = await render(false, dpr: 3);
+    final fractional = await render(false, dpr: 1.5);
     Future<Uint8List> pixels(ui.Image image) async => (await image.toByteData(
           format: ui.ImageByteFormat.rawRgba,
         ))!
@@ -117,13 +119,16 @@ void main() {
     final a = await pixels(refracted);
     final b = await pixels(blurred);
     final c = await pixels(retina);
+    final f = await pixels(fractional);
     var differences = 0;
     var dprDifference = 0;
+    var fractionalDifference = 0;
     for (var y = 16; y < 48; y++) {
       for (var x = 142; x < 158; x++) {
         final at = (y * 360 + x) * 4;
         differences += (a[at] - b[at]).abs() + (a[at + 2] - b[at + 2]).abs();
         dprDifference += (a[at] - c[at]).abs();
+        fractionalDifference += (a[at] - f[at]).abs();
         expect(a[at + 3], 255);
       }
     }
@@ -138,6 +143,46 @@ void main() {
       reason: 'Optical distances must stay in logical pixels',
     );
     expect(a[3], 0, reason: 'Outside the capsule stays transparent');
+    expect(fractionalDifference / (32 * 16), lessThan(1));
+    var partialCoverage = 0;
+    for (var i = 0; i < f.length; i += 4) {
+      final alpha = f[i + 3];
+      if (alpha > 0 && alpha < 255) {
+        partialCoverage++;
+        for (var channel = 0; channel < 3; channel++) {
+          expect(f[i + channel], lessThanOrEqualTo(alpha + 1),
+              reason: 'Antialiased edges must remain premultiplied');
+        }
+      }
+    }
+    expect(partialCoverage, greaterThan(10));
+    final neutralRecorder = ui.PictureRecorder();
+    Canvas(neutralRecorder).drawColor(const Color(0xffd0d0d0), BlendMode.src);
+    final neutralPicture = neutralRecorder.endRecording();
+    final neutralScene = await neutralPicture.toImage(456, 160);
+    neutralPicture.dispose();
+    final spectral = await render(false, source: neutralScene);
+    final neutralCompare = await render(true, source: neutralScene);
+    final sp = await pixels(spectral);
+    final cp = await pixels(neutralCompare);
+    int channelSpread(Uint8List data, int x, int y) {
+      final at = (y * 360 + x) * 4;
+      final channels = data.sublist(at, at + 3)..sort();
+      return channels.last - channels.first;
+    }
+
+    var spectralEdgePixels = 0;
+    for (var y = 0; y < 64; y++) {
+      for (var x = 50; x < 120; x++) {
+        if (channelSpread(sp, x, y) - channelSpread(cp, x, y) > 10) {
+          spectralEdgePixels++;
+        }
+      }
+    }
+    expect(spectralEdgePixels, greaterThan(50),
+        reason: 'A uniform scene must still reveal the colored reflection rim');
+    expect(channelSpread(sp, 80, 32), lessThanOrEqualTo(3),
+        reason: 'Spectral reflection must stay at the edge, not tint the body');
     final right = await render(false, flow: .85, expanded: true);
     final left = await render(false, flow: -.85, expanded: true);
     final neutral = await render(false, expanded: true);
@@ -168,6 +213,8 @@ void main() {
       'optics-fluid-right': right,
       'optics-fluid-left': left,
       'optics-fluid-rest': neutral,
+      'optics-spectral-neutral': spectral,
+      'optics-neutral-compare': neutralCompare,
     }.entries) {
       File('${directory.path}/${entry.key}.png').writeAsBytesSync(
         (await entry.value.toByteData(
@@ -182,8 +229,12 @@ void main() {
     refracted.dispose();
     blurred.dispose();
     retina.dispose();
+    fractional.dispose();
     right.dispose();
     left.dispose();
     neutral.dispose();
+    neutralScene.dispose();
+    spectral.dispose();
+    neutralCompare.dispose();
   });
 }

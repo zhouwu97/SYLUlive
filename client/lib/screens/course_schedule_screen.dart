@@ -182,8 +182,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   double _scheduleCardOpacity = 0.4;
   double _scheduleSlotHeight = defaultSlotHeight;
   double _scheduleFontScale = 1;
-  ScheduleColorOption _scheduleTextColor = ScheduleColorOption.theme;
-  ScheduleColorOption _scheduleCourseColor = ScheduleColorOption.theme;
   bool _courseReminderEnabled = false;
   int _reminderAdvanceMinutes = 5;
   bool _courseReminderBusy = false;
@@ -1958,19 +1956,16 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   static const _scheduleOpacityKey = 'card_opacity';
   static const _scheduleSlotHeightKey = 'slot_height';
   static const _scheduleFontScaleKey = 'schedule_font_scale';
-  static const _scheduleTextColorKey = 'schedule_text_color';
-  static const _scheduleCourseColorKey = 'schedule_course_color';
 
-  void _readScheduleTextAndColors(AppPreferencesStore prefs) {
+  void _readScheduleFontScale(AppPreferencesStore prefs) {
     _scheduleFontScale =
         (prefs.getDouble(_scheduleFontScaleKey) ?? 1).clamp(0.8, 1.5);
-    _scheduleTextColor = ScheduleColorOption.fromStorage(
-      prefs.getString(_scheduleTextColorKey),
-    );
-    _scheduleCourseColor = ScheduleColorOption.fromStorage(
-      prefs.getString(_scheduleCourseColorKey),
-    );
   }
+
+  ScheduleColorOption get _effectiveScheduleTextColor =>
+      context.read<ThemeProvider>().scheduleTextColorPreference;
+  ScheduleColorOption get _effectiveScheduleCourseColor =>
+      context.read<ThemeProvider>().scheduleCourseColorPreference;
 
   Future<void> _loadSettings() async {
     try {
@@ -1982,7 +1977,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _scheduleCardOpacity = prefs.getDouble(_scheduleOpacityKey) ?? 0.55;
         _scheduleSlotHeight =
             prefs.getDouble(_scheduleSlotHeightKey) ?? defaultSlotHeight;
-        _readScheduleTextAndColors(prefs);
+        _readScheduleFontScale(prefs);
         _reminderAdvanceMinutes =
             prefs.getInt('course_reminder_advance_minutes') ?? 5;
         _settingsLoaded = true; // 立即放行 UI 渲染
@@ -2094,7 +2089,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _scheduleCardOpacity = prefs.getDouble(_scheduleOpacityKey) ?? 0.55;
         _scheduleSlotHeight =
             prefs.getDouble(_scheduleSlotHeightKey) ?? defaultSlotHeight;
-        _readScheduleTextAndColors(prefs);
+        _readScheduleFontScale(prefs);
         _reminderAdvanceMinutes =
             prefs.getInt('course_reminder_advance_minutes') ?? 5;
       });
@@ -2125,8 +2120,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       scheduleCardOpacity: _scheduleCardOpacity,
       scheduleSlotHeight: _effectiveSlotHeight(),
       scheduleFontScale: _scheduleFontScale,
-      scheduleTextColor: _scheduleTextColor,
-      scheduleCourseColor: _scheduleCourseColor,
+      scheduleTextColor: _effectiveScheduleTextColor,
+      scheduleCourseColor: _effectiveScheduleCourseColor,
       defaultSlotHeight: defaultSlotHeight,
       minimumSlotHeight: 55,
       maximumSlotHeight: 120,
@@ -2303,21 +2298,17 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Future<void> _updateScheduleTextColorFromSettings(
     ScheduleColorOption value,
   ) async {
-    final prefs = await AppPreferencesStore.getInstance();
-    if (!await prefs.setString(_scheduleTextColorKey, value.name)) {
+    if (!await context.read<ThemeProvider>().setScheduleColorPreference(text: true, value: value)) {
       throw StateError('文字颜色未保存');
     }
-    if (mounted) setState(() => _scheduleTextColor = value);
   }
 
   Future<void> _updateScheduleCourseColorFromSettings(
     ScheduleColorOption value,
   ) async {
-    final prefs = await AppPreferencesStore.getInstance();
-    if (!await prefs.setString(_scheduleCourseColorKey, value.name)) {
+    if (!await context.read<ThemeProvider>().setScheduleColorPreference(text: false, value: value)) {
       throw StateError('课程块颜色未保存');
     }
-    if (mounted) setState(() => _scheduleCourseColor = value);
   }
 
   String _backgroundKeepAliveSubtitle() {
@@ -4431,7 +4422,7 @@ $classFilterRule
     final tokens = AppThemeTokens.of(context);
     final cardOpacity = isActive ? _scheduleCardOpacity : 0.2;
     // 非本周课程使用半透明灰底，文字跟随页面前景色。
-    final textColor = _scheduleTextColor.color ??
+    final textColor = _effectiveScheduleTextColor.color ??
         (isActive ? tokens.courseCardText : tokens.textPrimary);
     final top = (c.startSection - 1) * slotHeight;
     final h = c.span * slotHeight - 2;
@@ -4439,7 +4430,7 @@ $classFilterRule
     if (!isActive && wn != null && c.weeks.isNotEmpty) {
       inactiveLabel = c.weeks.first > wn ? '后期' : '前期';
     }
-    final base = (isActive ? _scheduleCourseColor.color : null) ??
+    final base = (isActive ? _effectiveScheduleCourseColor.color : null) ??
         getCourseColor(
           c.name,
           palette: tokens.coursePalette,

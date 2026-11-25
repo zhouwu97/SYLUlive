@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/app_theme_style.dart';
 import '../../theme/app_theme.dart';
+import '../../models/schedule_color_option.dart';
 import 'theme_contrast.dart';
 import 'theme_font_registry.dart';
 import 'theme_manifest.dart';
@@ -15,6 +16,11 @@ class ThemeAppearance {
   /// 原始外观显式覆盖壁纸和材质，避免重新启用用户后来保存的手动设置。
   const ThemeAppearance.originalDefault()
       : data = const {
+          'courseSettings': {
+            'source': _originalDefaultSource,
+            'textColor': 'theme',
+            'courseColor': 'theme',
+          },
           'wallpapers': {
             'source': _originalDefaultSource,
             'light': <String, dynamic>{},
@@ -36,6 +42,7 @@ class ThemeAppearance {
             'style': 'liquid_glass',
             'iconTint': 'template',
             'icons': <String, dynamic>{},
+            'motion': _liquidNavigationMotion,
           },
         };
 
@@ -44,6 +51,21 @@ class ThemeAppearance {
     'version': 1,
     'name': '默认主题（经典）',
   };
+
+  static const _liquidNavigationMotion = {
+    'performanceMode': 'high_quality',
+    'intensity': 1.0,
+    'clearMaterial': false,
+  };
+
+  static Map<String, dynamic> defaultNavigationMotion(String? style) =>
+      style == null || style == 'liquid_glass'
+          ? _liquidNavigationMotion
+          : const {
+              'performanceMode': 'off',
+              'intensity': 0.0,
+              'clearMaterial': false,
+            };
 
   final Map<String, dynamic> data;
 
@@ -56,6 +78,18 @@ class ThemeAppearance {
     final preset = group(ThemeGroup.shape)?['value'] as String? ?? 'standard';
     final fontFamily =
         ThemeFontRegistry.resolvedFamilyFor(group(ThemeGroup.font));
+    final courseSettings = data['courseSettings'] as Map?;
+    final textOverride = ScheduleColorOption.fromStorage(
+        courseSettings?['textColor'] as String?).color;
+    final courseOverride = ScheduleColorOption.fromStorage(
+        courseSettings?['courseColor'] as String?).color;
+    final defaultPalette = AppPalette.defaults(brightness);
+    final coursePalette = colors == null
+        ? defaultPalette.coursePalette
+        : [
+            for (final hex in colors['coursePalette'] as List)
+              ThemeContrast.parseColor(hex as String),
+          ];
     final materialGroup = group(ThemeGroup.material);
     Map? rawCardStyle;
     if (materialGroup != null && materialGroup['legacy'] != true) {
@@ -68,13 +102,16 @@ class ThemeAppearance {
       brightness: brightness,
       fontFamily: fontFamily,
       rawCardStyle: rawCardStyle,
-      palette: colors == null
+      palette: colors == null && textOverride == null && courseOverride == null
           ? null
-          : AppPalette.fromJson(colors['tokens'] as Map<String, dynamic>,
-              coursePalette: [
-                  for (final hex in colors['coursePalette'] as List)
-                    ThemeContrast.parseColor(hex as String)
-                ]),
+          : AppPalette.fromJson({
+              ...?colors?['tokens'] as Map<String, dynamic>?,
+              if (colors == null) ...defaultPalette.toJson(),
+              if (textOverride != null)
+                'courseCardText': '#${textOverride.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+            }, coursePalette: [
+              for (final color in coursePalette) courseOverride ?? color,
+            ]),
       seedColor: colors == null
           ? AppTheme.primaryColor
           : ThemeContrast.parseColor(colors['seedColor'] as String),
@@ -164,6 +201,11 @@ class ThemeAppearance {
     for (final group in selected) {
       switch (group) {
         case ThemeGroup.colors:
+          next['courseSettings'] = {
+            'source': source,
+            'textColor': 'theme',
+            'courseColor': 'theme',
+          };
           next['colors'] = {
             'source': source,
             for (final mode in ['light', 'dark'])
@@ -209,11 +251,16 @@ class ThemeAppearance {
               }
           };
         case ThemeGroup.navigation:
+          final navigation = resolve(manifest.data['bottomNav'] ?? const {})
+              as Map<String, dynamic>;
+          final style = navigation['style'] as String? ?? 'liquid_glass';
           next['navigation'] = {
             'source': source,
-            ...resolve(manifest.data['bottomNav']) as Map<String, dynamic>,
-            if (this.group(ThemeGroup.navigation)?['motion'] != null)
-              'motion': this.group(ThemeGroup.navigation)!['motion']
+            'iconTint': 'template',
+            'icons': <String, dynamic>{},
+            ...navigation,
+            'style': style,
+            'motion': defaultNavigationMotion(style),
           };
         case ThemeGroup.font:
           final fontData = manifest.data['font'];
@@ -222,6 +269,8 @@ class ThemeAppearance {
               'source': source,
               ...resolve(fontData) as Map<String, dynamic>,
             };
+          } else {
+            next.remove('font');
           }
         case ThemeGroup.widgets:
           next['widgets'] = {
@@ -234,6 +283,8 @@ class ThemeAppearance {
               'source': source,
               ...resolve(launcherData) as Map<String, dynamic>,
             };
+          } else {
+            next.remove('launcherIcon');
           }
         case ThemeGroup.layout:
           final layoutData = manifest.data['layout'] as Map?;

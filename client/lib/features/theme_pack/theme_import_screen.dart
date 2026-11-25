@@ -67,17 +67,12 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
 
   ThemeManifest? get _manifest => _installed?.manifest ?? _pack?.manifest;
 
-  static Set<ThemeGroup> _defaultSelectedGroups(ThemeManifest manifest) {
-    final supported = manifest.groups.intersection(ThemeGroup.applicable);
-    return supported.difference(const {ThemeGroup.launcherIcon});
-  }
-
   @override
   void initState() {
     super.initState();
     _brightness = context.read<ThemeProvider>().effectiveBrightness;
     if (_manifest != null) {
-      _selected.addAll(_defaultSelectedGroups(_manifest!));
+      _selected.addAll(ThemeGroup.defaultApply);
     }
     if (widget.incomingRequest != null) {
       ThemeIncomingCoordinator.instance.claimOwner(_ownerToken);
@@ -257,7 +252,7 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
         _pack = pack;
         _selected
           ..clear()
-          ..addAll(_defaultSelectedGroups(pack.manifest));
+          ..addAll(ThemeGroup.defaultApply);
       });
     } on ThemePackError catch (error) {
       if (isStillCurrent()) {
@@ -574,10 +569,13 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
                       title: Text(group.label),
                       subtitle: manifest.groups.contains(group)
                           ? null
-                          : const Text('此主题未包含'),
-                      value: manifest.groups.contains(group) &&
-                          _selected.contains(group),
-                      onChanged: _saving || !manifest.groups.contains(group)
+                          : Text(group == ThemeGroup.launcherIcon
+                              ? '此主题未包含'
+                              : '使用默认${group.label}，取消勾选可保留当前设置'),
+                      value: _selected.contains(group),
+                      onChanged: _saving ||
+                              (group == ThemeGroup.launcherIcon &&
+                                  !manifest.groups.contains(group))
                           ? null
                           : (value) => setState(() {
                                 value!
@@ -594,7 +592,7 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
                         '${manifest.groups.difference(ThemeGroup.applicable).map((group) => group.label).join('、')}已随主题保存，后续版本开放应用。',
                       ),
                     ),
-                  const Text('明暗模式和文字大小沿用你的设置。未勾选的部分保持当前外观。'),
+                  const Text('默认完整应用主题，未提供的外观项目恢复默认。取消勾选可保留当前设置。明暗模式和文字大小沿用你的设置。'),
                 ],
               ],
             ),

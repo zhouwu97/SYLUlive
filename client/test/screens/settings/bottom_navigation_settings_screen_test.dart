@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +10,7 @@ import 'package:shenliyuan/widgets/liquid_bottom_nav.dart';
 import 'package:shenliyuan/widgets/floating_bottom_nav.dart';
 import 'package:shenliyuan/widgets/bottom_nav_setup_hint.dart';
 import 'package:shenliyuan/widgets/theme_store_setup_hint.dart';
+import 'package:shenliyuan/widgets/settings/settings_slider_tile.dart';
 
 Widget app(ThemeProvider theme) => ChangeNotifierProvider.value(
     value: theme,
@@ -201,6 +204,46 @@ void main() {
     await theme.loadThemeForTesting();
   });
   tearDown(() => theme.dispose());
+
+  for (final (style, label) in [
+    ('normal', '标准底栏'),
+    ('floating', '悬浮底栏'),
+    ('liquid_glass', '液态玻璃底栏'),
+  ]) {
+    testWidgets('主题 $style 的设置预览和当前效果一致，重新选择预设可启用液态玻璃', (tester) async {
+      final prefs = await AppPreferencesStore.getInstance();
+      await prefs.setString(ThemeProvider.appearanceKey, jsonEncode({
+        'navigation': {'style': style, 'iconTint': 'template', 'icons': {}},
+      }));
+      theme.dispose();
+      theme = ThemeProvider(loadOnStart: false);
+      await theme.loadThemeForTesting();
+      await tester.pumpWidget(app(theme));
+      await tester.pumpAndSettle();
+      final liquid = style == 'liquid_glass';
+      expect(find.byType(LiquidBottomNav), liquid ? findsOneWidget : findsNothing);
+      expect(find.byType(FloatingBottomNav), liquid ? findsNothing : findsOneWidget);
+      expect(find.textContaining('当前效果：$label'), findsOneWidget);
+      expect(tester.widget<RadioGroup<BottomNavPerformanceMode>>(
+        find.byType(RadioGroup<BottomNavPerformanceMode>)).groupValue,
+        liquid ? BottomNavPerformanceMode.highQuality : BottomNavPerformanceMode.off);
+      expect(tester.widget<SettingsSliderTile>(
+        find.byKey(const ValueKey('bottom-nav-intensity'))).value, liquid ? 1 : 0);
+      if (!liquid) {
+        expect(tester.widget<FloatingBottomNav>(find.byType(FloatingBottomNav)).docked,
+            style == 'normal');
+        await tester.scrollUntilVisible(find.text('高画质'), 180,
+            scrollable: find.byType(Scrollable).first);
+        await tester.ensureVisible(find.text('高画质'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('高画质'));
+        await tester.pumpAndSettle();
+        expect(theme.bottomNavStyle, BottomNavStyle.liquidGlass);
+        expect(theme.appearance.data['navigation']['icons'], isEmpty);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('新底栏默认完整画质，设置页不再提供旧样式', (tester) async {
     await tester.pumpWidget(app(theme));

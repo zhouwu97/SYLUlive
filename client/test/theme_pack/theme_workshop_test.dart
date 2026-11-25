@@ -11,6 +11,8 @@ import 'package:material_color_utilities/material_color_utilities.dart';
 import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/features/theme_pack/theme_contrast.dart';
+import 'package:shenliyuan/features/theme_pack/theme_appearance.dart';
+import 'package:shenliyuan/features/theme_pack/theme_workshop_samples.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_codec.dart';
 import 'package:shenliyuan/features/theme_pack/theme_manifest.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_store.dart';
@@ -65,6 +67,49 @@ void main() {
     provider.dispose();
     AppPreferencesStore.setCustomInstance(null);
     await temp.delete(recursive: true);
+  });
+
+  testWidgets('工坊预览显示主题的空态和失败插画，加载和权限仍保留状态图标', (tester) async {
+    final imagePath = path.join(temp.path, 'state.png');
+    await tester.runAsync(() => File(imagePath).writeAsBytes(themeImage(64, 64)));
+    final appearance = ThemeAppearance({
+      'decoration': {
+        'light': {
+          'illustrations': {'empty': imagePath, 'error': imagePath},
+        },
+      },
+    });
+    for (final state in [
+      WorkshopSampleState.empty,
+      WorkshopSampleState.error,
+      WorkshopSampleState.loading,
+      WorkshopSampleState.permission,
+    ]) {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ThemeWorkshopSampleStage(
+            appearance: appearance,
+            brightness: Brightness.light,
+            assetResolver: (file) => FileImage(File(file)),
+            page: WorkshopSamplePage.market,
+            sampleState: state,
+          ),
+        ),
+      ));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(const ValueKey('theme-state-art-empty')),
+          state == WorkshopSampleState.empty ? findsOneWidget : findsNothing);
+      expect(find.byKey(const ValueKey('theme-state-art-error')),
+          state == WorkshopSampleState.error ? findsOneWidget : findsNothing);
+      if (state == WorkshopSampleState.loading) {
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      }
+      if (state == WorkshopSampleState.permission) {
+        expect(find.byIcon(Icons.lock_outline_rounded), findsOneWidget);
+      }
+      expect(tester.takeException(), isNull);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   test('工坊推导：#2F7FD8 常量角色映射、覆盖优先、8 色课表对比度与色相不变自动修正', () {
@@ -186,6 +231,7 @@ void main() {
       appVersion: '9.0.0',
     );
     expect(decoded.manifest.name, '海盐蓝工坊测试');
+    expect(decoded.manifest.data['bottomNav']['style'], 'liquid_glass');
     final lightPreview =
         img.decodeImage(decoded.contents[decoded.manifest.data['preview']['light']]!)!;
     expect(lightPreview.width, 1080);
@@ -572,6 +618,7 @@ void main() {
   });
 
   testWidgets('主题直接应用与保存失败重试，保留设备壁纸和其他主题组', (tester) async {
+    await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
     await provider.setBackgroundImage('morenbeijing.jpeg');
     final draftStore = ThemeWorkshopDraftStore(
       themesDirectory: Directory(path.join(temp.path, 'themes')),
@@ -588,6 +635,9 @@ void main() {
     );
     final apply = find.byKey(const ValueKey('workshop-apply'));
     expect(tester.widget<FilledButton>(apply).onPressed, isNull);
+    final preview = tester.widget<ThemeWorkshopSampleStage>(
+        find.byType(ThemeWorkshopSampleStage));
+    expect(preview.appearance.group(ThemeGroup.navigation)!['style'], 'floating');
     final preset = find.byKey(const ValueKey('workshop-seed-海盐蓝'));
     await tester.ensureVisible(preset);
     await tester.tap(preset);

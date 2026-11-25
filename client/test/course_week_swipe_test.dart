@@ -23,8 +23,12 @@ import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
 import 'package:shenliyuan/models/course_term.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/features/theme_pack/theme_manifest.dart';
+import 'package:shenliyuan/features/theme_pack/theme_pack_codec.dart';
+import 'package:shenliyuan/features/theme_pack/theme_pack_store.dart';
 
 import 'helpers/load_test_fonts.dart';
+import 'theme_pack/theme_pack_test.dart' show themeFixture, themeImage;
 
 class _FailingDisplayPreferences extends MemoryPreferencesStore {
   bool fail = true;
@@ -184,6 +188,81 @@ void main() {
     AppPreferencesStore.setCustomInstance(null);
   });
 
+  testWidgets('应用主题同步课表颜色选择，手动调整、重新应用和撤销保持真实颜色', (tester) async {
+    const widgets = MethodChannel('shenliyuan/widget');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(widgets, (call) async => null);
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(widgets, null));
+    final directory = await tester.runAsync(
+        () => Directory.systemTemp.createTemp('schedule-theme-sync-'));
+    addTearDown(() => directory!.delete(recursive: true));
+    final theme = ThemeProvider(
+        loadOnStart: false,
+        themePackStore: ThemePackStore(directory: directory));
+    final page = await _pumpCourse(tester,
+        appearanceProvider: theme,
+        initialPreferences: const {
+          'schedule_text_color': 'dark',
+          'schedule_course_color': 'blue'
+        });
+    late InstalledTheme installed;
+    await tester.runAsync(() async {
+      await theme.loadThemeForTesting();
+      final manifest = themeFixture();
+      for (final mode in ['light', 'dark']) {
+        manifest[mode]['tokens']['courseCardText'] = '#6D4C9A';
+        manifest[mode]['coursePalette'] = List.filled(5, '#D2D4FF');
+      }
+      installed = await theme.installTheme(PreparedThemePack(
+          ThemeManifest.parse(manifest, appVersion: '9.0.0'),
+          {'preview/cover.png': themeImage(1080, 2340)}));
+      await theme.applyInstalledTheme(installed, ThemeGroup.defaultApply);
+    });
+    await tester.pumpAndSettle();
+    expect(tester.widget<Text>(find.text('高等数学')).style!.color,
+        const Color(0xFF6D4C9A));
+    expect(_courseDecoration(tester, '高等数学').color, const Color(0xFFD2D4FF));
+    await _openDisplaySettings(tester);
+    expect(find.text('默认，跟随当前主题'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('课程块颜色'), 100,
+        scrollable: _settingsScrollable());
+    expect(find.text('默认，按课程配色'), findsOneWidget);
+    await tester.runAsync(() => _selectDisplayColor(tester, '课表文字颜色', '橙色'));
+    expect(find.text('橙色'), findsOneWidget);
+    expect(
+        (await AppPreferencesStore.getInstance())
+            .getString('schedule_text_color'),
+        'dark');
+    final savedAppearance = (await AppPreferencesStore.getInstance())
+        .getString(ThemeProvider.appearanceKey);
+    await tester.runAsync(() => theme.startTrial(
+        installed: installed, groups: ThemeGroup.defaultApply));
+    await tester.pumpAndSettle();
+    expect(find.text('默认，跟随当前主题'), findsOneWidget);
+    await tester.runAsync(theme.endTrial);
+    await tester.pumpAndSettle();
+    expect(find.text('橙色'), findsOneWidget);
+    expect(
+        (await AppPreferencesStore.getInstance())
+            .getString(ThemeProvider.appearanceKey),
+        savedAppearance);
+    await tester.runAsync(
+        () => theme.applyInstalledTheme(installed, ThemeGroup.defaultApply));
+    await tester.pumpAndSettle();
+    expect(find.text('默认，跟随当前主题'), findsOneWidget);
+    await tester.runAsync(theme.restorePreviousAppearance);
+    await tester.pumpAndSettle();
+    expect(find.text('橙色'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(tester.widget<Text>(find.text('高等数学')).style!.color,
+        ScheduleColorOption.orange.color);
+    expect(tester.takeException(), isNull);
+    await _disposeCourse(tester, page);
+  });
+
   testWidgets('课表字号和颜色可保存、重新进入并恢复原默认显示', (tester) async {
     var page = await _pumpCourse(tester);
     final defaultSize = tester.widget<Text>(find.text('高等数学')).style!.fontSize!;
@@ -324,9 +403,15 @@ void main() {
   testWidgets('手动添加显示保存状态，失败提示留在弹窗中，重试后立即关闭并显示课程', (tester) async {
     final store = _MemorySnapshotStore();
     final page = await _pumpCourse(tester, memoryStore: store);
-    await page.scheduleProvider.applyFetchedCourses([{
-      'name': '原有课程', 'time': 1, 'end_time': 2, 'week_day': 1, 'weeks': [1, 2],
-    }]);
+    await page.scheduleProvider.applyFetchedCourses([
+      {
+        'name': '原有课程',
+        'time': 1,
+        'end_time': 2,
+        'week_day': 1,
+        'weeks': [1, 2],
+      }
+    ]);
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.more_horiz_rounded));
     await tester.pumpAndSettle();
@@ -346,19 +431,26 @@ void main() {
     await tester.tap(find.text('添加'));
     await tester.pump();
     expect(find.text('正在保存…'), findsOneWidget);
-    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '正在保存…')).onPressed, isNull);
+    expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, '正在保存…'))
+            .onPressed,
+        isNull);
     expect(store.writes, writesBefore + 1);
     store.pendingWrite!.complete(false);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.textContaining('保存失败，请重试'), findsOneWidget);
     expect(page.scheduleProvider.courses.any((c) => c.name == '手动补课'), isFalse);
-    expect(tester.widget<TextField>(find.byType(TextField).first).controller!.text, '手动补课');
+    expect(
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        '手动补课');
     store.pendingWrite = null;
     await tester.tap(find.text('添加'));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
-    expect(page.scheduleProvider.courses.where((c) => c.name == '手动补课'), hasLength(1));
+    expect(page.scheduleProvider.courses.where((c) => c.name == '手动补课'),
+        hasLength(1));
     expect(tester.takeException(), isNull);
     await _disposeCourse(tester, page);
   });
@@ -789,17 +881,20 @@ Future<void> _selectDisplayColor(
   await tester.pumpAndSettle();
   await tester.tap(find.text(title));
   await tester.pumpAndSettle();
-  await _captureDisplay(tester,
-      title == '课表文字颜色' ? 'text-color-picker' : 'course-color-picker');
+  await _captureDisplay(
+      tester, title == '课表文字颜色' ? 'text-color-picker' : 'course-color-picker');
   await tester.tap(find.text(color).last);
   await tester.pumpAndSettle();
 }
 
-BoxDecoration _courseDecoration(WidgetTester tester, String name) =>
-    tester.widget<AppCardSurface>(find.ancestor(
-      of: find.text(name),
-      matching: find.byType(AppCardSurface),
-    ).first).decoration! as BoxDecoration;
+BoxDecoration _courseDecoration(WidgetTester tester, String name) => tester
+    .widget<AppCardSurface>(find
+        .ancestor(
+          of: find.text(name),
+          matching: find.byType(AppCardSurface),
+        )
+        .first)
+    .decoration! as BoxDecoration;
 
 Future<void> _captureDisplay(WidgetTester tester, String name) async {
   final directory = Platform.environment['SCHEDULE_DISPLAY_EVIDENCE'];
@@ -830,6 +925,7 @@ Future<_CourseTestPage> _pumpCourse(
   double textScaleFactor = 1,
   Map<String, Object> initialPreferences = const <String, Object>{},
   _MemorySnapshotStore? memoryStore,
+  ThemeProvider? appearanceProvider,
 }) async {
   AppPreferencesStore.setMockInitialValues(initialPreferences);
   tester.view.physicalSize = physicalSize;
@@ -905,7 +1001,7 @@ Future<_CourseTestPage> _pumpCourse(
 
   final auth = _CourseAuthProvider(client: dio);
   final eduProvider = _BoundEduProvider();
-  final themeProvider = ThemeProvider(loadOnStart: false);
+  final themeProvider = appearanceProvider ?? ThemeProvider(loadOnStart: false);
 
   final widget = MultiProvider(
     providers: [
@@ -915,20 +1011,27 @@ Future<_CourseTestPage> _pumpCourse(
           value: scheduleProvider),
       ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
     ],
-    child: MaterialApp(
-      themeMode: themeMode,
-      theme: lightTheme ??
-          ThemeData(brightness: Brightness.light, fontFamily: 'NotoSansCJKsc'),
-      darkTheme:
-          ThemeData(brightness: Brightness.dark, fontFamily: 'NotoSansCJKsc'),
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(
-          textScaler: TextScaler.linear(textScaleFactor),
-        ),
-        child: child!,
-      ),
-      home: const CourseScheduleScreen(),
-    ),
+    child: Builder(
+        builder: (context) => MaterialApp(
+              themeMode: themeMode,
+              theme: lightTheme ??
+                  (appearanceProvider == null
+                      ? ThemeData(
+                          brightness: Brightness.light,
+                          fontFamily: 'NotoSansCJKsc')
+                      : context
+                          .watch<ThemeProvider>()
+                          .buildAppTheme(Brightness.light)),
+              darkTheme: ThemeData(
+                  brightness: Brightness.dark, fontFamily: 'NotoSansCJKsc'),
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  textScaler: TextScaler.linear(textScaleFactor),
+                ),
+                child: child!,
+              ),
+              home: const CourseScheduleScreen(),
+            )),
   );
   await tester.pumpWidget(RepaintBoundary(
     key: const ValueKey('course-display-render'),

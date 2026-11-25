@@ -54,16 +54,22 @@ float lensDistance(vec2 p, vec2 h) {
   p -= uBend * vec2(1.0-uv.y*uv.y, 1.0-uv.x*uv.x) * .7;
   return sdCapsule(p, h);
 }
-vec2 lensNormal(vec2 p, vec2 h) {
+vec2 lensGradient(vec2 p, vec2 h) {
   const float e = .35;
   vec2 n = vec2(
     lensDistance(p + vec2(e, 0), h) - lensDistance(p - vec2(e, 0), h),
     lensDistance(p + vec2(0, e), h) - lensDistance(p - vec2(0, e), h));
-  return n / max(length(n), .0001);
+  return n / (2.0 * e);
+}
+float bevel(float d, float thickness) {
+  return clamp(1.0 + d / max(thickness, .001), 0.0, 1.0);
+}
+float gaussian(float x) {
+  return exp(-x*x);
 }
 vec2 bend(vec2 p, vec2 halfSize, float height, float amount, float depth) {
   float d = sdCapsule(p, halfSize);
-  float band = clamp(1.0 + d / max(height, .001), 0.0, 1.0);
+  float band = bevel(d, height);
   float circle = 1.0 - sqrt(max(0.0, 1.0 - band * band));
   vec2 n = normalAt(p, halfSize);
   vec2 radial = p / max(length(p), .0001);
@@ -79,19 +85,35 @@ vec3 scene(vec2 p) {
 #endif
   return texture(uScene, clamp(uv, vec2(.001), vec2(.999))).rgb;
 }
-float surfaceLight(float d, vec2 n, vec2 center, float strength) {
-  vec2 l = normalize(vec2(-.65, -1.) + (uPointer - center) / max(max(uSize.x, uSize.y), 1.) * .8);
+vec2 lightDirection(vec2 center) {
+  return normalize(vec2(-.65, -1.) + (uPointer - center)
+    / max(max(uSize.x, uSize.y), 1.) * .8);
+}
+float surfaceLight(float d, vec2 n, vec2 center, float thickness, float strength) {
+  vec2 l = lightDirection(center);
   float a = pow(max(dot(n, l), 0.0), 7.0);
   float b = pow(max(dot(n, -l), 0.0), 7.0) * .52;
-  float edge = clamp(1.0 + d / 8.0, 0.0, 1.0);
+  float edge = bevel(d, thickness);
   float slope = pow(edge, 1.65) * .94;
   float nz = sqrt(max(1.0 - slope * slope, .001));
   float fresnel = .04 + .96 * pow(1.0 - nz, 5.0);
-  float outline = exp(-pow((d + .7) / .65, 2.0));
-  float bloom = exp(-pow((d + 1.4) / 2.0, 2.0));
-  float caustic = exp(-pow((d + 3.0) / 1.65, 2.0));
+  float outline = gaussian((d + .7) / .65);
+  float bloom = gaussian((d + 1.4) / 2.0);
+  float caustic = gaussian((d + 3.0) / 1.65);
   return (outline * (.04 + a * .62 + b * .32) + bloom * (a + b) * .12
     + caustic * b * .07 + fresnel * .045) * strength * (1.0 - uCompare);
+}
+vec3 surfaceReflection(vec3 transmitted, float d, vec2 n, vec2 center,
+    float thickness, float strength) {
+  // A spectral rim remains visible on uniform scenes; scene dispersion alone
+  // only separates colors where the sampled background already has contrast.
+  float rim = gaussian((d + 1.0) / 1.3) * strength * (1.0-uCompare);
+  vec3 spectrum = .5 + .5 * cos(vec3(0, 2.094, 4.189)
+    + dot(n, vec2(.82, .57)) * 4.5);
+  vec3 reflected = mix(vec3(.96), spectrum, .65);
+  vec3 color = mix(transmitted, reflected, rim * .24);
+  // Keep the narrow directional specular visible against a pale scene.
+  return color + surfaceLight(d, n, center, thickness, strength) * .75;
 }
 vec4 tabs(vec2 p, float accent) {
   float itemWidth = (mix(uSize.x, uSize.y, uVertical) - 8.0) / 5.0;
@@ -117,7 +139,7 @@ vec3 dock(vec2 p, float accent) {
   float luma = dot(c, vec3(.2126, .7152, .0722));
   c = mix(vec3(luma), c, 1.12);
   c = mix(c, uNavBackground, uTint);
-  c += surfaceLight(d, normalAt(q, h), halfSize, .75);
+  c = surfaceReflection(c, d, normalAt(q, h), halfSize, uDockHeight, .75);
   c = mix(scene(p), c, coverage(d));
   vec4 ink = tabs(p, accent);
   return ink.rgb + c * (1.0 - ink.a);
@@ -129,7 +151,11 @@ void main() {
   vec2 lc = uLens.xy + uLens.zw * .5;
   vec2 halfSize = uLens.zw * .5;
   vec2 q = p - lc;
-  float ld = lensDistance(q, halfSize);
+  // Correct the deformed field locally before using logical-pixel bevel widths.
+  vec2 gradient = lensGradient(q, halfSize);
+  float magnitude = max(length(gradient), .001);
+  vec2 n = gradient / magnitude;
+  float ld = lensDistance(q, halfSize) / magnitude;
   float lm = coverage(ld);
   float mask = max(coverage(dd), lm);
   if (mask <= .0001) { fragColor = vec4(0); return; }
@@ -139,17 +165,14 @@ void main() {
   c *= 1.0 - exp(-max(ld, 0.0)/5.0) * .12 * clamp(uPress+uEnergy,0.,1.)
     * (1.0-lm) * (1.0-uCompare);
   if (lm > .0001) {
-    vec2 n = lensNormal(q, halfSize);
-    float band = clamp(1.0 + ld / max(uLensHeight * uPress, .001), 0.0, 1.0);
+    float thickness = max(uLensHeight * uPress, .001);
+    float band = bevel(ld, thickness);
     float circle = 1.0 - sqrt(max(0.0, 1.0 - band * band));
-    vec2 radial = q / max(length(q), .0001);
-    vec2 refractionNormal = n + radial;
-    refractionNormal /= max(length(refractionNormal), .0001);
-    vec2 offset = -refractionNormal * circle * uLensAmount * uPress
+    vec2 offset = -n * circle * uLensAmount * uPress
       * (1.0+uEnergy*.12) * (1.0-uCompare);
     vec2 at = p + offset;
-    float dispersion = uDispersion * q.x * q.y / max(halfSize.x * halfSize.y, 1.0);
-    vec2 split = offset * dispersion;
+    float spread = uDispersion * pow(band, 2.8) * clamp(uPress, 0.0, 1.0) * 3.2;
+    vec2 split = n * min(spread, 2.0) * (1.0-uCompare);
     vec3 r = dock(at + split, 1.0);
     vec3 o = dock(at + split * (2.0/3.0), 1.0);
     vec3 y = dock(at + split * (1.0/3.0), 1.0);
@@ -160,12 +183,13 @@ void main() {
     vec3 lens = vec3((r.r+o.r+y.r)/3.5+v.r/7.0,
       o.g/7.0+(y.g+g.g+cyan.g)/3.5, (cyan.b+b.b+v.b)/3.0);
     lens = mix(lens, vec3(uDark), mix(.08, .12, uDark) * (1.0-clamp(uPress,0.,1.)));
-    lens *= 1.0 - .03 * uPress;
-    // Inner occlusion and two light peaks make the thickness readable.
-    lens -= exp(-pow((ld+3.0)/5.0,2.0)) * .10 * uPress * (1.0-uCompare);
-    lens += surfaceLight(ld, n, lc, uPress);
+    lens *= 1.0 - .012 * uPress;
+    // Keep a shaded face and directional rim so pale backgrounds retain a lens.
+    float shadedFace = .35 + .65 * max(dot(n, -lightDirection(lc)), 0.0);
+    lens -= gaussian((ld+3.0)/5.0) * .055 * shadedFace * uPress * (1.0-uCompare);
+    lens = surfaceReflection(lens, ld, n, lc, thickness, uPress);
     float glint = exp(-length((p-uPointer)/vec2(90,70))*2.0);
-    lens += glint * .035 * uPress * (1.0-uCompare);
+    lens = mix(lens, vec3(1), glint * .02 * uPress * (1.0-uCompare));
     c = mix(c, lens, lm);
   }
   fragColor = vec4(clamp(c, 0.0, 1.0) * mask, mask);

@@ -87,17 +87,16 @@ abstract final class ThemeAppearanceExporter {
 
     Map<String, dynamic> buildVariant(Brightness brightness) {
       final mode = brightness == Brightness.dark ? 'dark' : 'light';
-      final defaultPalette = AppPalette.defaults(brightness);
+      final effectivePalette = appearance.buildTheme(brightness).extension<AppPalette>()!;
       final storedColors = colorsGroup?[mode] as Map<String, dynamic>?;
-      final tokens = storedColors != null
-          ? Map<String, dynamic>.from(storedColors['tokens'] as Map)
-          : defaultPalette.toJson();
+      final tokens = effectivePalette.toJson();
       final seedColor = storedColors?['seedColor'] as String? ?? '#147C72';
       final schemeVariant =
           storedColors?['schemeVariant'] as String? ?? 'tonalSpot';
-      final coursePalette = storedColors != null
-          ? List<String>.from(storedColors['coursePalette'] as List)
-          : const ['#448AFF', '#00C853', '#9C27B0', '#FF5252', '#FF9800'];
+      final coursePalette = [
+        for (final color in effectivePalette.coursePalette)
+          '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+      ];
 
       Map<String, dynamic>? exportedWallpapers;
       if (wallpapersGroup != null && wallpapersGroup['legacy'] == null) {

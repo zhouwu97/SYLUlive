@@ -277,6 +277,15 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                               ),
                               _buildToolCard(
                                 context,
+                                icon: Icons.file_download_outlined,
+                                color: const Color(
+                                    0xFF5B8DEF), // theme: fixed 工具入口、网站入口分类识别色
+                                title: '融智云考',
+                                subtitle: '题库导出 · GitHub',
+                                onTap: () => _openYunkao(context),
+                              ),
+                              _buildToolCard(
+                                context,
                                 icon: Icons.travel_explore_outlined,
                                 color: const Color(
                                     0xFF4F8DF7), // theme: fixed 工具入口、网站入口分类识别色
@@ -500,6 +509,15 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
           context,
         ).showSnackBar(const SnackBar(content: Text('无法打开链接')));
       }
+    }
+  }
+
+  Future<void> _openYunkao(BuildContext context) async {
+    final opened = await ExternalNavigator.current()
+        .open(Uri.parse('https://github.com/zhouwu97/yunkao/releases'));
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('无法打开链接')));
     }
   }
 

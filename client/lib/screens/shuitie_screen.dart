@@ -1206,6 +1206,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
     final themeProvider = context.read<ThemeProvider>();
     final isCustomMode = !themeProvider.isCleanBackgroundMode;
+    final reduceMotion = AppMotion.reducedMotion(context);
 
     await showGeneralDialog(
       context: context,
@@ -1213,90 +1214,88 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       barrierDismissible: true,
       barrierLabel: '关闭校园服务',
       barrierColor: Colors.black.withValues(alpha: isCustomMode ? 0.22 : 0.28),
-      transitionDuration: const Duration(milliseconds: 230),
-      pageBuilder: (dialogContext, __, ___) {
+      transitionDuration: reduceMotion ? Duration.zero : AppMotion.overlay,
+      pageBuilder: (dialogContext, animation, _) {
         final width = MediaQuery.sizeOf(dialogContext).width;
 
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: Material(
-            color: Colors.transparent,
-            child: SizedBox(
-              width: (width * 0.86).clamp(0.0, 390.0),
-              height: double.infinity,
-              child: StatefulBuilder(
-                builder: (dialogCtx, setDialogState) {
-                  _onCheckinStatusUpdated = () {
-                    if (dialogCtx.mounted) {
-                      setDialogState(() {});
+        final panel = Material(
+          color: Colors.transparent,
+          child: SizedBox(
+            width: (width * 0.86).clamp(0.0, 390.0),
+            height: double.infinity,
+            child: StatefulBuilder(
+              builder: (dialogCtx, setDialogState) {
+                _onCheckinStatusUpdated = () {
+                  if (dialogCtx.mounted) {
+                    setDialogState(() {});
+                  }
+                };
+                return HomeServiceDrawer(
+                  checkedIn: _checkedIn,
+                  streakDays: _streakDays,
+                  checkInLoading: _checkinStatusLoading && auth.isLoggedIn,
+                  checkInError: _checkinStatusError && auth.isLoggedIn,
+                  onRetryCheckIn: () => _ensureCheckinStatusLoaded(force: true),
+                  showCheckInDot: _showCheckInDot,
+                  announcements: _announcements,
+                  unreadAnnouncements: _unreadAnnouncements,
+                  waterSections:
+                      context.read<WaterSectionProvider>().activeSections,
+                  onCheckIn: () {
+                    _closePanelThenOpen(dialogContext, _openCheckInCalendar);
+                  },
+                  onOpenToolbox: () {
+                    _openPageKeepingPanel(const ToolboxScreen());
+                  },
+                  onOpenAnnouncements: _openAnnouncements,
+                  onOpenCompetitions: () {
+                    _openPageKeepingPanel(const CompetitionCenterScreen());
+                  },
+                  onOpenGrades: () {
+                    _openGradeKeepingPanel();
+                  },
+                  onOpenExamSchedule: () {
+                    _openPageKeepingPanel(const ExamScheduleScreen());
+                  },
+                  onOpenFeedback: () {
+                    _openPageKeepingPanel(const FeedbackCenterScreen());
+                  },
+                  onOpenCourt: () {
+                    if (!context.read<AuthProvider>().isLoggedIn) {
+                      _openPageKeepingPanel(const LoginScreen());
+                    } else {
+                      _openPageKeepingPanel(const CourtHubScreen());
                     }
-                  };
-                  return HomeServiceDrawer(
-                    checkedIn: _checkedIn,
-                    streakDays: _streakDays,
-                    checkInLoading: _checkinStatusLoading && auth.isLoggedIn,
-                    checkInError: _checkinStatusError && auth.isLoggedIn,
-                    onRetryCheckIn: () =>
-                        _ensureCheckinStatusLoaded(force: true),
-                    showCheckInDot: _showCheckInDot,
-                    announcements: _announcements,
-                    unreadAnnouncements: _unreadAnnouncements,
-                    waterSections:
-                        context.read<WaterSectionProvider>().activeSections,
-                    onCheckIn: () {
-                      _closePanelThenOpen(dialogContext, _openCheckInCalendar);
-                    },
-                    onOpenToolbox: () {
-                      _openPageKeepingPanel(const ToolboxScreen());
-                    },
-                    onOpenAnnouncements: _openAnnouncements,
-                    onOpenCompetitions: () {
-                      _openPageKeepingPanel(const CompetitionCenterScreen());
-                    },
-                    onOpenGrades: () {
-                      _openGradeKeepingPanel();
-                    },
-                    onOpenExamSchedule: () {
-                      _openPageKeepingPanel(const ExamScheduleScreen());
-                    },
-                    onOpenFeedback: () {
-                      _openPageKeepingPanel(const FeedbackCenterScreen());
-                    },
-                    onOpenCourt: () {
-                      if (!context.read<AuthProvider>().isLoggedIn) {
-                        _openPageKeepingPanel(const LoginScreen());
-                      } else {
-                        _openPageKeepingPanel(const CourtHubScreen());
-                      }
-                    },
-                    onOpenWaterSectionDirectory: () {
-                      _openWaterSectionDirectoryKeepingPanel();
-                    },
-                    onOpenWaterSection: (WaterSection section) {
-                      _openWaterSectionKeepingPanel(section);
-                    },
-                  );
-                },
-              ),
+                  },
+                  onOpenWaterSectionDirectory: () {
+                    _openWaterSectionDirectoryKeepingPanel();
+                  },
+                  onOpenWaterSection: (WaterSection section) {
+                    _openWaterSectionKeepingPanel(section);
+                  },
+                );
+              },
             ),
           ),
         );
-      },
-      transitionBuilder: (_, animation, __, child) {
-        return SlideTransition(
-          position: Tween(
-            begin: const Offset(-1, 0),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          )),
-          child: AppSurfaceFadeTransition(
-            opacity: animation,
-            child: child,
-          ),
+
+        // 按侧栏自身宽度滑动，卡片材质在过渡中保持稳定。
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: reduceMotion
+              ? panel
+              : SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(-1, 0),
+                    end: Offset.zero,
+                  ).chain(CurveTween(curve: AppMotion.incoming)).animate(
+                        animation,
+                      ),
+                  child: panel,
+                ),
         );
       },
+      transitionBuilder: (_, __, ___, child) => child,
     );
     _onCheckinStatusUpdated = null;
   }

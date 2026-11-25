@@ -11,6 +11,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/exam_schedule_screen.dart';
 import 'package:shenliyuan/screens/shuitie_screen.dart';
+import 'package:shenliyuan/widgets/home_service_drawer.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 class _StubAuthProvider extends ChangeNotifier implements AuthProvider {
@@ -58,7 +59,10 @@ class _Harness {
   }
 }
 
-Future<_Harness> _pumpHome(WidgetTester tester) async {
+Future<_Harness> _pumpHome(
+  WidgetTester tester, {
+  bool disableAnimations = false,
+}) async {
   AppPreferencesStore.setMockInitialValues({});
   tester.view.physicalSize = const Size(400, 800);
   tester.view.devicePixelRatio = 1;
@@ -99,7 +103,14 @@ Future<_Harness> _pumpHome(WidgetTester tester) async {
       ChangeNotifierProvider<WaterSectionProvider>.value(
           value: harness.sectionProvider),
     ],
-    child: const MaterialApp(home: ShuitieScreen()),
+    child: MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data:
+            MediaQuery.of(context).copyWith(disableAnimations: disableAnimations),
+        child: child!,
+      ),
+      home: const ShuitieScreen(),
+    ),
   ));
   await tester.pump();
   return harness;
@@ -114,6 +125,46 @@ Future<void> _openPanel(WidgetTester tester) async {
 void main() {
   VisibilityDetectorController.instance.updateInterval = Duration.zero;
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
+
+  testWidgets('校园服务贴着左边缘滑入，点击遮罩后向左滑出', (tester) async {
+    await _pumpHome(tester);
+    await tester.tap(find.byTooltip('校园服务'));
+    await tester.pump();
+
+    final drawer = find.byType(HomeServiceDrawer);
+    expect(tester.getTopRight(drawer).dx, closeTo(0, 0.5));
+    await tester.pump(const Duration(milliseconds: 64));
+    final enteringRight = tester.getTopRight(drawer).dx;
+    expect(enteringRight, greaterThan(0));
+    expect(enteringRight, lessThan(tester.getSize(drawer).width));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(drawer).dx, closeTo(0, 0.5));
+
+    await tester.tapAt(const Offset(390, 400));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 96));
+    final exitingRight = tester.getTopRight(drawer).dx;
+    expect(exitingRight, greaterThan(0));
+    expect(exitingRight, lessThan(tester.getSize(drawer).width));
+    await tester.pumpAndSettle();
+    expect(drawer, findsNothing);
+  });
+
+  testWidgets('系统关闭动画时校园服务直接打开并可用返回键关闭', (tester) async {
+    await _pumpHome(tester, disableAnimations: true);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('校园服务'));
+    await tester.pump();
+
+    final drawer = find.byType(HomeServiceDrawer);
+    expect(tester.getTopLeft(drawer).dx, closeTo(0, 0.5));
+    expect(find.text('工具箱').hitTestable(), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump();
+    expect(drawer, findsNothing);
+  });
 
   testWidgets('返回后再点其他服务项仍保留校园服务侧栏', (tester) async {
     await _pumpHome(tester);

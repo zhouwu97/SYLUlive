@@ -18,7 +18,7 @@ async function openConnectionDialog(page: import('@playwright/test').Page) {
 }
 
 test('未安装助手且本站有安装包时给出下载与自助安装步骤', async ({page}) => {
-  await page.route('**/assistant/assistant.json', route => route.fulfill({contentType:'application/json',body:JSON.stringify(assistantPackage)}));
+  await page.route('**/assistant/assistant.json', route => route.fulfill({contentType:'application/json',body:JSON.stringify({...assistantPackage,sites:[`${new URL(route.request().url()).origin}/*`]})}));
   await openConnectionDialog(page);
   const guide = page.locator('.assistant-guide');
   await expect(guide).toBeVisible();
@@ -36,7 +36,7 @@ test('装好助手后不刷新页面自动复检，但不自动读取学校资�
   let bindCalls = 0;
   await page.route('**/api/academic-account-configs', route => route.fulfill({json:{configs:[]}}));
   await page.route('**/api/academic-account-configs/sylu_undergraduate', route => {bindCalls++;return route.fulfill({json:{ok:true}});});
-  await page.route('**/assistant/assistant.json', route => route.fulfill({contentType:'application/json',body:JSON.stringify(assistantPackage)}));
+  await page.route('**/assistant/assistant.json', route => route.fulfill({contentType:'application/json',body:JSON.stringify({...assistantPackage,sites:[`${new URL(route.request().url()).origin}/*`]})}));
   await page.addInitScript(() => {
     const state = window as unknown as {__bridgeOperations?:string[]};
     state.__bridgeOperations = [];

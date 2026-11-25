@@ -19,6 +19,7 @@ import (
 
 var (
 	ErrLotteryAlreadyDrawn = errors.New("lottery already drawn")
+	ErrLotteryNotReady     = errors.New("lottery draw time not reached")
 	beijingLocation        = time.FixedZone("CST", 8*3600)
 )
 
@@ -305,7 +306,7 @@ func checkAndDrawLotteries(db *gorm.DB) {
 	for _, event := range events {
 		log.Printf("活动 [%s] 达到开奖时间，准备开奖...", event.Title)
 		if err := ExecuteDrawWithMode(db, event.ID, models.LotteryDrawModeAuto); err != nil {
-			if errors.Is(err, ErrLotteryAlreadyDrawn) {
+			if errors.Is(err, ErrLotteryAlreadyDrawn) || errors.Is(err, ErrLotteryNotReady) {
 				continue
 			}
 			log.Printf("活动 [%s] 自动开奖失败: %v", event.Title, err)
@@ -348,6 +349,9 @@ func ExecuteDrawWithMode(db *gorm.DB, eventID uint, mode string) error {
 		}
 		if event.Status != models.LotteryStatusOngoing {
 			return ErrLotteryAlreadyDrawn
+		}
+		if event.DrawTime.After(time.Now()) {
+			return ErrLotteryNotReady
 		}
 
 		// 只纳入仍存在且处于 active 状态的参与者，剔除已注销或已删除账号。
@@ -478,7 +482,7 @@ func ExecuteDrawWithMode(db *gorm.DB, eventID uint, mode string) error {
 	})
 
 	if err != nil {
-		if !errors.Is(err, ErrLotteryAlreadyDrawn) {
+		if !errors.Is(err, ErrLotteryAlreadyDrawn) && !errors.Is(err, ErrLotteryNotReady) {
 			log.Printf("开奖事务执行失败: %v\n", err)
 		}
 		return err

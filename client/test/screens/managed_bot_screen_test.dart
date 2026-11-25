@@ -56,7 +56,15 @@ Map<String, dynamic> _policy() => {
       'min_reply_interval_minutes': 30,
     };
 
+Map<String, dynamic> _newPolicy() => {
+      ..._policy(),
+      'daily_reply_limit': 100,
+      'min_reply_interval_minutes': 1,
+      'hourly_reply_limit': 15
+    };
+
 Map<String, dynamic> _status(Map<String, dynamic>? bot) => {
+      'default_policy': _newPolicy(),
       'bot': bot == null ? null : {'avatar': '', 'policy': _policy(), ...bot},
       'policy_supported': true,
       'sections': [
@@ -183,20 +191,118 @@ Future<double> _appBarContrast(WidgetTester tester, GlobalKey boundary) async {
 }
 
 void main() {
+  for (final existing in [false, true]) {
+    testWidgets('服务端规则优先且保存后采用确认结果 existing=$existing', (tester) async {
+      final dio = Dio(BaseOptions(baseUrl: 'https://fixture.invalid/api'));
+      final auth = _Auth(dio);
+      addTearDown(() {
+        auth.dispose();
+        dio.close();
+      });
+      final defaults = {
+        ..._policy(),
+        'daily_reply_limit': 82,
+        'min_reply_interval_minutes': 7,
+        'hourly_reply_limit': 12
+      };
+      var bot = existing
+          ? <String, dynamic>{
+              'bot_user_id': 10,
+              'name': '旧规则机器人',
+              'enabled': false,
+              'policy': _policy()
+            }
+          : null;
+      final writes = <Map>[];
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+        if (request.method == 'POST') {
+          writes.add(Map.from(request.data as Map));
+          bot = {
+            'bot_user_id': 10,
+            'name': '确认后的机器人',
+            'enabled': false,
+            'policy': {
+              ...defaults,
+              'daily_reply_limit': 60,
+              'min_reply_interval_minutes': 9
+            }
+          };
+        }
+        handler.resolve(Response(
+            requestOptions: request,
+            data: {..._status(bot), 'default_policy': defaults}));
+      }));
+      final boundary = GlobalKey();
+      await _pump(tester, auth, boundary: boundary);
+      await tester.pumpAndSettle();
+      await _expand(tester, 'bot-speech-toggle');
+      final daily = find.byKey(const ValueKey('bot-daily-limit'));
+      await _show(tester, daily, 180);
+      expect(
+          tester.widget<DropdownButton<int>>(daily).value, existing ? 3 : 82);
+      final interval = find.byKey(const ValueKey('bot-interval'));
+      await _show(tester, interval, 180);
+      expect(
+          tester
+              .widget<TextField>(find.descendant(
+                  of: interval, matching: find.byType(TextField)))
+              .controller!
+              .text,
+          existing ? '30' : '7');
+      expect(find.text(existing ? '服务端未设置每小时上限' : '服务端规则：每小时最多 12 条'),
+          findsOneWidget);
+      await _show(tester,
+          find.text(existing ? '服务端未设置每小时上限' : '服务端规则：每小时最多 12 条'), -160);
+      await _capture(tester, boundary, 'server-policy-existing-$existing');
+      await _show(tester, find.byKey(const ValueKey('bot-save-profile')), -200);
+      await tester.tap(find.byKey(const ValueKey('bot-save-profile')));
+      await tester.pumpAndSettle();
+      expect(writes.single['policy']['daily_reply_limit'], existing ? 3 : 82);
+      expect(writes.single['policy']['min_reply_interval_minutes'],
+          existing ? 30 : 7);
+      expect(
+          writes.single['policy']['hourly_reply_limit'], existing ? null : 12);
+      await _show(tester, daily, 180);
+      expect(tester.widget<DropdownButton<int>>(daily).value, 60);
+      await _show(tester, interval, 180);
+      expect(
+          tester
+              .widget<TextField>(find.descendant(
+                  of: interval, matching: find.byType(TextField)))
+              .controller!
+              .text,
+          '9');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
   testWidgets('100条与1分钟设置可读取保存，非法间隔禁用保存', (tester) async {
     final dio = Dio(BaseOptions(baseUrl: 'https://fixture.invalid/api'));
     final auth = _Auth(dio);
-    addTearDown(() { auth.dispose(); dio.close(); });
+    addTearDown(() {
+      auth.dispose();
+      dio.close();
+    });
     final writes = <Map>[];
-    final policy = {..._policy(), 'daily_reply_limit': 100, 'min_reply_interval_minutes': 1};
+    final policy = {
+      ..._policy(),
+      'daily_reply_limit': 100,
+      'min_reply_interval_minutes': 1
+    };
     dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
       if (request.method == 'POST') writes.add(Map.from(request.data as Map));
-      handler.resolve(Response(requestOptions: request, data: _status({
-        'bot_user_id':10, 'name':'活跃机器人', 'enabled':false, 'policy':policy
-      })));
+      handler.resolve(Response(
+          requestOptions: request,
+          data: _status({
+            'bot_user_id': 10,
+            'name': '活跃机器人',
+            'enabled': false,
+            'policy': policy
+          })));
     }));
     final boundary = GlobalKey();
-    await _pump(tester, auth, theme:ThemeMode.dark, scale:1.5, boundary:boundary);
+    await _pump(tester, auth,
+        theme: ThemeMode.dark, scale: 1.5, boundary: boundary);
     await tester.pumpAndSettle();
     await _expand(tester, 'bot-speech-toggle');
     final daily = find.byKey(const ValueKey('bot-daily-limit'));
@@ -214,8 +320,9 @@ void main() {
     await _show(tester, save, 180);
     await tester.tap(save);
     await tester.pumpAndSettle();
-    expect(writes.single['policy'], containsPair('daily_reply_limit',100));
-    expect(writes.single['policy'], containsPair('min_reply_interval_minutes',1));
+    expect(writes.single['policy'], containsPair('daily_reply_limit', 100));
+    expect(
+        writes.single['policy'], containsPair('min_reply_interval_minutes', 1));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -462,8 +569,12 @@ void main() {
       await _show(tester, find.byKey(const ValueKey('bot-save-profile')), 200);
       await tester.tap(find.byKey(const ValueKey('bot-save-profile')));
       await tester.pumpAndSettle();
-      expect(writes.single,
-          {'name': '大肥鱼', 'avatar': '', 'enabled': false, 'policy': _policy()});
+      expect(writes.single, {
+        'name': '大肥鱼',
+        'avatar': '',
+        'enabled': false,
+        'policy': _newPolicy()
+      });
       await _show(tester, find.text('启用机器人'), 200);
       await tester.tap(find.text('启用机器人'));
       await tester.pumpAndSettle();
@@ -621,8 +732,8 @@ void main() {
       await _capture(tester, boundary, 'app-bot-$label-glass-scroll');
       await appearance.setComponentOpacityLevel(.55);
       await tester.pumpAndSettle();
-      expect(
-          _surfaceAlpha(tester, 'bot-management-surface'), closeTo(.8875, .001));
+      expect(_surfaceAlpha(tester, 'bot-management-surface'),
+          closeTo(.8875, .001));
       expect(_surfaceAlpha(tester, 'bot-appbar-surface'), closeTo(.8875, .001));
       expect(
           await _appBarContrast(tester, boundary), greaterThanOrEqualTo(4.5));
@@ -630,8 +741,8 @@ void main() {
       await appearance.setFrostedGlass(false);
       await tester.pumpAndSettle();
       expect(activeBackdropFilters(), findsNothing);
-      expect(
-          _surfaceAlpha(tester, 'bot-management-surface'), closeTo(.8875, .001));
+      expect(_surfaceAlpha(tester, 'bot-management-surface'),
+          closeTo(.8875, .001));
       expect(_surfaceAlpha(tester, 'bot-appbar-surface'), closeTo(.8875, .001));
       await _capture(tester, boundary, 'app-bot-$label-blur-off');
       await appearance.setFrostedGlass(true);

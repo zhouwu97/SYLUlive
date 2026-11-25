@@ -45,7 +45,9 @@ func TestIntegrationWebAstrBotCrossRuntime(t *testing.T) {
 	const owner = 91234
 	const otherOwner = owner + 1
 	const secret = "synthetic-cross-runtime-only-secret"
+	require.NoError(t, db.AutoMigrate(&models.AcademicAccountConfig{}, &models.AcademicConfigReceipt{}))
 	require.NoError(t, db.AutoMigrate(&models.Notification{}, &models.FileUploadGrant{}, &models.ImageVariant{}, &models.UserCheckInStat{}, &models.UserExperienceLedger{}))
+	require.NoError(t, models.EnsureCheckInSchema(db))
 	require.NoError(t, db.Create(&models.User{ID: owner, Nickname: "跨端合成用户", Role: models.RoleUser, AccountStatus: "active"}).Error)
 	for _, doc := range []string{models.LegalDocumentUserAgreement, models.LegalDocumentPrivacyPolicy, models.LegalDocumentCommunityRules} {
 		ack := ""
@@ -76,6 +78,9 @@ func TestIntegrationWebAstrBotCrossRuntime(t *testing.T) {
 	personal := NewPersonalSnapshotHandler(services.NewPersonalSnapshotService(db, time.Now))
 	ownerAPI := r.Group("/api", middleware.AuthMiddleware(db, secret))
 	ownerAPI.GET("/user/profile", NewUserHandler(db).GetProfile)
+	configs := NewAcademicAccountConfigHandler(db)
+	ownerAPI.GET("/academic-account-configs", configs.List)
+	ownerAPI.PUT("/academic-account-configs/:provider", configs.Mutate)
 	ownerAPI.PUT("/personal-snapshots/erke", personal.PutErke)
 	ownerAPI.DELETE("/personal-snapshots/erke", personal.DeleteErke)
 	proxy := httputil.NewSingleHostReverseProxy(web)

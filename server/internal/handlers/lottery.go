@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type LotteryHandler struct {
@@ -292,60 +293,53 @@ func (h *LotteryHandler) Join(c *gin.Context) {
 		return
 	}
 
-	var event models.LotteryEvent
-	if err := h.db.First(&event, uint(eventID)).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			middleware.WriteAPIError(c, http.StatusNotFound, "lottery_not_found", "抽奖活动不存在", nil)
-			return
+	status, code, message := http.StatusInternalServerError, "lottery_join_failed", "参与抽奖失败，请稍后重试"
+	reject := func(httpStatus int, errorCode, text string) error {
+		status, code, message = httpStatus, errorCode, text
+		return errors.New(errorCode)
+	}
+	var weight int
+	err = h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var event models.LotteryEvent
+		// 与取消、删除及开奖共用活动行锁，状态检查与报名写入必须共同提交。
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&event, uint(eventID)).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return reject(http.StatusNotFound, "lottery_not_found", "抽奖活动不存在")
+			}
+			return err
 		}
-		middleware.WriteAPIError(c, http.StatusInternalServerError, "lottery_join_failed", "查询抽奖活动失败", nil)
-		return
-	}
-
-	if event.Status != models.LotteryStatusOngoing {
-		middleware.WriteAPIError(c, http.StatusBadRequest, "lottery_already_drawn", "该抽奖已经结束", nil)
-		return
-	}
-	if !event.DrawTime.After(time.Now()) {
-		middleware.WriteAPIError(c, http.StatusBadRequest, "lottery_join_closed", "该抽奖已停止参与", nil)
-		return
-	}
-
-	// 所有账号统一按教务配置登记状态准入。
-	configured, err := models.HasAcademicConfig(h.db, userID)
+		if event.Status != models.LotteryStatusOngoing {
+			return reject(http.StatusBadRequest, "lottery_already_drawn", "该抽奖已经结束")
+		}
+		if !event.DrawTime.After(time.Now()) {
+			return reject(http.StatusBadRequest, "lottery_join_closed", "该抽奖已停止参与")
+		}
+		configured, err := models.HasAcademicConfig(tx, userID)
+		if err != nil {
+			return reject(http.StatusServiceUnavailable, "academic_config_unavailable", "教务配置暂时无法读取，请稍后重试")
+		}
+		if !configured {
+			return reject(http.StatusForbidden, "edu_binding_required", "请先完成教务连接并同步课表配置后再参与抽奖")
+		}
+		var user models.User
+		if err := tx.Select("id", "exp", "account_status").First(&user, userID).Error; err != nil {
+			return reject(http.StatusUnauthorized, "authentication_required", "用户不存在")
+		}
+		if user.AccountStatus != "" && user.AccountStatus != "active" {
+			return reject(http.StatusUnauthorized, "account_unavailable", "账号当前不可用")
+		}
+		weight = services.CalculateLotteryWeightByLevel(user.Exp)
+		participant := models.LotteryParticipant{LotteryID: event.ID, UserID: user.ID, Weight: weight}
+		if err := tx.Create(&participant).Error; err != nil {
+			if isUniqueConstraintError(err) {
+				return reject(http.StatusConflict, "lottery_already_joined", "你已经参与过该抽奖活动了")
+			}
+			return err
+		}
+		return nil
+	})
 	if err != nil {
-		middleware.WriteAPIError(c, http.StatusServiceUnavailable, "academic_config_unavailable", "教务配置暂时无法读取，请稍后重试", nil)
-		return
-	}
-	if !configured {
-		middleware.WriteAPIError(c, http.StatusForbidden, "edu_binding_required", "请先完成教务连接并同步课表配置后再参与抽奖", nil)
-		return
-	}
-
-	var user models.User
-	if err := h.db.Select("id", "exp", "account_status").First(&user, userID).Error; err != nil {
-		middleware.WriteAPIError(c, http.StatusUnauthorized, "authentication_required", "用户不存在", nil)
-		return
-	}
-	if user.AccountStatus != "" && user.AccountStatus != "active" {
-		middleware.WriteAPIError(c, http.StatusUnauthorized, "account_unavailable", "账号当前不可用", nil)
-		return
-	}
-
-	weight := services.CalculateLotteryWeightByLevel(user.Exp)
-	participant := models.LotteryParticipant{
-		LotteryID: event.ID,
-		UserID:    user.ID,
-		Weight:    weight,
-	}
-
-	// 依赖联合唯一索引防并发重复报名，仅将唯一约束错误映射为 409。
-	if err := h.db.Create(&participant).Error; err != nil {
-		if isUniqueConstraintError(err) {
-			middleware.WriteAPIError(c, http.StatusConflict, "lottery_already_joined", "你已经参与过该抽奖活动了", nil)
-			return
-		}
-		middleware.WriteAPIError(c, http.StatusInternalServerError, "lottery_join_failed", "参与抽奖失败，请稍后重试", nil)
+		middleware.WriteAPIError(c, status, code, message, nil)
 		return
 	}
 
@@ -384,6 +378,10 @@ func (h *LotteryHandler) Draw(c *gin.Context) {
 
 	err = tasks.ExecuteDrawWithMode(h.db, uint(eventID), models.LotteryDrawModeManual)
 	if err != nil {
+		if errors.Is(err, tasks.ErrLotteryNotReady) {
+			middleware.WriteAPIError(c, http.StatusBadRequest, "lottery_not_ready", "还未到开奖时间", nil)
+			return
+		}
 		if errors.Is(err, tasks.ErrLotteryAlreadyDrawn) {
 			middleware.WriteAPIError(c, http.StatusBadRequest, "lottery_already_drawn", "该抽奖已经结束", nil)
 			return

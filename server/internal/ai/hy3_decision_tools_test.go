@@ -275,7 +275,7 @@ func TestHy3AdapterRejectsUnexpectedPersonalPayloadBeforeAudit(t *testing.T) {
 func TestHy3CompetitionAdapterUsesSelectedComparisonAndUnifiedProfile(t *testing.T) {
 	db := newHy3DecisionTestDB(t)
 	require.NoError(t, db.AutoMigrate(
-		&models.User{}, &models.AcademicIdentityBinding{},
+		&models.User{}, &models.AcademicIdentityBinding{}, &models.AcademicAccountConfig{},
 		&models.UserCompetitionPreference{},
 		&models.UserCompetitionAward{},
 		&models.CompetitionCategory{},
@@ -288,6 +288,10 @@ func TestHy3CompetitionAdapterUsesSelectedComparisonAndUnifiedProfile(t *testing
 		CompetitionProfileAIEnabled: true, CompetitionProfileAIEnabledAt: &now,
 	}
 	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, db.Create(&models.AcademicAccountConfig{
+		UserID: user.ID, ProviderID: models.AcademicProviderUndergraduate,
+		StudentID: user.StudentID, State: "active", Revision: 1,
+	}).Error)
 	require.NoError(t, db.Create(&models.UserCompetitionPreference{
 		UserID: 7, Goals: datatypes.JSON(`["能力提升"]`),
 		DirectionTags: datatypes.JSON(`["程序设计"]`), SkillTags: datatypes.JSON(`[]`),
@@ -368,7 +372,7 @@ func TestHy3CompetitionAdapterUsesSelectedComparisonAndUnifiedProfile(t *testing
 func TestHy3CandidateExplanationUsesEngineOrderAndRealDimensions(t *testing.T) {
 	db := newHy3DecisionTestDB(t)
 	require.NoError(t, db.AutoMigrate(
-		&models.User{}, &models.AcademicIdentityBinding{},
+		&models.User{}, &models.AcademicIdentityBinding{}, &models.AcademicAccountConfig{},
 		&models.UserCompetitionPreference{},
 		&models.UserCompetitionAward{},
 	))
@@ -377,6 +381,10 @@ func TestHy3CandidateExplanationUsesEngineOrderAndRealDimensions(t *testing.T) {
 		ID: 7, StudentID: "hy3-candidate", PasswordHash: "test", Nickname: "候选用户",
 		EduGrade: "本科三年级", EduCollege: "信息学院", EduMajor: "软件工程",
 		CompetitionProfileAIEnabled: true, CompetitionProfileAIEnabledAt: &now,
+	}).Error)
+	require.NoError(t, db.Create(&models.AcademicAccountConfig{
+		UserID: 7, ProviderID: models.AcademicProviderUndergraduate,
+		StudentID: "hy3-candidate", State: "active", Revision: 1,
 	}).Error)
 	require.NoError(t, db.Create(&models.UserCompetitionPreference{
 		UserID: 7, Goals: datatypes.JSON(`["能力提升"]`),

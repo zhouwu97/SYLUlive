@@ -128,6 +128,16 @@ func DefaultManagedBotPolicy() models.ManagedBotPolicy {
 	return models.ManagedBotPolicy{PublicReadEnabled: true, AllowedPostTypes: []string{"campus_life", "course_study"}, BlockedTerms: []string{}, BlockLinks: true, DailyReplyLimit: 3, MinReplyIntervalMinutes: 30}
 }
 
+// 新建默认单独返回，读取既有机器人时继续保留其已保存规则。
+func NewManagedBotPolicy() models.ManagedBotPolicy {
+	policy := DefaultManagedBotPolicy()
+	hourly := ManagedBotDefaultHourlyReplies
+	policy.HourlyReplyLimit = &hourly
+	policy.DailyReplyLimit = ManagedBotMaxDailyReplies
+	policy.MinReplyIntervalMinutes = ManagedBotMinReplyIntervalMinutes
+	return policy
+}
+
 func ManagedBotPolicy(bot models.ManagedBot) models.ManagedBotPolicy {
 	policy := DefaultManagedBotPolicy()
 	if bot.PolicyJSON != "" {
@@ -289,11 +299,11 @@ func (s *IntegrationActionService) UpdateManagedBot(ctx context.Context, owner u
 		avatar := ""
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if policy.HourlyReplyLimit == nil && policy.DailyReplyLimit == 3 && policy.MinReplyIntervalMinutes == 30 {
-				hourly := ManagedBotDefaultHourlyReplies
-				policy.HourlyReplyLimit = &hourly
+				defaults := NewManagedBotPolicy()
+				policy.HourlyReplyLimit = defaults.HourlyReplyLimit
 				// Released clients submit the previous preset when creating a bot.
-				policy.DailyReplyLimit = ManagedBotMaxDailyReplies
-				policy.MinReplyIntervalMinutes = ManagedBotMinReplyIntervalMinutes
+				policy.DailyReplyLimit = defaults.DailyReplyLimit
+				policy.MinReplyIntervalMinutes = defaults.MinReplyIntervalMinutes
 			}
 			if input.Name == nil {
 				return integrationError("invalid_bot_name", 422)

@@ -1065,6 +1065,28 @@ func TestThemePackLifecycleAndConcurrencySQLite(t *testing.T) {
 	runThemePackConcurrencyAndLifecycleSuite(t, db)
 }
 
+func TestThemeSubmissionRejectsLowContrast(t *testing.T) {
+	for _, field := range []string{"textPrimary", "coursePalette"} {
+		t.Run(field, func(t *testing.T) {
+			manifest := defaultValidManifest()
+			light := manifest["light"].(map[string]any)
+			tokens := light["tokens"].(map[string]any)
+			if field == "textPrimary" {
+				tokens["textPrimary"] = "#FFFFFF"
+				tokens["background"] = "#FFFFFF"
+				tokens["card"] = "#FFFFFF"
+			} else {
+				tokens["courseCardText"] = "#FFFFFF"
+				light["coursePalette"] = []any{"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"}
+			}
+			_, err := ValidateAndNormalizeThemePack(buildTestThemeZip(t, manifest, defaultValidAssets()), ThemeMetadataOverrides{})
+			var problem *ThemePackError
+			require.ErrorAs(t, err, &problem)
+			require.Equal(t, ThemeCodeContrastLow, problem.Code)
+		})
+	}
+}
+
 func TestThemePackPostgresAutoMigrateAndConcurrency(t *testing.T) {
 	dsn := strings.TrimSpace(os.Getenv("THEME_TEST_PG_DSN"))
 	if dsn == "" {

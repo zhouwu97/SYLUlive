@@ -10,6 +10,7 @@ import '../models/lottery.dart';
 import '../providers/auth_provider.dart';
 import '../services/async_action_guard.dart';
 import '../services/idempotency_key.dart';
+import '../services/publish_session_scope.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_page_background.dart';
@@ -35,6 +36,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
   List<LotteryEvent> _history = const [];
   bool _historyLoading = false;
+  String? _historyError;
+  int _historyRequestSeq = 0;
 
   bool _isSubmitting = false;
   bool _postDrawRefreshInFlight = false;
@@ -80,6 +83,16 @@ class _LotteryScreenState extends State<LotteryScreen> {
       _boundUserId = nextUserId;
       _boundSessionEpoch = nextEpoch;
       _dio = auth.dio;
+      _isSubmitting = false;
+      _isLoading = true;
+      _event = null;
+      _history = const [];
+      _historyError = null;
+      _historyRequestSeq++;
+      _postDrawRefreshInFlight = false;
+      _lastPostDrawRefreshAt = null;
+      _serverClockOffset = Duration.zero;
+      _countdownTimer?.cancel();
       _joinIdempotencyKey = null;
       _joinIdempotencyEventId = null;
       _drawIdempotencyKey = null;
@@ -101,6 +114,13 @@ class _LotteryScreenState extends State<LotteryScreen> {
     if (!mounted || requestSeq != _requestSeq) return false;
     final auth = context.read<AuthProvider>();
     return auth.user?.id == userId && auth.accountSessionEpoch == epoch;
+  }
+
+  bool _ownsAction(PublishSessionScope session, int eventId) {
+    if (!mounted || _event?.id != eventId) return false;
+    final auth = context.read<AuthProvider>();
+    return session.owns(
+        userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
   }
 
   Future<void> _loadPage({bool silent = false}) async {
@@ -132,6 +152,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
       if (rawEvent is! Map) {
         setState(() {
           _event = null;
+          _isSubmitting = false;
           _isEmpty = true;
           _isLoading = false;
           _errorMessage = null;
@@ -161,15 +182,15 @@ class _LotteryScreenState extends State<LotteryScreen> {
       final authAcademic =
           context.read<AuthProvider>().user?.academicConfigured == true;
       setState(() {
+        if (_event?.id != event.id) _isSubmitting = false;
         _event = event;
-        _participantCount =
-            (data['participant_count'] as num?)?.toInt() ?? event.participantCount;
+        _participantCount = (data['participant_count'] as num?)?.toInt() ??
+            event.participantCount;
         _joined = data['joined'] == true;
         _myWeight = (data['my_weight'] as num?)?.toInt() ?? 0;
-        _academicConfigured =
-            data.containsKey('academic_configured')
-                ? data['academic_configured'] == true
-                : authAcademic;
+        _academicConfigured = data.containsKey('academic_configured')
+            ? data['academic_configured'] == true
+            : authAcademic;
         _isLoading = false;
         _isEmpty = false;
         _errorMessage = null;
@@ -211,19 +232,27 @@ class _LotteryScreenState extends State<LotteryScreen> {
   }
 
   Future<void> _fetchHistory() async {
+    final requestSeq = ++_historyRequestSeq;
     final userId = _boundUserId;
     final epoch = _boundSessionEpoch;
+    bool current() {
+      if (!mounted || requestSeq != _historyRequestSeq) return false;
+      final auth = context.read<AuthProvider>();
+      return auth.user?.id == userId && auth.accountSessionEpoch == epoch;
+    }
+
     if (mounted) {
-      setState(() => _historyLoading = true);
+      setState(() {
+        _historyLoading = true;
+        _historyError = null;
+      });
     }
     try {
       final response = await _dio.get(
         '/lottery/history',
         queryParameters: const {'page': 1, 'page_size': 10},
       );
-      if (!mounted) return;
-      final auth = context.read<AuthProvider>();
-      if (auth.user?.id != userId || auth.accountSessionEpoch != epoch) return;
+      if (!current()) return;
       final data = response.data is Map
           ? Map<String, dynamic>.from(response.data as Map)
           : const <String, dynamic>{};
@@ -239,10 +268,14 @@ class _LotteryScreenState extends State<LotteryScreen> {
         _history = list;
         _historyLoading = false;
       });
-    } catch (_) {
-      if (mounted) {
-        setState(() => _historyLoading = false);
-      }
+    } catch (error) {
+      if (!current()) return;
+      setState(() {
+        _historyLoading = false;
+        _historyError = error is DioException
+            ? AppFeedback.dioErrorMessage(error, fallback: '加载往期抽奖失败')
+            : '加载往期抽奖失败';
+      });
     }
   }
 
@@ -271,8 +304,12 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
     _lastPostDrawRefreshAt = now;
     _postDrawRefreshInFlight = true;
+    final userId = _boundUserId;
+    final epoch = _boundSessionEpoch;
     _loadPage(silent: true).whenComplete(() {
-      _postDrawRefreshInFlight = false;
+      if (_boundUserId == userId && _boundSessionEpoch == epoch) {
+        _postDrawRefreshInFlight = false;
+      }
     });
   }
 
@@ -322,13 +359,19 @@ class _LotteryScreenState extends State<LotteryScreen> {
       return;
     }
     final eventId = event.id;
+    final auth = context.read<AuthProvider>();
+    final userId = auth.user?.id;
+    if (userId == null) return;
+    final session = PublishSessionScope(
+        accountId: userId, accountSessionEpoch: auth.accountSessionEpoch);
     await _actionGuard.run<void>(
-      'lottery-join:$eventId',
-      () => _joinLotteryOnce(eventId),
+      'lottery-join:$userId:${session.accountSessionEpoch}:$eventId',
+      () => _joinLotteryOnce(eventId, session),
     );
   }
 
-  Future<void> _joinLotteryOnce(int eventId) async {
+  Future<void> _joinLotteryOnce(
+      int eventId, PublishSessionScope session) async {
     if (mounted) setState(() => _isSubmitting = true);
     if (_joinIdempotencyEventId != eventId || _joinIdempotencyKey == null) {
       _joinIdempotencyEventId = eventId;
@@ -339,9 +382,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
         '/lottery/$eventId/join',
         options: Options(headers: <String, dynamic>{
           'Idempotency-Key': _joinIdempotencyKey!,
-        }),
+        }, extra: session.requestExtra),
       );
-      if (!mounted) return;
+      if (!mounted || !_ownsAction(session, eventId)) return;
       AppFeedback.showSnackBar(context, '参与成功！');
       final data = response.data is Map
           ? Map<String, dynamic>.from(response.data as Map)
@@ -354,20 +397,20 @@ class _LotteryScreenState extends State<LotteryScreen> {
       _joinIdempotencyKey = null;
       _joinIdempotencyEventId = null;
     } on DioException catch (e) {
+      if (!mounted || !_ownsAction(session, eventId)) return;
       final status = e.response?.statusCode;
       // 后端返回 4xx/5xx 响应后释放旧键，避免 5xx 失败占位锁死后续重试。
       if (status != null) {
         _joinIdempotencyKey = null;
         _joinIdempotencyEventId = null;
       }
-      if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(e, fallback: '参与失败'),
         isError: true,
       );
     } finally {
-      if (mounted) {
+      if (_ownsAction(session, eventId)) {
         setState(() => _isSubmitting = false);
       }
     }
@@ -380,20 +423,26 @@ class _LotteryScreenState extends State<LotteryScreen> {
       AppFeedback.showSnackBar(context, '还未到开奖时间，无法手动补开', isError: true);
       return;
     }
+    final auth = context.read<AuthProvider>();
+    final userId = auth.user?.id;
+    if (userId == null) return;
+    final session = PublishSessionScope(
+        accountId: userId, accountSessionEpoch: auth.accountSessionEpoch);
     final confirm = await AppFeedback.confirmDanger(
       context,
       title: '兜底手动补开',
+      confirmText: '确认开奖',
       message: '当前已过开奖时间且系统尚未开奖，确定手动触发本次开奖吗？此操作不可逆。',
     );
-    if (!mounted || !confirm) return;
+    if (!confirm || !_ownsAction(session, event.id)) return;
     final eventId = event.id;
     await _actionGuard.run<void>(
-      'lottery-draw:$eventId',
-      () => _adminDrawOnce(eventId),
+      'lottery-draw:$userId:${session.accountSessionEpoch}:$eventId',
+      () => _adminDrawOnce(eventId, session),
     );
   }
 
-  Future<void> _adminDrawOnce(int eventId) async {
+  Future<void> _adminDrawOnce(int eventId, PublishSessionScope session) async {
     if (mounted) setState(() => _isSubmitting = true);
     if (_drawIdempotencyEventId != eventId || _drawIdempotencyKey == null) {
       _drawIdempotencyEventId = eventId;
@@ -404,26 +453,26 @@ class _LotteryScreenState extends State<LotteryScreen> {
         '/admin/lottery/$eventId/draw',
         options: Options(headers: <String, dynamic>{
           'Idempotency-Key': _drawIdempotencyKey!,
-        }),
+        }, extra: session.requestExtra),
       );
-      if (!mounted) return;
+      if (!mounted || !_ownsAction(session, eventId)) return;
       AppFeedback.showSnackBar(context, '开奖成功！');
       _drawIdempotencyKey = null;
       _drawIdempotencyEventId = null;
       await _loadPage(silent: true);
     } on DioException catch (e) {
+      if (!mounted || !_ownsAction(session, eventId)) return;
       if (e.response?.statusCode != null) {
         _drawIdempotencyKey = null;
         _drawIdempotencyEventId = null;
       }
-      if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(e, fallback: '开奖失败'),
         isError: true,
       );
     } finally {
-      if (mounted) {
+      if (_ownsAction(session, eventId)) {
         setState(() => _isSubmitting = false);
       }
     }
@@ -467,8 +516,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
         statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppPageBackground.color(
-            context, isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4)),
+        backgroundColor: AppPageBackground.color(context,
+            isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4)),
         appBar: AppBar(
           title:
               const Text('官方抽奖', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -560,10 +609,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
               ),
             ),
           ),
-          if (_history.isNotEmpty) ...[
-            const SizedBox(height: 28),
-            _buildHistorySection(primary, isDark),
-          ],
+          const SizedBox(height: 28),
+          _buildHistorySection(primary, isDark),
         ],
       ),
     );
@@ -635,17 +682,16 @@ class _LotteryScreenState extends State<LotteryScreen> {
               ),
             ),
           ],
-          if (_history.isNotEmpty || _historyLoading) ...[
-            const SizedBox(height: 24),
-            _buildHistorySection(primary, isDark),
-          ],
+          const SizedBox(height: 24),
+          _buildHistorySection(primary, isDark),
           const SizedBox(height: 16),
         ],
       ),
     );
   }
 
-  Widget _buildDescriptionCard(String description, bool isDark, Color titleColor) {
+  Widget _buildDescriptionCard(
+      String description, bool isDark, Color titleColor) {
     return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -705,7 +751,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
                     '参与官方抽奖需先完成教务连接并同步课表配置。',
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? Colors.amber.shade200 : const Color(0xFF92400E),
+                      color: isDark
+                          ? Colors.amber.shade200
+                          : const Color(0xFF92400E),
                     ),
                   ),
                 ),
@@ -870,8 +918,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
             const Center(
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text('本期无有效参与者，已流拍',
-                    style: TextStyle(color: Colors.grey)),
+                child:
+                    Text('本期无有效参与者，已流拍', style: TextStyle(color: Colors.grey)),
               ),
             )
           else
@@ -1258,7 +1306,20 @@ class _LotteryScreenState extends State<LotteryScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          if (_history.isEmpty)
+          if (_historyError != null) ...[
+            Semantics(
+                liveRegion: true,
+                child: Text(_historyError!,
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error))),
+            TextButton.icon(
+              onPressed: _fetchHistory,
+              icon: const Icon(Icons.refresh),
+              label: const Text('重试加载往期记录'),
+            ),
+          ] else if (_historyLoading && _history.isEmpty)
+            Text('正在加载往期记录…', style: TextStyle(fontSize: 13, color: subColor))
+          else if (_history.isEmpty)
             Text('暂无往期记录', style: TextStyle(fontSize: 13, color: subColor))
           else
             ..._history.map((item) {

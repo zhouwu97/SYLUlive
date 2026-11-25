@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
@@ -650,6 +651,12 @@ func (h *SuperAdminHandler) CreateLotteryEvent(c *gin.Context) {
 
 	now := time.Now()
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "postgres" {
+			// 首次发布也没有可锁的旧活动；事务锁覆盖所有实例的发布入口。
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", "sylulive-lottery-publish").Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Model(&models.LotteryEvent{}).
 			Where("status = ?", models.LotteryStatusOngoing).
 			Updates(map[string]interface{}{
@@ -761,7 +768,7 @@ func (h *SuperAdminHandler) DeleteLotteryEvent(c *gin.Context) {
 	var deletedTitle string
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		var event models.LotteryEvent
-		if err := tx.First(&event, eventID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&event, eventID).Error; err != nil {
 			return err
 		}
 		deletedTitle = event.Title
@@ -888,7 +895,19 @@ func (h *SuperAdminHandler) KickLotteryParticipant(c *gin.Context) {
 	}
 
 	var event models.LotteryEvent
-	if err := h.db.First(&event, uint(eventID)).Error; err != nil {
+	var removed int64
+	err := h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&event, uint(eventID)).Error; err != nil {
+			return err
+		}
+		if event.Status != models.LotteryStatusOngoing {
+			return nil
+		}
+		result := tx.Where("lottery_id = ? AND user_id = ?", eventID, userID).Delete(&models.LotteryParticipant{})
+		removed = result.RowsAffected
+		return result.Error
+	})
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "抽奖活动不存在"})
 			return
@@ -901,13 +920,7 @@ func (h *SuperAdminHandler) KickLotteryParticipant(c *gin.Context) {
 		return
 	}
 
-	result := h.db.Where("lottery_id = ? AND user_id = ?", eventID, userID).Delete(&models.LotteryParticipant{})
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "踢出失败"})
-		return
-	}
-
-	if result.RowsAffected == 0 {
+	if removed == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "该用户未参与该抽奖"})
 		return
 	}

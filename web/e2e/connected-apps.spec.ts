@@ -129,6 +129,7 @@ const defaultPolicy = {
   allowed_post_types: ["campus_life", "course_study"], blocked_terms: [] as string[],
   block_links: true, daily_reply_limit: 3, min_reply_interval_minutes: 30,
 };
+const newPolicy = {...defaultPolicy, hourly_reply_limit:15, daily_reply_limit:100, min_reply_interval_minutes:1};
 async function fixture(
   page: Page,
   options: { recent?: boolean; slow?: boolean; postEnabled?: boolean } = {},
@@ -175,7 +176,7 @@ async function fixture(
         const body = request.postDataJSON();
         bot = { bot_user_id: 2001, name: bot?.name || "大肥鱼", avatar: "", owner: { id: 991, nickname: "合成账号" }, policy: { ...defaultPolicy }, ...bot, ...body };
       }
-      return route.fulfill({ json: { bot, policy_supported: true, sections: [{ slug: "campus_life", name: "校园生活" }, { slug: "course_study", name: "课程学习" }, { slug: "campus_activity", name: "校园活动" }], auto_reply_server_enabled: false, auto_reply_authorized: false, auto_post_server_enabled:options.postEnabled===true,auto_post_authorized:false } });
+      return route.fulfill({ json: { bot, default_policy:newPolicy, policy_supported: true, sections: [{ slug: "campus_life", name: "校园生活" }, { slug: "course_study", name: "课程学习" }, { slug: "campus_activity", name: "校园活动" }], auto_reply_server_enabled: false, auto_reply_authorized: false, auto_post_server_enabled:options.postEnabled===true,auto_post_authorized:false } });
     }
     if (path.endsWith("/lookup"))
       return route.fulfill(
@@ -453,7 +454,7 @@ test("机器人新建头像权限编辑启用暂停完整链路，自动评论�
   await expect(page.getByLabel("发表内置表情", { exact: false })).not.toBeChecked();
   await page.getByRole("button", {name: "新建机器人", exact: true}).click();
   await expect(page.getByText("机器人 #2001 · 已暂停")).toBeVisible();
-  expect(writes.find(w => w.path.endsWith("/bot"))!.body).toEqual({name: "本鱼", avatar: "", enabled: false, policy: defaultPolicy});
+  expect(writes.find(w => w.path.endsWith("/bot"))!.body).toEqual({name: "本鱼", avatar: "", enabled: false, policy: newPolicy});
   await expect(page.getByText("合成账号 的 AI", { exact: false })).toBeVisible();
   await page.getByLabel("上传机器人头像").setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j7ioAAAAASUVORK5CYII=", "base64") });
   await expect(page.getByText("头像已上传，保存机器人资料后会公开显示。", { exact: true })).toBeVisible();
@@ -742,3 +743,33 @@ for (const width of [375, 1440])
       fullPage: true,
     });
   });
+
+
+for (const existing of [false,true]) test(`机器人表单采用服务端规则并读取保存结果 existing=${existing}`,async({page},info)=>{
+  await fixture(page);
+  const defaults={...defaultPolicy,hourly_reply_limit:12,daily_reply_limit:82,min_reply_interval_minutes:7,blocked_terms:['服务端禁止词']};
+  let bot:Record<string,unknown>|null=existing?{bot_user_id:2001,name:'旧规则机器人',enabled:false,policy:{...defaultPolicy}}:null;
+  const writes:Record<string,any>[]=[];
+  await page.route('**/api/connected-apps/bot',route=>{
+    if(route.request().method()==='POST'){
+      writes.push(route.request().postDataJSON());
+      bot={bot_user_id:2001,name:'服务端确认机器人',enabled:false,policy:{...defaults,daily_reply_limit:60,min_reply_interval_minutes:9}};
+    }
+    return route.fulfill({json:{bot,default_policy:defaults,policy_supported:true,sections:[{slug:'campus_life',name:'校园生活'}],auto_reply_server_enabled:true,auto_reply_authorized:true}});
+  });
+  await page.goto('./connected-apps?purpose=bot');
+  const daily=page.getByLabel('每 24 小时最多评论数');
+  const interval=page.getByLabel('评论间隔（分钟）');
+  await expect(daily).toHaveValue(existing?String(defaultPolicy.daily_reply_limit):'82');
+  await expect(interval).toHaveValue(existing?String(defaultPolicy.min_reply_interval_minutes):'7');
+  await expect(page.getByLabel('屏蔽词',{exact:true})).toHaveValue(existing?'':'服务端禁止词');
+  await expect(page.getByText(existing?'服务端未设置每小时上限。':'服务端规则：每小时最多 12 条。',{exact:true})).toBeVisible();
+  await page.screenshot({path:info.outputPath(`bot-server-policy-${existing}.png`),fullPage:true});
+  await page.getByRole('button',{name:existing?'保存资料与权限':'新建机器人',exact:true}).click();
+  await expect(daily).toHaveValue('60');await expect(interval).toHaveValue('9');
+  expect(writes).toHaveLength(1);
+  expect(writes[0].policy.daily_reply_limit).toBe(existing?defaultPolicy.daily_reply_limit:82);
+  expect(writes[0].policy.min_reply_interval_minutes).toBe(existing?defaultPolicy.min_reply_interval_minutes:7);
+  expect(writes[0].policy.hourly_reply_limit).toBe(existing?undefined:12);
+  expect(writes[0].policy.blocked_terms).toEqual(existing?[]:['服务端禁止词']);
+});

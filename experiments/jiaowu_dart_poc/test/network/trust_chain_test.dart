@@ -13,12 +13,12 @@ void main() {
 
     expect(
       JiaowuTrustChain.intermediateName,
-      'TrustAsia TLS Pro RSA CA 2025',
+      'TrustAsia OV TLS RSA CA 2024',
     );
-    expect(JiaowuTrustChain.bundledTrustVersion, 'trustasia-rsa-2025-v1');
+    expect(JiaowuTrustChain.bundledTrustVersion, 'trustasia-ov-rsa-2024-certum-v2');
     expect(
       JiaowuTrustChain.intermediateCertificateSha256,
-      '41:6A:2C:89:51:5B:8B:C1:4E:13:67:70:24:E2:A8:2E:8B:1B:2F:41:17:A8:8F:D1:1B:8B:BD:25:D1:A5:C5:17',
+      'D0:B6:26:C8:AD:93:96:22:96:B3:92:01:06:ED:7F:B3:81:8F:CB:98:E0:B7:3E:79:91:41:B4:25:21:33:5B:0F',
     );
   });
 }

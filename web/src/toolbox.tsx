@@ -140,15 +140,17 @@ function Lottery(){
       <p className="muted">规则：已完成教务配置的账号均可参与一次；用户等级即抽奖权重（Lv.1~Lv.8 对应 1~8 份）。</p>
       <button type="button" className="btn primary" disabled={joinDisabled} onClick={()=>void ui.act(async()=>{await write(`/api/lottery/${event.id}/join`);await q.refetch();},'参与成功')}>{joinLabel}</button>
     </QueryState>}
-    {history.length>0&&<section style={{marginTop:16}}>
+    <section style={{marginTop:16}}>
       <h4>往期抽奖记录</h4>
+      <QueryState query={historyQ} empty={!history.length}>
       {history.map((item)=>
         <p key={item.id} className="muted">
           {item.title}（{item.prize_name}）· {lotteryStatusText(item.status)} · 参与 {item.participant_count??0} 人
           {Number(item.status)===1?` · 中奖者：${item.winner?.nickname||(item.winner_id?'已注销用户':'暂无')}`:''}
         </p>
       )}
-    </section>}
+      </QueryState>
+    </section>
   </>;
 }
 const providerNames:Record<string,string>={undergraduate:'本科教务',graduate:'研究生教务',erke:'二课 WebVPN',physical:'体测'};

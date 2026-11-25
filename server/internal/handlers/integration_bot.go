@@ -67,7 +67,7 @@ func (h *IntegrationHandler) BotStatus(c *gin.Context) {
 		writeIntegrationError(c, err, false)
 		return
 	}
-	c.JSON(200, gin.H{"bot": bot, "runtime_supported": true, "runtime": runtime, "policy_supported": true, "sections": choices, "auto_reply_server_enabled": h.options.AutoReplyEnabled, "auto_reply_authorized": authorized, "auto_post_server_enabled": h.options.AutoPostEnabled, "auto_post_authorized": postAuthorized})
+	c.JSON(200, gin.H{"bot": bot, "default_policy": services.NewManagedBotPolicy(), "runtime_supported": true, "runtime": runtime, "policy_supported": true, "sections": choices, "auto_reply_server_enabled": h.options.AutoReplyEnabled, "auto_reply_authorized": authorized, "auto_post_server_enabled": h.options.AutoPostEnabled, "auto_post_authorized": postAuthorized})
 }
 
 func (h *IntegrationHandler) ManageBot(c *gin.Context) {

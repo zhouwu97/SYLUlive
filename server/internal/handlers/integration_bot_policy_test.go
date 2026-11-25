@@ -63,6 +63,11 @@ func TestManagedBotHTTPCreatePausedEditRecentPauseAndReadPolicy(t *testing.T) {
 	w := send("GET", "/api/connected-apps/bot", jwt, nil)
 	require.Equal(t, 200, w.Code, w.Body.String())
 	require.Contains(t, w.Body.String(), `"policy_supported":true`)
+	var status struct {
+		DefaultPolicy models.ManagedBotPolicy `json:"default_policy"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status))
+	require.Equal(t, services.NewManagedBotPolicy(), status.DefaultPolicy)
 	require.Contains(t, w.Body.String(), `"name":"校园生活"`)
 	require.NotContains(t, w.Body.String(), "投诉")
 	require.NotContains(t, w.Body.String(), "敏感")
@@ -75,6 +80,9 @@ func TestManagedBotHTTPCreatePausedEditRecentPauseAndReadPolicy(t *testing.T) {
 	require.Contains(t, w.Body.String(), `"nickname":"公开创建者"`)
 	var bot models.ManagedBot
 	require.NoError(t, db.First(&bot, "owner_id = ?", owner).Error)
+	require.Equal(t, 100, services.ManagedBotPolicy(bot).DailyReplyLimit)
+	require.Equal(t, 1, services.ManagedBotPolicy(bot).MinReplyIntervalMinutes)
+	require.Equal(t, 15, *services.ManagedBotPolicy(bot).HourlyReplyLimit)
 	botPost := models.Post{BoardID: models.BoardShuitie, AuthorID: bot.UserID, PostType: "campus_life", Status: models.PostStatusNormal, ContentKind: models.PostContentKindNormal, Content: "AI公开归属验收"}
 	require.NoError(t, db.Create(&botPost).Error)
 	w = send("GET", fmt.Sprintf("/api/integrations/v1/public/community/posts/%d", botPost.ID), "", nil)

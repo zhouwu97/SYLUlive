@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
@@ -17,6 +19,7 @@ import (
 
 func newLotteryHandlerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open database: %v", err)
@@ -32,6 +35,128 @@ func newLotteryHandlerTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestLotteryJoinPostgresWaitsForCancellation(t *testing.T) {
+	db := integrationLockDB(t)
+	require.NoError(t, db.AutoMigrate(&models.AcademicAccountConfig{}, &models.LotteryEvent{}, &models.LotteryParticipant{}))
+	user := models.User{Nickname: "报名并发测试", PasswordHash: "synthetic", AccountStatus: "active"}
+	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, db.Create(&models.AcademicAccountConfig{UserID: user.ID, ProviderID: models.AcademicProviderUndergraduate, StudentID: "synthetic-lottery", State: "active", Revision: 1}).Error)
+	event := models.LotteryEvent{Title: "取消中的活动", PrizeName: "合成奖品", DrawTime: time.Now().Add(time.Hour)}
+	require.NoError(t, db.Create(&event).Error)
+	cancellation := db.Begin()
+	require.NoError(t, cancellation.Error)
+	t.Cleanup(func() { _ = cancellation.Rollback().Error })
+	require.NoError(t, cancellation.Model(&event).Update("status", models.LotteryStatusCancelled).Error)
+	read := make(chan struct{}, 1)
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register("test:lottery-read", func(tx *gorm.DB) {
+		if tx.Statement.Table == "lottery_events" {
+			select {
+			case read <- struct{}{}:
+			default:
+			}
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Query().Remove("test:lottery-read") })
+	result := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		r := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(r)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/lottery/1/join", nil)
+		c.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(event.ID), 10)}}
+		c.Set("user_id", user.ID)
+		NewLotteryHandler(db).Join(c)
+		result <- r
+	}()
+	// 正确的行锁会等待取消提交；旧的无锁读取会立即返回旧状态。
+	select {
+	case <-read:
+	case <-time.After(200 * time.Millisecond):
+	}
+	require.NoError(t, cancellation.Commit().Error)
+	select {
+	case r := <-result:
+		require.Equal(t, http.StatusBadRequest, r.Code, r.Body.String())
+	case <-time.After(3 * time.Second):
+		t.Fatal("报名未在取消提交后完成")
+	}
+	var count int64
+	require.NoError(t, db.Model(&models.LotteryParticipant{}).Where("lottery_id = ?", event.ID).Count(&count).Error)
+	require.Zero(t, count)
+}
+
+func TestLotteryConcurrentPublishingPostgres(t *testing.T) {
+	db := integrationLockDB(t)
+	require.NoError(t, db.AutoMigrate(&models.LotteryEvent{}, &models.LotteryParticipant{}))
+	ready, release := make(chan struct{}, 2), make(chan struct{})
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register("test:lottery-publish", func(tx *gorm.DB) {
+		if tx.Statement.Table == "lottery_events" {
+			ready <- struct{}{}
+			select {
+			case <-release:
+			case <-time.After(3 * time.Second):
+				tx.AddError(gorm.ErrInvalidTransaction)
+			}
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Create().Remove("test:lottery-publish") })
+	results := make(chan *httptest.ResponseRecorder, 2)
+	for _, title := range []string{"并发活动一", "并发活动二"} {
+		go func(title string) {
+			results <- performJSONRequest(t, NewSuperAdminHandler(db).CreateLotteryEvent, http.MethodPost, "/api/super/lottery", map[string]any{
+				"title": title, "prize_name": "合成奖品", "draw_time": time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			})
+		}(title)
+	}
+	select {
+	case <-ready:
+	case <-time.After(3 * time.Second):
+		close(release)
+		t.Fatal("发布未开始")
+	}
+	select {
+	case <-ready:
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	for range 2 {
+		select {
+		case r := <-results:
+			require.Equal(t, http.StatusCreated, r.Code, r.Body.String())
+		case <-time.After(3 * time.Second):
+			t.Fatal("并发发布未结束")
+		}
+	}
+	var ongoing int64
+	require.NoError(t, db.Model(&models.LotteryEvent{}).Where("status = ?", models.LotteryStatusOngoing).Count(&ongoing).Error)
+	require.EqualValues(t, 1, ongoing)
+}
+
+func TestLotteryDrawRechecksRescheduledDeadlinePostgres(t *testing.T) {
+	db := integrationLockDB(t)
+	require.NoError(t, db.AutoMigrate(&models.LotteryEvent{}, &models.LotteryParticipant{}))
+	event := models.LotteryEvent{Title: "改期活动", PrizeName: "合成奖品", DrawTime: time.Now().Add(-time.Hour)}
+	require.NoError(t, db.Create(&event).Error)
+	changed := false
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register("test:lottery-reschedule", func(tx *gorm.DB) {
+		if tx.Statement.Table == "lottery_events" && !changed {
+			changed = true
+			require.NoError(t, db.Model(&event).Update("draw_time", time.Now().Add(time.Hour)).Error)
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Query().Remove("test:lottery-reschedule") })
+	r := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(r)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/admin/lottery/1/draw", nil)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(event.ID), 10)}}
+	NewLotteryHandler(db).Draw(c)
+	require.Equal(t, http.StatusBadRequest, r.Code, r.Body.String())
+	require.Contains(t, r.Body.String(), "lottery_not_ready")
+	var saved models.LotteryEvent
+	require.NoError(t, db.First(&saved, event.ID).Error)
+	require.Equal(t, models.LotteryStatusOngoing, saved.Status)
+	require.Nil(t, saved.DrawnAt)
+}
+
 func performJSONRequest(
 	t *testing.T,
 	handler gin.HandlerFunc,
@@ -40,7 +165,6 @@ func performJSONRequest(
 	body map[string]any,
 ) *httptest.ResponseRecorder {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
 	payload, err := json.Marshal(body)
 	if err != nil {
 		t.Fatalf("marshal body: %v", err)
@@ -83,7 +207,7 @@ func TestCreateLotteryEventPublishesNewCurrentEventAndClosesOldOne(t *testing.T)
 	if err := db.First(&updatedOld, oldEvent.ID).Error; err != nil {
 		t.Fatalf("load old event: %v", err)
 	}
-	if updatedOld.Status != 1 {
+	if updatedOld.Status != models.LotteryStatusCancelled {
 		t.Fatalf("expected old event closed, got status %d", updatedOld.Status)
 	}
 

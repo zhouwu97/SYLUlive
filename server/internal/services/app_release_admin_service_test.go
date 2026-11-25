@@ -217,3 +217,29 @@ func TestAppReleaseAdminServiceOhosExternalMarketLifecycle(t *testing.T) {
 	require.NoError(t, db.Model(&models.AppRelease{}).Where("id = ?", draft2.ID).Count(&count).Error)
 	require.Zero(t, count)
 }
+
+func TestBetaReleaseLifecycleAndIsolation(t *testing.T) {
+	svc, _, admin := newAppReleaseAdminTestService(t)
+	stable := createAppReleaseDraftForTest(t, svc, admin, 1700, 1600)
+	_, err := svc.PublishDraft(context.Background(), stable.ID, admin.ID)
+	require.NoError(t, err)
+	beta, err := svc.CreateDraft(context.Background(), AppReleaseDraftInput{
+		Platform: models.AppReleasePlatformAndroid, Channel: models.AppReleaseChannelBeta,
+		VersionName: "1.7.0", VersionCode: 1700, Title: "beta", Changelog: "audit",
+		MinimumSupportedVersionCode: 1699, CreatedBy: admin.ID,
+		DeliveryMode: models.AppReleaseDeliveryModeDirectPackage,
+	}, "beta.apk", bytes.NewReader(apkFixture(1700)), 1024*1024)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), beta.MinimumSupportedVersionCode)
+	require.Contains(t, beta.StorageKey, "android/beta/1700/")
+	require.NotEqual(t, stable.StorageKey, beta.StorageKey)
+	_, err = svc.PublishDraft(context.Background(), beta.ID, admin.ID)
+	require.NoError(t, err)
+	minimum := int64(1700)
+	_, err = svc.UpdateDraft(context.Background(), beta.ID, admin.ID, AppReleaseDraftUpdate{MinimumSupportedVersionCode: &minimum})
+	require.Error(t, err)
+	_, err = svc.WithdrawPublished(context.Background(), beta.ID, admin.ID)
+	require.NoError(t, err)
+	_, err = svc.WithdrawPublished(context.Background(), stable.ID, admin.ID)
+	require.ErrorIs(t, err, ErrAppReleaseNoFallback)
+}

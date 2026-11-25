@@ -1,5 +1,5 @@
 import {test, expect, chromium, type Page} from '@playwright/test';
-import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises';
+import {mkdtemp, mkdir, writeFile, rm, cp, readFile} from 'node:fs/promises';
 import {resolve, join} from 'node:path';
 import {tmpdir} from 'node:os';
 
@@ -16,14 +16,20 @@ async function hello(page: Page) {
   }));
 }
 
-test('真实扩展停用后重新启用，在原标签页免刷新恢复握手且不读取学校资料', async () => {
+test('真实扩展停用后重新启用，在原标签页免刷新恢复握手且不读取学校资料', async ({baseURL}) => {
   const root = await mkdtemp(join(tmpdir(), 'sylulive-reenable-'));
   const controllerPath = join(root, 'controller');
   await mkdir(controllerPath);
   // management 只授予临时测试控制器，产品扩展的权限不变。
   await writeFile(join(controllerPath, 'manifest.json'), JSON.stringify({manifest_version: 3, name: 'SYLU test controller', version: '1.0', permissions: ['management'], background: {service_worker: 'background.js'}}));
   await writeFile(join(controllerPath, 'background.js'), 'chrome.runtime.onInstalled.addListener(() => {});');
-  const extension = resolve('browser-extension/dist-dev');
+  const extension = join(root,'extension');
+  await cp(resolve('browser-extension/dist-dev'),extension,{recursive:true});
+  const origin=new URL(baseURL!).origin;
+  const manifest=JSON.parse(await readFile(join(extension,'manifest.json'),'utf8'));
+  manifest.host_permissions.push(`${origin}/*`);
+  for(const script of manifest.content_scripts)script.matches.push(`${origin}/*`);
+  await writeFile(join(extension,'manifest.json'),JSON.stringify(manifest));
   const paths = `${extension},${controllerPath}`;
   const context = await chromium.launchPersistentContext(join(root, 'profile'), {channel: 'chromium', headless: true, args: [`--disable-extensions-except=${paths}`, `--load-extension=${paths}`]});
   const schoolRequests: string[] = [];
@@ -36,7 +42,7 @@ test('真实扩展停用后重新启用，在原标签页免刷新恢复握手�
     await context.route('**/api/**', route => route.fulfill({json: {items: []}}));
     await context.route(/https?:\/\/(?:(?:jxw|yjsgl|webvpn)\.sylu\.edu\.cn|47\.92\.231\.221)\//, route => { schoolRequests.push(route.request().url()); return route.abort(); });
     const page = await context.newPage();
-    await page.goto('http://127.0.0.1:5173/web/schedule');
+    await page.goto(`${origin}/web/schedule`);
     await expect.poll(() => hello(page)).toBe(true);
     let navigations = 0;
     page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });

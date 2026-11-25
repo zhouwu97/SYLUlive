@@ -60,7 +60,7 @@ try {
     await page.getByRole('checkbox',{name:/我已核对连接码与当前账号/}).check();
     await page.getByRole('button',{name:'授权此助手',exact:true}).click();
     await expect(page.getByText(/已授权。回到原 QQ 聊天/)).toBeVisible();
-    await page.getByRole('link',{name:/社区机器人.*自动浏览/}).click();
+    await page.getByRole('navigation',{name:'管理分类'}).getByRole('link',{name:/^管理社区机器人/}).click();
     await page.getByRole('navigation',{name:'助手管理分区'}).getByRole('button',{name:'连接 AstrBot',exact:true}).click();
     await page.getByRole('button',{name:'修改权限',exact:true}).click();
     const editor=page.getByRole('group',{name:'修改连接权限'});
@@ -83,7 +83,7 @@ try {
     for(const dataset of ['grades','erke']) {
       await page.getByRole('combobox',{name:'资料类型'}).selectOption(dataset);
       await page.getByRole('button',{name:'从本机教务助手读取',exact:true}).click();
-      await page.getByRole('button',{name:'查询并更新资料',exact:true}).click();
+      await page.getByRole('button',{name:'连接并读取资料',exact:true}).click();
       await expect(page.locator('.dialog-form')).toHaveCount(0);
       const confirm=page.getByRole('button',{name:'确认同步最小资料',exact:true});
       await expect(confirm).toBeDisabled();

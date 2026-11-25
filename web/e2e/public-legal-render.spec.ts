@@ -7,12 +7,12 @@ for (const colorScheme of ['light','dark'] as const) {
     ['/privacy','privacy','沈理校园隐私政策'],
     ['/extension/privacy','extension-privacy','沈理校园教务助手隐私说明'],
   ]) {
-    test(`公开正文移动端可读 ${path} ${colorScheme}`, async ({page}) => {
+    test(`公开正文移动端可读 ${path} ${colorScheme}`, async ({page,baseURL}) => {
       await page.setViewportSize({width:375,height:812});
       await page.emulateMedia({colorScheme, reducedMotion:'reduce'});
       const html = await readFile(`server/static/legal/${filename}.html`, 'utf8');
       await page.route(`**${path}`, route => route.fulfill({contentType:'text/html; charset=utf-8',body:html}));
-      await page.goto(`http://127.0.0.1:5173${path}`);
+      await page.goto(`${new URL(baseURL!).origin}${path}`);
       await expect(page.getByRole('heading',{level:1})).toHaveText(title);
       expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const contact = page.locator('.body').filter({hasText:'1517088507@qq.com'}).last();

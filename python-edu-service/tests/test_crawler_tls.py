@@ -1,13 +1,21 @@
 import hashlib
 import ssl
 
+import certifi
 import pytest
 
 from services import crawler
 from services.crawler import ACADEMIC_TLS_CIPHER, _academic_tls_context
 
 
-def test_school_intermediate_does_not_replace_root_or_hostname_validation():
+def test_school_intermediate_does_not_replace_root_or_hostname_validation(monkeypatch):
+    roots = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    roots.load_verify_locations(cafile=certifi.where())
+    root_fingerprints = {
+        hashlib.sha256(cert).hexdigest()
+        for cert in roots.get_ca_certs(binary_form=True)
+    }
+    monkeypatch.setattr(crawler.ssl, "create_default_context", lambda: roots)
     context = _academic_tls_context()
     assert context.check_hostname is True
     assert context.verify_mode == ssl.CERT_REQUIRED
@@ -16,7 +24,11 @@ def test_school_intermediate_does_not_replace_root_or_hostname_validation():
         hashlib.sha256(cert).hexdigest()
         for cert in context.get_ca_certs(binary_form=True)
     }
-    assert "416a2c89515b8bc14e13677024e2a82e8b1b2f4117a88fd11b8bbd25d1a5c517" in fingerprints
+    assert root_fingerprints <= fingerprints
+    assert {
+        "d0b626c8ad93962296b3920106ed7fb3818fcb98e0b73e799141b42521335b0f",
+        "ce0df856ea6cc0ebe068f55c4cc4de77def45cacb2d4e946d8ade706666f5887",
+    } <= fingerprints
 
 
 @pytest.mark.asyncio

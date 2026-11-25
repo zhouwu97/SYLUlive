@@ -50,10 +50,12 @@ void main() {
       double flow = 0,
       bool expanded = false,
       ui.Image? source,
+      ui.Image? lensSource,
     }) async {
       final shader = program.fragmentShader();
       shader.setImageSampler(0, source ?? scene);
       shader.setImageSampler(1, tabs);
+      shader.setImageSampler(2, lensSource ?? source ?? scene);
       final values = <double>[
         360,
         64,
@@ -171,18 +173,35 @@ void main() {
       return channels.last - channels.first;
     }
 
-    var spectralEdgePixels = 0;
+    var litEdgePixels = 0;
     for (var y = 0; y < 64; y++) {
       for (var x = 50; x < 120; x++) {
-        if (channelSpread(sp, x, y) - channelSpread(cp, x, y) > 10) {
-          spectralEdgePixels++;
-        }
+        final at = (y * 360 + x) * 4;
+        expect(channelSpread(sp, x, y), lessThanOrEqualTo(3),
+            reason: 'A neutral scene keeps the clear dock neutral');
+        if (sp[at] - cp[at] > 5) litEdgePixels++;
       }
     }
-    expect(spectralEdgePixels, greaterThan(50),
-        reason: 'A uniform scene must still reveal the colored reflection rim');
+    expect(litEdgePixels, greaterThan(50),
+        reason: 'A uniform scene must still reveal neutral surface lighting');
     expect(channelSpread(sp, 80, 32), lessThanOrEqualTo(3),
-        reason: 'Spectral reflection must stay at the edge, not tint the body');
+        reason: 'Surface lighting must not tint the body');
+    final rawLens =
+        await render(false, source: neutralScene, lensSource: scene);
+    final rawPixels = await pixels(rawLens);
+    var rawLensDifference = 0;
+    for (var y = 16; y < 48; y++) {
+      for (var x = 150; x < 210; x++) {
+        final at = (y * 360 + x) * 4;
+        rawLensDifference += (rawPixels[at] - sp[at]).abs();
+      }
+    }
+    expect(rawLensDifference / (32 * 60), greaterThan(8),
+        reason:
+            'The lens samples raw capture independently of the blurred dock');
+    expect(rawPixels.sublist((32 * 360 + 80) * 4, (32 * 360 + 80) * 4 + 4),
+        sp.sublist((32 * 360 + 80) * 4, (32 * 360 + 80) * 4 + 4),
+        reason: 'Changing raw lens capture leaves the dock unchanged');
     final right = await render(false, flow: .85, expanded: true);
     final left = await render(false, flow: -.85, expanded: true);
     final neutral = await render(false, expanded: true);
@@ -215,6 +234,7 @@ void main() {
       'optics-fluid-rest': neutral,
       'optics-spectral-neutral': spectral,
       'optics-neutral-compare': neutralCompare,
+      'optics-raw-lens': rawLens,
     }.entries) {
       File('${directory.path}/${entry.key}.png').writeAsBytesSync(
         (await entry.value.toByteData(
@@ -236,5 +256,6 @@ void main() {
     neutralScene.dispose();
     spectral.dispose();
     neutralCompare.dispose();
+    rawLens.dispose();
   });
 }

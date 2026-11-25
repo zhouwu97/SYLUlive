@@ -3,7 +3,7 @@ import { mkdtemp, rm, mkdir, cp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
-async function command(page: import('@playwright/test').Page, operation: string, payload: Record<string, unknown>) {
+async function command(page: import("@playwright/test").Page, operation: string, payload: Record<string, unknown>) {
   return page.evaluate(({operation,payload})=>new Promise<any>((resolve,reject)=>{
     const id=crypto.randomUUID(),timer=setTimeout(()=>reject(new Error('助手命令超时')),8000);
     const listener=(event:MessageEvent)=>{if(event.data?.id!==id||event.data.direction!=='response')return;clearTimeout(timer);window.removeEventListener('message',listener);resolve(event.data)};
@@ -11,7 +11,7 @@ async function command(page: import('@playwright/test').Page, operation: string,
   }),{operation,payload});
 }
 
-async function vaultKeys(worker: import('@playwright/test').Worker) {
+async function vaultKeys(worker: import("@playwright/test").Worker) {
   return worker.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open('sylulive-academic',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
     const keys = await new Promise<IDBValidKey[]>((resolve,reject)=>{const r=db.transaction('data').objectStore('data').getAllKeys();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
@@ -20,12 +20,15 @@ async function vaultKeys(worker: import('@playwright/test').Worker) {
 }
 
 for (const provider of ["undergraduate", "erke"] as const) {
-  test(`${provider}真实扩展首次保存授权、第二次自动登录回跳并拉取、断开清除凭据`, async () => {
+  test(`${provider}真实扩展首次保存授权、第二次自动登录回跳并拉取、断开清除凭据`, async ({ baseURL }) => {
+    const appOrigin = new URL(baseURL!).origin;
     test.setTimeout(120_000);
     const profileDir = await mkdtemp(resolve(tmpdir(), "sylulive-autologin-"));
     const extension = resolve(profileDir, "extension");
     await cp(resolve("browser-extension/dist-dev"), extension, { recursive: true });
     const manifest = JSON.parse(await readFile(resolve(extension, "manifest.json"), "utf8"));
+    manifest.host_permissions.push(`${appOrigin}/*`);
+    for (const script of manifest.content_scripts) script.matches.push(`${appOrigin}/*`);
     // Headless Chromium 无法操作浏览器原生的 optional host 权限弹窗；仅在临时
     // 测试包预授予本用例学校域名，扩展源码与生产 manifest 仍按点击请求权限。
     manifest.host_permissions.push(provider === "erke" ? "https://webvpn.sylu.edu.cn/*" : "https://jxw.sylu.edu.cn/*");
@@ -68,13 +71,13 @@ for (const provider of ["undergraduate", "erke"] as const) {
           ? (window as any).__fixtureSchoolTab(options.url) : create(options)) as typeof chrome.tabs.create;
       }, { origin });
       // Service Worker 请求无法由 page.route 覆盖；只提供固定夹具，禁止真实外联。
-      await worker.evaluate(({ origin, identityHtml, loginHtml, erkeData, gradeJson }) => {
+      await worker.evaluate(({ appOrigin, origin, identityHtml, loginHtml, erkeData, gradeJson }) => {
         (self as any).__schoolReady = false;
         (self as any).__appUserId = 7;
         self.fetch = (async (input: RequestInfo | URL) => {
           const url = String(input), path = new URL(url).pathname;
           let body: string;
-          if (url === "http://127.0.0.1:5173/api/user/profile") body = JSON.stringify({ id: (self as any).__appUserId, nickname: "合成测试", role: "user" });
+          if (url === appOrigin + "/api/user/profile") body = JSON.stringify({ id: (self as any).__appUserId, nickname: "合成测试", role: "user" });
           else if (new URL(url).origin !== origin) throw new Error("测试禁止外联");
           else if (!(self as any).__schoolReady) body = loginHtml;
           else if (path.includes("xsgrxx") || path.endsWith("top.aspx")) body = identityHtml;
@@ -85,8 +88,8 @@ for (const provider of ["undergraduate", "erke"] as const) {
           Object.defineProperty(response, "url", { value: url });
           return response;
         }) as typeof fetch;
-      }, { origin, identityHtml, loginHtml, erkeData, gradeJson });
-      await context.route("**/api/**", route => route.fulfill({ json: route.request().url().endsWith("/user/profile") ? { id: 7, nickname: "合成测试", role: "user" } : { ok: true } }));
+      }, { appOrigin, origin, identityHtml, loginHtml, erkeData, gradeJson });
+      await context.route("**/api/**", route => route.fulfill({ json: route.request().url().endsWith("/user/profile") ? { id: 7, nickname: "合成测试", role: "user" } : route.request().url().includes("/academic-account-configs") ? { configs: [] } : { ok: true } }));
       await context.route(`${origin}/**`, async route => {
         const path = new URL(route.request().url()).pathname;
         if (holdIdentity && (path.includes('xsgrxx') || path.endsWith('top.aspx'))) await new Promise<void>(resolve=>{releaseIdentity=resolve});
@@ -122,7 +125,7 @@ for (const provider of ["undergraduate", "erke"] as const) {
       }
       await prepareContext();
       let page = await context.newPage();
-      await page.goto(`http://127.0.0.1:5173/web/grades${provider === "erke" ? "?tab=erke" : ""}`);
+      await page.goto(`${appOrigin}/web/grades${provider === "erke" ? "?tab=erke" : ""}`);
       await page.evaluate(() => { (window as any).__bridgeMessages = []; window.addEventListener("message", event => { if (event.data?.channel === "sylulive-academic-v1") (window as any).__bridgeMessages.push(event.data); }); });
       await expect(page.getByRole("button", { name: "我的账号" })).toBeVisible();
       await page.getByRole("button", { name: "更新本地资料" }).click();
@@ -196,7 +199,7 @@ for (const provider of ["undergraduate", "erke"] as const) {
       worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
       await prepareContext();
       page=await context.newPage();
-      await page.goto(`http://127.0.0.1:5173/web/grades${provider==='erke'?'?tab=erke':''}`);
+      await page.goto(`${appOrigin}/web/grades${provider==='erke'?'?tab=erke':''}`);
       await page.evaluate(()=>{(window as any).__bridgeMessages=[];window.addEventListener('message',event=>{if(event.data?.channel==='sylulive-academic-v1')(window as any).__bridgeMessages.push(event.data)})});
       await expect(page.getByRole('button',{name:'我的账号'})).toBeVisible();
       await page.getByRole('button',{name:'更新本地资料'}).click();
@@ -221,11 +224,11 @@ for (const provider of ["undergraduate", "erke"] as const) {
       await expect(page.getByRole("button", { name: "断开并清除当前资料" })).toHaveCount(0);
       expect(await vaultKeys(worker)).toHaveLength(0);
       // 损坏密文不会自动删除或挡住恢复入口，用户可明确清除后再连接。
-      await worker.evaluate(async provider=>{
+      await worker.evaluate(async ({provider,appOrigin})=>{
         const db=await new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open('sylulive-academic',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
-        await new Promise<void>((resolve,reject)=>{const tx=db.transaction('data','readwrite');tx.objectStore('data').put({iv:[0],data:[1]},`school-credentials:http://127.0.0.1:5173:7:${provider}`);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)});
+        await new Promise<void>((resolve,reject)=>{const tx=db.transaction('data','readwrite');tx.objectStore('data').put({iv:[0],data:[1]},`school-credentials:${appOrigin}:7:${provider}`);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)});
         db.close();
-      },provider);
+      },{provider,appOrigin});
       const damagedFlow=await command(page,'connect',{provider});
       await expect.poll(()=>context.pages().some(p=>p.url().includes(`flow=${damagedFlow.result.flowId}`))).toBe(true);
       const damaged=context.pages().find(p=>p.url().includes(`flow=${damagedFlow.result.flowId}`))!;
@@ -271,12 +274,12 @@ for (const provider of ["undergraduate", "erke"] as const) {
       await expect(switched.getByRole('button',{name:'授权并自动登录',exact:true})).toBeDisabled();
       // 助手标签被导航离开时也算结束，不能仅凭标签 ID 仍存在而等待五分钟。
       await worker.evaluate(()=>{(self as any).__appUserId=7});
-      await switched.goto('http://127.0.0.1:5173/web/grades');
+      await switched.goto(`${appOrigin}/web/grades`);
       const navigated = await command(page,'loginStatus',{provider,flowId:connect.result.flowId});
       expect(navigated.ok).toBe(true);expect(navigated.result.state).toBe('cancelled');
       // 登录请求在途时清除已保存凭据：旧请求结束不能提交或覆盖清除成功状态。
-      await worker.evaluate(async({provider,account,password})=>{
-        const scope=`school-credentials:http://127.0.0.1:5173:7:${provider}`;
+      await worker.evaluate(async({provider,account,password,appOrigin})=>{
+        const scope=`school-credentials:${appOrigin}:7:${provider}`;
         const key=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);
         const iv=crypto.getRandomValues(new Uint8Array(12));
         const credentials={account,password,...(provider==='erke'?{vpnPassword:'synthetic-vpn-secret'}:{})};
@@ -284,7 +287,7 @@ for (const provider of ["undergraduate", "erke"] as const) {
         const db=await new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open('sylulive-academic',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
         await new Promise<void>((resolve,reject)=>{const tx=db.transaction('data','readwrite');tx.objectStore('data').put({key,iv:[...iv],data:[...new Uint8Array(data)]},scope);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)});
         db.close();(self as any).__schoolReady=false;
-      },{provider,account,password:expectedPassword});
+      },{provider,account,password:expectedPassword,appOrigin});
       holdIdentity=true;releaseIdentity=undefined;
       const clearFlow=await command(page,'connect',{provider});
       await expect.poll(()=>Boolean(releaseIdentity)).toBe(true);

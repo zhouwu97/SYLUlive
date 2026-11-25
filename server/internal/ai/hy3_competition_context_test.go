@@ -29,7 +29,7 @@ func TestBuildHy3CompetitionUserContextUsesUnifiedStructuredProfile(t *testing.T
 	db, err := gorm.Open(sqlite.Open("file:hy3-context-on?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&models.User{}, &models.AcademicIdentityBinding{}, &models.UserCompetitionPreference{}, &models.UserCompetitionProfile{}, &models.UserCompetitionAward{},
+		&models.User{}, &models.AcademicIdentityBinding{}, &models.AcademicAccountConfig{}, &models.UserCompetitionPreference{}, &models.UserCompetitionProfile{}, &models.UserCompetitionAward{},
 	))
 	now := time.Now()
 	user := models.User{
@@ -38,6 +38,10 @@ func TestBuildHy3CompetitionUserContextUsesUnifiedStructuredProfile(t *testing.T
 		EduGrade: "本科2023级", EduCollege: "信息学院", EduMajor: "软件工程",
 	}
 	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, db.Create(&models.AcademicAccountConfig{
+		UserID: user.ID, ProviderID: models.AcademicProviderUndergraduate,
+		StudentID: "hy3-on", State: "active", Revision: 1,
+	}).Error)
 
 	profile, err := BuildHy3CompetitionUserContext(context.Background(), db, user.ID)
 	require.NoError(t, err)

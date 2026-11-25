@@ -238,6 +238,35 @@ func TestExecuteDrawCreatesAnnouncementWhenSystemUserDoesNotExist(t *testing.T) 
 	}
 }
 
+func TestExecuteDrawRejectsFutureDeadline(t *testing.T) {
+	for _, mode := range []string{models.LotteryDrawModeAuto, models.LotteryDrawModeManual} {
+		t.Run(mode, func(t *testing.T) {
+			db := newLotteryTaskTestDB(t)
+			event := models.LotteryEvent{Title: "未来活动", PrizeName: "合成奖品", DrawTime: time.Now().Add(time.Hour)}
+			if err := db.Create(&event).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := ExecuteDrawWithMode(db, event.ID, mode); err == nil {
+				t.Fatal("未来活动不应开奖")
+			}
+			var saved models.LotteryEvent
+			if err := db.First(&saved, event.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if saved.Status != models.LotteryStatusOngoing || saved.DrawnAt != nil || saved.WinnerID != nil {
+				t.Fatalf("未来活动被修改：%+v", saved)
+			}
+			var count int64
+			if err := db.Model(&models.Announcement{}).Count(&count).Error; err != nil {
+				t.Fatal(err)
+			}
+			if count != 0 {
+				t.Fatalf("未来活动创建了%d条公告", count)
+			}
+		})
+	}
+}
+
 func TestCheckAndDrawLotteriesPublishesAnnouncementForDueEvent(t *testing.T) {
 	db := newLotteryTaskTestDB(t)
 

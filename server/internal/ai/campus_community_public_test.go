@@ -63,3 +63,39 @@ func TestCommunityPublicAuthorsCountsRankCursorAndMedia(t *testing.T) {
 	require.NoError(t, db.First(&stored, 1).Error)
 	require.Equal(t, 17, stored.ViewCount)
 }
+
+func TestCommunityChronologicalPostPagination(t *testing.T) {
+	db := communityTestDB(t)
+	for _, id := range []uint{1, 3, 5, 7, 9, 11} {
+		communityTestPost(t, db, id)
+	}
+	require.NoError(t, db.Model(&models.Post{}).Where("id = ?", 1).Update("status", models.PostStatusModeratedHidden).Error)
+	require.NoError(t, db.Model(&models.Post{}).Where("id = ?", 7).Update("status", models.PostStatusDeleted).Error)
+	require.NoError(t, db.Model(&models.Post{}).Where("id IN ?", []uint{5, 9}).Update("title", "限定学习讨论").Error)
+	tools := NewCampusMCPTools(db, nil, nil, WithCampusCommunityReadTools(nil))
+	for _, tc := range []struct {
+		name, tool, args string
+		ids              []uint
+		next             uint
+	}{
+		{"oldest_first_page", "community.list_feed", `{"sort":"oldest","limit":2}`, []uint{3, 5}, 5},
+		{"oldest_next_page", "community.list_feed", `{"sort":"oldest","limit":2,"after_id":5}`, []uint{9, 11}, 0},
+		{"oldest_end", "community.list_feed", `{"sort":"oldest","after_id":11}`, []uint{}, 0},
+		{"newest_default", "community.list_feed", `{"limit":2}`, []uint{11, 9}, 9},
+		{"newest_next_page", "community.list_feed", `{"sort":"newest","limit":2,"after_id":9}`, []uint{5, 3}, 0},
+		{"oldest_search", "community.search_posts", `{"query":"限定","sort":"oldest","limit":2}`, []uint{5, 9}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			page := communityTestRead(t, tools, tc.tool, tc.args).Data.(map[string]interface{})
+			ids := []uint{}
+			for _, post := range page["items"].([]communityPostView) {
+				ids = append(ids, post.PostID)
+			}
+			require.Equal(t, tc.ids, ids)
+			require.Equal(t, tc.next, page["next_after_id"])
+			require.Empty(t, page["next_cursor"])
+		})
+	}
+	_, err := campusToolByName(t, tools, "community.list_feed").Execute(context.Background(), 7, json.RawMessage(`{"sort":"oldest","cursor":"unexpected"}`))
+	require.Error(t, err)
+}

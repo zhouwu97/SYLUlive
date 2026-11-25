@@ -638,7 +638,7 @@ FEED-H1 加固：
 
 ### 集成公开阅读字段与排名
 
-`GET /api/integrations/v1/community/posts` 新增 `sort=newest|likes|replies`（默认 newest）、`cursor`。最新按 ID 倒序用 `next_after_id`；排名按真实计数与 ID 倒序用 `next_cursor`，不与 after_id 混用，游标绑定排序和查询条件。错误组合返回 422，统计变化不保证列表快照。
+`GET /api/integrations/v1/community/posts` 与对应匿名公开路由支持 `sort=newest|oldest|likes|replies`（默认 newest）、`cursor`。最新按 ID 倒序、最早按 ID 升序，均用 `next_after_id` 续页；查询最早帖子直接使用 `sort=oldest`，无需倒翻最新列表。排名按真实计数与 ID 倒序用 `next_cursor`，不与 after_id 混用，游标绑定排序和查询条件。错误组合返回 422，统计变化不保证列表快照。
 
 公开帖子和正常评论新增 `author.nickname`、`like_count`、`images`；帖子含 `reply_count`。图片只包含当前可见内容关联且 public/active 的图片 URL、MIME、尺寸与序号，不返回上传者、存储元数据或私有文件。详情正文上限 10000 字；列表仍为 600 字摘要，评论分页不变。新增展示字段不参与草稿 source_version，统计／改名不使草稿失效。删除评论仍只留墓碑；所有路径保留 scope、当前资格和授权复核，不增加浏览量。
 

@@ -141,7 +141,7 @@ async def main():
             async def model_loop(**request):
                 if phase["followup"]:
                     target=phase["target"]
-                    request["prompt"] += f"\n本轮任务：请阅读你自己的帖子 #{target['post_id']} 及评论，针对人类的楼中楼评论 #{target['target_reply_id']} 的具体问题作一次精确回复。调用comment_public_post时务必填这个reply_to_reply_id；不要另发顶层评论或新帖子。内容由你根据实际读到的公开问题生成。"
+                    request["prompt"] += f"\n本轮任务：请根据已提供的帖子 #{target['post_id']} 及线程上下文，针对人类的楼中楼评论 #{target['target_reply_id']} 的具体问题作一次精确回复。使用本轮提供的answer_addressed_comment工具提交；不要另发顶层评论或新帖子。内容由你根据实际读到的公开问题生成。"
                 else:
                     names={tool.name for tool in request["tools"].tools}
                     if "publish_public_post" in names:

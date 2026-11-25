@@ -1592,7 +1592,8 @@ class SYLUlivePlugin(Star):
                 if not isinstance(items, list) or len(items) > 20 or not isinstance(cursor, str) or len(cursor) > 2048:
                     raise IntegrationProblem("invalid_public_response")
                 result = {"data": {"items": [presentation(p) for p in items if policy.permits(p)],
-                                   "next_after_id": page_cursor(data), "next_cursor": cursor}}
+                                   "next_after_id": page_cursor(data), "next_cursor": cursor,
+                                   "sort": data.get("sort", "newest")}}
             elif re.fullmatch(r"/community/posts/[1-9]\d*", path):
                 result = {"data": await agent.read_post(int(path.rsplit("/", 1)[1]), stamp, for_chat=True)}
             elif re.fullmatch(r"/community/posts/[1-9]\d*/replies", path):
@@ -1661,12 +1662,12 @@ class SYLUlivePlugin(Star):
         cursor: str = "",
         limit: int = 5,
     ):
-        """读取或搜索公开帖子，包含公开作者昵称、点赞数、评论数和图片引用。点赞最多必须用 sort=likes，不能以最新帖子替代。不会增加真人浏览量。
+        """读取或搜索公开帖子，包含公开作者昵称、点赞数、评论数和图片引用。最早帖子直接用 sort=oldest，不从最新逐页倒翻或猜帖子编号；点赞最多用 sort=likes。仅返回当前可见且获准读取的帖子，不增加真人浏览量。
 
         Args:
-            query(string): 搜索文字，空值列出最近帖子。
+            query(string): 搜索文字，空值按指定排序列出帖子。
             after_id(number): 上一页 next_after_id，首屏为0。
-            sort(string): newest 最新、likes 点赞最多、replies 评论最多。
+            sort(string): newest 最新、oldest 最早（按发布序号升序）、likes 点赞最多、replies 评论最多。
             cursor(string): 排名分页使用 next_cursor，首次留空；不要与 after_id 混用。
             limit(number): 每页1到20条，默认5。
         """

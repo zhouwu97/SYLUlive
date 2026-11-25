@@ -4580,29 +4580,38 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     );
     var isSending = false;
 
-    // 楼中楼 sheet 的子回复快照：初始取已在列表中的数据，剩余懒加载。
-    // 深链锚定（anchorReply 为子回复）时跳过列表预览，首屏直接加载以目标
-    // 结尾的窗口页（before_reply_id），并在窗口中高亮目标。
-    final anchored = anchorReply != null;
-    final sheetChildren = <Reply>[
-      if (!anchored) ..._collectThreadChildren(parentReply.id),
-    ];
+    const childrenPageSize = 50;
+    final previewChildren = _collectThreadChildren(parentReply.id);
+    final missingAnchor = anchorReply != null &&
+        !previewChildren.any((reply) => reply.id == anchorReply.id);
+    final pageAnchor = missingAnchor &&
+            (parentReply.childReplyCount == 0 ||
+                parentReply.childReplyCount > childrenPageSize)
+        ? anchorReply
+        : null;
+    final sheetChildren = pageAnchor == null ? previewChildren : <Reply>[];
     var childrenTotal = parentReply.childReplyCount > 0
         ? parentReply.childReplyCount
         : sheetChildren.length;
-    if (anchored && childrenTotal == 0) childrenTotal = 1;
+    if (missingAnchor && childrenTotal == 0) childrenTotal = 1;
     String? sheetChildrenCursor;
-    // loading 只表示"请求在途"；"还需要继续加载"由 hasMoreChildren 单独判断。
-    // 之前用 needsLoad 初始化 loading 会在 loadMoreChildren 入口被自身挡住，
-    // 导致首轮请求永远不发（死锁）。
     bool sheetChildrenLoading = false;
     bool sheetChildrenError = false;
-    bool firstChildrenRequest = true;
     VoidCallback? sheetUpdater;
     ModalRoute<void>? threadRoute;
+    final cancelToken = CancelToken();
+    final auth = context.read<AuthProvider>();
+    final session = ReplyNotificationSession.capture(auth);
+
+    bool isCurrentThreadRequest() {
+      if (!mounted || cancelToken.isCancelled) return false;
+      final current = ReplyNotificationSession.capture(auth);
+      return session.accountId == current.accountId &&
+          session.accountEpoch == current.accountEpoch;
+    }
 
     Future<void> loadMoreChildren() async {
-      if (sheetChildrenLoading) return;
+      if (sheetChildrenLoading || !isCurrentThreadRequest()) return;
       sheetChildrenLoading = true;
       sheetChildrenError = false;
       sheetUpdater?.call();
@@ -4610,38 +4619,39 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         final resp = await _dio.get(
           '/posts/${widget.postId}/replies/${parentReply.id}/children',
           queryParameters: {
-            'limit': 50,
-            if (anchored && firstChildrenRequest)
-              'before_reply_id': anchorReply.id,
-            if (sheetChildrenCursor != null) 'cursor': sheetChildrenCursor,
+            'limit': childrenPageSize,
+            if (sheetChildrenCursor != null)
+              'cursor': sheetChildrenCursor
+            else if (pageAnchor != null)
+              'before_reply_id': pageAnchor.id,
           },
+          cancelToken: cancelToken,
         );
-        firstChildrenRequest = false;
+        if (!isCurrentThreadRequest()) return;
         final data = resp.data;
-        if (data is Map<String, dynamic> && data['replies'] is List) {
-          final fetched = (data['replies'] as List)
-              .map((e) => Reply.fromJson(e as Map<String, dynamic>))
-              .toList();
-          final known = sheetChildren.map((r) => r.id).toSet();
-          sheetChildren.addAll(fetched.where((r) => !known.contains(r.id)));
-          final next = data['next_cursor'] as String?;
-          sheetChildrenCursor = (next != null && next.isNotEmpty) ? next : null;
-          if (sheetChildren.length >= childrenTotal) {
-            sheetChildrenCursor = null;
-          }
+        if (data is! Map<String, dynamic> || data['replies'] is! List) {
+          throw const FormatException('评论响应格式异常');
         }
-      } on DioException {
-        sheetChildrenError = true;
+        final fetched = (data['replies'] as List)
+            .map((e) => Reply.fromJson(e as Map<String, dynamic>))
+            .toList();
+        final next = data['next_cursor'] as String?;
+        final known = sheetChildren.map((r) => r.id).toSet();
+        sheetChildren.addAll(fetched.where((r) => known.add(r.id)));
+        sheetChildrenCursor = (next != null && next.isNotEmpty) ? next : null;
+        if (sheetChildren.length > childrenTotal) {
+          childrenTotal = sheetChildren.length;
+        }
       } catch (_) {
-        sheetChildrenError = true;
+        sheetChildrenError = isCurrentThreadRequest();
       } finally {
         sheetChildrenLoading = false;
-        sheetUpdater?.call();
+        if (!cancelToken.isCancelled) sheetUpdater?.call();
       }
     }
 
     // 打开 sheet 前就开始补拉剩余子回复，避免打开后再闪 loading。
-    if (childrenTotal > sheetChildren.length) {
+    if (missingAnchor || childrenTotal > sheetChildren.length) {
       unawaited(loadMoreChildren());
     }
 
@@ -4694,7 +4704,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                 error: sheetChildrenError,
                 hasMore: sheetChildrenCursor != null,
                 onLoadMore: loadMoreChildren,
-                highlightReplyId: anchored ? anchorReply.id : null,
+                highlightReplyId: anchorReply?.id,
               ),
               composer: PostReplyComposer(
                 embedded: true,
@@ -4760,6 +4770,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       },
     );
 
+    cancelToken.cancel();
     // pop 返回时退出动画仍在运行，等弹层移出 Overlay 后再释放输入资源。
     await threadRoute?.completed;
     threadComposerController.dispose();
@@ -4927,7 +4938,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     int? highlightReplyId,
   }) {
     final hasTrailer = loading || error || hasMore;
-    if (children.isEmpty && !loading) {
+    if (children.isEmpty && !hasTrailer) {
       return const SliverToBoxAdapter(
         child: SizedBox(height: 100),
       );

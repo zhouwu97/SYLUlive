@@ -187,6 +187,27 @@ Post _postWithImages({
 }
 
 class FakeDio extends Fake implements Dio {
+  FakeDio({
+    this.threadChildCount = 51,
+    this.contextChildCount = 1,
+    this.threadResponseGate,
+  });
+
+  final int threadChildCount;
+  final int contextChildCount;
+  final Future<void>? threadResponseGate;
+  final childQueries = <Map<String, dynamic>>[];
+  bool failNextContextChildRequest = false;
+
+  Map<String, dynamic> _threadChild(int number) => {
+        'id': 700 + number,
+        'post_id': 106,
+        'parent_reply_id': 7,
+        'author_id': 2,
+        'content': 'child-$number',
+        'created_at': '2026-01-01T00:00:00.000Z',
+      };
+
   /// children 懒加载接口被调用的次数（51-children 死锁回归测试用）。
   static int childrenRequestCount = 0;
   static final requestedPaths = <String>[];
@@ -430,29 +451,19 @@ class FakeDio extends Fake implements Dio {
         } as dynamic,
       );
     }
-    // 帖子 106：根评论带 51 条子回复的懒加载死锁回归 fixture。
     if (path.startsWith('/posts/106/replies/') && path.endsWith('/children')) {
       childrenRequestCount++;
+      childQueries.add({...?queryParameters});
+      if (threadResponseGate != null) await threadResponseGate;
+      final before = queryParameters?['before_reply_id'] as int?;
+      final end = before == null ? threadChildCount.clamp(0, 50) : before - 700;
       return Response<T>(
         requestOptions: RequestOptions(path: path),
         data: {
           'replies': <dynamic>[
-            {
-              "id": 751,
-              "post_id": 106,
-              "parent_reply_id": 7,
-              "content": "lazy-child-51",
-              "author_id": 2,
-              "author": {
-                "id": 2,
-                "nickname": "User2",
-                "avatar": "http://example.com/avatar.png",
-                "student_id": "2"
-              },
-              "created_at": "2026-01-01T00:00:00.000Z"
-            }
+            for (var number = 1; number <= end; number++) _threadChild(number),
           ],
-          'next_cursor': '',
+          'next_cursor': end < threadChildCount ? '2026-01-01T00:00:00Z|${700 + end}' : '',
         } as dynamic,
       );
     }
@@ -472,27 +483,13 @@ class FakeDio extends Fake implements Dio {
                 "avatar": "http://example.com/avatar.png",
                 "student_id": "2"
               },
-              "child_reply_count": 51,
+              "child_reply_count": threadChildCount,
               "created_at": "2026-01-01T00:00:00.000Z"
             },
-            ...List.generate(
-                50,
-                (i) => {
-                      "id": 701 + i,
-                      "post_id": 106,
-                      "parent_reply_id": 7,
-                      "content": "child-${i + 1}",
-                      "author_id": 2,
-                      "author": {
-                        "id": 2,
-                        "nickname": "User2",
-                        "avatar": "http://example.com/avatar.png",
-                        "student_id": "2"
-                      },
-                      "created_at": "2026-01-01T00:00:00.000Z"
-                    }),
+            _threadChild(1),
+            _threadChild(2),
           ],
-          'total': 52,
+          'total': threadChildCount + 1,
           'next_cursor': '',
         } as dynamic,
       );
@@ -542,7 +539,7 @@ class FakeDio extends Fake implements Dio {
               "avatar": "",
               "student_id": "2"
             },
-            "child_reply_count": 1,
+            "child_reply_count": contextChildCount,
             "created_at": "2026-01-01T00:00:00.000Z"
           },
           'root_reply_id': 800,
@@ -550,6 +547,14 @@ class FakeDio extends Fake implements Dio {
       );
     }
     if (path.startsWith('/posts/107/replies/') && path.endsWith('/children')) {
+      childQueries.add({...?queryParameters});
+      if (failNextContextChildRequest) {
+        failNextContextChildRequest = false;
+        throw DioException.connectionTimeout(
+          requestOptions: RequestOptions(path: path),
+          timeout: const Duration(seconds: 1),
+        );
+      }
       return Response<T>(
         requestOptions: RequestOptions(path: path),
         data: {
@@ -605,7 +610,9 @@ class FakeDio extends Fake implements Dio {
 class FakeAuthProvider extends Fake
     with ChangeNotifier
     implements AuthProvider {
-  final FakeDio _dio = FakeDio();
+  FakeAuthProvider([FakeDio? dio]) : _dio = dio ?? FakeDio();
+
+  final FakeDio _dio;
 
   @override
   bool get isLoggedIn => true;
@@ -668,10 +675,11 @@ Widget _postDetailTestApp(
   Post post, {
   bool isMarket = false,
   bool isDesktopSplitMode = false,
+  FakeDio? dio,
 }) {
   return MultiProvider(
     providers: [
-      ChangeNotifierProvider<AuthProvider>(create: (_) => FakeAuthProvider()),
+      ChangeNotifierProvider<AuthProvider>(create: (_) => FakeAuthProvider(dio)),
       ChangeNotifierProvider<PostProvider>(create: (_) => FakePostProvider()),
       ChangeNotifierProvider<ThemeProvider>(create: (_) => FakeThemeProvider()),
     ],
@@ -1269,6 +1277,41 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('点击子回复先显示两条预览，随后自动补齐第三条', (tester) async {
+    await setGoldenViewport(tester, GoldenViewports.phone390x844);
+    final gate = Completer<void>();
+    final dio = FakeDio(threadChildCount: 3, threadResponseGate: gate.future);
+    final post = Post(
+      id: 106,
+      title: '三条子回复',
+      content: 'Content',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026),
+    );
+    await tester.pumpWidget(_postDetailTestApp(post, dio: dio));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.textContaining('child-1'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final surface = find.byKey(const ValueKey('reply-thread-surface'));
+    Finder child(int number) => find.descendant(
+          of: surface,
+          matching: find.textContaining('child-$number'),
+        );
+    expect(child(1), findsOneWidget);
+    expect(child(2), findsOneWidget);
+    expect(child(3), findsNothing);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(dio.childQueries, [{'limit': 50}]);
+    expect(child(3), findsOneWidget);
+    expect(find.text('加载更多回复'), findsNothing);
+  });
+
   testWidgets('楼中楼超过50条子回复时首次懒加载不被自身loading锁挡住', (tester) async {
     FakeDio.childrenRequestCount = 0;
     tester.view.physicalSize = const Size(390, 844);
@@ -1294,7 +1337,6 @@ void main() {
     await tester.pumpWidget(_postDetailTestApp(post));
     await tester.pumpAndSettle();
 
-    // 根评论只带了 50 条子回复，但真实总数 51 → 出现"共 51 条回复"入口。
     expect(find.textContaining('共 51 条回复'), findsOneWidget);
 
     await tester.tap(find.textContaining('共 51 条回复'));
@@ -1309,53 +1351,53 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('通知深链目标不在已加载列表时通过 context 打开线程 sheet 定位', (tester) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final post = Post(
-      id: 107,
-      title: '深链定位测试帖',
-      content: 'Content',
-      boardId: 1,
-      authorId: 1,
-      author: User(
-        id: 1,
-        studentId: '123',
-        nickname: 'TestUser',
-        avatar: '',
-        createdAt: DateTime.now(),
-      ),
-      createdAt: DateTime.now(),
-    );
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider<AuthProvider>(
-              create: (_) => FakeAuthProvider()),
-          ChangeNotifierProvider<PostProvider>(
-              create: (_) => FakePostProvider()),
-          ChangeNotifierProvider<ThemeProvider>(
-              create: (_) => FakeThemeProvider()),
-        ],
-        child: MaterialApp(
-          home: PostDetailScreen(
-            postId: 107,
-            initialPost: post,
-            targetReplyId: 900, // 不在列表分页里的子回复目标
+  for (final childCount in [1, 51]) {
+    testWidgets('通知定位首轮失败后仍可重试，线程共 $childCount 条', (tester) async {
+      await setGoldenViewport(tester, GoldenViewports.phone390x844);
+      final dio = FakeDio(contextChildCount: childCount)
+        ..failNextContextChildRequest = true;
+      final post = Post(
+        id: 107,
+        title: '深链定位测试帖',
+        content: 'Content',
+        boardId: 1,
+        authorId: 1,
+        createdAt: DateTime(2026),
+      );
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AuthProvider>(
+                create: (_) => FakeAuthProvider(dio)),
+            ChangeNotifierProvider<PostProvider>(
+                create: (_) => FakePostProvider()),
+            ChangeNotifierProvider<ThemeProvider>(
+                create: (_) => FakeThemeProvider()),
+          ],
+          child: MaterialApp(
+            home: PostDetailScreen(
+              postId: 107,
+              initialPost: post,
+              targetReplyId: 900,
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    // 目标不在列表 → context 接口 → 直接打开楼中楼 sheet 锚定目标。
-    expect(find.text('评论详情'), findsOneWidget);
-    expect(find.textContaining('context-root'), findsOneWidget);
-    expect(find.textContaining('context-target-child'), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+      expect(find.text('评论详情'), findsOneWidget);
+      expect(find.textContaining('context-root'), findsOneWidget);
+      final retry = find.text('加载失败，点击重试');
+      expect(retry, findsOneWidget);
+      await tester.tap(retry);
+      await tester.pumpAndSettle();
+
+      final query = {'limit': 50, if (childCount > 50) 'before_reply_id': 900};
+      expect(dio.childQueries, [query, query]);
+      expect(find.textContaining('context-target-child'), findsOneWidget);
+      expect(retry, findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
 }

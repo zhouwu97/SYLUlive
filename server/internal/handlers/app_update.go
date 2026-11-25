@@ -62,6 +62,7 @@ func NewAppUpdateHandler(svc *services.AppReleaseService, useAccelRedirect bool,
 // updateCheckResponse 是给客户端的统一响应。无更新时 file 等字段为空，
 // 客户端必须能容忍这一情况。
 type updateCheckResponse struct {
+	Channel                     string `json:"channel"`
 	UpdateAvailable             bool   `json:"update_available"`
 	UpdateType                  string `json:"update_type"`
 	CurrentVersionName          string `json:"current_version_name,omitempty"`
@@ -99,7 +100,7 @@ func (h *AppUpdateHandler) CheckUpdate(c *gin.Context) {
 		})
 		return
 	}
-	if channel != models.AppReleaseChannelStable {
+	if channel != models.AppReleaseChannelStable && channel != models.AppReleaseChannelBeta {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "unsupported channel",
 			"code":  "unsupported_channel",
@@ -138,6 +139,7 @@ func (h *AppUpdateHandler) CheckUpdate(c *gin.Context) {
 			// 任何"尚未发布版本"的情况一律放行，避免 App 启动失败。客户端
 			// 看到响应后应按 check_after_seconds 等再检查。
 			c.JSON(http.StatusOK, updateCheckResponse{
+				Channel:                     channel,
 				UpdateAvailable:             false,
 				UpdateType:                  string(services.UpdateNone),
 				CurrentVersionName:          versionName,
@@ -158,9 +160,14 @@ func (h *AppUpdateHandler) CheckUpdate(c *gin.Context) {
 	}
 
 	decision := services.DecideUpdate(currentVersionCode, latest.VersionCode, latest.MinimumSupportedVersionCode)
+	// Beta 是独立下载目录，不使用正式版构建号判断升级。
+	if latest.Channel == models.AppReleaseChannelBeta {
+		decision = services.UpdateOptional
+	}
 
 	// 构造统一响应：无更新时 file/title/changelog 为空，让客户端直接进入 App。
 	resp := updateCheckResponse{
+		Channel:                     latest.Channel,
 		UpdateAvailable:             decision != services.UpdateNone,
 		UpdateType:                  string(decision),
 		CurrentVersionName:          versionName,

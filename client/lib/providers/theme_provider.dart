@@ -209,6 +209,10 @@ class ThemeTrialSession {
     required this.manifest,
     required this.groups,
     required this.appearance,
+    this.editedGroups = const {},
+    this.customNavIntensity,
+    this.customFrostedStrength,
+    this.customOpacityLevel,
     this.installed,
     this.pack,
     this.stagingDirectory,
@@ -217,6 +221,10 @@ class ThemeTrialSession {
   final ThemeManifest manifest;
   final Set<ThemeGroup> groups;
   final ThemeAppearance appearance;
+  final Set<ThemeGroup> editedGroups;
+  final double? customNavIntensity;
+  final double? customFrostedStrength;
+  final double? customOpacityLevel;
   final InstalledTheme? installed;
   final PreparedThemePack? pack;
   final String? stagingDirectory;
@@ -302,6 +310,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   double _frostedGlassCustomStrength = .65;
   double _customComponentOpacityLevel = .65;
   Future<void>? _cardAppearanceWrites;
+  int _pendingAppearanceOperations = 0;
   bool _liquidGlass = true;
   bool _floatingNavBar = true;
   BottomNavStyle _bottomNavStyle = BottomNavStyle.liquidGlass;
@@ -397,11 +406,11 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   double get frostedGlassCustomStrength => _activeMaterial != null &&
           frostedGlassPerformanceMode == FrostedGlassPerformanceMode.custom
       ? frostedGlass ? frostedGlassStrength : 0.0
-      : _frostedGlassCustomStrength;
+      : _trial?.customFrostedStrength ?? _frostedGlassCustomStrength;
   double get customComponentOpacityLevel => _activeMaterial != null &&
           frostedGlassPerformanceMode == FrostedGlassPerformanceMode.custom
       ? _roundPercent(componentOpacityLevel)
-      : _customComponentOpacityLevel;
+      : _trial?.customOpacityLevel ?? _customComponentOpacityLevel;
   FrostedGlassPerformanceMode get frostedGlassPerformanceMode =>
       !canCustomizeCardMaterial
           ? FrostedGlassPerformanceMode.off
@@ -564,7 +573,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     BottomNavPerformanceMode.highQuality => 1.0,
     BottomNavPerformanceMode.highPerformance => .35,
     BottomNavPerformanceMode.off => 0.0,
-    BottomNavPerformanceMode.custom => _bottomNavCustomIntensity,
+    BottomNavPerformanceMode.custom => _trial?.customNavIntensity ?? _bottomNavCustomIntensity,
   };
 
   BottomNavPerformanceMode _modeForIntensity(double value) {
@@ -756,6 +765,23 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _setBackgroundMode(AppBackgroundMode mode) {
+    if (_trial != null) {
+      _updateTrialAppearance(ThemeAppearance({
+        ...appearance.data,
+        'wallpapers': {
+          'source': null,
+          'legacy': {
+            'mode': mode.name,
+            'portrait': backgroundImage,
+            'landscape': landscapeBackgroundImage,
+            'portraitFill': backgroundFillScreen,
+            'landscapeFill': landscapeBackgroundFillScreen,
+            'blur': backgroundBlur,
+          },
+        },
+      }));
+      return Future<void>.value();
+    }
     _backgroundMode = mode;
     _appearance = _appearance.without(ThemeGroup.wallpapers);
     notifyListeners();
@@ -834,8 +860,10 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       _setManualWallpaper(imageUrl, fillScreen: fillScreen, landscape: true);
 
   Future<void> _setManualWallpaper(String? image,
-          {required bool fillScreen, required bool landscape}) =>
-      _queueAppearanceOperation((prefs) async {
+          {required bool fillScreen, required bool landscape}) {
+    final trialGeneration = _trial == null ? null : _trialGeneration;
+    return _queueAppearanceOperation((prefs) async {
+        if (trialGeneration != null && trialGeneration != _trialGeneration) return;
         var savedPath = image;
         if (image != null && isLocalFileBackground(image)) {
           final local = image.startsWith('file://')
@@ -845,6 +873,24 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
             await _initializeThemeFiles(prefs);
             savedPath = await themePacks.adoptWallpaper(local);
           }
+        }
+        if (trialGeneration != null) {
+          if (trialGeneration != _trialGeneration) return;
+          _updateTrialAppearance(ThemeAppearance({
+            ...appearance.data,
+            'wallpapers': {
+              'source': null,
+              'legacy': {
+                'mode': savedPath == null ? backgroundMode.name : 'custom',
+                'portrait': landscape ? backgroundImage : savedPath,
+                'landscape': landscape ? savedPath : landscapeBackgroundImage,
+                'portraitFill': landscape ? backgroundFillScreen : fillScreen,
+                'landscapeFill': landscape ? fillScreen : landscapeBackgroundFillScreen,
+                'blur': backgroundBlur,
+              },
+            },
+          }));
+          return;
         }
         final oldPath =
             landscape ? _landscapeBackgroundImage : _backgroundImage;
@@ -878,6 +924,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
           if (image != null) image
         ]);
       });
+  }
 
   Future<void> _clearWallpaperOverride(AppPreferencesStore prefs) async {
     if (_appearance.group(ThemeGroup.wallpapers) != null &&
@@ -892,6 +939,10 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     final value = blur.clamp(0.0, 30.0);
     final brightness = effectiveBrightness;
     final tab = currentHomeTabIndex.value;
+    if (_trial != null) {
+      _updateTrialAppearance(appearance.patchWallpaperBlur(brightness, tab, value));
+      return Future<void>.value();
+    }
     _backgroundBlur = value;
     _appearance = _appearance.patchWallpaperBlur(brightness, tab, value);
     notifyListeners();
@@ -918,6 +969,9 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// 保存底色偏好，界面滑块通过 [setComponentOpacityLevel] 换算后调用。
   Future<bool> setComponentOpacity(double value) {
     if (!value.isFinite) return Future<bool>.value(false);
+    if (_trial != null) {
+      return _patchTrialMaterial({'componentOpacity': value.clamp(0.0, 1.0)});
+    }
     _useEffectiveMaterial();
     final opacity = value.clamp(0.0, 1.0);
     final brightness = effectiveBrightness;
@@ -952,6 +1006,10 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setBottomNavStyle(BottomNavStyle style) async {
+    if (_trial != null) {
+      await _patchTrialNavigation();
+      return;
+    }
     _bottomNavStyle = BottomNavStyle.liquidGlass;
     _liquidGlass = true;
     _floatingNavBar = true;
@@ -968,6 +1026,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> setBottomNavPerformanceMode(
     BottomNavPerformanceMode mode,
   ) {
+    if (_trial != null) return _patchTrialNavigation(mode: mode);
     _useEffectiveNavigation();
     _bottomNavPerformanceMode = mode;
     _bottomNavAnimationIntensity = _motionPreset(mode);
@@ -978,6 +1037,9 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<bool> setBottomNavAnimationIntensity(double value) {
     if (!value.isFinite) return Future<bool>.value(false);
+    if (_trial != null) {
+      return _patchTrialNavigation(intensity: _roundPercent(value.clamp(0.0, 1.0)));
+    }
     _useEffectiveNavigation();
     _bottomNavAnimationIntensity = (value.clamp(0.0, 1.0) * 100).round() / 100;
     if (_bottomNavPerformanceMode != BottomNavPerformanceMode.off ||
@@ -993,7 +1055,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// 保存调用时的快照，连续拖动及预设切换按顺序落盘，失败可保存当前值重试。
-  Future<bool> _persistBottomNavEffects() {
+  Future<bool> _persistBottomNavEffects({BottomNavStyle? preserveStyle}) {
     final mode = _bottomNavPerformanceMode.storageValue;
     final intensity = _bottomNavAnimationIntensity;
     final custom = _bottomNavCustomIntensity;
@@ -1006,16 +1068,22 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         await prefs.setBool('bottom_nav_clear_material', clear),
       ];
       return results.every((saved) => saved) &&
-          await _saveManualNavigation(prefs);
+          await _saveManualNavigation(prefs, preserveStyle: preserveStyle,
+              motion: {'performanceMode': mode, 'intensity': intensity, 'clearMaterial': clear});
     });
   }
 
   Future<void> setBottomNavClearMaterial(bool value) async {
+    if (_trial != null) {
+      await _patchTrialNavigation(clear: value, preserveStyle: true);
+      return;
+    }
+    final style = bottomNavStyle;
     _useEffectiveNavigation();
     _bottomNavClearMaterial = value;
     _appearance = _appearance.resetNavigationStyle();
     notifyListeners();
-    if (!await _persistBottomNavEffects()) throw const FileSystemException('导航栏材质未能保存');
+    if (!await _persistBottomNavEffects(preserveStyle: style)) throw const FileSystemException('导航栏材质未能保存');
   }
 
   void _useEffectiveNavigation() {
@@ -1027,8 +1095,20 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<bool> _saveManualNavigation(AppPreferencesStore prefs) async {
+  Future<bool> _saveManualNavigation(AppPreferencesStore prefs,
+      {BottomNavStyle? preserveStyle, Map<String, dynamic>? motion}) async {
     if (_appearance.group(ThemeGroup.navigation) == null) return true;
+    if (preserveStyle != null) {
+      return _writeCurrentAppearance(prefs, ThemeAppearance({
+        ..._appearance.data,
+        'navigation': {
+          ..._appearance.group(ThemeGroup.navigation)!,
+          'source': null,
+          'style': preserveStyle.storageValue,
+          'motion': motion,
+        },
+      }));
+    }
     return _writeCurrentAppearance(prefs, _appearance.resetNavigationStyle());
   }
 
@@ -1083,6 +1163,12 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<bool> setFrostedGlass(bool value) {
+    if (_trial != null) {
+      return _patchTrialMaterial({'frostedGlass': {
+        'enabled': value,
+        'strength': value && frostedGlassStrength == 0 ? 1.0 : frostedGlassStrength,
+      }});
+    }
     _useEffectiveMaterial();
     final strength =
         value && _frostedGlassStrength == 0 ? 1.0 : _frostedGlassStrength;
@@ -1105,6 +1191,15 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<bool> setFrostedGlassPerformanceMode(
       FrostedGlassPerformanceMode mode) {
+    if (_trial != null) {
+      final (strength, opacityLevel) = mode == FrostedGlassPerformanceMode.custom
+          ? (frostedGlassCustomStrength, customComponentOpacityLevel)
+          : _frostedGlassPreset(mode);
+      return _patchTrialMaterial({
+        'componentOpacity': minComponentOpacity + (1 - minComponentOpacity) * opacityLevel,
+        'frostedGlass': {'enabled': strength > 0, 'strength': strength},
+      });
+    }
     _useEffectiveMaterial();
     _frostedGlassPerformanceMode = mode;
     final (strength, opacityLevel) = _frostedGlassPreset(mode);
@@ -1126,12 +1221,17 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   /// 重试只保存当前数值，不能再次套用预设覆盖用户后续拖动。
   Future<bool> saveFrostedGlassSettings({bool includeOpacity = false}) =>
-      _persistFrostedGlass(includeOpacity: includeOpacity);
+      _trial != null ? Future<bool>.value(true) :
+          _persistFrostedGlass(includeOpacity: includeOpacity);
 
   /// 拖动时立即预览，按顺序保存，避免较早的异步写入覆盖最终强度。
   /// 同值也允许保存，供存储失败后重试；设置页可从关闭状态向上拖动启用模糊。
   Future<bool> setFrostedGlassStrength(double value) {
     if (!value.isFinite) return Future<bool>.value(false);
+    if (_trial != null) {
+      final strength = _roundPercent(value.clamp(0.0, 1.0));
+      return _patchTrialMaterial({'frostedGlass': {'enabled': strength > 0, 'strength': strength}});
+    }
     _useEffectiveMaterial();
     final strength = (value.clamp(0.0, 1.0) * 100).round() / 100;
     final enabled = strength > 0;
@@ -1185,15 +1285,40 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<T> _queueAppearanceOperation<T>(
       Future<T> Function(AppPreferencesStore) action) {
+    _pendingAppearanceOperations++;
     final operation =
         (_cardAppearanceWrites ?? Future<void>.value()).then((_) async {
-      final prefs = await AppPreferencesStore.getInstance();
-      _readThemePreferences(prefs);
-      return action(prefs);
+      try {
+        final prefs = await AppPreferencesStore.getInstance();
+        _readThemePreferences(prefs);
+        return await action(prefs);
+      } finally {
+        _pendingAppearanceOperations--;
+      }
     });
     _cardAppearanceWrites =
         operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
     return operation;
+  }
+
+  Future<void> _queueAppearanceEdit(ThemeAppearance Function() edit,
+      {required String error, bool cleanup = false}) {
+    final trialGeneration = _trial == null ? null : _trialGeneration;
+    return _queueAppearanceOperation((prefs) async {
+      if (trialGeneration != null && trialGeneration != _trialGeneration) return;
+      if (!_isLoaded) {
+        _applyStoredPreferences(prefs);
+        _isLoaded = true;
+      }
+      if (cleanup) await _initializeThemeFiles(prefs);
+      if (trialGeneration != null) {
+        if (trialGeneration != _trialGeneration) return;
+        _updateTrialAppearance(edit());
+      } else if (!await _writeCurrentAppearance(prefs, edit())) {
+        throw FileSystemException(error);
+      }
+      if (cleanup) await _cleanupThemeFiles();
+    });
   }
 
   void _useEffectiveMaterial() {
@@ -1220,6 +1345,77 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (_appearance.group(ThemeGroup.material) == null) return true;
     return _writeCurrentAppearance(
         prefs, _appearance.patchMaterial(mode, patch));
+  }
+
+  void _updateTrialAppearance(ThemeAppearance next, {double? customNavIntensity,
+      double? customFrostedStrength, double? customOpacityLevel}) {
+    final active = _trial!;
+    _trial = ThemeTrialSession(
+      manifest: active.manifest,
+      groups: active.groups,
+      appearance: next,
+      customNavIntensity: customNavIntensity ?? active.customNavIntensity,
+      customFrostedStrength: customFrostedStrength ?? active.customFrostedStrength,
+      customOpacityLevel: customOpacityLevel ?? active.customOpacityLevel,
+      editedGroups: {
+        ...active.editedGroups,
+        for (final group in ThemeGroup.applicable)
+          if (!identical(next.group(group), active.appearance.group(group))) group,
+        if (!identical(next.data['courseSettings'], active.appearance.data['courseSettings']))
+          ThemeGroup.colors,
+      },
+      installed: active.installed,
+      pack: active.pack,
+      stagingDirectory: active.stagingDirectory,
+    );
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<bool> _patchTrialMaterial(Map<String, dynamic> patch) {
+    final current = appearance;
+    final rememberedStrength = frostedGlassCustomStrength;
+    final rememberedOpacity = customComponentOpacityLevel;
+    final material = {
+      ...?current.group(ThemeGroup.material),
+      for (final mode in ['light', 'dark'])
+        mode: current.group(ThemeGroup.material)?[mode] ?? {
+          'componentOpacity': _componentOpacity,
+          'frostedGlass': {'enabled': _frostedGlass, 'strength': _frostedGlassStrength},
+        },
+    }..remove('legacy');
+    final next = ThemeAppearance({...current.data, 'material': material})
+        .patchMaterial(effectiveBrightness, patch);
+    final mode = next.group(ThemeGroup.material)![_appearanceMode] as Map;
+    final frost = mode['frostedGlass'] as Map;
+    final strength = frost['enabled'] == true ? (frost['strength'] as num).toDouble() : 0.0;
+    final opacity = _roundPercent((((mode['componentOpacity'] as num).toDouble() - minComponentOpacity)
+        / (1 - minComponentOpacity)).clamp(0.0, 1.0));
+    final custom = _modeForFrostedGlass(strength, opacity) == FrostedGlassPerformanceMode.custom;
+    _updateTrialAppearance(next,
+        customFrostedStrength: custom ? strength : rememberedStrength,
+        customOpacityLevel: custom ? opacity : rememberedOpacity);
+    return Future<bool>.value(true);
+  }
+
+  Future<bool> _patchTrialNavigation({BottomNavPerformanceMode? mode,
+      double? intensity, bool? clear, bool preserveStyle = false}) {
+    final current = appearance;
+    final rememberedIntensity = bottomNavPerformanceMode == BottomNavPerformanceMode.custom
+        ? bottomNavAnimationIntensity : _trial?.customNavIntensity;
+    final activeMode = intensity != null ? _modeForIntensity(intensity) : mode ?? bottomNavPerformanceMode;
+    final activeIntensity = intensity ?? (mode == null
+        ? bottomNavAnimationIntensity : _motionPreset(mode));
+    _updateTrialAppearance(ThemeAppearance({
+      ...current.data,
+      'navigation': {
+        ...?current.group(ThemeGroup.navigation),
+        'source': null,
+        'style': (preserveStyle ? bottomNavStyle : BottomNavStyle.liquidGlass).storageValue,
+        'motion': {'performanceMode': activeMode.storageValue,
+          'intensity': activeIntensity, 'clearMaterial': clear ?? bottomNavClearMaterial},
+      },
+    }), customNavIntensity: activeMode == BottomNavPerformanceMode.custom ? activeIntensity : rememberedIntensity);
+    return Future<bool>.value(true);
   }
 
   ThemeAppearance get appearance => _trial?.appearance ?? _appearance;
@@ -1249,7 +1445,12 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> setScheduleColorPreference({
     required bool text,
     required ScheduleColorOption value,
-  }) => _queueCardAppearanceWrite((prefs) async {
+  }) {
+    if (_trial != null) {
+      _updateTrialAppearance(_appearanceWithScheduleColor(appearance, text: text, value: value));
+      return Future<bool>.value(true);
+    }
+    return _queueCardAppearanceWrite((prefs) async {
     final settings = _appearance.data['courseSettings'] as Map?;
     if (settings == null && _appearance.group(ThemeGroup.colors) == null) {
       final saved = await prefs.setString(
@@ -1257,9 +1458,17 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       if (saved && !_disposed) notifyListeners();
       return saved;
     }
-    return _writeCurrentAppearance(prefs, ThemeAppearance({
-      ..._appearance.data,
-      if (_appearance.group(ThemeGroup.colors) case final colors?)
+    return _writeCurrentAppearance(prefs,
+        _appearanceWithScheduleColor(_appearance, text: text, value: value));
+    });
+  }
+
+  ThemeAppearance _appearanceWithScheduleColor(ThemeAppearance current,
+      {required bool text, required ScheduleColorOption value}) {
+    final settings = current.data['courseSettings'] as Map?;
+    return ThemeAppearance({
+      ...current.data,
+      if (current.group(ThemeGroup.colors) case final colors?)
         'colors': {...colors, 'source': null},
       'courseSettings': {
         'source': null,
@@ -1267,8 +1476,8 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         'courseColor': settings?['courseColor'] ?? 'theme',
         (text ? 'textColor' : 'courseColor'): value.name,
       },
-    }));
-  });
+    });
+  }
   String? get themeStorageWarning => _themeStorageWarning;
   String get currentAppearanceSummary {
     if (_trial != null) {
@@ -1492,6 +1701,17 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         .intersection(ThemeGroup.applicable);
     if (selected.isEmpty) return;
     final generation = ++_trialGeneration;
+    if (_pendingAppearanceOperations > 0) await _cardAppearanceWrites;
+    if (!_themeFilesInitialized) {
+      await _queueAppearanceOperation((prefs) async {
+        if (!_isLoaded) {
+          _applyStoredPreferences(prefs);
+          _isLoaded = true;
+        }
+        await _initializeThemeFiles(prefs);
+      });
+    }
+    if (_disposed || generation != _trialGeneration) return;
     final previousStaging = _trial?.stagingDirectory;
     String? stagingDirectory;
     String directory;
@@ -1505,7 +1725,8 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
       directory = stagingDirectory;
     }
-    final trialAppearance = _appearance.apply(manifest, selected, directory);
+    final trialAppearance = _snapshotAppearance(AppPreferencesStore.maybeInstance)
+        .apply(manifest, selected, directory);
     await ThemeFontRegistry.ensureLoaded(
       trialAppearance.group(ThemeGroup.font),
       inMemoryContents: pack?.contents,
@@ -1592,41 +1813,58 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> applyTrial() {
     final active = _trial;
     if (active == null) return Future<void>.value();
-    _trialGeneration++;
+    final generation = _trialGeneration;
     return _queueAppearanceOperation((prefs) async {
+      final targetTrial = generation == _trialGeneration ? _trial ?? active : active;
       if (!_isLoaded) {
         _applyStoredPreferences(prefs);
         _isLoaded = true;
       }
       await _initializeThemeFiles(prefs);
       InstalledTheme target;
-      if (active.installed != null) {
-        target = active.installed!;
+      if (targetTrial.installed != null) {
+        target = targetTrial.installed!;
       } else {
         final existing = await themePacks.findInstalledVersion(
-          active.manifest.id,
-          active.manifest.version,
+          targetTrial.manifest.id,
+          targetTrial.manifest.version,
         );
-        target = existing ?? await themePacks.install(active.pack!);
+        target = existing ?? await themePacks.install(targetTrial.pack!);
       }
       final snapshot = _snapshotAppearance(prefs);
-      final next =
-          _appearance.apply(target.manifest, active.groups, target.directory);
+      var next =
+          _appearance.apply(target.manifest, targetTrial.groups, target.directory);
+      if (targetTrial.editedGroups.isNotEmpty) {
+        next = ThemeAppearance({
+          ...next.data,
+          for (final group in targetTrial.editedGroups) group.name: targetTrial.appearance.group(group),
+          if (targetTrial.editedGroups.contains(ThemeGroup.colors))
+            'courseSettings': targetTrial.appearance.data['courseSettings'],
+        });
+        if (targetTrial.stagingDirectory case final staging?) {
+          for (final raw in next.paths.toSet()) {
+            if (path.isWithin(staging, raw)) {
+              next = next.replacePath(raw,
+                  path.join(target.directory, path.relative(raw, from: staging)));
+            }
+          }
+        }
+      }
       await ThemeFontRegistry.ensureLoaded(next.group(ThemeGroup.font));
-      if (active.groups.contains(ThemeGroup.widgets)) {
+      if (targetTrial.groups.contains(ThemeGroup.widgets)) {
         await _recordManualWidgetThemesBeforeThemeApply(prefs);
       }
       await _commitAppearance(prefs, next, snapshot, notifyImmediately: false);
-      _trial = null;
+      if (generation == _trialGeneration) _trial = null;
       if (!_disposed) notifyListeners();
       await _applySystemCapabilities(
         prefs: prefs,
         next: next,
-        selected: active.groups,
+        selected: targetTrial.groups,
         manifest: target.manifest,
       );
-      if (active.stagingDirectory != null) {
-        await themePacks.removeStagingDirectory(active.stagingDirectory);
+      if (targetTrial.stagingDirectory != null) {
+        await themePacks.removeStagingDirectory(targetTrial.stagingDirectory);
       }
       await _cleanupThemeFiles();
     });
@@ -1637,24 +1875,26 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     String? authorName,
     String? appVersion,
   }) async {
-    final effective = _snapshotAppearance(await AppPreferencesStore.getInstance());
+    final prefs = await AppPreferencesStore.getInstance();
+    final effective = _trial?.appearance ?? _snapshotAppearance(prefs);
+    final legacy = effective.group(ThemeGroup.wallpapers)?['legacy'] as Map?;
     final hasThemeWalls = effective.group(ThemeGroup.wallpapers) != null &&
         effective.group(ThemeGroup.wallpapers)!['legacy'] == null;
     RawWallpaperInput? manualPortrait;
     RawWallpaperInput? manualLandscape;
-    if (!hasThemeWalls && _backgroundMode == AppBackgroundMode.custom) {
+    if (!hasThemeWalls && legacy?['mode'] == 'custom') {
       manualPortrait = await ThemeAppearanceExporter.readWallpaperSource(
-        _backgroundImage,
-        fillScreen: _backgroundFillScreen,
-        blur: _backgroundBlur,
+        legacy?['portrait'] as String?,
+        fillScreen: legacy?['portraitFill'] as bool? ?? false,
+        blur: (legacy?['blur'] as num?)?.toDouble() ?? 0,
         isBundledAsset: isBundledAssetBackground,
         isLocalFile: isLocalFileBackground,
         resolveBundledAssetPath: resolveBundledAssetPath,
       );
       manualLandscape = await ThemeAppearanceExporter.readWallpaperSource(
-        _landscapeBackgroundImage,
-        fillScreen: _landscapeBackgroundFillScreen,
-        blur: _backgroundBlur,
+        legacy?['landscape'] as String?,
+        fillScreen: legacy?['landscapeFill'] as bool? ?? false,
+        blur: (legacy?['blur'] as num?)?.toDouble() ?? 0,
         isBundledAsset: isBundledAssetBackground,
         isLocalFile: isLocalFileBackground,
         resolveBundledAssetPath: resolveBundledAssetPath,
@@ -1664,10 +1904,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     final hasExplicitMaterial =
         persistedMat != null && persistedMat['legacy'] != true;
     final shouldExportManualMat = !hasExplicitMaterial &&
-        (manualPortrait != null ||
-            manualLandscape != null ||
-            _frostedGlass ||
-            _componentOpacity < 1.0);
+        (manualPortrait != null || manualLandscape != null);
     final persistedNavStyle =
         (_bottomNavPerformanceMode == BottomNavPerformanceMode.off
                 ? BottomNavStyle.floating
@@ -1675,7 +1912,8 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
             .storageValue;
     return ThemeAppearanceExporter.export(
       appearance: effective,
-      name: customName ?? suggestedExportName,
+      name: customName ?? (_trial == null ? suggestedExportName :
+          effective.singleThemeName ?? '我的混搭外观'),
       author: authorName ?? '本机导出',
       appVersion: appVersion ?? '1.0.0',
       bottomNavStyle: persistedNavStyle,
@@ -1745,8 +1983,10 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> applyEditedAppearance(
     ThemeAppearance edited,
     Set<ThemeGroup> groups,
-  ) =>
-      _queueAppearanceOperation((prefs) async {
+  ) {
+    final generation = ++_trialGeneration;
+    final oldTrialStaging = _trial?.stagingDirectory;
+    return _queueAppearanceOperation((prefs) async {
         if (!_isLoaded) {
           _applyStoredPreferences(prefs);
           _isLoaded = true;
@@ -1798,16 +2038,15 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         final next = ThemeAppearance(data);
         await ThemeFontRegistry.ensureLoaded(next.group(ThemeGroup.font));
         await _commitAppearance(prefs, next, snapshot, notifyImmediately: false);
-        final oldTrialStaging = _trial?.stagingDirectory;
-        _trialGeneration++;
-        _trial = null;
+        if (generation == _trialGeneration) _trial = null;
         if (!_disposed) notifyListeners();
         await HomeWidgetService.syncThemeAppearance(next, prefs: prefs);
-        if (oldTrialStaging != null) {
+        if (oldTrialStaging != null && oldTrialStaging != _trial?.stagingDirectory) {
           await themePacks.removeStagingDirectory(oldTrialStaging);
         }
         await _cleanupThemeFiles();
       });
+  }
 
   Future<void> applyOriginalDefaultAppearance() => applyEditedAppearance(
         const ThemeAppearance.originalDefault(),
@@ -1821,6 +2060,8 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }) {
     final selected = Set<ThemeGroup>.of(groups)
         .intersection(ThemeGroup.applicable);
+    final generation = asBetaDefault ? _trialGeneration : ++_trialGeneration;
+    final oldTrialStaging = _trial?.stagingDirectory;
     return _queueAppearanceOperation((prefs) async {
       if (!_isLoaded) {
         _applyStoredPreferences(prefs);
@@ -1831,8 +2072,6 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
           (_trial != null || prefs.containsKey(appearanceKey))) {
         return false;
       }
-      final oldTrialStaging = _trial?.stagingDirectory;
-      _trialGeneration++;
       final snapshot = _snapshotAppearance(prefs);
       final next = _appearance.apply(theme.manifest, selected, theme.directory);
       await ThemeFontRegistry.ensureLoaded(next.group(ThemeGroup.font));
@@ -1840,7 +2079,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         await _recordManualWidgetThemesBeforeThemeApply(prefs);
       }
       await _commitAppearance(prefs, next, snapshot, notifyImmediately: false);
-      _trial = null;
+      if (generation == _trialGeneration) _trial = null;
       if (!_disposed) notifyListeners();
       await _applySystemCapabilities(
         prefs: prefs,
@@ -1848,7 +2087,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         selected: selected,
         manifest: theme.manifest,
       );
-      if (oldTrialStaging != null) {
+      if (oldTrialStaging != null && oldTrialStaging != _trial?.stagingDirectory) {
         await themePacks.removeStagingDirectory(oldTrialStaging);
       }
       await _cleanupThemeFiles();
@@ -1856,16 +2095,16 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     });
   }
 
-  Future<void> restorePreviousAppearance() =>
-      _queueAppearanceOperation((prefs) async {
+  Future<void> restorePreviousAppearance() {
+    final generation = ++_trialGeneration;
+    final oldTrialStaging = _trial?.stagingDirectory;
+    return _queueAppearanceOperation((prefs) async {
         final previous = _previousAppearance;
         if (previous == null) return;
-        final oldTrialStaging = _trial?.stagingDirectory;
-        _trialGeneration++;
         final snapshot = _snapshotAppearance(prefs);
         await ThemeFontRegistry.ensureLoaded(previous.group(ThemeGroup.font));
         await _commitAppearance(prefs, previous, snapshot, notifyImmediately: false);
-        _trial = null;
+        if (generation == _trialGeneration) _trial = null;
         if (!_disposed) notifyListeners();
         final previousWidgets = previous.group(ThemeGroup.widgets);
         String? courseOverride;
@@ -1886,11 +2125,12 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
           courseThemeOverride: courseOverride,
           examThemeOverride: examOverride,
         );
-        if (oldTrialStaging != null) {
+        if (oldTrialStaging != null && oldTrialStaging != _trial?.stagingDirectory) {
           await themePacks.removeStagingDirectory(oldTrialStaging);
         }
         await _cleanupThemeFiles();
       });
+  }
 
   /// 内置默认主题自动应用的分组：桌面图标和桌面小部件不随默认外观改动。
   static final Set<ThemeGroup> builtInDefaultGroups =
@@ -1901,11 +2141,11 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   /// 恢复默认外观。随包内置默认主题的构建传入 [defaultTheme]，默认外观就是首次启动
   /// 载入的那套主题；其余构建回到不带主题的手动外观。
-  Future<void> restoreManualAppearance({InstalledTheme? defaultTheme}) =>
-      _queueAppearanceOperation((prefs) async {
-        final oldTrialStaging = _trial?.stagingDirectory;
+  Future<void> restoreManualAppearance({InstalledTheme? defaultTheme}) {
+    final generation = ++_trialGeneration;
+    final oldTrialStaging = _trial?.stagingDirectory;
+    return _queueAppearanceOperation((prefs) async {
         final hadThemeWidgets = _appearance.group(ThemeGroup.widgets) != null;
-        _trialGeneration++;
         final cleared = defaultTheme == null
             ? const ThemeAppearance.empty()
             : const ThemeAppearance.empty().apply(
@@ -1917,7 +2157,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         await ThemeFontRegistry.ensureLoaded(cleared.group(ThemeGroup.font));
         await _commitAppearance(prefs, cleared, _snapshotAppearance(prefs),
             notifyImmediately: false);
-        _trial = null;
+        if (generation == _trialGeneration) _trial = null;
         if (!_disposed) notifyListeners();
         String? courseOverride;
         String? examOverride;
@@ -1936,11 +2176,12 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
           examThemeOverride: examOverride,
         );
         // 恢复手动外观不改动已生效的桌面图标，避免退出主题时触发桌面重载。
-        if (oldTrialStaging != null) {
+        if (oldTrialStaging != null && oldTrialStaging != _trial?.stagingDirectory) {
           await themePacks.removeStagingDirectory(oldTrialStaging);
         }
         await _cleanupThemeFiles();
       });
+  }
 
   Future<void> deleteInstalledTheme(String id) =>
       _queueAppearanceOperation((prefs) async {
@@ -1959,37 +2200,20 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     Brightness brightness,
     Map<String, dynamic>? cardStyle,
   ) =>
-      _queueAppearanceOperation((prefs) async {
-        if (!_isLoaded) {
-          _applyStoredPreferences(prefs);
-          _isLoaded = true;
-        }
-        final next = _appearance.patchCardStyle(
+      _queueAppearanceEdit(() => appearance.patchCardStyle(
           brightness,
           cardStyle,
           fallbackOpacity: _componentOpacity,
           fallbackFrosted: _frostedGlass,
           fallbackStrength: _frostedGlassStrength,
-        );
-        if (!await _writeCurrentAppearance(prefs, next)) {
-          throw const FileSystemException('卡片样式未能保存');
-        }
-      });
+        ), error: '卡片样式未能保存');
 
   Future<void> updateHeaderLayout(
     String slot,
     Map<String, dynamic>? headerLayout,
   ) =>
-      _queueAppearanceOperation((prefs) async {
-        if (!_isLoaded) {
-          _applyStoredPreferences(prefs);
-          _isLoaded = true;
-        }
-        final next = _appearance.patchHeaderLayout(slot, headerLayout);
-        if (!await _writeCurrentAppearance(prefs, next)) {
-          throw const FileSystemException('页头布局未能保存');
-        }
-      });
+      _queueAppearanceEdit(() => appearance.patchHeaderLayout(slot, headerLayout),
+          error: '页头布局未能保存');
 
   Future<String> adoptDecorationImage(
     String sourcePath,
@@ -2009,33 +2233,13 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     String slot,
     Map<String, dynamic>? slotDecoration,
   ) =>
-      _queueAppearanceOperation((prefs) async {
-        if (!_isLoaded) {
-          _applyStoredPreferences(prefs);
-          _isLoaded = true;
-        }
-        await _initializeThemeFiles(prefs);
-        final next =
-            _appearance.patchHeaderDecoration(brightness, slot, slotDecoration);
-        if (!await _writeCurrentAppearance(prefs, next)) {
-          throw const FileSystemException('页头装饰未能保存');
-        }
-        await _cleanupThemeFiles();
-      });
+      _queueAppearanceEdit(() =>
+          appearance.patchHeaderDecoration(brightness, slot, slotDecoration),
+          error: '页头装饰未能保存', cleanup: true);
 
   Future<void> resetAppearanceGroup(ThemeGroup group) =>
-      _queueAppearanceOperation((prefs) async {
-        if (!_isLoaded) {
-          _applyStoredPreferences(prefs);
-          _isLoaded = true;
-        }
-        await _initializeThemeFiles(prefs);
-        final next = _appearance.without(group);
-        if (!await _writeCurrentAppearance(prefs, next)) {
-          throw const FileSystemException('外观分组未能重置');
-        }
-        await _cleanupThemeFiles();
-      });
+      _queueAppearanceEdit(() => appearance.without(group),
+          error: '外观分组未能重置', cleanup: true);
 
   Future<void> _commitAppearance(
     AppPreferencesStore prefs,
@@ -2163,7 +2367,14 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> clearBackground() => _queueAppearanceOperation((prefs) async {
+  Future<void> clearBackground() {
+    if (_trial != null) {
+      _updateTrialAppearance(ThemeAppearance({...appearance.data, 'wallpapers': {
+        'source': null, 'light': <String, dynamic>{}, 'dark': <String, dynamic>{},
+      }}));
+      return Future<void>.value();
+    }
+    return _queueAppearanceOperation((prefs) async {
         final old = [
           if (_backgroundImage != null) _backgroundImage!,
           if (_landscapeBackgroundImage != null) _landscapeBackgroundImage!
@@ -2186,6 +2397,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         await _clearWallpaperOverride(prefs);
         await _cleanupThemeFiles(legacyCandidates: old);
       });
+  }
 
   /// 旧方法，仅保留兼容签名。内部同步写新 key。
   Future<void> setStartOnTimetable(bool v) async {

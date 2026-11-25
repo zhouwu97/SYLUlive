@@ -22,6 +22,7 @@ import '../services/publish_session_scope.dart';
 import 'my_content_screen.dart';
 import 'post_detail_screen.dart';
 import 'court_screen.dart';
+import 'lottery_screen.dart';
 import 'feedback/feedback_detail_screen.dart';
 import '../features/theme_pack/admin_theme_review_screen.dart';
 import '../features/theme_pack/theme_submission_screen.dart';
@@ -574,6 +575,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       actionText = '反馈工单有新回复';
     } else if (type == 'feedback_admin_update') {
       actionText = '有新的用户工单';
+    } else if (type == 'lottery_won') {
+      actionText = '恭喜中奖';
     }
 
     return InkWell(
@@ -717,6 +720,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             if (mounted && _isCurrentSession(auth, session)) {
               await _loadReplies();
             }
+          } else if (type == 'lottery_won') {
+            if (!mounted) return;
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const LotteryScreen()),
+            );
           }
         } finally {
           if (id != null) _openingNotificationIds.remove(id);
@@ -754,7 +763,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                       ? Icons.admin_panel_settings_outlined
                       : type == 'course_evaluation_result'
                           ? Icons.rate_review_outlined
-                          : Icons.notifications,
+                          : type == 'lottery_won'
+                              ? Icons.card_giftcard_rounded
+                              : Icons.notifications,
                   color: Theme.of(context).primaryColor,
                   size: 20,
                 ),

@@ -287,36 +287,34 @@ class _GlassPainter extends CustomPainter {
     final oldCapture = resources.capture;
     final oldBlurred = resources.blurred;
     resources.capture = capture.image;
-    resources.blurred = null;
+    final ratio = capture.image.width / capture.rect.width;
     // Material is selected explicitly. Press changes the lens shape and optics,
     // but must not silently turn the ordinary frosted material into clear glass.
     final blur = settings.blur;
-    ui.Image scene = capture.image;
-    if (blur > 0) {
-      final ratio = capture.image.width / capture.rect.width;
-      final recorder = ui.PictureRecorder();
-      final blurCanvas = Canvas(recorder);
-      blurCanvas.saveLayer(
-        null,
-        Paint()
-          ..imageFilter = ui.ImageFilter.blur(
-            sigmaX: blur * ratio,
-            sigmaY: blur * ratio,
-            tileMode: TileMode.clamp,
-          ),
-      );
-      blurCanvas.drawImage(capture.image, Offset.zero, Paint());
-      blurCanvas.restore();
-      final picture = recorder.endRecording();
-      scene = resources.blurred = picture.toImageSync(
-        capture.image.width,
-        capture.image.height,
-      );
-      picture.dispose();
-    }
+    final recorder = ui.PictureRecorder();
+    final blurCanvas = Canvas(recorder);
+    blurCanvas.saveLayer(
+      null,
+      Paint()
+        ..imageFilter = ui.ImageFilter.blur(
+          sigmaX: blur * ratio,
+          sigmaY: blur * ratio,
+          tileMode: TileMode.clamp,
+        ),
+    );
+    blurCanvas.drawImage(capture.image, Offset.zero, Paint());
+    blurCanvas.restore();
+    final picture = recorder.endRecording();
+    resources.blurred = picture.toImageSync(
+      capture.image.width,
+      capture.image.height,
+    );
+    picture.dispose();
     _ensureAtlas(size);
-    shader.setImageSampler(0, scene);
+    shader.setImageSampler(0, resources.blurred!);
     shader.setImageSampler(1, resources.atlas!);
+    // 云考导航透镜使用原始背景，底座继续使用用户选择的磨砂材质。
+    shader.setImageSampler(2, capture.image);
     // Inverse of reference jellyMatrix: stretch along velocity, compress across
     // it. Determinant is one, so moving faster does not inflate the glass volume.
     final along = 1 + settings.stretch;

@@ -15,9 +15,10 @@ HTTP + CookieJar → CSRF → RSA PKCS#1 v1.5 → 登录探活 → 学生信息
 
 ## 安全边界
 
-- 默认客户端保留系统根证书，并补充站点缺失的 `TrustAsia TLS Pro RSA CA 2025`
-  中间证书（SHA-256：`41:6A:2C:89:51:5B:8B:C1:4E:13:67:70:24:E2:A8:2E:8B:1B:2F:41:17:A8:8F:D1:1B:8B:BD:25:D1:A5:C5:17`）；
-  TLS 主机名和证书有效期校验仍然开启。
+- 默认客户端保留系统根证书，并补充站点缺失的 `TrustAsia OV TLS RSA CA 2024`
+  中间证书及通向 `Certum Trusted Network CA` 的 `TrustAsia TLS RSA Root CA`
+  交叉签名证书；TLS 主机名和证书有效期校验仍然开启。
+  证书来源、指纹与补链更新流程见 [学校证书链说明](../../python-edu-service/certs/README.md)。
 - Dio 关闭自动重定向，保留 302/901 给分类器判断。
 - 所有请求共享同一个 `CookieJar`，不在业务请求中手动拼接 Cookie。
 - `clearState()` 只清内存状态；`resetSession()` 才会清空 CookieJar，用于 fresh login、退出和切换账号。

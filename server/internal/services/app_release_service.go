@@ -148,8 +148,6 @@ func DecideUpdate(current, latest, minimumSupported int64) UpdateDecision {
 }
 
 // GetLatestPublished 返回指定平台和渠道下 status=published 的最高 version_code 行。
-//
-// 阶段 A 没有超管发布接口，测试或本地联调都通过直接 INSERT 数据进行。
 // 没有任何已发布版本时返回 gorm.ErrRecordNotFound。
 func (s *AppReleaseService) GetLatestPublished(ctx context.Context, platform, channel string) (*models.AppRelease, error) {
 	if platform == "" || channel == "" {

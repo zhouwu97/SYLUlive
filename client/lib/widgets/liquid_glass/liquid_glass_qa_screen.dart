@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../utils/responsive_util.dart';
 import '../liquid_bottom_nav.dart';
 import 'liquid_glass_runtime.dart';
+import 'liquid_glass_switch.dart';
 
 class LiquidGlassReferenceParityScreen extends StatelessWidget {
   const LiquidGlassReferenceParityScreen({super.key});
@@ -23,12 +24,23 @@ class LiquidGlassQaScreen extends StatefulWidget {
 
 class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
   final _position = ValueNotifier(2.0);
+  final _switchScene = LiquidGlassSceneSource();
+  final _scroll = ScrollController();
   int _selected = 2;
   bool _compare = false, _clear = false;
+  bool _switchOn = true, _switchReady = false, _reduceSwitch = false;
   double _intensity = 1;
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_switchScene.frameChanged);
+  }
+
   @override
   void dispose() {
     _position.dispose();
+    _scroll.dispose();
+    _switchScene.dispose();
     super.dispose();
   }
 
@@ -43,10 +55,14 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
       appBar: AppBar(title: const Text('Liquid Glass Reference QA')),
       body: LiquidGlassScene(
         background: Stack(fit: StackFit.expand, children: [
-          CustomPaint(
-              painter: _GridPainter(
-                  Theme.of(context).brightness == Brightness.dark)),
+          LiquidGlassBackground(
+            source: _switchScene,
+            child: CustomPaint(
+                painter: _GridPainter(
+                    Theme.of(context).brightness == Brightness.dark)),
+          ),
           ListView(
+              controller: _scroll,
               padding: EdgeInsets.fromLTRB(
                   vertical ? 136 : 24, 24, 24, vertical ? 24 : 128),
               children: [
@@ -54,7 +70,8 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
                     style:
                         TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 16),
-                const Text('同一距离用不同速度拖动；按住不动会恢复，松手后保留惯性。背景、图标和高光一起经过变形透镜。'),
+                const Text(
+                    '底座始终保留清透折射和亮边；按住按钮才出现透镜。拖动速度决定拉伸和弯曲，松手后胶囊随回弹退场，底座保持原样。'),
                 SwitchListTile(
                     title: const Text('仅模糊对照'),
                     value: _compare,
@@ -63,6 +80,45 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
                     title: const Text('清透材质'),
                     value: _clear,
                     onChanged: (v) => setState(() => _clear = v)),
+                const SizedBox(height: 16),
+                Row(children: [
+                  Expanded(
+                      child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('液态玻璃开关 · 正式组件',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w600)),
+                      Text(
+                          '${_switchOn ? '已开启' : '已关闭'} · ${_switchReady ? 'GPU 透镜已就绪' : '普通开关'}'),
+                    ],
+                  )),
+                  MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                        disableAnimations:
+                            MediaQuery.disableAnimationsOf(context) ||
+                                _reduceSwitch),
+                    child: LiquidGlassSwitch(
+                      key: const ValueKey('qa-liquid-switch'),
+                      label: '液态玻璃开关试用',
+                      value: _switchOn,
+                      onChanged: (value) => setState(() => _switchOn = value),
+                      source: _switchScene,
+                      compare: _compare,
+                      intensity: _intensity,
+                      onOpticsReadyChanged: (ready) =>
+                          setState(() => _switchReady = ready),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 8),
+                const Text('轻点从原端鼓起、滑向另一端再收回；按住可手动拖动和反向回弹。本样例不保存设置。'),
+                CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('减少开关动画'),
+                    value: _reduceSwitch,
+                    onChanged: (value) =>
+                        setState(() => _reduceSwitch = value!)),
                 const Text('局部测试强度（不修改用户设置）'),
                 Slider(
                     value: _intensity,

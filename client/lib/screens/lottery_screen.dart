@@ -1,17 +1,19 @@
+import 'dart:async';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:dio/dio.dart';
-import 'dart:async';
-import '../widgets/app_page_background.dart';
+
+import '../config/api_constants.dart';
 import '../models/lottery.dart';
 import '../providers/auth_provider.dart';
-import '../utils/app_feedback.dart';
-import '../config/api_constants.dart';
-import '../widgets/cached_avatar.dart';
 import '../services/async_action_guard.dart';
 import '../services/idempotency_key.dart';
+import '../utils/app_feedback.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_page_background.dart';
+import '../widgets/cached_avatar.dart';
 
 class LotteryScreen extends StatefulWidget {
   const LotteryScreen({super.key});
@@ -22,26 +24,71 @@ class LotteryScreen extends StatefulWidget {
 
 class _LotteryScreenState extends State<LotteryScreen> {
   bool _isLoading = true;
+  bool _isEmpty = false;
   String? _errorMessage;
   LotteryEvent? _event;
   int _participantCount = 0;
   bool _joined = false;
   int _myWeight = 0;
+  bool _academicConfigured = false;
+  Duration _serverClockOffset = Duration.zero;
+
+  List<LotteryEvent> _history = const [];
+  bool _historyLoading = false;
+
   bool _isSubmitting = false;
   bool _postDrawRefreshInFlight = false;
   DateTime? _lastPostDrawRefreshAt;
+
   String? _joinIdempotencyKey;
+  int? _joinIdempotencyEventId;
   String? _drawIdempotencyKey;
+  int? _drawIdempotencyEventId;
+
   final AsyncActionGuard _actionGuard = AsyncActionGuard();
+
+  int _requestSeq = 0;
+  int? _boundUserId;
+  int? _boundSessionEpoch;
 
   late Dio _dio;
   Timer? _countdownTimer;
 
+  DateTime _now() => DateTime.now().add(_serverClockOffset);
+
+  bool _isDrawTimeReached(LotteryEvent event) =>
+      !event.drawTime.isAfter(_now());
+
   @override
   void initState() {
     super.initState();
-    _dio = context.read<AuthProvider>().dio;
-    _fetchLottery();
+    final auth = context.read<AuthProvider>();
+    _dio = auth.dio;
+    _boundUserId = auth.user?.id;
+    _boundSessionEpoch = auth.accountSessionEpoch;
+    _academicConfigured = auth.user?.academicConfigured == true;
+    _loadPage();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.watch<AuthProvider>();
+    final nextUserId = auth.user?.id;
+    final nextEpoch = auth.accountSessionEpoch;
+    if (nextUserId != _boundUserId || nextEpoch != _boundSessionEpoch) {
+      _boundUserId = nextUserId;
+      _boundSessionEpoch = nextEpoch;
+      _dio = auth.dio;
+      _joinIdempotencyKey = null;
+      _joinIdempotencyEventId = null;
+      _drawIdempotencyKey = null;
+      _drawIdempotencyEventId = null;
+      _academicConfigured = auth.user?.academicConfigured == true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadPage();
+      });
+    }
   }
 
   @override
@@ -50,54 +97,151 @@ class _LotteryScreenState extends State<LotteryScreen> {
     super.dispose();
   }
 
+  bool _isCurrentSession(int requestSeq, int? userId, int? epoch) {
+    if (!mounted || requestSeq != _requestSeq) return false;
+    final auth = context.read<AuthProvider>();
+    return auth.user?.id == userId && auth.accountSessionEpoch == epoch;
+  }
+
+  Future<void> _loadPage({bool silent = false}) async {
+    await Future.wait([
+      _fetchLottery(silent: silent),
+      _fetchHistory(),
+    ]);
+  }
+
   Future<void> _fetchLottery({bool silent = false}) async {
+    final requestSeq = ++_requestSeq;
+    final userId = _boundUserId;
+    final epoch = _boundSessionEpoch;
+
     if (mounted && !silent) {
       setState(() {
         _isLoading = true;
+        _isEmpty = false;
         _errorMessage = null;
       });
     }
     try {
       final response = await _dio.get('/lottery/current');
-      if (mounted) {
+      if (!mounted || !_isCurrentSession(requestSeq, userId, epoch)) return;
+      final data = response.data is Map
+          ? Map<String, dynamic>.from(response.data as Map)
+          : const <String, dynamic>{};
+      final rawEvent = data['event'];
+      if (rawEvent is! Map) {
         setState(() {
-          _event = LotteryEvent.fromJson(response.data['event']);
-          _participantCount = response.data['participant_count'] ?? 0;
-          _joined = response.data['joined'] ?? false;
-          _myWeight = response.data['my_weight'] ?? 0;
+          _event = null;
+          _isEmpty = true;
           _isLoading = false;
+          _errorMessage = null;
         });
-        if (_event?.status == 0) {
-          if (_event!.drawTime.isAfter(DateTime.now())) {
-            _lastPostDrawRefreshAt = null;
-          }
-          _startCountdown();
-        } else {
-          _countdownTimer?.cancel();
+        _countdownTimer?.cancel();
+        return;
+      }
+
+      final event = LotteryEvent.fromJson(Map<String, dynamic>.from(rawEvent));
+      final serverTimeRaw = data['server_time']?.toString();
+      if (serverTimeRaw != null && serverTimeRaw.isNotEmpty) {
+        final serverTime = DateTime.tryParse(serverTimeRaw);
+        if (serverTime != null) {
+          _serverClockOffset = serverTime.difference(DateTime.now());
         }
+      }
+
+      if (_joinIdempotencyEventId != event.id) {
+        _joinIdempotencyKey = null;
+        _joinIdempotencyEventId = null;
+      }
+      if (_drawIdempotencyEventId != event.id) {
+        _drawIdempotencyKey = null;
+        _drawIdempotencyEventId = null;
+      }
+
+      final authAcademic =
+          context.read<AuthProvider>().user?.academicConfigured == true;
+      setState(() {
+        _event = event;
+        _participantCount =
+            (data['participant_count'] as num?)?.toInt() ?? event.participantCount;
+        _joined = data['joined'] == true;
+        _myWeight = (data['my_weight'] as num?)?.toInt() ?? 0;
+        _academicConfigured =
+            data.containsKey('academic_configured')
+                ? data['academic_configured'] == true
+                : authAcademic;
+        _isLoading = false;
+        _isEmpty = false;
+        _errorMessage = null;
+      });
+
+      if (event.isOngoing) {
+        if (!_isDrawTimeReached(event)) {
+          _lastPostDrawRefreshAt = null;
+        }
+        _startCountdown();
+      } else {
+        _countdownTimer?.cancel();
       }
     } on DioException catch (e) {
+      if (!_isCurrentSession(requestSeq, userId, epoch)) return;
       if (e.response?.statusCode == 404) {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _errorMessage = "暂无抽奖活动";
-          });
-        }
+        _countdownTimer?.cancel();
+        setState(() {
+          _event = null;
+          _isLoading = false;
+          _isEmpty = true;
+          _errorMessage = null;
+        });
       } else {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '加载失败');
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = '发生未知错误';
+          _isEmpty = false;
+          _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '加载失败');
         });
+      }
+    } catch (_) {
+      if (!_isCurrentSession(requestSeq, userId, epoch)) return;
+      setState(() {
+        _isLoading = false;
+        _isEmpty = false;
+        _errorMessage = '发生未知错误';
+      });
+    }
+  }
+
+  Future<void> _fetchHistory() async {
+    final userId = _boundUserId;
+    final epoch = _boundSessionEpoch;
+    if (mounted) {
+      setState(() => _historyLoading = true);
+    }
+    try {
+      final response = await _dio.get(
+        '/lottery/history',
+        queryParameters: const {'page': 1, 'page_size': 10},
+      );
+      if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      if (auth.user?.id != userId || auth.accountSessionEpoch != epoch) return;
+      final data = response.data is Map
+          ? Map<String, dynamic>.from(response.data as Map)
+          : const <String, dynamic>{};
+      final rawItems = data['items'];
+      final list = rawItems is List
+          ? rawItems
+              .whereType<Map>()
+              .map((item) =>
+                  LotteryEvent.fromJson(Map<String, dynamic>.from(item)))
+              .toList()
+          : const <LotteryEvent>[];
+      setState(() {
+        _history = list;
+        _historyLoading = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _historyLoading = false);
       }
     }
   }
@@ -114,9 +258,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
   void _refreshAfterDrawTimeIfNeeded() {
     final event = _event;
-    if (event == null ||
-        event.status != 0 ||
-        event.drawTime.isAfter(DateTime.now())) {
+    if (event == null || !event.isOngoing || !_isDrawTimeReached(event)) {
       return;
     }
 
@@ -129,14 +271,13 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
     _lastPostDrawRefreshAt = now;
     _postDrawRefreshInFlight = true;
-    _fetchLottery(silent: true).whenComplete(() {
+    _loadPage(silent: true).whenComplete(() {
       _postDrawRefreshInFlight = false;
     });
   }
 
   String _formatCountdown(DateTime target) {
-    final diff = target.difference(DateTime.now());
-
+    final diff = target.difference(_now());
     if (diff <= Duration.zero) {
       return '即将开奖';
     }
@@ -149,17 +290,38 @@ class _LotteryScreenState extends State<LotteryScreen> {
     if (days > 0) {
       return '$days天 $hours时 $minutes分';
     }
-
     if (hours > 0) {
-      return '$hours时 $minutes分';
+      return '$hours时 $minutes分 $seconds秒';
     }
-
     return '$minutes分 $seconds秒';
   }
 
+  String _formatBeijingDateTime(DateTime value) {
+    final bj = value.toUtc().add(const Duration(hours: 8));
+    final y = bj.year.toString().padLeft(4, '0');
+    final m = bj.month.toString().padLeft(2, '0');
+    final d = bj.day.toString().padLeft(2, '0');
+    final h = bj.hour.toString().padLeft(2, '0');
+    final min = bj.minute.toString().padLeft(2, '0');
+    return '$y-$m-$d $h:$min';
+  }
+
   Future<void> _joinLottery() async {
-    if (_event == null || _isSubmitting) return;
-    final eventId = _event!.id;
+    final event = _event;
+    if (event == null || _isSubmitting) return;
+    if (!event.isOngoing || _isDrawTimeReached(event)) {
+      AppFeedback.showSnackBar(context, '该抽奖已截止参与，等待系统开奖', isError: true);
+      return;
+    }
+    if (!_academicConfigured) {
+      AppFeedback.showSnackBar(
+        context,
+        '请先完成教务连接并同步课表配置后再参与抽奖',
+        isError: true,
+      );
+      return;
+    }
+    final eventId = event.id;
     await _actionGuard.run<void>(
       'lottery-join:$eventId',
       () => _joinLotteryOnce(eventId),
@@ -168,44 +330,63 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
   Future<void> _joinLotteryOnce(int eventId) async {
     if (mounted) setState(() => _isSubmitting = true);
+    if (_joinIdempotencyEventId != eventId || _joinIdempotencyKey == null) {
+      _joinIdempotencyEventId = eventId;
+      _joinIdempotencyKey = newIdempotencyKey('lottery-join');
+    }
     try {
       final response = await _dio.post(
         '/lottery/$eventId/join',
         options: Options(headers: <String, dynamic>{
-          'Idempotency-Key': _joinIdempotencyKey ??=
-              newIdempotencyKey('lottery-join'),
+          'Idempotency-Key': _joinIdempotencyKey!,
         }),
       );
       if (!mounted) return;
       AppFeedback.showSnackBar(context, '参与成功！');
+      final data = response.data is Map
+          ? Map<String, dynamic>.from(response.data as Map)
+          : const <String, dynamic>{};
       setState(() {
         _joined = true;
-        _myWeight = response.data['weight'] ?? 0;
+        _myWeight = (data['weight'] as num?)?.toInt() ?? _myWeight;
         _participantCount++;
-        _isSubmitting = false;
       });
       _joinIdempotencyKey = null;
+      _joinIdempotencyEventId = null;
     } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      // 后端返回 4xx/5xx 响应后释放旧键，避免 5xx 失败占位锁死后续重试。
+      if (status != null) {
+        _joinIdempotencyKey = null;
+        _joinIdempotencyEventId = null;
+      }
       if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(e, fallback: '参与失败'),
         isError: true,
       );
-      setState(() => _isSubmitting = false);
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 
   Future<void> _adminDraw() async {
-    if (_event == null || _isSubmitting) return;
+    final event = _event;
+    if (event == null || _isSubmitting) return;
+    if (!event.isOngoing || !_isDrawTimeReached(event)) {
+      AppFeedback.showSnackBar(context, '还未到开奖时间，无法手动补开', isError: true);
+      return;
+    }
     final confirm = await AppFeedback.confirmDanger(
       context,
-      title: '手动开奖',
-      message: '确定要立即对该活动开奖吗？此操作不可逆，将立刻按权重抽取一名幸运儿。',
+      title: '兜底手动补开',
+      message: '当前已过开奖时间且系统尚未开奖，确定手动触发本次开奖吗？此操作不可逆。',
     );
-    if (!mounted) return;
-    if (!confirm) return;
-    final eventId = _event!.id;
+    if (!mounted || !confirm) return;
+    final eventId = event.id;
     await _actionGuard.run<void>(
       'lottery-draw:$eventId',
       () => _adminDrawOnce(eventId),
@@ -214,26 +395,37 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
   Future<void> _adminDrawOnce(int eventId) async {
     if (mounted) setState(() => _isSubmitting = true);
+    if (_drawIdempotencyEventId != eventId || _drawIdempotencyKey == null) {
+      _drawIdempotencyEventId = eventId;
+      _drawIdempotencyKey = newIdempotencyKey('lottery-draw');
+    }
     try {
       await _dio.post(
         '/admin/lottery/$eventId/draw',
         options: Options(headers: <String, dynamic>{
-          'Idempotency-Key': _drawIdempotencyKey ??=
-              newIdempotencyKey('lottery-draw'),
+          'Idempotency-Key': _drawIdempotencyKey!,
         }),
       );
       if (!mounted) return;
       AppFeedback.showSnackBar(context, '开奖成功！');
-      _fetchLottery();
       _drawIdempotencyKey = null;
+      _drawIdempotencyEventId = null;
+      await _loadPage(silent: true);
     } on DioException catch (e) {
+      if (e.response?.statusCode != null) {
+        _drawIdempotencyKey = null;
+        _drawIdempotencyEventId = null;
+      }
       if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(e, fallback: '开奖失败'),
         isError: true,
       );
-      setState(() => _isSubmitting = false);
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 
@@ -275,55 +467,104 @@ class _LotteryScreenState extends State<LotteryScreen> {
         statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4)),
+        backgroundColor: AppPageBackground.color(
+            context, isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4)),
         appBar: AppBar(
           title:
               const Text('官方抽奖', style: TextStyle(fontWeight: FontWeight.bold)),
           elevation: 0,
           backgroundColor: AppPageBackground.color(context, Colors.transparent),
-        ),
-        extendBodyBehindAppBar: true,
-        body: Stack(
-          children: [
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: AppPageBackground.color(context, isDark
-                      ? const Color(0xFF111315)
-                      : const Color(0xFFFFFAF4)),
-                ),
-              ),
-            ),
-            SafeArea(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _errorMessage != null
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.inbox_rounded,
-                                size: 80,
-                                color: isDark ? Colors.white30 : Colors.black26,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                _errorMessage!,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color:
-                                      isDark ? Colors.white70 : Colors.black54,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : _buildEventContent(
-                          context, primary, isDark, isSuperAdmin),
+          actions: [
+            IconButton(
+              tooltip: '刷新',
+              onPressed: _isLoading ? null : () => _loadPage(),
+              icon: const Icon(Icons.refresh_rounded),
             ),
           ],
         ),
+        body: SafeArea(
+          top: false,
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _errorMessage != null
+                  ? _buildErrorState(isDark)
+                  : _isEmpty || _event == null
+                      ? _buildEmptyState(primary, isDark)
+                      : RefreshIndicator(
+                          onRefresh: () => _loadPage(silent: true),
+                          child: _buildEventContent(
+                            context,
+                            primary,
+                            isDark,
+                            isSuperAdmin,
+                          ),
+                        ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.cloud_off_rounded,
+              size: 64,
+              color: isDark ? Colors.white38 : Colors.black26,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _errorMessage ?? '加载失败',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15,
+                color: isDark ? Colors.white70 : Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: () => _loadPage(),
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('重新加载'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(Color primary, bool isDark) {
+    return RefreshIndicator(
+      onRefresh: () => _loadPage(silent: true),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        children: [
+          const SizedBox(height: 40),
+          Icon(
+            Icons.inbox_rounded,
+            size: 72,
+            color: isDark ? Colors.white30 : Colors.black26,
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: Text(
+              '暂无抽奖活动',
+              style: TextStyle(
+                fontSize: 16,
+                color: isDark ? Colors.white70 : Colors.black54,
+              ),
+            ),
+          ),
+          if (_history.isNotEmpty) ...[
+            const SizedBox(height: 28),
+            _buildHistorySection(primary, isDark),
+          ],
+        ],
       ),
     );
   }
@@ -335,94 +576,177 @@ class _LotteryScreenState extends State<LotteryScreen> {
     bool isSuperAdmin,
   ) {
     final ev = _event!;
-    final isOngoing = ev.status == 0;
+    final isOngoing = ev.isOngoing;
+    final drawTimeReached = _isDrawTimeReached(ev);
     final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      child: SafeArea(
-        top: true,
-        child: Column(
-          children: [
-            _buildEventHero(ev, isOngoing, primary, isDark),
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      child: Column(
+        children: [
+          _buildEventHero(ev, isOngoing, primary, isDark),
+          const SizedBox(height: 16),
+          _buildPrizeCard(ev, isOngoing, primary, isDark),
+          if (ev.description.trim().isNotEmpty) ...[
             const SizedBox(height: 16),
-            _buildPrizeCard(ev, isOngoing, primary, isDark),
-            const SizedBox(height: 16),
-            if (!isOngoing)
-              _buildWinnerCard(ev, primary, isDark, titleColor)
-            else ...[
-              _buildWinnerCard(ev, primary, isDark, titleColor),
-              const SizedBox(height: 16),
-              if (_joined)
-                _buildJoinedCard(isDark)
-              else
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _isSubmitting ? null : _joinLottery,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: _isSubmitting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2),
-                          )
-                        : const Text(
-                            '立即参与',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                  ),
-                ),
-              const SizedBox(height: 16),
-              _buildLotteryRules(primary, isDark),
-            ],
-            if (isSuperAdmin && isOngoing) ...[
-              const SizedBox(height: 32),
-              TextButton.icon(
-                onPressed: _adminDraw,
-                icon: const Icon(Icons.flash_on, color: Colors.orange),
-                label: const Text(
-                  '管理员手动开奖',
-                  style: TextStyle(color: Colors.orange),
-                ),
-                style: TextButton.styleFrom(
-                  backgroundColor: Colors.orange.withValues(alpha: 0.1),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ],
-            if (!isOngoing) ...[
-              const SizedBox(height: 32),
-              Text(
-                '已结束 · 感谢参与',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? Colors.white54 : const Color(0xFF7D8A97),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
+            _buildDescriptionCard(ev.description.trim(), isDark, titleColor),
           ],
-        ),
+          const SizedBox(height: 16),
+          _buildWinnerCard(ev, primary, isDark, titleColor),
+          if (isOngoing) ...[
+            const SizedBox(height: 16),
+            if (_joined)
+              _buildJoinedCard(isDark)
+            else
+              _buildJoinAction(primary, isDark, drawTimeReached),
+            const SizedBox(height: 16),
+            _buildLotteryRules(primary, isDark),
+          ],
+          // 仅到点后仍未开奖时，给超级管理员提供兜底手动补开入口。
+          if (isSuperAdmin && isOngoing && drawTimeReached) ...[
+            const SizedBox(height: 24),
+            TextButton.icon(
+              onPressed: _isSubmitting ? null : _adminDraw,
+              icon: const Icon(Icons.flash_on, color: Colors.orange),
+              label: const Text(
+                '兜底手动补开',
+                style: TextStyle(color: Colors.orange),
+              ),
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.orange.withValues(alpha: 0.1),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+          if (!isOngoing) ...[
+            const SizedBox(height: 20),
+            Text(
+              '${ev.statusLabel} · 感谢参与',
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? Colors.white54 : const Color(0xFF7D8A97),
+              ),
+            ),
+          ],
+          if (_history.isNotEmpty || _historyLoading) ...[
+            const SizedBox(height: 24),
+            _buildHistorySection(primary, isDark),
+          ],
+          const SizedBox(height: 16),
+        ],
       ),
+    );
+  }
+
+  Widget _buildDescriptionCard(String description, bool isDark, Color titleColor) {
+    return AppCardSurface(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: _softCardDecoration(isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '活动说明',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: titleColor,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            description,
+            style: TextStyle(
+              fontSize: 14,
+              height: 1.6,
+              color: isDark ? Colors.white70 : const Color(0xFF4B5563),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildJoinAction(Color primary, bool isDark, bool drawTimeReached) {
+    final canJoin = !drawTimeReached && _academicConfigured && !_isSubmitting;
+    String buttonText = '立即参与';
+    if (drawTimeReached) {
+      buttonText = '已截止，等待系统开奖';
+    } else if (!_academicConfigured) {
+      buttonText = '需先连接教务后参与';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!_academicConfigured && !drawTimeReached) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: isDark ? 0.14 : 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.school_outlined,
+                    size: 18, color: Color(0xFFD97706)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '参与官方抽奖需先完成教务连接并同步课表配置。',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? Colors.amber.shade200 : const Color(0xFF92400E),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: canJoin ? _joinLottery : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primary,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor:
+                  isDark ? Colors.white12 : const Color(0xFFE5E7EB),
+              disabledForegroundColor:
+                  isDark ? Colors.white38 : const Color(0xFF9CA3AF),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+              elevation: 0,
+            ),
+            child: _isSubmitting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2),
+                  )
+                : Text(
+                    buttonText,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -444,10 +768,10 @@ class _LotteryScreenState extends State<LotteryScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          if (ev.status == 0)
+          if (ev.isOngoing)
             Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 20),
+                padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Column(
                   children: [
                     const Icon(Icons.hourglass_empty,
@@ -474,7 +798,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                 ),
               ),
             )
-          else if (ev.winner != null)
+          else if (ev.isDrawn && ev.winner != null)
             Column(
               children: [
                 const Row(
@@ -522,22 +846,42 @@ class _LotteryScreenState extends State<LotteryScreen> {
                             color: isDark
                                 ? Colors.white70
                                 : const Color(0xFF747B82))),
-                    Text(ev.prizeName,
-                        style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? Colors.white
-                                : const Color(0xFF1F2328))),
+                    Expanded(
+                      child: Text(ev.prizeName,
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF1F2328))),
+                    ),
                   ],
-                )
+                ),
               ],
             )
-          else
+          else if (ev.isDrawn && ev.winnerId != null)
             const Center(
               child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Text('暂无中奖者', style: TextStyle(color: Colors.grey)),
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('中奖用户已注销', style: TextStyle(color: Colors.grey)),
+              ),
+            )
+          else if (ev.isNoWinner)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('本期无有效参与者，已流拍',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            )
+          else
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  ev.isCancelled ? '本期活动已取消' : '暂无中奖者',
+                  style: const TextStyle(color: Colors.grey),
+                ),
               ),
             ),
         ],
@@ -615,19 +959,23 @@ class _LotteryScreenState extends State<LotteryScreen> {
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        Text(
-                          event.title,
-                          style: TextStyle(
-                              fontSize: 13,
-                              color: isDark
-                                  ? Colors.white70
-                                  : const Color(0xFF747B82)),
+                        Flexible(
+                          child: Text(
+                            event.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: isDark
+                                    ? Colors.white70
+                                    : const Color(0xFF747B82)),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         const Text('·', style: TextStyle(color: Colors.grey)),
                         const SizedBox(width: 8),
                         Text(
-                          isOngoing ? '进行中' : '已开奖',
+                          event.statusLabel,
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
@@ -666,13 +1014,21 @@ class _LotteryScreenState extends State<LotteryScreen> {
               color: titleColor,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Text(
             event.prizeName,
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: isDark ? Colors.white : const Color(0xFFF97316),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '开奖时间：${_formatBeijingDateTime(event.drawTime)}（北京时间）',
+            style: TextStyle(
+              fontSize: 13,
+              color: isDark ? Colors.white60 : const Color(0xFF747B82),
             ),
           ),
           const SizedBox(height: 16),
@@ -716,7 +1072,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      isOngoing ? _formatCountdown(event.drawTime) : '已结束',
+                      isOngoing
+                          ? _formatCountdown(event.drawTime)
+                          : event.statusLabel,
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
@@ -767,7 +1125,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '当前等级权重：$_myWeight 份，开奖前按最新等级重算',
+                  '当前实时等级权重：$_myWeight 份，开奖时按最新等级计算',
                   style: TextStyle(
                     fontSize: 12,
                     color: isDark ? Colors.white60 : const Color(0xFF747B82),
@@ -821,22 +1179,22 @@ class _LotteryScreenState extends State<LotteryScreen> {
           ),
           const SizedBox(height: 16),
           _buildRuleRow(
-            Icons.person_outline_rounded,
-            '每个账号仅可参与一次',
+            Icons.school_outlined,
+            '已完成教务连接并同步课表配置的账号即可参与，每个账号仅可参与一次',
             primary,
             textColor,
           ),
           const SizedBox(height: 12),
           _buildRuleRow(
             Icons.trending_up_rounded,
-            '用户等级就是抽奖权重，Lv.几就是几份权重',
+            '用户等级就是抽奖权重，Lv.几就是几份权重（开奖前按最新等级实时重算）',
             primary,
             textColor,
           ),
           const SizedBox(height: 12),
           _buildRuleRow(
             Icons.verified_user_outlined,
-            '系统按参与者权重随机抽取中奖者',
+            '系统到点自动按权重公平摇号，并公示置顶公告与站内中奖通知',
             primary,
             textColor,
           ),
@@ -848,8 +1206,12 @@ class _LotteryScreenState extends State<LotteryScreen> {
   Widget _buildRuleRow(
       IconData icon, String text, Color primary, Color textColor) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: primary),
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(icon, size: 16, color: primary),
+        ),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
@@ -862,6 +1224,94 @@ class _LotteryScreenState extends State<LotteryScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildHistorySection(Color primary, bool isDark) {
+    final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
+    final subColor = isDark ? Colors.white60 : const Color(0xFF747B82);
+
+    return AppCardSurface(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: _softCardDecoration(isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '往期抽奖记录',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: titleColor,
+                ),
+              ),
+              const Spacer(),
+              if (_historyLoading)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_history.isEmpty)
+            Text('暂无往期记录', style: TextStyle(fontSize: 13, color: subColor))
+          else
+            ..._history.map((item) {
+              final winnerText = item.isDrawn
+                  ? (item.winner?.nickname ??
+                      (item.winnerId != null ? '已注销用户' : '暂无中奖者'))
+                  : item.statusLabel;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.04)
+                        : const Color(0xFFFFFAF4),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${item.title} · ${item.prizeName}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: titleColor,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            item.statusLabel,
+                            style: TextStyle(fontSize: 12, color: subColor),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '开奖：${_formatBeijingDateTime(item.drawnAt ?? item.drawTime)} · 参与 ${item.participantCount} 人 · 结果：$winnerText',
+                        style: TextStyle(fontSize: 12, color: subColor),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
     );
   }
 }

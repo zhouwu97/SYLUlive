@@ -215,10 +215,13 @@ class _ThemeTrialBannerHostState extends State<ThemeTrialBannerHost> {
           ),
         ),
         Expanded(
-          child: MediaQuery.removePadding(
-            context: context,
-            removeTop: true,
-            child: widget.child,
+          child: Semantics(
+            container: true,
+            child: MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              child: widget.child,
+            ),
           ),
         ),
       ],

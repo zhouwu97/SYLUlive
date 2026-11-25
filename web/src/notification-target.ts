@@ -10,6 +10,7 @@ export function notificationTarget(n:Entity,role?:string):{to?:string;label:stri
   if(type==='course_evaluation_result')return {to:'/profile?tab=evaluations',label:'查看审核结果',kind:'评价审核',icon:'ratings'};
   if(type==='canteen_pending'||type==='canteen_review_result')return {to:'/canteen?tab=mine',label:'查看我的贡献',kind:'食堂审核',icon:'canteen'};
   if(type==='competition_award_verification')return {to:'/competition?tab=awards',label:'查看认证结果',kind:'获奖认证',icon:'competition'};
+  if(type==='lottery_won')return {to:'/toolbox',label:'查看抽奖结果',kind:'中奖通知',icon:'competition'};
   if(post)return {to:`/post/${post}`,label:'查看帖子',kind:type==='reply'?'评论回复':'社区动态',icon:'community'};
   return {label:'查看详情',kind:'系统通知',icon:'bell'};
 }

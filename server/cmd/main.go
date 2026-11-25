@@ -1393,7 +1393,7 @@ func main() {
 	if cfg.ImageVariantWorkerEnabled {
 		services.StartImageVariantWorkers(appCtx, db, cfg.UploadDir, 1)
 	}
-	tasks.StartLotteryCron(db)
+	lotteryCron := tasks.StartLotteryCron(appCtx, db)
 	appealFinalizerCron := tasks.StartAppealFinalizerCron(appCtx, db)
 	go tasks.CleanupFeedSnapshots(appCtx, db)
 	feedMetricsCron := tasks.StartFeedMetricsCron(appCtx, services.NewFeedMetricsService(db))
@@ -2361,7 +2361,9 @@ func main() {
 		superAdmin.DELETE("/security/blocks/:id", securityAdminHandler.RevokeBlock)
 
 		superAdmin.GET("/users", superAdminHandler.GetUsers)
+		superAdmin.GET("/lottery/events", superAdminHandler.GetLotteryEvents)
 		superAdmin.POST("/lottery", superAdminHandler.CreateLotteryEvent)
+		superAdmin.PUT("/lottery/:id", superAdminHandler.UpdateLotteryEvent)
 		superAdmin.DELETE("/lottery/:id", superAdminHandler.DeleteLotteryEvent)
 		superAdmin.GET("/lottery/participants", superAdminHandler.GetLotteryParticipants)
 		superAdmin.DELETE("/lottery/participants/:event_id/:user_id", superAdminHandler.KickLotteryParticipant)
@@ -2758,18 +2760,13 @@ func main() {
 		adminViolations.PUT("/:id/appeal", teacherHandler.HandleAppeal)
 	}
 
-	// 抽奖路由
-
+	// 抽奖路由（统一要求登录访问）
 	lotteryGroup := r.Group("/api/lottery")
-
+	lotteryGroup.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
-
-		// 获取当前抽奖活动（可以允许未登录用户看，所以不用统一拦截，或者用带用户信息的中间件）
-
-		lotteryGroup.GET("/current", middleware.AuthMiddleware(db, cfg.JWTSecret), lotteryHandler.GetCurrent)
-
-		lotteryGroup.POST("/:id/join", middleware.AuthMiddleware(db, cfg.JWTSecret), lotteryHandler.Join)
-
+		lotteryGroup.GET("/current", lotteryHandler.GetCurrent)
+		lotteryGroup.GET("/history", lotteryHandler.GetHistory)
+		lotteryGroup.POST("/:id/join", lotteryHandler.Join)
 	}
 
 	lotteryAdminGroup := r.Group("/api/admin/lottery")
@@ -2965,6 +2962,9 @@ func main() {
 	}
 	if appealFinalizerCron != nil {
 		appealFinalizerCron.Wait()
+	}
+	if lotteryCron != nil {
+		lotteryCron.Wait()
 	}
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)

@@ -9,11 +9,12 @@ const (
 	AppReleaseStatusWithdrawn = "withdrawn"
 )
 
-// 首版的平台和渠道常量。保留为数据字段，未来增加渠道时无需修改表结构。
+// 支持的平台和更新通道，发布记录按两者独立选择版本。
 const (
 	AppReleasePlatformAndroid = "android"
 	AppReleasePlatformOhos    = "ohos"
 	AppReleaseChannelStable   = "stable"
+	AppReleaseChannelBeta     = "beta"
 )
 
 // 发布交付模式常量。

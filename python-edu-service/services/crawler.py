@@ -53,7 +53,7 @@ def _academic_tls_context() -> ssl.SSLContext:
     context.set_ciphers(ACADEMIC_TLS_CIPHER)
     # 学校只发送叶证书；补齐公开中间证书，仍要求链路最终到达系统可信根。
     context.load_verify_locations(cafile=str(
-        Path(__file__).resolve().parent.parent / "certs" / "TrustAsiaTLSProRSACA2025.pem"
+        Path(__file__).resolve().parent.parent / "certs" / "sylu-academic-chain.pem"
     ))
     context.verify_flags &= ~ssl.VERIFY_X509_PARTIAL_CHAIN
     return context

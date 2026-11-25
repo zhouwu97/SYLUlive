@@ -31,6 +31,7 @@ const (
 	NotificationTypeAppealRejected        = "appeal_rejected"
 	NotificationTypeFeedbackAdminUpdate   = "feedback_admin_update"
 	NotificationTypeFeedbackUpdate        = "feedback_update"
+	NotificationTypeLotteryWon            = "lottery_won"
 )
 
 // 工单更新保留投递记录，列表与未读由工单会话消费，不计入通用通知。

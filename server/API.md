@@ -2,6 +2,19 @@
 
 本文件旨在提供沈理校园后端的 HTTP API 接口概览。所有的接口均基于 RESTful 风格设计，通过 JSON 格式进行数据交互。
 
+## 应用更新与测试通道
+
+| 方法与路径 | 权限 | 说明 |
+| --- | --- | --- |
+| `GET /api/app/update` | 公开 | Query 或 `X-App-*` 请求头提供 `platform`、`channel`、`version_name`、`version_code`；平台为 `android`／`ohos`，通道为 `stable`／`beta` |
+| `GET/HEAD /api/app/releases/:id/download` | 公开 | 仅已发布记录可下载；沿用 Range、完整性与撤回校验 |
+| `GET/POST /api/super/app-releases` | 超级管理员 | 列表／上传草稿；multipart 的 `channel` 缺省 `stable`，可选 `beta` |
+| `GET/PATCH/DELETE /api/super/app-releases/:id` | 超级管理员 | 查看／修改草稿或正式版最低支持构建号／删除未发布草稿；平台、通道、包体与构建号不可修改 |
+| `POST /api/super/app-releases/:id/publish` | 超级管理员 | 显式发布已校验的草稿 |
+| `POST /api/super/app-releases/:id/withdraw` | 超级管理员 | 停止新下载；Beta 可全部下架，正式通道保留可用回退版本 |
+
+更新响应新增 `channel`，表示目标版本所属通道。`stable` 只返回正式版并执行既有构建号与最低支持策略；`beta` 只返回测试版下载信息，不比较当前构建号、不回退正式版。已发布 Beta 的 `update_available=true`、`update_type=optional` 仅表示下载入口可用，客户端独立保存，不进入应用内更新或安装流程。创建 Beta 时最低支持构建号规范化为 1，不能提高。对应通道没有已发布版本时返回 `update_available=false`。客户端始终另查 `stable`，其强制更新优先。其余版本字段、交付方式和错误码沿用既有协议。完整功能边界见[应用更新通道契约](../docs/design/app-update-channels.md)，发布入口见[发布手册](../docs/ops/app-release.md)。
+
 ## 安全中心预警来源
 
 `GET /api/admin/security/events` 与 `GET /api/admin/security/events/:id` 延续管理员鉴权；普通用户不可访问。`source_key` 仍只提供给超级管理员，用于既有 HMAC 来源封禁。

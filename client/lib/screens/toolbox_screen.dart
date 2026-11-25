@@ -325,11 +325,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 title: '抽奖活动',
                                 themeKey: 'lottery',
                                 subtitle: '公平福利派送',
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => const LotteryScreen()),
-                                ),
+                                onTap: () => _openLottery(context),
                               ),
                             ],
                           ),
@@ -461,6 +457,18 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     }
     Navigator.push(context,
         MaterialPageRoute(builder: (_) => const ErkeScoreScreen()));
+  }
+
+  void _openLottery(BuildContext context) {
+    if (context.read<AuthProvider>().user == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请先登录')));
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const LotteryScreen()),
+    );
   }
 
   void _openPhysicalTest(BuildContext context) {

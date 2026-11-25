@@ -70,6 +70,7 @@ class AppVersionHeaders {
     }
   }
 
+  // Beta 仅提供独立下载入口，业务请求继续执行正式版最低支持策略。
   Map<String, String> toHeaders() => {
         'X-App-Platform': AppPlatforms.current.wireName,
         'X-App-Channel': 'stable',
@@ -103,13 +104,22 @@ class AppUpdateCoordinator extends ChangeNotifier {
   AppUpdateRequirement _requirement = AppUpdateRequirement.none;
   NativeUpdateDownloadStatus _downloadStatus = NativeUpdateDownloadStatus.idle;
   AppUpdateInfo? _info;
+  AppUpdateInfo? _betaInfo;
+  String? _betaErrorMessage;
+  bool _betaDeferred = false;
+  bool _manualCheckInProgress = false;
   String? _errorMessage;
   DateTime? _lastSuccessfulCheckAt;
   bool _initialized = false;
   bool _checking = false;
   bool _requiredByApi426 = false;
-  bool _requiredByCache = false;
   bool _optionalDeferred = false;
+  bool _installDeferred = false;
+  bool _silentDownloadEnabled = true;
+  String? _presentedRequiredRelease;
+  String? _presentedFailedRelease;
+  bool _promptActive = false;
+  int _policyGeneration = 0;
   Future<void>? _initialCheck;
   Future<void>? _activeCheck;
   Timer? _downloadPollingTimer;
@@ -117,6 +127,11 @@ class AppUpdateCoordinator extends ChangeNotifier {
   AppUpdateRequirement get requirement =>
       _requiredByApi426 ? AppUpdateRequirement.required : _requirement;
   AppUpdateInfo? get info => _info;
+  AppUpdateInfo? get betaInfo => _betaInfo;
+  String? get betaErrorMessage => _betaErrorMessage;
+  bool get isPromptActive => _promptActive;
+  bool get shouldPromptBeta =>
+      _betaInfo != null && !_checking && !_betaDeferred && !isRequired;
   NativeUpdateDownloadStatus get downloadStatus => _downloadStatus;
   AppUpdateDownloadState get downloadState => _downloadStatus.state;
   String? get errorMessage => _errorMessage;
@@ -128,7 +143,26 @@ class AppUpdateCoordinator extends ChangeNotifier {
   bool get shouldPromptOptional =>
       requirement == AppUpdateRequirement.optional &&
       !_checking &&
-      !_optionalDeferred;
+      !_optionalDeferred &&
+      (_info?.deliveryMode == AppUpdateDeliveryMode.externalMarket ||
+          !PlatformCapabilities.current.supportsInAppPackageInstall ||
+          (!_silentDownloadEnabled &&
+              downloadState == AppUpdateDownloadState.idle));
+  bool get shouldPromptInstall =>
+      requirement == AppUpdateRequirement.optional &&
+      !_checking &&
+      !_installDeferred &&
+      hasReadyPackage;
+  bool get shouldPromptRequired =>
+      isRequired &&
+      !_manualCheckInProgress &&
+      info != null &&
+      _presentedRequiredRelease != info!.releaseKey;
+  bool get shouldPromptFailure =>
+      downloadState == AppUpdateDownloadState.failed &&
+      downloadStatus.userInitiated &&
+      info != null &&
+      _presentedFailedRelease != info!.releaseKey;
 
   /// 旧界面与测试的兼容投影；它不再决定任何全屏渲染。
   AppUpdatePhase get phase {
@@ -160,7 +194,6 @@ class AppUpdateCoordinator extends ChangeNotifier {
         if (cached.info.updateType == AppUpdateType.required &&
             headers.versionCode < cached.info.minimumSupportedVersionCode) {
           _info = cached.info;
-          _requiredByCache = true;
           _requirement = AppUpdateRequirement.required;
         }
       }
@@ -176,67 +209,108 @@ class AppUpdateCoordinator extends ChangeNotifier {
     bool manual = false,
     bool initial = false,
   }) {
-    if (!_initialized) return initialize();
+    if (!_initialized) {
+      if (manual) _manualCheckInProgress = true;
+      return initialize();
+    }
     final activeCheck = _activeCheck;
-    if (activeCheck != null) return activeCheck;
+    if (activeCheck != null) {
+      if (manual) _manualCheckInProgress = true;
+      return activeCheck;
+    }
     if (!force && !_shouldCheckNow()) return Future.value();
+    if (manual) _manualCheckInProgress = true;
     return _activeCheck = _check(manual: manual).whenComplete(() {
       _activeCheck = null;
     });
   }
 
   Future<void> _check({required bool manual}) async {
+    final generation = _policyGeneration;
     _checking = true;
     _errorMessage = null;
+    _betaErrorMessage = null;
     notifyListeners();
     try {
       final headers = await _versionHeadersLoader();
-      final next = await _api.checkUpdate(
-        platform: AppPlatforms.current.wireName,
-        channel: 'stable',
-        versionName: headers.versionName,
-        versionCode: headers.versionCode,
-      );
-      final previous = _info;
-      _info = next;
-      _lastSuccessfulCheckAt = DateTime.now().toUtc();
-      unawaited(_cache.write(next, _lastSuccessfulCheckAt!).catchError((_) {}));
-      _requiredByCache = false;
-      _requirement = switch (next.updateType) {
-        AppUpdateType.required => AppUpdateRequirement.required,
-        AppUpdateType.optional => AppUpdateRequirement.optional,
-        AppUpdateType.none => AppUpdateRequirement.none,
-      };
-      if (previous?.latestVersionCode != next.latestVersionCode) {
-        _optionalDeferred = false;
-      }
-      await _refreshDownloadStatus(next);
-
-      // 静默只对普通更新生效；手动检查必须让用户先确认下载。
-      if (!manual &&
-          PlatformCapabilities.current.supportsInAppPackageInstall &&
-          next.updateType == AppUpdateType.optional &&
-          next.deliveryMode == AppUpdateDeliveryMode.directPackage &&
-          _downloadStatus.state == AppUpdateDownloadState.idle) {
-        final preferences = await _preferences.read();
-        if (preferences.silentDownload) {
-          try {
-            await enqueueDownload(wifiOnly: preferences.wifiOnly);
-          } catch (error) {
-            // 下载排队失败不能把已确认的 optional 发布误判为“没有更新”。
-            _errorMessage = _errorText(error);
+      final preferences = await _preferences.read();
+      _silentDownloadEnabled = preferences.silentDownload;
+      try {
+        final next = await _api.checkUpdate(
+          platform: AppPlatforms.current.wireName,
+          channel: 'stable',
+          versionName: headers.versionName,
+          versionCode: headers.versionCode,
+        );
+        final previous = _info;
+        _info = next;
+        _lastSuccessfulCheckAt = DateTime.now().toUtc();
+        unawaited(
+            _cache.write(next, _lastSuccessfulCheckAt!).catchError((_) {}));
+        _requirement = switch (next.updateType) {
+          AppUpdateType.required => AppUpdateRequirement.required,
+          AppUpdateType.optional => AppUpdateRequirement.optional,
+          AppUpdateType.none => AppUpdateRequirement.none,
+        };
+        if (previous?.releaseKey != next.releaseKey) {
+          _optionalDeferred = false;
+          _installDeferred = false;
+        }
+        await _refreshDownloadStatus(next);
+        if (!manual &&
+            !_manualCheckInProgress &&
+            PlatformCapabilities.current.supportsInAppPackageInstall &&
+            next.updateType == AppUpdateType.optional &&
+            next.deliveryMode == AppUpdateDeliveryMode.directPackage &&
+            _downloadStatus.state == AppUpdateDownloadState.idle) {
+          if (preferences.silentDownload) {
+            try {
+              await enqueueDownload(wifiOnly: preferences.wifiOnly);
+            } catch (error) {
+              // 下载排队失败不能把已确认的 optional 发布误判为“没有更新”。
+              _errorMessage = _errorText(error);
+            }
           }
+        }
+      } catch (error) {
+        // 网络错误不能解除已确认的最低版本要求。
+        _errorMessage = _errorText(error);
+      }
+      notifyListeners();
+      if (preferences.betaUpdates && generation == _policyGeneration) {
+        try {
+          final beta = await _api.checkUpdate(
+            platform: AppPlatforms.current.wireName,
+            channel: 'beta',
+            versionName: headers.versionName,
+            versionCode: headers.versionCode,
+          );
+          if (generation != _policyGeneration) return;
+          if (_betaInfo?.releaseKey != beta.releaseKey) _betaDeferred = false;
+          _betaInfo = beta.updateAvailable ? beta : null;
+        } catch (error) {
+          if (generation != _policyGeneration) return;
+          _betaErrorMessage = _errorText(error);
         }
       }
     } catch (error) {
       _errorMessage = _errorText(error);
-      if (!_requiredByApi426 && !_requiredByCache) {
-        _requirement = AppUpdateRequirement.none;
-      }
     } finally {
+      _manualCheckInProgress = false;
       _checking = false;
       notifyListeners();
     }
+  }
+
+  Future<void> setBetaUpdates(bool enabled) async {
+    await _preferences.setBetaUpdates(enabled);
+    _policyGeneration++;
+    _betaInfo = null;
+    _betaErrorMessage = null;
+    _betaDeferred = false;
+    notifyListeners();
+    await _activeCheck;
+    await check(force: true);
   }
 
   void requireUpdateFromApi() {
@@ -273,6 +347,38 @@ class AppUpdateCoordinator extends ChangeNotifier {
     notifyListeners();
   }
 
+  void deferInstallPrompt() {
+    _installDeferred = true;
+    notifyListeners();
+  }
+
+  void markRequiredPromptPresented() {
+    _presentedRequiredRelease = info?.releaseKey;
+    notifyListeners();
+  }
+
+  bool tryBeginPrompt() {
+    if (_promptActive) return false;
+    _promptActive = true;
+    notifyListeners();
+    return true;
+  }
+
+  void endPrompt() {
+    _promptActive = false;
+    notifyListeners();
+  }
+
+  void markFailurePromptPresented() {
+    _presentedFailedRelease = info?.releaseKey;
+    notifyListeners();
+  }
+
+  void deferBetaDownload() {
+    _betaDeferred = true;
+    notifyListeners();
+  }
+
   /// 保留旧名称，行为由“忽略版本”改为本次不再弹窗，不会阻止静默下载策略。
   Future<void> ignoreOptionalUpdate() => deferOptionalUpdate();
 
@@ -282,6 +388,7 @@ class AppUpdateCoordinator extends ChangeNotifier {
   }) async {
     final release = _directReleaseOrThrow();
     final preferences = await _preferences.read();
+    if (_info?.releaseKey != release.releaseKey) return;
     await _downloadBridge.enqueue(
       release,
       wifiOnly: wifiOnly ?? preferences.wifiOnly,
@@ -307,8 +414,10 @@ class AppUpdateCoordinator extends ChangeNotifier {
   Future<void> installPreparedUpdate() async {
     final release = _directReleaseOrThrow();
     if (!hasReadyPackage) throw StateError('更新包尚未准备完成');
+    _errorMessage = null;
     try {
       await _downloadBridge.installPrepared(release);
+      notifyListeners();
     } catch (error) {
       _errorMessage = _errorText(error);
       notifyListeners();
@@ -342,7 +451,9 @@ class AppUpdateCoordinator extends ChangeNotifier {
   }
 
   Future<void> _refreshDownloadStatus(AppUpdateInfo release) async {
-    if (!PlatformCapabilities.current.supportsInAppPackageInstall) {
+    if (!PlatformCapabilities.current.supportsInAppPackageInstall ||
+        !release.updateAvailable ||
+        release.deliveryMode != AppUpdateDeliveryMode.directPackage) {
       _downloadStatus = NativeUpdateDownloadStatus.idle;
       return;
     }
@@ -354,6 +465,10 @@ class AppUpdateCoordinator extends ChangeNotifier {
       status = NativeUpdateDownloadStatus.idle;
     }
     if (!identical(_info, release)) return;
+    // 下载完成是新的用户决策，先前关闭发现提示不应吞掉安装确认。
+    if (status.state == AppUpdateDownloadState.ready && !hasReadyPackage) {
+      _installDeferred = false;
+    }
     _downloadStatus = status;
     if (status.isActive) _startDownloadPolling();
   }

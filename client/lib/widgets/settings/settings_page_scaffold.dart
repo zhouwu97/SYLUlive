@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/theme_provider.dart';
 import '../campus/campus_theme.dart';
 import '../global_background_wrapper.dart';
+import '../liquid_glass/liquid_glass_scene.dart';
 
 /// 统一的设置中心页面脚手架 (恢复 18dp 标准舒服边距)
 class SettingsPageScaffold extends StatelessWidget {
@@ -88,7 +89,13 @@ class SettingsPageScaffold extends StatelessWidget {
     );
     return Theme(
       data: CampusTheme.withBrandAccent(baseTheme),
-      child: appearance == null ? page : GlobalBackgroundWrapper(child: page),
+      child: LiquidGlassScene(
+        background: Stack(fit: StackFit.expand, children: [
+          if (appearance != null) const CustomBackgroundLayer(),
+          ColoredBox(color: pageBg),
+        ]),
+        overlay: BackdropGroup(child: page),
+      ),
     );
   }
 }

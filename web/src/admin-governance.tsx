@@ -1781,79 +1781,241 @@ export function AdminCompetitionsModule() {
   );
 }
 
+function lotteryStatusLabel(status: unknown): string {
+  switch (Number(status)) {
+    case 0:
+      return "进行中";
+    case 1:
+      return "已开奖";
+    case 2:
+      return "已流拍";
+    case 3:
+      return "已取消";
+    default:
+      return "已结束";
+  }
+}
+
+function toDatetimeLocalValue(iso?: string): string {
+  const date = iso ? new Date(iso) : new Date(Date.now() + 3600 * 1000);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function toRfc3339(input: string): string {
+  const raw = String(input || "").trim();
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toISOString();
+}
+
+function isLotteryNotFound(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 404 || err.code === "lottery_not_found");
+}
+
 export function AdminLotteryModule() {
   const ui = useUI();
-  const current = useApi("/api/lottery/current");
-  const participants = useApi("/api/super/lottery/participants");
-  const ev = entity(current.data, "event");
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+  const eventsQuery = useApi("/api/super/lottery/events?page=1&page_size=30");
+  const eventList = rows(eventsQuery.data, "items");
+  const participants = useApi(
+    selectedEventId
+      ? query("/api/super/lottery/participants", { event_id: selectedEventId, page: 1, page_size: 100 })
+      : "/api/super/lottery/participants",
+  );
+  const ev = entity(participants.data, "event");
+  const activeEventId = selectedEventId ?? (ev.id ? Number(ev.id) : (eventList[0]?.id ? Number(eventList[0].id) : null));
   const partList = rows(participants.data, "participants", "items");
+  const hasAnyOngoing = eventList.some((item) => Number(item.status) === 0);
+  const isOngoing = Number(ev.status) === 0;
+  const isDue = Boolean(ev.draw_time) && !Number.isNaN(new Date(ev.draw_time).getTime()) && new Date(ev.draw_time).getTime() <= Date.now();
+
+  const refreshAll = async () => {
+    await Promise.all([eventsQuery.refetch(), participants.refetch()]);
+  };
+
+  const openEditor = (editing?: Entity) => {
+    const isEdit = Boolean(editing?.id);
+    ui.open(isEdit ? "编辑抽奖活动" : "创建新抽奖活动", (
+      <>
+        {!isEdit && hasAnyOngoing && (
+          <p className="muted">提示：发布新活动时，当前进行中的抽奖活动将被自动标记为“已取消”。</p>
+        )}
+        <Form
+          fields={[
+            { name: "title", label: "活动标题", value: editing?.title || "", required: true },
+            { name: "prize_name", label: "奖品名称", value: editing?.prize_name || "", required: true },
+            { name: "draw_time", label: "开奖时间", type: "datetime-local", value: toDatetimeLocalValue(editing?.draw_time), required: true },
+            { name: "description", label: "活动说明（可选）", type: "textarea", value: editing?.description || "" },
+          ]}
+          submit={isEdit ? "保存修改" : "发布活动"}
+          onSubmit={async (v) => {
+            const payload = {
+              title: String(v.title || "").trim(),
+              prize_name: String(v.prize_name || "").trim(),
+              description: String(v.description || "").trim(),
+              draw_time: toRfc3339(String(v.draw_time || "")),
+            };
+            if (isEdit) {
+              await write(`/api/super/lottery/${editing!.id}`, payload, "PUT");
+              ui.notify("抽奖活动已更新");
+            } else {
+              const res = await write("/api/super/lottery", payload, "POST");
+              const createdId = Number(res?.event?.id);
+              setSelectedEventId(createdId > 0 ? createdId : null);
+              ui.notify("抽奖活动已发布");
+            }
+            await refreshAll();
+            ui.close();
+          }}
+        />
+      </>
+    ));
+  };
+
+  const confirmManualDraw = (eventId: number, title: string) => {
+    ui.open("兜底手动补开", (
+      <div>
+        <p>活动「{title}」已过开奖时间且尚未开奖，确定手动触发本次开奖吗？此操作不可逆。</p>
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={ui.close}>取消</button>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={async () => {
+              if (await ui.act(async () => {
+                await write(`/api/admin/lottery/${eventId}/draw`);
+                await refreshAll();
+              }, "已完成补开")) ui.close();
+            }}
+          >
+            确认补开
+          </button>
+        </div>
+      </div>
+    ));
+  };
+
+  const confirmDelete = (eventId: number, title: string) => {
+    ui.open("删除抽奖活动", (
+      <div>
+        <p>确定删除「{title}」及其全部参与记录吗？此操作不可恢复。</p>
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={ui.close}>取消</button>
+          <button
+            type="button"
+            className="btn danger"
+            onClick={async () => {
+              if (await ui.act(async () => {
+                await write(`/api/super/lottery/${eventId}`, {}, "DELETE");
+                setSelectedEventId(null);
+                await refreshAll();
+              }, "活动已删除")) ui.close();
+            }}
+          >
+            确认删除
+          </button>
+        </div>
+      </div>
+    ));
+  };
 
   return (
     <>
-      <Head level={2} title="校园抽奖管理" description="创建福利抽奖活动、手动开奖及核查参与记录（超级管理员专属）。">
-        <button
-          type="button"
-          className="btn primary"
-          onClick={() => ui.open("创建新抽奖活动", (
-            <Form
-              fields={[
-                { name: "title", label: "活动标题", required: true },
-                { name: "prize_name", label: "奖品名称", required: true },
-                { name: "draw_time", label: "开奖时间 (ISO 或 YYYY-MM-DD HH:mm:ss)", required: true },
-                { name: "description", label: "活动规则说明", type: "textarea", required: true },
-              ]}
-              submit="创建活动"
-              onSubmit={async (v) => {
-                await write("/api/super/lottery", v);
-                await current.refetch();
-                ui.notify("抽奖活动已创建");
-                ui.close();
-              }}
-            />
-          ))}
-        >
-          发起抽奖
-        </button>
-        <button type="button" className="btn" onClick={() => { void current.refetch(); void participants.refetch(); }}>刷新</button>
+      <Head level={2} title="校园抽奖管理" description="发布与编辑抽奖活动、查看往期期次、到点兜底补开及管理参与记录（超级管理员专属）。">
+        <button type="button" className="btn primary" onClick={() => openEditor()}>发起抽奖</button>
+        <button type="button" className="btn" onClick={() => void refreshAll()}>刷新</button>
       </Head>
 
-      <QueryState query={current}>
-        {ev.id ? (
-          <section className="panel panel-pad admin-card">
-            <div className="admin-row-head">
-              <b>{ev.title || ev.prize_name}</b>
-              <span className={`tag ${ev.status === 0 ? "is-resolved" : ""}`}>{ev.status === 0 ? "进行中" : "已开奖"}</span>
-            </div>
-            <p>{ev.description}</p>
-            <p className="muted">参与人数：{current.data?.participant_count ?? 0} · 开奖时间：{ev.draw_time}{ev.winner?.nickname ? ` · 中奖者：${ev.winner.nickname}` : ""}</p>
-            <div className="form-actions">
-              {ev.status === 0 && (
-                <button type="button" className="btn primary" onClick={() => void ui.act(async () => { await write(`/api/admin/lottery/${ev.id}/draw`); await current.refetch(); }, "已完成开奖")}>立即开奖</button>
-              )}
-              <button type="button" className="btn danger" onClick={() => void ui.act(async () => { await write(`/api/super/lottery/${ev.id}`, {}, "DELETE"); await current.refetch(); }, "活动已删除")}>删除活动</button>
-            </div>
-          </section>
-        ) : (
-          <div className="panel"><Empty title="当前没有进行中的抽奖活动" /></div>
-        )}
-      </QueryState>
+      {eventList.length > 0 && (
+        <section className="panel panel-pad admin-card">
+          <label className="field">
+            查看抽奖期次
+            <select
+              value={activeEventId ?? ""}
+              onChange={(e) => setSelectedEventId(Number(e.target.value) || null)}
+            >
+              {eventList.map((item) => (
+                <option key={item.id} value={item.id}>
+                  #{item.id} {item.title || item.prize_name}（{lotteryStatusLabel(item.status)} · {item.participant_count ?? 0} 人）
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
+      )}
 
-      {partList.length > 0 && (
-        <section className="panel admin-card">
-          <div className="admin-card-head"><h3>参与人列表</h3><span>共 {partList.length} 条</span></div>
-          <div className="admin-list">
-            {partList.map((p, idx) => (
-              <div className="list-row admin-row" key={`${p.event_id}:${p.user_id}:${idx}`}>
-                <div className="list-main">
-                  <b>{p.nickname || p.user?.nickname || `UID ${p.user_id}`}</b>
-                  <small>活动 #{p.event_id} · UID #{p.user_id}</small>
-                </div>
-                {p.event_id && p.user_id && (
-                  <button type="button" className="btn sm danger" onClick={() => void ui.act(async () => { await write(`/api/super/lottery/participants/${p.event_id}/${p.user_id}`, {}, "DELETE"); await participants.refetch(); }, "已移除该参与记录")}>移除</button>
-                )}
+      {isLotteryNotFound(participants.error) ? (
+        <div className="panel"><Empty title="暂无抽奖活动" description="点击右上角「发起抽奖」创建新活动。" /></div>
+      ) : (
+        <QueryState query={participants}>
+          {ev.id ? (
+            <section className="panel panel-pad admin-card">
+              <div className="admin-row-head">
+                <b>{ev.title || ev.prize_name}</b>
+                <span className={`tag ${isOngoing ? "is-resolved" : ""}`}>{lotteryStatusLabel(ev.status)}</span>
               </div>
-            ))}
+              <p>奖品：{ev.prize_name}</p>
+              {ev.description && <p>{ev.description}</p>}
+              <p className="muted">
+                参与人数：{participants.data?.total ?? ev.participant_count ?? partList.length}
+                {" · "}开奖时间：{ev.draw_time ? time(ev.draw_time) : "-"}
+                {ev.winner?.nickname ? ` · 中奖者：${ev.winner.nickname}` : ev.winner_id ? " · 中奖者已注销" : ""}
+              </p>
+              <div className="form-actions">
+                {isOngoing && (
+                  <button type="button" className="btn" onClick={() => openEditor(ev)}>编辑活动</button>
+                )}
+                {isOngoing && isDue && (
+                  <button type="button" className="btn primary" onClick={() => confirmManualDraw(Number(ev.id), ev.title || ev.prize_name)}>兜底手动补开</button>
+                )}
+                <button type="button" className="btn danger" onClick={() => confirmDelete(Number(ev.id), ev.title || ev.prize_name)}>删除活动</button>
+              </div>
+            </section>
+          ) : (
+            <div className="panel"><Empty title="暂无抽奖活动" /></div>
+          )}
+        </QueryState>
+      )}
+
+      {ev.id && (
+        <section className="panel admin-card">
+          <div className="admin-card-head">
+            <h3>参与人列表</h3>
+            <span>共 {participants.data?.total ?? partList.length} 条</span>
           </div>
+          {partList.length === 0 ? (
+            <div className="panel-pad"><Empty title="暂无参与者" /></div>
+          ) : (
+            <div className="admin-list">
+              {partList.map((p, idx) => {
+                const lotteryId = p.lottery_id ?? ev.id;
+                const displayWeight = p.current_weight ?? p.weight ?? 1;
+                return (
+                  <div className="list-row admin-row" key={`${lotteryId}:${p.user_id}:${idx}`}>
+                    <div className="list-main">
+                      <b>{p.nickname || p.user?.nickname || `UID ${p.user_id}`}</b>
+                      <small>活动 #{lotteryId} · UID #{p.user_id} · 实时权重 {displayWeight}</small>
+                    </div>
+                    {isOngoing && lotteryId && p.user_id && (
+                      <button
+                        type="button"
+                        className="btn sm danger"
+                        onClick={() => void ui.act(async () => {
+                          await write(`/api/super/lottery/participants/${lotteryId}/${p.user_id}`, {}, "DELETE");
+                          await refreshAll();
+                        }, "已移除该参与记录（用户可重新报名）")}
+                      >
+                        移除
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
       )}
     </>

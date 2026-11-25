@@ -7,7 +7,7 @@ import {useMobile} from './mobile';
 import {useAuth} from './auth';
 import {useAssistantProbe} from './use-assistant-probe';
 import {AssistantInstallGuide} from './assistant-guide';
-import {useApi,write,entity} from './api';
+import {ApiError,useApi,write,entity,rows,time} from './api';
 import {Empty,Form,Head,Icon,QueryState,useUI} from './ui';
 // 工具箱分组与 App（client/lib/screens/toolbox_screen.dart）保持一致；Web 独有的计算与诊断放在「更多工具」。
 type Tool = { id: string; title: string; subtitle: string; icon: string; to?: string; href?: string; modal?: string };
@@ -69,7 +69,88 @@ function Free(){
   return <><p>第 {availability.week} 周 · 基于当前课表，本地计算</p>{availability.days.map((periods,i)=><p key={i}>周{'一二三四五六日'[i]}：{periods.join('、')||'没有空闲节次'}</p>)}<p className="muted">结果仅依据已导入的排课，临时调课、考试和其他活动请另行核对。</p>{schedule}</>;
 }
 function Checkin(){const q=useApi('/api/user/checkin/status'),ui=useUI();return <QueryState query={q}><p>{q.data?.check_in_date} · {q.data?.checked_in?'今天已签到':'今天未签到'}</p><p>连续 {q.data?.streak_days||0} 天 · 补签卡 {q.data?.makeup_cards||0} 张</p><button className="btn primary" disabled={q.data?.checked_in} onClick={()=>void ui.act(()=>write('/api/user/checkin'),'签到成功')}>今日签到</button><Form fields={[{name:'check_in_date',label:'补签日期',type:'date',required:true}]} submit="使用补签卡" onSubmit={async values=>{await write('/api/user/checkin/makeup',values);await q.refetch();ui.notify('补签成功')}}/></QueryState>}
-function Lottery(){const q=useApi('/api/lottery/current'),ui=useUI(),event=entity(q.data,'event');return <QueryState query={q}><h3>{event.title||event.prize_name||'校园抽奖'}</h3><p>{event.description}</p><p>参与人数 {q.data?.participant_count||0} · 开奖时间 {event.draw_time}</p><p>{event.winner?.nickname?`获奖者：${event.winner.nickname}`:''}</p><button className="btn primary" disabled={q.data?.joined||event.status!==0} onClick={()=>void ui.act(()=>write(`/api/lottery/${event.id}/join`),'参与状态已保存')}>{q.data?.joined?'已参与':'参加本期活动'}</button></QueryState>}
+function formatLotteryCountdown(drawTime?:string,nowMs:number=Date.now()){
+  if(!drawTime)return '-';
+  const target=new Date(drawTime).getTime();
+  if(Number.isNaN(target))return drawTime;
+  const diff=target-nowMs;
+  if(diff<=0)return '即将开奖';
+  const totalSec=Math.floor(diff/1000);
+  const days=Math.floor(totalSec/86400);
+  const hours=Math.floor((totalSec%86400)/3600);
+  const minutes=Math.floor((totalSec%3600)/60);
+  const seconds=totalSec%60;
+  if(days>0)return `${days}天 ${hours}时 ${minutes}分`;
+  if(hours>0)return `${hours}时 ${minutes}分 ${seconds}秒`;
+  return `${minutes}分 ${seconds}秒`;
+}
+function lotteryStatusText(status:unknown){
+  switch(Number(status)){
+    case 0:return '进行中';
+    case 1:return '已开奖';
+    case 2:return '已流拍';
+    case 3:return '已取消';
+    default:return '已结束';
+  }
+}
+function Lottery(){
+  const q=useApi('/api/lottery/current');
+  const historyQ=useApi('/api/lottery/history?page=1&page_size=10');
+  const {refetch:refetchCurrent}=q;
+  const {refetch:refetchHistory}=historyQ;
+  const ui=useUI();
+  const [nowMs,setNowMs]=useState(()=>Date.now());
+  const event=entity(q.data,'event');
+  const history=rows(historyQ.data,'items');
+  const isNotFound=q.error instanceof ApiError&&(q.error.status===404||q.error.code==='lottery_not_found');
+  const isOngoing=Number(event.status)===0;
+  const drawMs=event.draw_time?new Date(event.draw_time).getTime():NaN;
+  const isDue=!Number.isNaN(drawMs)&&drawMs<=nowMs;
+  const academicConfigured=q.data?.academic_configured!==false;
+
+  useEffect(()=>{
+    if(!isOngoing||isDue)return;
+    const id=window.setInterval(()=>setNowMs(Date.now()),1000);
+    return ()=>window.clearInterval(id);
+  },[isOngoing,isDue]);
+
+  useEffect(()=>{
+    if(!isOngoing||!isDue)return;
+    const id=window.setInterval(()=>{void refetchCurrent();void refetchHistory();},15000);
+    return ()=>window.clearInterval(id);
+  },[isOngoing,isDue,refetchCurrent,refetchHistory]);
+
+  const joinDisabled=Boolean(q.data?.joined)||!isOngoing||isDue||!academicConfigured;
+  const joinLabel=q.data?.joined?'已参与':!isOngoing?lotteryStatusText(event.status):isDue?'已截止，等待系统开奖':!academicConfigured?'需先连接教务后参与':'参加本期活动';
+
+  return <>
+    {isNotFound?<Empty title="暂无抽奖活动" description="目前没有进行中或已开奖的官方抽奖活动。"/>:<QueryState query={q}>
+      <h3>{event.title||event.prize_name||'校园抽奖'} · {lotteryStatusText(event.status)}</h3>
+      <p><b>奖品：</b>{event.prize_name||'-'}</p>
+      {event.description&&<p>{event.description}</p>}
+      <p className="muted">
+        参与人数 {q.data?.participant_count??event.participant_count??0}
+        {' · '}开奖时间 {event.draw_time?time(event.draw_time):'-'}
+        {isOngoing?` · 距离开奖 ${formatLotteryCountdown(event.draw_time,nowMs)}`:''}
+      </p>
+      {Number(event.status)===1&&<p><b>获奖者：</b>{event.winner?.nickname||(event.winner_id?'已注销用户':'暂无中奖者')}</p>}
+      {Number(event.status)===2&&<p className="muted">本期无有效参与者，已流拍。</p>}
+      {q.data?.joined&&<p className="muted">已参与本期抽奖，当前实时等级权重：{q.data?.my_weight||1} 份（开奖前按最新等级重算）。</p>}
+      {isOngoing&&!q.data?.joined&&!academicConfigured&&<p className="muted">参与抽奖需先完成教务连接并同步课表配置。</p>}
+      <p className="muted">规则：已完成教务配置的账号均可参与一次；用户等级即抽奖权重（Lv.1~Lv.8 对应 1~8 份）。</p>
+      <button type="button" className="btn primary" disabled={joinDisabled} onClick={()=>void ui.act(async()=>{await write(`/api/lottery/${event.id}/join`);await q.refetch();},'参与成功')}>{joinLabel}</button>
+    </QueryState>}
+    {history.length>0&&<section style={{marginTop:16}}>
+      <h4>往期抽奖记录</h4>
+      {history.map((item)=>
+        <p key={item.id} className="muted">
+          {item.title}（{item.prize_name}）· {lotteryStatusText(item.status)} · 参与 {item.participant_count??0} 人
+          {Number(item.status)===1?` · 中奖者：${item.winner?.nickname||(item.winner_id?'已注销用户':'暂无')}`:''}
+        </p>
+      )}
+    </section>}
+  </>;
+}
 const providerNames:Record<string,string>={undergraduate:'本科教务',graduate:'研究生教务',erke:'二课 WebVPN',physical:'体测'};
 function Diagnostic(){
   const assistant=useAssistantProbe({autoStart:false});

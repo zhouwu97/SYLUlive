@@ -9,6 +9,7 @@
 - 先检查当前主题、共享组件、相邻页面和相关测试；具体设计按本次任务要求执行。
 - docs/design/ 仅保留功能契约和决策记录，不再作为全局视觉规范；不得静默绕过其中仍有效的业务与权限 ADR。
 - 必须验证 loading、empty、error、retry、权限、异步竞态和真实渲染状态；具体门禁按 DEVELOPMENT_STANDARD.md 执行。
+- 制作、改造或评估 `.sltheme` 主题包时，先读 [skills/sylulive-theme/SKILL.md](skills/sylulive-theme/SKILL.md)。
 
 ## 实现取舍：不过度防御
 

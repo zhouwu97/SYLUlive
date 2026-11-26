@@ -47,6 +47,7 @@ type SelfUserResponse struct {
 	LoginAccount          string                           `json:"login_account"`
 	ID                    uint                             `json:"id"`
 	StudentID             string                           `json:"student_id,omitempty"`
+	AcademicConfigured    bool                             `json:"academic_configured"`
 	StudentVerified       bool                             `json:"student_verified"`
 	AcademicIdentities    []models.AcademicIdentityBinding `json:"academic_identities"`
 	EmailMasked           string                           `json:"email_masked"`
@@ -140,6 +141,13 @@ func selfUserResponseForDB(db *gorm.DB, user models.User) (SelfUserResponse, err
 		return SelfUserResponse{}, err
 	}
 	response := selfUserResponse(user, consentState)
+	if db.Migrator().HasTable(&models.AcademicAccountConfig{}) {
+		configured, err := models.HasAcademicConfig(db, user.ID)
+		if err != nil {
+			return SelfUserResponse{}, err
+		}
+		response.AcademicConfigured = configured
+	}
 	if previewPath, ready, err := services.ReadyPublicImageVariantPath(db, user.Background, services.ImageVariantMedium); err != nil {
 		return SelfUserResponse{}, err
 	} else if ready {

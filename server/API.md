@@ -445,7 +445,7 @@ FEED-H1 加固：
 | `POST`| `/api/super/users/:id/reset_password`| 强制重置密码 |
 | `GET` | `/api/super/stats` | 获取系统整体统计大盘数据 |
 
-管理用户摘要中的 `student_id` 依次取可信身份学号、最近更新的有效云端配置学号、旧登录账号字段。`academic_configured` 仅表示存在有效配置，`student_verified` 在管理摘要中保留为历史身份投影，不能作为业务准入依据；食堂评价、集市发布和试卷库统一按 `edu_authorized`（兼容旧 `edu_bound`）判断教务认证准入，登记配置或仅本机连接不授予权限。搜索包含所有有效云端配置学号，已删除配置不用于搜索或展示。本机连接尚未同步时服务端无法据此登记；管理接口不返回学校密码、Cookie 或会话，公开用户接口也不增加学号。
+管理用户摘要中的 `student_id` 依次取可信身份学号、最近更新的有效云端配置学号、旧登录账号字段。`academic_configured` 表示存在有效配置。`student_verified` 是管理摘要中的历史身份投影。食堂评价和集市发布按 `edu_authorized`（兼容旧 `edu_bound`）判断教务准入，试卷库按有效云端教务配置判断。搜索包含所有有效云端配置学号，已删除配置不用于搜索或展示。本机连接尚未同步时服务端无法据此登记。管理接口不返回学校密码、Cookie 或会话，公开用户接口也不增加学号。
 
 ### 安全中心
 
@@ -528,7 +528,7 @@ FEED-H1 加固：
 
 ## 试卷库
 
-普通接口均需 JWT；普通用户还需完成教务认证，管理员可绕过教务认证。
+普通接口均需 JWT。普通用户须在当前 App 账号登记有效的本科或研究生教务配置，个人资料的 `academic_configured` 字段报告该配置状态。管理员可直接访问。
 
 - `GET /api/exam-papers`：已发布列表，支持 `keyword`、`academic_year`、`semester`、`exam_type`、`sort`、`page`、`page_size`。响应额外包含 `academic_years`：全部已发布试卷的去重学年列表，按倒序排列，不受本次筛选条件影响。
 - `GET /api/exam-papers/:id`：已发布详情。

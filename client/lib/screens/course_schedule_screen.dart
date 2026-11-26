@@ -42,6 +42,7 @@ import '../widgets/course/course_semester_start_picker.dart';
 import '../widgets/campus/campus_theme.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'schedule/course_detail_sheet.dart';
+import 'schedule/course_cancellation_sheet.dart';
 import '../theme/app_theme_tokens.dart';
 import '../theme/app_theme_style.dart';
 import '../theme/app_palette.dart';
@@ -1123,6 +1124,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
                       case CourseMenuAction.archives:
                         _showArchiveSheet(context, sc);
+                        break;
+                      case CourseMenuAction.cancelledCourses:
+                        unawaited(_showCancelledCourses(sc));
                         break;
                       case CourseMenuAction.share:
                         _shareSchedule(sc);
@@ -4538,16 +4542,28 @@ $classFilterRule
   }
 
   // ====== 课程详情 ======
-  void _showDetail(CourseBlock c) {
+  Future<void> _showDetail(CourseBlock c) async {
     final sc = context.read<CourseScheduleProvider>();
+    final generation = sc.contextGeneration;
     final currentWeek = sc.getAcademicWeek(_weekStart) ?? 1;
-    CourseDetailSheet.show(
+    final changed = await CourseDetailSheet.show(
       context,
       course: c,
       currentAcademicWeek: currentWeek,
       onEditCustomCourse: () => _showAddCourseDialog(context, editCourse: c),
       onDeleteCustomCourse: () => _confirmDeleteCourse(c),
     );
+    if (changed == true && mounted && generation == sc.contextGeneration) {
+      await _syncCourseReminders(sc);
+    }
+  }
+
+  Future<void> _showCancelledCourses(CourseScheduleProvider provider) async {
+    final generation = provider.contextGeneration;
+    await CancelledCoursesSheet.show(context, provider: provider);
+    if (mounted && generation == provider.contextGeneration) {
+      await _syncCourseReminders(provider);
+    }
   }
 
   Future<void> _confirmDeleteCourse(CourseBlock c) async {

@@ -953,7 +953,7 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   /// 用一份已读取的固定操作快照提交课程、来源模型、隐藏状态与调节层。
   ///
-  /// [snapshot] 为 null 或课程为空表示**明确缺失**（该学期确实没有本地课表），
+  /// [snapshot] 为 null 或展示与来源均为空表示该学期没有本地课表，
   /// 而不是读取失败——读取失败已经在调用方拿到快照之前抛出。
   Future<bool> _applyTermSnapshotToMemory(
     _ScheduleOperationContext operation,
@@ -967,11 +967,18 @@ class CourseScheduleProvider extends ChangeNotifier {
     final cached = snapshot == null || snapshot.courses.isEmpty
         ? const <CourseBlock>[]
         : snapshot.courses.map(CourseBlock.fromJson).toList();
-    if (cached.isEmpty) {
+    final loadedOverrides = await _overrideRepository.loadOverrides(
+      semesterId: operation.term.id,
+      accountId: operation.sourceAccountId.isEmpty ? null : operation.sourceAccountId,
+    );
+    if (!_isCurrentOperation(operation)) return false;
+    // 全部停课后展示为空，仍须恢复来源和删除规则，供用户撤销删除。
+    if (cached.isEmpty && (snapshot == null ||
+        (snapshot.baseCourses.isEmpty && snapshot.manualCourses.isEmpty))) {
       if (_courses.isEmpty) {
         _baseSchedule = [];
         _manualCourses = [];
-        _overrides = [];
+        _overrides = loadedOverrides;
         _resolvedMeetings = [];
         _buildGrid();
       }
@@ -982,14 +989,6 @@ class CourseScheduleProvider extends ChangeNotifier {
     final coalesced = _coalesceGraduateCourses(cached);
     // 一律使用固定操作上下文中的学期与来源账号，不在 await 之后重新读取可变字段。
     final termId = operation.term.id;
-    // 先把调节层读到局部变量：读取期间可能发生新的学期切换，
-    // 必须重新校验后再提交，避免旧学期的调节层覆盖新学期的内存。
-    final loadedOverrides = await _overrideRepository.loadOverrides(
-      semesterId: termId,
-      accountId:
-          operation.sourceAccountId.isEmpty ? null : operation.sourceAccountId,
-    );
-    if (!_isCurrentOperation(operation)) return false;
     _hiddenCourseIds = snapshot!.hiddenCourseIds.toSet();
     final sourceRestored = _restoreSourceModels(snapshot, termId: termId);
     _overrides = loadedOverrides;
@@ -1222,9 +1221,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _isLoading = false;
     _errorMessage = null;
 
-    if (_courses.isNotEmpty) {
-      if (!await _saveOperationCourses(operation, _courses)) return 0;
-    }
+    if (!await _saveOperationCourses(operation, _courses)) return 0;
     if (!_isCurrentOperation(operation)) return 0;
 
     await _clearOperationActiveArchive(operation);
@@ -1839,7 +1836,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       );
       _syncResolvedSchedule();
 
-      final persisted = _courses.isNotEmpty
+      final persisted = _courses.isNotEmpty || _baseSchedule.isNotEmpty || _manualCourses.isNotEmpty
           ? await _saveOperationCourses(operation, _courses)
           : await _clearOperationCourses(operation);
       if (!_isCurrentOperation(operation)) return;
@@ -1864,7 +1861,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (_userId == null) return;
     if (!PlatformCapabilities.current.supportsNativeWidget) return;
     // 使用 microtask 避免阻塞 UI
-    Future.microtask(() => HomeWidgetService.syncCourseData(this));
+    Future.microtask(() => HomeWidgetService.syncCourseData(this))
+        .catchError((Object _) {}); // 同步状态由服务记录，失败不打断主 App 的课表读取。
   }
 
   /// 预览和最终解析共用可见的教务原始安排。
@@ -2075,16 +2073,10 @@ class CourseScheduleProvider extends ChangeNotifier {
     }).toList();
   }
 
-  /// 创建或更新时间调整规则 (Section 18 - 20)
-  ScheduleConflictCheckResult previewReschedule({
+  Meeting _requireSourceMeeting({
     required String courseKey,
     required String meetingKey,
     required Set<int> affectedWeeks,
-    required int toWeekday,
-    required int toStartSection,
-    required int toEndSection,
-    int weekOffset = 0,
-    String? overrideId,
     String? sourceSnapshotHash,
   }) {
     final source = _visibleBaseSchedule
@@ -2103,6 +2095,23 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (affectedWeeks.isEmpty || !sourceWeeks.containsAll(affectedWeeks)) {
       throw StateError('所选原周次中存在不上课的周次，请重新选择');
     }
+    return source;
+  }
+
+  /// 创建或更新时间调整规则 (Section 18 - 20)
+  ScheduleConflictCheckResult previewReschedule({
+    required String courseKey,
+    required String meetingKey,
+    required Set<int> affectedWeeks,
+    required int toWeekday,
+    required int toStartSection,
+    required int toEndSection,
+    int weekOffset = 0,
+    String? overrideId,
+    String? sourceSnapshotHash,
+  }) {
+    _requireSourceMeeting(courseKey: courseKey, meetingKey: meetingKey,
+        affectedWeeks: affectedWeeks, sourceSnapshotHash: sourceSnapshotHash);
     final targetWeeks = affectedWeeks.map((w) => w + weekOffset).toSet();
     if (targetWeeks.any((w) => w < 1 || w > currentTerm.maxWeek)) {
       throw StateError('目标周次超出本学期范围');
@@ -2243,6 +2252,107 @@ class CourseScheduleProvider extends ChangeNotifier {
     return override;
   }
 
+  /// 停课保留教务源快照；只从当前正在编辑的调整中拆出所选原周次。
+  Future<ScheduleOverride> createCancelOverride({
+    required String courseKey,
+    required String meetingKey,
+    required Set<int> affectedWeeks,
+    required String sourceSnapshotHash,
+    String? overrideId,
+  }) async {
+    final generation = _contextGeneration;
+    final term = currentTerm;
+    final accountId = _sourceAccountId;
+    await _ensureTrustedSourceForMutation();
+    _ensureMutationGeneration(generation);
+    final source = _requireSourceMeeting(courseKey: courseKey,
+        meetingKey: meetingKey, affectedWeeks: affectedWeeks,
+        sourceSnapshotHash: sourceSnapshotHash);
+    final editing = _overrides.where((o) => o.id == overrideId).firstOrNull;
+    if (overrideId != null && (editing == null || !editing.isActive ||
+        editing.type == ScheduleOverrideType.cancel ||
+        editing.courseKey != courseKey || editing.meetingKey != meetingKey ||
+        !editing.affectedWeeks.containsAll(affectedWeeks))) {
+      throw StateError('课程安排已变化，请重新打开课程后删除');
+    }
+    final now = DateTime.now();
+    final updated = <ScheduleOverride>[];
+    for (final existing in _overrides) {
+      if (!existing.isActive || existing.courseKey != courseKey ||
+          existing.meetingKey != meetingKey ||
+          existing.affectedWeeks.intersection(affectedWeeks).isEmpty) {
+        updated.add(existing);
+        continue;
+      }
+      if (existing.id != overrideId) {
+        throw StateError('所选周次已有其他本地调整，请重新打开课程后删除');
+      }
+      final remaining = existing.affectedWeeks.difference(affectedWeeks);
+      if (remaining.isNotEmpty) {
+        updated.add(existing.copyWith(affectedWeeks: remaining, updatedAt: now));
+      }
+    }
+    var index = 0;
+    ScheduleOverride cancel(Meeting meeting, Set<int> weeks, String snapshot,
+        {ScheduleOverride? previous}) => ScheduleOverride(
+      id: 'ov_cancel_${now.microsecondsSinceEpoch}_${index++}', semesterId: term.id,
+      courseKey: courseKey, meetingKey: meeting.meetingKey,
+      type: ScheduleOverrideType.cancel, affectedWeeks: weeks,
+      weekOffset: previous?.weekOffset ?? 0,
+      toWeekday: previous?.toWeekday, toStartSection: previous?.toStartSection,
+      toEndSection: previous?.toEndSection, toRoom: previous?.toRoom,
+      sourceSnapshotHash: snapshot,
+      fromWeekday: meeting.weekday, fromStartSection: meeting.startSection,
+      fromEndSection: meeting.endSection, fromRoom: meeting.room,
+      createdAt: now, updatedAt: now,
+    );
+    final cancellation = cancel(source, affectedWeeks, sourceSnapshotHash, previous: editing);
+    updated.add(cancellation);
+    // 合并显示的原安排也属于本次删除；只处理 Resolver 实际合并的未调整周次。
+    if (editing?.replaceSameCourse == true) {
+      final targetWeeks = editing!.targetWeeksFor(affectedWeeks);
+      for (final course in _visibleBaseSchedule.where((c) => c.courseKey == courseKey)) {
+        for (final meeting in course.meetings) {
+          if (meeting.weekday != editing.toWeekday ||
+              meeting.startSection != editing.toStartSection ||
+              meeting.endSection != editing.toEndSection) {
+            continue;
+          }
+          var remaining = meeting.weeks.isEmpty
+              ? List.generate(term.maxWeek, (i) => i + 1).toSet() : meeting.weeks;
+          for (final rule in _overrides.where((o) => o.isActive &&
+              o.courseKey == courseKey && o.meetingKey == meeting.meetingKey)) {
+            remaining = remaining.difference(rule.affectedWeeks);
+          }
+          final mergedWeeks = remaining.intersection(targetWeeks);
+          if (mergedWeeks.isNotEmpty) {
+            updated.add(cancel(meeting, mergedWeeks, meeting.computeSnapshotHash()));
+          }
+        }
+      }
+    }
+    _scheduleResolver.resolve(baseSchedule: _visibleBaseSchedule,
+        overrides: updated, manualCourses: _manualCourses,
+        semesterId: term.id, totalTeachingWeeks: term.maxWeek);
+    final persisted = await _overrideRepository.saveOverrides(
+        semesterId: term.id, accountId: accountId, overrides: updated);
+    _ensureMutationGeneration(generation);
+    if (!persisted) throw StateError('删除课程保存失败，请稍后重试');
+    final savedOverrides = await _overrideRepository.loadOverrides(
+        semesterId: term.id, accountId: accountId);
+    _ensureMutationGeneration(generation);
+    _overrides = savedOverrides;
+    _syncResolvedSchedule();
+    try {
+      await _persistResolvedScheduleOrThrow();
+    } catch (error) {
+      debugPrint('课表展示快照保存失败（本地删除已生效）: $error');
+    }
+    _ensureMutationGeneration(generation);
+    notifyListeners();
+    return cancellation;
+  }
+
   /// 创建或更新教室调整规则 (Section 22)
   Future<ScheduleOverride> createChangeRoomOverride({
     required String courseKey,
@@ -2305,31 +2415,43 @@ class CourseScheduleProvider extends ChangeNotifier {
     required ScheduleOverride updated,
     bool allowConflict = false,
   }) async {
+    final generation = _contextGeneration;
+    final term = currentTerm;
+    final accountId = _sourceAccountId;
     await _ensureTrustedSourceForMutation();
+    _ensureMutationGeneration(generation);
     final persisted = await _overrideRepository.upsertOverride(
       override: updated,
-      accountId: _sourceAccountId,
+      accountId: accountId,
     );
+    _ensureMutationGeneration(generation);
     if (!persisted) {
       throw StateError('调课规则保存失败，请稍后重试');
     }
-    _overrides = await _overrideRepository.loadOverrides(
-      semesterId: currentTerm.id,
-      accountId: _sourceAccountId,
+    final savedOverrides = await _overrideRepository.loadOverrides(
+      semesterId: term.id,
+      accountId: accountId,
     );
+    _ensureMutationGeneration(generation);
+    _overrides = savedOverrides;
     _syncResolvedSchedule();
     try {
       await _persistResolvedScheduleOrThrow();
     } catch (e) {
       debugPrint('课表展示快照保存失败（调课规则已落盘生效）: $e');
     }
+    _ensureMutationGeneration(generation);
     notifyListeners();
     return updated;
   }
 
   /// 恢复教务原课 (Section 25: 删除 Override，重跑 Resolver)
   Future<void> restoreBaseMeeting(String overrideId) async {
+    final generation = _contextGeneration;
+    final term = currentTerm;
+    final accountId = _sourceAccountId;
     await _ensureTrustedSourceForMutation();
+    _ensureMutationGeneration(generation);
     final overrideIdx = _overrides.indexWhere((o) => o.id == overrideId);
     if (overrideIdx < 0) {
       throw StateError('未找到对应的调课规则');
@@ -2338,27 +2460,31 @@ class CourseScheduleProvider extends ChangeNotifier {
     final hasBaseMeeting = _baseSchedule.any((c) =>
         c.courseKey == targetOverride.courseKey &&
         c.meetings.any((m) => m.meetingKey == targetOverride.meetingKey));
-    if (!hasBaseMeeting) {
+    if (!hasBaseMeeting && targetOverride.type != ScheduleOverrideType.cancel) {
       throw StateError('当前没有对应课程的原始教务快照，无法恢复原安排，请重新同步教务');
     }
     final persisted = await _overrideRepository.deleteOverride(
       overrideId: overrideId,
-      semesterId: currentTerm.id,
-      accountId: _sourceAccountId,
+      semesterId: term.id,
+      accountId: accountId,
     );
+    _ensureMutationGeneration(generation);
     if (!persisted) {
       throw StateError('恢复原安排失败，请稍后重试');
     }
-    _overrides = await _overrideRepository.loadOverrides(
-      semesterId: currentTerm.id,
-      accountId: _sourceAccountId,
+    final savedOverrides = await _overrideRepository.loadOverrides(
+      semesterId: term.id,
+      accountId: accountId,
     );
+    _ensureMutationGeneration(generation);
+    _overrides = savedOverrides;
     _syncResolvedSchedule();
     try {
       await _persistResolvedScheduleOrThrow();
     } catch (e) {
       debugPrint('课表展示快照保存失败（恢复原安排已生效）: $e');
     }
+    _ensureMutationGeneration(generation);
     notifyListeners();
   }
 

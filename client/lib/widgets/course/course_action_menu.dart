@@ -7,6 +7,7 @@ enum CourseMenuAction {
   switchTerm,
   setSemesterStart,
   archives,
+  cancelledCourses,
   share,
   settings,
 }
@@ -42,6 +43,8 @@ class CourseActionMenu extends StatelessWidget {
         const PopupMenuDivider(),
         _buildItem(
             context, CourseMenuAction.archives, Icons.archive_rounded, '课表存档'),
+        _buildItem(context, CourseMenuAction.cancelledCourses,
+            Icons.restore_from_trash_outlined, '已删除课程'),
         _buildItem(
             context, CourseMenuAction.share, Icons.share_rounded, '分享课表'),
         const PopupMenuDivider(),

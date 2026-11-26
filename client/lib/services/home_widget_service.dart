@@ -203,11 +203,11 @@ class HomeWidgetService {
     );
   }
 
-  static Future<void> updateAppearance(HomeWidgetAppearance appearance) {
-    final operation = _appearanceUpdateQueue?.then(
-          (_) => _persistAppearance(appearance),
-        ) ??
-        _persistAppearance(appearance);
+  static Future<void> updateAppearance(HomeWidgetAppearance appearance) =>
+      _queueAppearanceUpdate(() => _persistAppearance(appearance));
+
+  static Future<void> _queueAppearanceUpdate(Future<void> Function() action) {
+    final operation = _appearanceUpdateQueue?.then((_) => action()) ?? action();
     // 外观写入和原生刷新必须保持调用顺序，避免快速切换时旧请求后完成并覆盖新主题。
     late final Future<void> tail;
     void release() {
@@ -272,6 +272,7 @@ class HomeWidgetService {
   static Future<void> _syncCourseData(CourseScheduleProvider provider) async {
     _lastCourseProvider = provider;
     final startedAt = DateTime.now();
+    var written = false;
     _setSyncStatus(HomeWidgetSyncStatus(
       stage: HomeWidgetSyncStage.writing,
       accountId: int.tryParse(provider.academicIdentity?.studentId ?? ''),
@@ -317,6 +318,7 @@ class HomeWidgetService {
       if (!saved) {
         throw StateError('共享存储写入失败');
       }
+      written = true;
       _setSyncStatus(HomeWidgetSyncStatus(
         stage: HomeWidgetSyncStage.refreshing,
         lastWriteAt: startedAt,
@@ -337,16 +339,20 @@ class HomeWidgetService {
       debugPrint(
           '课表小组件已全量同步 (Schema v$courseWidgetSchemaVersion)：${courses.length} 门课');
     } catch (error) {
+      final appGroupUnavailable = error is PlatformException &&
+          error.code == 'WIDGET_APP_GROUP_UNAVAILABLE';
       _setSyncStatus(HomeWidgetSyncStatus(
         stage: HomeWidgetSyncStage.failed,
         lastWriteAt: startedAt,
-        writeSucceeded: error.toString().contains('刷新') ? true : false,
-        refreshSucceeded: error.toString().contains('刷新') ? false : null,
+        writeSucceeded: written,
+        refreshSucceeded: written ? false : null,
         accountId: int.tryParse(provider.academicIdentity?.studentId ?? ''),
-        errorCode: error.toString().contains('刷新')
-            ? 'native_refresh_failed'
-            : 'storage_write_failed',
-        errorMessage: error.toString(),
+        errorCode: appGroupUnavailable
+            ? error.code
+            : written
+                ? 'native_refresh_failed'
+                : 'storage_write_failed',
+        errorMessage: appGroupUnavailable ? error.message : error.toString(),
       ));
       debugPrint('课表小组件同步失败：$error');
       rethrow;
@@ -374,6 +380,17 @@ class HomeWidgetService {
     Iterable<HomeWidgetExamEntry> entries, {
     AcademicIdentityKey? identity,
   }) async {
+    try {
+      await _syncExamData(entries, identity: identity);
+    } catch (error) {
+      debugPrint('考试小组件同步失败：$error');
+    }
+  }
+
+  static Future<void> _syncExamData(
+    Iterable<HomeWidgetExamEntry> entries, {
+    AcademicIdentityKey? identity,
+  }) async {
     final cached = entries.toList()
       ..sort((a, b) => a.startTime.compareTo(b.startTime));
     _lastExamEntries = cached;
@@ -393,7 +410,7 @@ class HomeWidgetService {
       }).toList();
 
       final prefs = await AppPreferencesStore.getInstance();
-      await prefs.setString(
+      final saved = await prefs.setString(
         _examDataKey,
         jsonEncode({
           'schema_version': examWidgetSchemaVersion,
@@ -402,19 +419,12 @@ class HomeWidgetService {
           'exams': exams,
         }),
       );
+      if (!saved) throw StateError('考试小组件数据保存失败，请重试');
       await _refreshNative();
       debugPrint('考试小组件已同步：${exams.length} 场考试');
     }
 
-    try {
-      if (identity != null) {
-        await AcademicAuxiliaryOwnership.write('widget_exam', identity, action);
-      } else {
-        await AcademicAuxiliaryOwnership.write('widget_exam', null, action);
-      }
-    } catch (error) {
-      debugPrint('考试小组件同步失败：$error');
-    }
+    await AcademicAuxiliaryOwnership.write('widget_exam', identity, action);
   }
 
   static Future<void> clearExamDataForIdentity(AcademicIdentityKey identity,
@@ -451,7 +461,7 @@ class HomeWidgetService {
         if (exams != null) {
           final identity = _lastExamIdentity;
           if (identity != null) {
-            return syncExamData(exams, identity: identity);
+            return _syncExamData(exams, identity: identity);
           }
           // 没有身份的历史缓存不能覆盖 ownership；仅刷新原生展示。
           return _refreshNative();
@@ -468,7 +478,7 @@ class HomeWidgetService {
     if (exams != null) {
       final identity = _lastExamIdentity;
       if (identity != null) {
-        await syncExamData(exams, identity: identity);
+        await _syncExamData(exams, identity: identity);
       } else {
         // 无法确认身份时保留现有 owner，不执行 ownerless 写入。
         await _refreshNative();
@@ -699,19 +709,37 @@ class HomeWidgetService {
     required AppPreferencesStore prefs,
     String? courseThemeOverride,
     String? examThemeOverride,
+  }) =>
+      _queueAppearanceUpdate(() => _syncThemeAppearance(appearance,
+          prefs: prefs,
+          courseThemeOverride: courseThemeOverride,
+          examThemeOverride: examThemeOverride));
+
+  // 主题应用和手动换色共用顺序，旧主题同步不能在用户的新选择之后回写。
+  static Future<void> _syncThemeAppearance(
+    ThemeAppearance appearance, {
+    required AppPreferencesStore prefs,
+    String? courseThemeOverride,
+    String? examThemeOverride,
   }) async {
-    await prefs.setString(
+    Future<void> saveString(String key, String value) async {
+      if (!await prefs.setString(key, value)) {
+        throw StateError('桌面小组件配色保存失败，请重试');
+      }
+    }
+
+    await saveString(
       HomeWidgetPreferenceKeys.appPalette,
       ThemeWidgetPalette.encodePayload(appearance),
     );
     if (courseThemeOverride != null) {
-      await prefs.setString(
+      await saveString(
         HomeWidgetPreferenceKeys.courseTheme,
         courseThemeOverride,
       );
     }
     if (examThemeOverride != null) {
-      await prefs.setString(
+      await saveString(
         HomeWidgetPreferenceKeys.examTheme,
         examThemeOverride,
       );
@@ -741,12 +769,14 @@ class HomeWidgetService {
                 else
                   item,
             ];
-            await prefs.setString(
+            await saveString(
               _courseDataKey,
               jsonEncode({...decoded, 'courses': updatedCourses}),
             );
           }
-        } catch (_) {}
+        } on FormatException {
+          // 损坏的旧展示缓存不参与重配色；写入失败继续交给调用方报告。
+        }
       }
     }
     await syncAll();
@@ -771,10 +801,33 @@ class HomeWidgetService {
                   false,
         },
       });
+      _setSyncStatus(HomeWidgetSyncStatus(
+        stage: HomeWidgetSyncStage.success,
+        lastWriteAt: _syncStatus.lastWriteAt,
+        lastRefreshAt: DateTime.now(),
+        writeSucceeded: _syncStatus.writeSucceeded,
+        refreshSucceeded: true,
+        accountId: _syncStatus.accountId,
+        dataVersion: _syncStatus.dataVersion,
+      ));
     } on MissingPluginException {
       // 桌面端和单元测试没有 Android 通道，数据仍会正常写入。
     } catch (error) {
       debugPrint('原生小组件刷新失败：$error');
+      if (error is PlatformException &&
+          error.code == 'WIDGET_APP_GROUP_UNAVAILABLE') {
+        _setSyncStatus(HomeWidgetSyncStatus(
+          stage: HomeWidgetSyncStage.failed,
+          lastWriteAt: _syncStatus.lastWriteAt,
+          lastRefreshAt: _syncStatus.lastRefreshAt,
+          writeSucceeded: _syncStatus.writeSucceeded,
+          refreshSucceeded: false,
+          accountId: _syncStatus.accountId,
+          errorCode: error.code,
+          errorMessage: error.message,
+        ));
+        rethrow;
+      }
       throw StateError('原生小组件刷新失败：$error');
     }
   }

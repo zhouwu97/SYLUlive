@@ -54,6 +54,84 @@ void main() {
     await HomeWidgetService.updateAppearance(appearance);
   });
 
+  testWidgets('原生刷新失败后，换色选中项仍与已保存的设置一致', (tester) async {
+    await setGoldenViewport(tester, GoldenViewports.phone390x844);
+    AppPreferencesStore.setMockInitialValues({});
+    const channel = MethodChannel('shenliyuan/widget');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
+        (call) async {
+      if (call.method == 'updateWidget') {
+        throw PlatformException(code: 'WIDGET_UPDATE_FAILED');
+      }
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    await tester
+        .pumpWidget(const MaterialApp(home: HomeWidgetSettingsScreen()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, '校园蓝').first);
+    await tester.pumpAndSettle();
+    final saved = await HomeWidgetService.getAppearance(HomeWidgetKind.course);
+    expect(saved.theme, HomeWidgetTheme.campusBlue);
+    expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '校园蓝').first)
+            .selected,
+        isTrue);
+  });
+
+  for (final appGroupUnavailable in [false, true]) {
+    testWidgets('同步全部失败显示原因，按钮恢复后可重试：AppGroup=$appGroupUnavailable',
+        (tester) async {
+      await setGoldenViewport(tester, GoldenViewports.phone390x844);
+      AppPreferencesStore.setMockInitialValues({});
+      var failRefresh = true;
+      const channel = MethodChannel('shenliyuan/widget');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
+          (call) async {
+        if (call.method == 'updateWidget' && failRefresh) {
+          throw PlatformException(
+            code: appGroupUnavailable
+                ? 'WIDGET_APP_GROUP_UNAVAILABLE'
+                : 'WIDGET_UPDATE_FAILED',
+            message: appGroupUnavailable
+                ? '小组件共享存储不可用，请使用主 App 与小组件均具有相同 App Group 权限的签名重新安装'
+                : null,
+          );
+        }
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null));
+      await tester
+          .pumpWidget(const MaterialApp(home: HomeWidgetSettingsScreen()));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('同步全部小组件'), 400);
+      await tester.tap(find.text('同步全部小组件'));
+      await tester.pumpAndSettle();
+      expect(find.text('全部桌面小组件已同步'), findsNothing);
+      expect(
+          find.descendant(
+              of: find.byType(SnackBar),
+              matching: find.text(appGroupUnavailable
+                  ? '小组件共享存储不可用，请使用主 App 与小组件均具有相同 App Group 权限的签名重新安装'
+                  : '小组件同步失败，请检查状态后重试')),
+          findsOneWidget);
+      expect(
+          tester
+              .widget<FilledButton>(
+                  find.widgetWithText(FilledButton, '同步全部小组件'))
+              .onPressed,
+          isNotNull);
+      failRefresh = false;
+      await tester.tap(find.text('同步全部小组件'));
+      await tester.pumpAndSettle();
+      expect(find.text('全部桌面小组件已同步'), findsOneWidget);
+      expect(find.text('小组件状态：已同步'), findsOneWidget);
+    });
+  }
+
   for (final large in [false, true]) {
     testWidgets('有课预览各主题及字号不溢出，包含超大 2×2／4×2 large=$large', (tester) async {
       await setGoldenViewport(tester, GoldenViewports.phone390x844);

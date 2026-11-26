@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A00200010000000000000001 /* HomeWidgetData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00200020000000000000001 /* HomeWidgetData.swift */; };
+		A00200010000000000000002 /* HomeWidgetData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00200020000000000000001 /* HomeWidgetData.swift */; };
+		A00200010000000000000003 /* HomeWidgetData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00200020000000000000001 /* HomeWidgetData.swift */; };
 		A00100010000000000000001 /* CourseScheduleWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00100020000000000000001 /* CourseScheduleWidget.swift */; };
 		A00100010000000000000002 /* CourseScheduleWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A00100030000000000000001 /* CourseScheduleWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A00100010000000000000003 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A00100020000000000000004 /* PrivacyInfo.xcprivacy */; };
@@ -62,6 +65,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A00200020000000000000001 /* HomeWidgetData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetData.swift; sourceTree = "<group>"; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
@@ -105,6 +109,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		A00200080000000000000001 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				A00200020000000000000001 /* HomeWidgetData.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		331C8082294A63A400263BE5 /* RunnerTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -133,6 +145,7 @@
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				A00100080000000000000001 /* CourseScheduleWidget */,
+				A00200080000000000000001 /* Shared */,
 			);
 			sourceTree = "<group>";
 		};
@@ -345,6 +358,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */,
+				A00200010000000000000003 /* HomeWidgetData.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -353,6 +367,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
+				A00200010000000000000001 /* HomeWidgetData.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 			);
@@ -363,6 +378,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00100010000000000000001 /* CourseScheduleWidget.swift in Sources */,
+				A00200010000000000000002 /* HomeWidgetData.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

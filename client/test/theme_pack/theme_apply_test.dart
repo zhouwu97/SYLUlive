@@ -751,10 +751,13 @@ void main() {
     final confirmation = tester.widget<SnackBar>(find.byType(SnackBar));
     expect(confirmation.persist, isFalse);
     expect(confirmation.duration, const Duration(seconds: 5));
-    await tester.tap(find.text('撤销'));
-    await tester
-        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 80)));
+    // 撤销包含平台小组件同步，在真实异步区启动并等待，避免遗留到下一用例。
+    await tester.runAsync(() async {
+      await tester.tap(find.text('撤销'));
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    });
     await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
     expect(provider.hasThemeColors, isFalse);
     expect(provider.backgroundImage, 'morenbeijing.jpeg');
     expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);

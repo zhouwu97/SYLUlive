@@ -145,6 +145,65 @@ void main() {
     await h.theme.loadThemeForTesting();
     expect(h.theme.bottomNavClearMaterial, isTrue);
   });
+  for (final axis in Axis.values) {
+    for (final held in [false, true]) {
+      testWidgets('$axis 点击其他入口边缘先展开再移动，松手收回 held=$held', (tester) async {
+        final h = await pumpNav(tester,
+            axis: axis,
+            viewport: axis == Axis.vertical
+                ? GoldenViewports.tabletLandscape1280x800
+                : GoldenViewports.phone390x844);
+        final entry =
+            tester.getRect(find.byKey(const ValueKey('bottom-nav-item-1')));
+        final point = axis == Axis.horizontal
+            ? Offset(entry.left + 4, entry.center.dy)
+            : Offset(entry.center.dx, entry.top + 4);
+        final press = await tester.startGesture(point);
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(h.position.value, closeTo(0, .01), reason: '先在原位展开');
+        expect(h.commits, 0);
+        if (held) {
+          await press.moveBy(axis == Axis.horizontal
+              ? const Offset(1, 0)
+              : const Offset(0, 1));
+          for (var frame = 0; frame < 60; frame++) {
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          final optics = tester
+              .widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer));
+          expect(h.position.value, closeTo(1, .01));
+          expect(optics.press, greaterThan(.9), reason: '仍按住时不得收回');
+          expect(h.commits, 0);
+          expect(h.selected.value, 0);
+        }
+        await press.up();
+        expect(h.commits, 1);
+        var expandedDuringTravel = false;
+        for (var frame = 0; frame < 100; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          final optics = tester
+              .widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer));
+          expandedDuringTravel |= h.position.value > .05 &&
+              h.position.value < .95 &&
+              optics.press > .8;
+        }
+        if (!held) {
+          expect(expandedDuringTravel, isTrue,
+              reason: '短按也必须展开后移动，不能抬手就中断按压动画');
+        }
+        await tester.pumpAndSettle();
+        expect(h.selected.value, 1);
+        expect(h.commits, 1);
+        expect(h.position.value, closeTo(1, .001));
+        expect(
+            tester
+                .widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer))
+                .press,
+            closeTo(0, .001));
+      });
+    }
+  }
+
   testWidgets('透镜从原处进入按压态并连续移向课表，跟手且松手才切页', (tester) async {
     final h = await pumpNav(tester);
     final target =
@@ -152,15 +211,14 @@ void main() {
     final drag = await tester.startGesture(target);
     expect(h.position.value, 0, reason: '按下不得瞬移');
     await tester.pump(const Duration(milliseconds: 16));
-    expect(h.position.value, greaterThan(0));
-    expect(h.position.value, lessThan(1));
+    expect(h.position.value, closeTo(0, .01), reason: '先在原端鼓起再移动');
     expect(
         tester
             .widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer))
             .press,
         greaterThan(0));
     await drag.moveBy(const Offset(1, 0));
-    for (var i = 0; i < 7; i++) {
+    for (var i = 0; i < 18; i++) {
       await tester.pump(const Duration(milliseconds: 16));
     }
     expect(h.position.value, greaterThan(.5));
@@ -355,6 +413,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(h.commits, 0);
     expect(h.selected.value, 0);
+    final cancelledPress = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-3'))));
+    await tester.pump(const Duration(milliseconds: 220));
+    await cancelledPress.cancel();
+    await tester.pumpAndSettle();
+    expect(h.commits, 0);
+    expect(h.selected.value, 0);
+    expect(h.position.value, closeTo(0, .001));
     await tester.tap(find.byKey(const ValueKey('bottom-nav-item-4')));
     await tester.pump(const Duration(milliseconds: 16));
     await tester.tap(find.byKey(const ValueKey('bottom-nav-item-1')));
@@ -363,6 +429,44 @@ void main() {
     expect(h.position.value, closeTo(1, .001));
     expect(tester.takeException(), isNull);
   });
+
+  for (final axis in Axis.values) {
+    testWidgets('$axis 滑行途中再次按下不刹停，拖动接管保留可见位置', (tester) async {
+      final h = await pumpNav(tester,
+          axis: axis,
+          viewport: axis == Axis.vertical
+              ? GoldenViewports.tabletLandscape1280x800
+              : GoldenViewports.phone390x844);
+      await tester.tap(find.byKey(const ValueKey('bottom-nav-item-4')));
+      for (var frame = 0; frame < 12; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      final before = h.position.value;
+      expect(before, greaterThan(.05), reason: '原端展开结束后，在滑行阶段重新按下');
+      final lens =
+          tester.getCenter(find.byKey(const ValueKey('bottom-nav-selection')));
+      final held = await tester.startGesture(lens);
+      await held.moveBy(
+          axis == Axis.horizontal ? const Offset(1, 0) : const Offset(0, 1));
+      for (var frame = 0; frame < 7; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(h.position.value, greaterThan(before + .8),
+          reason: '再次按下及轻微抖动不能把现有吸附目标改成按下位置');
+      expect(h.commits, 1);
+      final takeover = h.position.value;
+      await held.moveBy(
+          axis == Axis.horizontal ? const Offset(8, 0) : const Offset(0, 8));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(h.position.value, greaterThanOrEqualTo(takeover),
+          reason: '接管拖动应从当前画面继续，不能回跳到按下时的位置');
+      await held.cancel();
+      await tester.pumpAndSettle();
+      expect(h.selected.value, 4);
+      expect(h.commits, 1);
+      expect(h.position.value, closeTo(4, .001));
+    });
+  }
 
   testWidgets('父页面转场通知不会覆盖正在吸附的透镜；外部切页仍同步', (tester) async {
     final h = await pumpNav(tester);

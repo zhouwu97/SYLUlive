@@ -12,6 +12,115 @@ import 'package:shenliyuan/widgets/settings/settings_switch.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  for (final on in [false, true]) {
+    testWidgets('switch reverses immediately after dragging beyond rail on=$on',
+        (tester) async {
+      await tester.runAsync(loadLiquidGlassSwitchProgram);
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      var value = on;
+      final commits = <bool>[];
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: LiquidGlassScene(
+          background: const ColoredBox(color: Colors.white),
+          overlay: ListView(controller: scroll, children: [
+            StatefulBuilder(
+                builder: (context, setState) => Center(
+                      child: SettingsSwitch(
+                          value: value,
+                          onChanged: (next) {
+                            commits.add(next);
+                            setState(() => value = next);
+                          }),
+                    )),
+            const SizedBox(height: 1600),
+          ]),
+        )),
+      ));
+      await tester.pumpAndSettle();
+      final custom = find.descendant(
+          of: find.byType(LiquidGlassSwitch),
+          matching: find.byWidgetPredicate((w) =>
+              w is CustomPaint &&
+              w.painter.runtimeType.toString() == '_SwitchPainter'));
+      final dynamic painter = tester.widget<CustomPaint>(custom.first).painter;
+      final motion = painter.motion as LiquidGlassDynamics;
+      final direction = on ? -1.0 : 1.0;
+      final drag =
+          await tester.startGesture(tester.getCenter(find.byType(Switch)));
+      await tester.pump(const Duration(milliseconds: 200));
+      await drag.moveBy(Offset(5 * direction, 0));
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(motion.position, closeTo(on ? .75 : .25, .02),
+          reason: 'A resting thumb previews small movements before drag slop');
+      await drag.moveBy(Offset(105 * direction, 0));
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(motion.position, closeTo(on ? 0 : 1, .01));
+      for (var reversal = 0; reversal < 4; reversal++) {
+        await drag.moveBy(Offset((reversal.isEven ? -24 : 24) * direction, 0));
+        await tester.pump(const Duration(milliseconds: 50));
+        final endpoint = reversal.isEven ? (on ? 1 : 0) : (on ? 0 : 1);
+        expect(motion.position, closeTo(endpoint, .02),
+            reason:
+                'Excess travel outside the rail must not create a dead zone');
+        expect(motion.pressure, greaterThan(.9));
+        expect(commits, isEmpty);
+        expect(scroll.offset, 0);
+      }
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(commits, [!on]);
+      expect(value, !on);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  testWidgets(
+      'repress during guided switch travel keeps the visible lens moving',
+      (tester) async {
+    await tester.runAsync(loadLiquidGlassSwitchProgram);
+    var value = false;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: LiquidGlassScene(
+      background: const ColoredBox(color: Colors.white),
+      overlay: Center(
+          child: StatefulBuilder(
+              builder: (context, setState) => SettingsSwitch(
+                  value: value,
+                  onChanged: (next) => setState(() => value = next)))),
+    ))));
+    await tester.pumpAndSettle();
+    final custom = find.descendant(
+        of: find.byType(LiquidGlassSwitch),
+        matching: find.byWidgetPredicate((w) =>
+            w is CustomPaint &&
+            w.painter.runtimeType.toString() == '_SwitchPainter'));
+    final dynamic painter = tester.widget<CustomPaint>(custom.first).painter;
+    final motion = painter.motion as LiquidGlassDynamics;
+    await tester.tap(find.byType(Switch));
+    for (var frame = 0; frame < 16; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final before = motion.position;
+    expect(before, inExclusiveRange(.05, .7));
+    final repress =
+        await tester.startGesture(tester.getCenter(find.byType(Switch)));
+    await repress.moveBy(const Offset(1, 1));
+    for (var frame = 0; frame < 4; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(motion.position, greaterThan(before + .1),
+        reason:
+            'A new tap must not brake the previous journey before pointer-up');
+    await repress.up();
+    await tester.pumpAndSettle();
+    expect(value, isFalse);
+    expect(motion.position, 0);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('regrabbing a moving switch decelerates without losing momentum',
       (tester) async {
     final motion = LiquidGlassDynamics(vsync: tester, directFollowRate: 100)
@@ -305,6 +414,50 @@ void main() {
       }
     });
   }
+
+  testWidgets(
+    'navigation elasticity increases strain and recoil without slowing tracking',
+    (tester) async {
+      final original = LiquidGlassDynamics(vsync: tester)..configure(70);
+      final elastic = LiquidGlassDynamics(vsync: tester, shapeElasticity: 1.35)
+        ..configure(70);
+      try {
+        for (final motion in [original, elastic]) {
+          motion.grab();
+          motion.advance(.5);
+        }
+        final peaks = [0.0, 0.0];
+        final recoil = [0.0, 0.0];
+        for (var frame = 1; frame <= 18; frame++) {
+          for (final (i, motion) in [original, elastic].indexed) {
+            motion.dragTo(2.5 * frame / 18);
+            motion.advance(1 / 120);
+            if (motion.stretch > peaks[i]) peaks[i] = motion.stretch;
+          }
+          expect(elastic.position, original.position);
+        }
+        original.releaseTo(2.5);
+        elastic.releaseTo(2.5);
+        for (var frame = 0; frame < 60; frame++) {
+          for (final (i, motion) in [original, elastic].indexed) {
+            motion.advance(1 / 120);
+            if (frame >= 24) recoil[i] += motion.energy;
+          }
+          expect(elastic.position, original.position);
+          expect(elastic.pressure, original.pressure);
+        }
+        expect(peaks[1], greaterThan(peaks[0] * 1.15));
+        expect(recoil[1], greaterThan(recoil[0] * 1.4));
+        elastic.advance(3);
+        expect(elastic.isMoving, isFalse);
+        expect(elastic.position, 2.5);
+        expect(elastic.energy, 0);
+      } finally {
+        original.dispose();
+        elastic.dispose();
+      }
+    },
+  );
 
   testWidgets(
     'same distance at different speeds produces different optical deformation',

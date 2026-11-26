@@ -99,6 +99,7 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
     _fluid = LiquidGlassDynamics(
       vsync: this,
       index: widget.currentIndex.toDouble(),
+      shapeElasticity: 1.35,
     )..addListener(_publish);
     _motion = Listenable.merge([_fluid, _tilt]);
     widget.visualIndexListenable.addListener(_externalPosition);
@@ -194,19 +195,16 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
     _speed = 0;
     final center = 4 + (_fluid.position + .5) * _itemWidth;
     _grabOffset = p.dx - center;
-    _startedOnLens = _grabOffset.abs() <= _itemWidth * .7;
+    final target = _index(p.dx);
+    _startedOnLens = target == _fluid.position.round().clamp(0, 4);
     _tracker = VelocityTracker.withKind(event.kind)
       ..addPosition(event.timeStamp, event.position);
     if (!_startedOnLens) {
-      // Start pressing where the lens currently is, then spring to the finger.
-      // Preserve position and momentum, including when re-grabbing mid-flight.
       _grabOffset = 0;
+      _fluid.pressTo(target.toDouble(), pressure: _pressure(event));
+    } else {
+      _fluid.grab(pressure: _pressure(event), continueMotion: true);
     }
-    _fluid.grab(pressure: _pressure(event));
-    _fluid.dragTo(
-      (p.dx - 4 - _grabOffset) / _itemWidth - .5,
-      pressure: _pressure(event),
-    );
   }
 
   void _move(PointerMoveEvent event) {
@@ -221,14 +219,13 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
         trackRight: 4 + _itemWidth * 4.5,
       );
       _drag.beginDrag(_fluid.position.clamp(0, 4).toDouble());
-      if (!_startedOnLens) _grabOffset = 0;
+      // 滑行可在按下后继续；拖动接管以此刻可见位置为锚点。
+      _grabOffset = _startedOnLens
+          ? _startX - (4 + (_fluid.position + .5) * _itemWidth)
+          : 0;
     }
     if (!_dragging) {
       // Small pointer jitter must not cancel the automatic journey.
-      _fluid.dragTo(
-        (p.dx - 4 - _grabOffset) / _itemWidth - .5,
-        pressure: _pressure(event),
-      );
       return;
     }
     final measured = _velocity(_tracker!.getVelocity());
@@ -257,11 +254,16 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
             itemWidth: _itemWidth,
           )
         : _index(_local(event).dx);
+    final guidedTap = !_dragging && _fluid.isTapping;
     _pointerId = null;
     _tracker = null;
     _dragging = false;
     _commit(target);
-    _settle(target);
+    if (guidedTap) {
+      _fluid.tapTo(target.toDouble());
+    } else {
+      _settle(target);
+    }
   }
 
   void _cancel(PointerCancelEvent event) {

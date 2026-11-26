@@ -47,7 +47,7 @@ class _LiquidGlassSwitchState extends State<LiquidGlassSwitch>
   ui.FragmentShader? _shader;
   int? _pointer;
   Offset _start = Offset.zero, _light = const Offset(40, 0);
-  double _startIndex = 0, _colorTarget = 0;
+  double _dragIndex = 0, _colorTarget = 0;
   bool _ready = false, _opticalGesture = false, _verticalCancelled = false;
   bool _tapCandidate = false;
   bool _horizontalDrag = false;
@@ -117,18 +117,19 @@ class _LiquidGlassSwitchState extends State<LiquidGlassSwitch>
     }
     _pointer = event.pointer;
     _start = event.position;
-    _startIndex = _motion.position.clamp(0, 1);
+    _dragIndex = _motion.position.clamp(0, 1);
     _light = event.localPosition;
     _verticalCancelled = false;
     _horizontalDrag = false;
     _tapCandidate = true;
     _opticalGesture = true;
-    _motion.grab();
+    _motion.grab(continueMotion: true);
   }
 
   void _move(PointerMoveEvent event) {
     if (_pointer != event.pointer || _verticalCancelled) return;
     final delta = event.position - _start;
+    var dragDelta = event.delta.dx;
     // After horizontal drag ownership is established, a diagonal reversal
     // belongs to the same gesture rather than a new vertical scroll.
     if (!_horizontalDrag &&
@@ -140,13 +141,21 @@ class _LiquidGlassSwitchState extends State<LiquidGlassSwitch>
       _motion.releaseTo(widget.value ? 1 : 0);
       return;
     }
-    if (delta.dx.abs() > kTouchSlop) {
+    if (!_horizontalDrag && delta.dx.abs() > kTouchSlop) {
       _horizontalDrag = true;
       _tapCandidate = false;
+      if (_motion.isTapping) {
+        _dragIndex = _motion.position.clamp(0, 1);
+        dragDelta = delta.dx;
+        _motion.grab();
+      }
     }
     _light = event.localPosition;
-    _motion.dragTo((_startIndex + delta.dx / 20).clamp(0, 1),
-        pullY: (delta.dy * .12).clamp(-3, 3));
+    if (_motion.isTapping) return;
+    // Clamp each delta like the native Switch. Discard off-rail travel so
+    // reversing outside the track takes effect on the very next event.
+    _dragIndex = (_dragIndex + dragDelta / 20).clamp(0, 1);
+    _motion.dragTo(_dragIndex, pullY: (delta.dy * .12).clamp(-3, 3));
   }
 
   void _cancel() {

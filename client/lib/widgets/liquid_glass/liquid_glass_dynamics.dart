@@ -12,6 +12,7 @@ class LiquidGlassDynamics extends ChangeNotifier {
     required TickerProvider vsync,
     double index = 0,
     this.directFollowRate = 0,
+    this.shapeElasticity = 1,
   }) {
     _x.snap(index);
     _ticker = vsync.createTicker(_tick);
@@ -22,6 +23,9 @@ class LiquidGlassDynamics extends ChangeNotifier {
   /// Optional tighter response for controls whose thumb must track a pointer.
   /// Zero keeps the navigation lens' existing spring response.
   final double directFollowRate;
+
+  /// Shape response is independent of pointer tracking and native commits.
+  final double shapeElasticity;
   final _x = _Spring();
   final _y = _Spring();
   final _press = _Spring();
@@ -64,20 +68,27 @@ class LiquidGlassDynamics extends ChangeNotifier {
     _x.value *= ratio;
     _x.target *= ratio;
     _x.velocity *= ratio;
+    _tapFrom *= ratio;
+    _tapTo *= ratio;
     _itemWidth = itemWidth;
   }
 
-  void grab({double pressure = 1}) {
+  void grab({double pressure = 1, bool continueMotion = false}) {
     _tapInterrupted = isMoving;
-    _tapActive = _tapPosition = false;
     _heldSeconds = 0;
     _held = true;
-    _x.target = _x.value;
+    // A new short press can still be a tap. Keep the existing journey until
+    // horizontal dragging actually takes ownership of the pointer.
+    if (!continueMotion || !_tapInterrupted) {
+      _tapActive = _tapPosition = false;
+      _x.target = _x.value;
+    }
     _press.target = pressure;
     _wake();
   }
 
   void dragTo(double index, {double pullY = 0, double pressure = 1}) {
+    _tapActive = _tapPosition = false;
     _held = true;
     _x.target = index.clamp(0, 4) * _itemWidth;
     _y.target = pullY.clamp(-10, 10);
@@ -96,13 +107,31 @@ class LiquidGlassDynamics extends ChangeNotifier {
   }
 
   /// Complete a quick tap as a compressed press, travel and release gesture.
-  /// The native switch still owns the semantic commit on pointer-up.
+  /// The host control still owns the semantic commit on pointer-up.
   void tapTo(double index) {
     if (reduced) {
       snapTo(index);
       return;
     }
     _held = false;
+    if (!_tapActive || _tapTo != index * _itemWidth) {
+      _beginTap(index);
+    }
+    _wake();
+  }
+
+  /// A navigation press travels while held; pointer-up owns the single commit.
+  void pressTo(double index, {double pressure = 1}) {
+    if (reduced) {
+      snapTo(index);
+      return;
+    }
+    grab(pressure: pressure);
+    _beginTap(index, pressure: pressure);
+    _wake();
+  }
+
+  void _beginTap(double index, {double pressure = 1}) {
     _tapFrom = _x.value;
     _tapTo = index * _itemWidth;
     // An unfinished gesture already lifted the lens. Retarget its springs
@@ -112,8 +141,7 @@ class LiquidGlassDynamics extends ChangeNotifier {
     _tapActive = _tapPosition = true;
     _x.target = _tapFrom;
     _y.target = 0;
-    _press.target = 1;
-    _wake();
+    _press.target = pressure;
   }
 
   void snapTo(double index) {
@@ -165,7 +193,7 @@ class LiquidGlassDynamics extends ChangeNotifier {
             (_tapTo - _x.value).abs() < .4 &&
             _x.velocity.abs() < 12) {
           _tapActive = false;
-          _press.target = 0;
+          if (!_held) _press.target = 0;
         }
       }
       final damping = _held ? 22.0 : 17.0;
@@ -179,12 +207,16 @@ class LiquidGlassDynamics extends ChangeNotifier {
       _y.step(h, 260, damping);
       _press.step(h, 310, _tapPosition && !_tapActive ? 24 : 18);
       if (speed > 16) _angle = math.atan2(_y.velocity, _x.velocity);
-      _stretch.target = math.min(speed / 2400, .25);
-      _stretch.step(h, _tapPosition ? 300 : 230, _tapPosition ? 24 : 15);
-      _bendX.target = ((_x.target - _x.value) * .12).clamp(-11, 11);
-      _bendY.target = ((_y.target - _y.value) * .12).clamp(-11, 11);
-      _bendX.step(h, _tapPosition ? 300 : 190, _tapPosition ? 24 : 14);
-      _bendY.step(h, 190, 14);
+      _stretch.target = math.min(speed / 2400, .25) * shapeElasticity;
+      _stretch.step(h, _tapPosition ? 300 : 230 / shapeElasticity,
+          _tapPosition ? 24 : 15 / shapeElasticity);
+      _bendX.target =
+          ((_x.target - _x.value) * .12).clamp(-11, 11) * shapeElasticity;
+      _bendY.target =
+          ((_y.target - _y.value) * .12).clamp(-11, 11) * shapeElasticity;
+      _bendX.step(h, _tapPosition ? 300 : 190 / shapeElasticity,
+          _tapPosition ? 24 : 14 / shapeElasticity);
+      _bendY.step(h, 190 / shapeElasticity, 14 / shapeElasticity);
       remaining -= realStep;
     }
   }

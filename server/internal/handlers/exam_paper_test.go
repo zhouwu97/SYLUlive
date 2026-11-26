@@ -275,6 +275,31 @@ func TestExamPaperDeniesLegacyAuthorizationWithoutConfig(t *testing.T) {
 	}
 }
 
+func TestExamPaperProfileAndListFollowActiveAcademicConfig(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	require.NoError(t, env.db.AutoMigrate(&models.CheckIn{}, &models.UserLegalConsent{}))
+	user := createExamPaperTestUser(t, env.db, "config-only", models.RoleUser, true, 0)
+	other := createExamPaperTestUser(t, env.db, "other-config", models.RoleUser, true, 0)
+	profileHandler := &UserHandler{db: env.db}
+	check := func(userID uint, configured bool, listStatus int) {
+		t.Helper()
+		profile := performExamPaperRequest(profileHandler.GetProfile, http.MethodGet, "/api/user/profile", nil, userID, nil, "")
+		require.Equal(t, http.StatusOK, profile.Code, profile.Body.String())
+		var data map[string]any
+		require.NoError(t, json.Unmarshal(profile.Body.Bytes(), &data))
+		require.Equal(t, configured, data["academic_configured"])
+		require.Equal(t, configured, data["student_verified"])
+		require.Empty(t, data["academic_identities"])
+
+		list := performExamPaperRequest(env.handler.List, http.MethodGet, "/api/exam-papers", nil, userID, nil, "")
+		require.Equal(t, listStatus, list.Code, list.Body.String())
+	}
+	check(user.ID, true, http.StatusOK)
+	require.NoError(t, env.db.Model(&models.AcademicAccountConfig{}).Where("user_id = ?", user.ID).Update("state", "deleted").Error)
+	check(user.ID, false, http.StatusForbidden)
+	check(other.ID, true, http.StatusOK)
+}
+
 func TestExamPaperListRequiresEduVerificationAndHidesPrivateFields(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	unverified := createExamPaperTestUser(t, env.db, "unverified", models.RoleUser, false, 0)

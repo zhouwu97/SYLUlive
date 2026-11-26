@@ -553,7 +553,7 @@ FEED-H1 加固：
 
 ## 试卷库
 
-普通接口均需 JWT；普通用户还需完成教务认证，管理员可绕过教务认证。
+普通接口均需 JWT。普通用户须在当前 App 账号登记有效的本科或研究生教务配置，个人资料的 `academic_configured` 字段报告该配置状态。管理员可直接访问。
 
 - `GET /api/exam-papers`：已发布列表，支持 `keyword`、`academic_year`、`semester`、`exam_type`、`sort`、`page`、`page_size`。响应额外包含 `academic_years`：全部已发布试卷的去重学年列表，按倒序排列，不受本次筛选条件影响。
 - `GET /api/exam-papers/:id`：已发布详情。

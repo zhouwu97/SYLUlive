@@ -168,7 +168,7 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
         : null;
     final cardOpacity = (modeMat?['componentOpacity'] as num? ?? 1.0)
         .toDouble()
-        .clamp(0.75, 1.0);
+        .clamp(0.0, 1.0);
     final frostMap = modeMat?['frostedGlass'] as Map?;
     final frostStrength = frostMap?['enabled'] == true
         ? ((frostMap?['strength'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0)

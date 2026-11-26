@@ -92,6 +92,24 @@ void main() {
   TypeMatcher<ThemePackError> failsWith(String code) =>
       isA<ThemePackError>().having((error) => error.code, 'code', code);
 
+  test('主题卡片接受 0–100% 不透明度，拒绝越界值', () {
+    for (final opacity in [-.01, 0.0, .42, .75, 1.0, 1.01]) {
+      final json = themeFixture();
+      for (final mode in ['light', 'dark']) {
+        json[mode]['componentOpacity'] = opacity;
+      }
+      if (opacity < 0 || opacity > 1) {
+        expect(() => ThemeManifest.parse(json, appVersion: '9.0.0'),
+            throwsA(failsWith('theme_field_invalid')));
+      } else {
+        final manifest = ThemeManifest.parse(json, appVersion: '9.0.0');
+        for (final mode in ['light', 'dark']) {
+          expect(manifest.data[mode]['componentOpacity'], opacity);
+        }
+      }
+    }
+  });
+
   test('本机来源不可伪装官方；忽略无关条目并完整解码合法图片', () async {
     final manifest = themeFixture()..['source'] = 'official';
     final pack = await ThemePackCodec.decode(
@@ -266,9 +284,10 @@ void main() {
       ..['sectionMark'] = {'style': 'icon', 'image': 'decorations/mark.png'}
       ..['illustrations'] = {'empty': 'decorations/empty.png'}
       ..['ornaments'] = {
-        'postCard': {'image': 'decorations/ear.png', 'width': 56, 'dy': -20}
+        'postCard': {'image': 'decorations/ear.png', 'width': 56, 'dy': -20},
+        'fab': {'image': 'decorations/ear.png', 'width': 64, 'dy': -40},
       }
-      ..['serviceIcons'] = {'edu': 'icons/edu.png'};
+      ..['serviceIcons'] = {'edu': 'icons/edu.png', 'search': 'icons/edu.png'};
     final pack = await ThemePackCodec.decode(
         themeArchive(json, files: {
           'decorations/tile.png': themeImage(64, 64),
@@ -283,6 +302,7 @@ void main() {
     expect(light['cardStyle'], {'fill': 'tint'});
     expect(light['backdrop']['glow'][0]['radius'], .5);
     expect(light['sectionMark'], {'style': 'icon', 'image': 'decorations/mark.png'});
+    expect(light['ornaments']['fab']['dy'], -40);
     expect(light['ornaments']['postCard'], {
       'image': 'decorations/ear.png',
       'corner': 'topRight',
@@ -291,7 +311,7 @@ void main() {
       'dy': -20,
       'opacity': 1,
     });
-    expect(light['serviceIcons'], {'edu': 'icons/edu.png'});
+    expect(light['serviceIcons'], {'edu': 'icons/edu.png', 'search': 'icons/edu.png'});
     expect(pack.manifest.groups,
         containsAll([ThemeGroup.wallpapers, ThemeGroup.decoration]));
     expect(

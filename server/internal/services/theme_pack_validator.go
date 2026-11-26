@@ -177,8 +177,8 @@ const (
 
 // 卡片角饰位置与可替换入口图标的键，与客户端 ThemeManifest 保持一致。
 var (
-	themeOrnamentSlots   = []string{"postCard", "campusHeader", "campusNotice", "campusServices"}
-	themeServiceIconKeys = []string{"edu", "canteen", "ranking", "team", "map", "calendar", "erke", "fitness", "exam", "papers", "sites", "cloudGame", "lottery"}
+	themeOrnamentSlots   = []string{"postCard", "campusHeader", "campusNotice", "campusServices", "fab"}
+	themeServiceIconKeys = []string{"edu", "canteen", "ranking", "team", "map", "calendar", "erke", "fitness", "exam", "papers", "sites", "cloudGame", "lottery", "menu", "messages", "search"}
 )
 
 type themeAssetRef struct {
@@ -648,11 +648,10 @@ func parseAndValidateManifest(source map[string]any, currentAppVersion string) (
 		}
 		navOut := map[string]any{}
 		if navObj["style"] != nil {
-			styleStr, err := parseJSONChoice(navObj["style"], "bottomNav.style", []string{"normal", "floating", "liquid_glass"})
+			_, err := parseJSONChoice(navObj["style"], "bottomNav.style", []string{"normal", "floating", "liquid_glass"})
 			if err != nil {
 				return nil, nil, err
 			}
-			navOut["style"] = styleStr
 		}
 		tintRaw := any("template")
 		if navObj["iconTint"] != nil {
@@ -880,7 +879,7 @@ func parseVariant(raw any, field string, addRef func(string, themeAssetKind) str
 	}
 
 	if v["componentOpacity"] != nil {
-		op, err := parseJSONNumber(v["componentOpacity"], field+".componentOpacity", 0.75, 1.0)
+		op, err := parseJSONNumber(v["componentOpacity"], field+".componentOpacity", 0.0, 1.0)
 		if err != nil {
 			return nil, err
 		}
@@ -1311,7 +1310,7 @@ func parseHeaderLayout(raw any, field string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	imgH, err := parseJSONNumberDefault(v["imageHeight"], 160, field+".imageHeight", 96, 280)
+	imgH, err := parseJSONNumberDefault(v["imageHeight"], 150, field+".imageHeight", 96, 280)
 	if err != nil {
 		return nil, err
 	}
@@ -1673,7 +1672,7 @@ func validateAndNormalizeThemeImage(data []byte, kind themeAssetKind, assetPath 
 			return nil, "", imgErr()
 		}
 	case themeAssetHeader:
-		if maxSide > 2048 {
+		if maxSide < 1200 || maxSide > 2048 {
 			return nil, "", imgErr()
 		}
 	case themeAssetSticker, themeAssetIllustration:

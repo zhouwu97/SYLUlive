@@ -73,20 +73,25 @@ class ThemeAsset {
   final ThemeAssetKind kind;
 }
 
+bool hasHeaderDecoration(Map? decoration) =>
+    decoration?['background'] != null ||
+    (decoration?['stickers'] as List?)?.isNotEmpty == true;
+
 /// 本机文件仅在 parse 边界校验；安装后的规范数据直接读取。
 class ThemeManifest {
   const ThemeManifest.fromStored(this.data);
   final Map<String, dynamic> data;
 
-  /// 可挂卡片角饰的位置：首页帖子卡片、校园页头卡、校园通知卡、校园服务宫格。
+  /// 可挂角饰的位置：首页帖子卡片、校园页头卡、校园通知卡、校园服务宫格、首页发帖按钮。
   static const ornamentSlots = [
     'postCard',
     'campusHeader',
     'campusNotice',
     'campusServices',
+    'fab',
   ];
 
-  /// 可替换的入口图标：前 6 个是校园服务宫格，后 7 个是工具箱。
+  /// 可替换的入口图标：前 6 个是校园服务宫格，中间 7 个是工具箱，最后 3 个是首页顶栏的菜单、消息和搜索图标。
   static const serviceIconKeys = [
     'edu',
     'canteen',
@@ -101,6 +106,9 @@ class ThemeManifest {
     'sites',
     'cloudGame',
     'lottery',
+    'menu',
+    'messages',
+    'search',
   ];
   String get id => data['id'] as String;
   int get version => data['version'] as int;
@@ -483,7 +491,7 @@ class _ManifestParser {
       'alignment': choice(v['alignment'] ?? 'start', '$field.alignment',
           const ['start', 'center', 'end']),
       'imageHeight':
-          number(v['imageHeight'] ?? 160, '$field.imageHeight', 96, 280),
+          number(v['imageHeight'] ?? 150, '$field.imageHeight', 96, 280),
       'imageWidth': number(v['imageWidth'] ?? 1, '$field.imageWidth', .45, 1),
     };
   }
@@ -688,7 +696,7 @@ class _ManifestParser {
         },
       if (v['componentOpacity'] != null)
         'componentOpacity':
-            number(v['componentOpacity'], '$field.componentOpacity', .75, 1),
+            number(v['componentOpacity'], '$field.componentOpacity', 0, 1),
       if (frost != null)
         'frostedGlass': {
           'enabled': boolean(frost['enabled'], '$field.frostedGlass.enabled'),

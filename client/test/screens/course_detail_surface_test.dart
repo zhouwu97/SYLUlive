@@ -91,9 +91,9 @@ void main() {
                   .descendant(of: surface, matching: find.byType(DecoratedBox))
                   .first)
               .decoration as BoxDecoration;
-          final expectedAlpha = .75 + .25 * opacity;
+          final expectedAlpha = opacity;
           expect(paint.color!.a, closeTo(expectedAlpha, 0.005),
-              reason: '模糊启停时详情底面均跟随新的 75%–100% 映射');
+              reason: '模糊启停时详情底面均跟随实际不透明度');
           expect(activeBackdropFilters(),
               glass ? findsOneWidget : findsNothing,
               reason: '毛玻璃开启时详情必须真实模糊背后内容');

@@ -157,7 +157,7 @@ class WorkshopVariantDraft {
               : Map<String, dynamic>.from(entry.value as Map),
       },
       componentOpacity: ((json['componentOpacity'] as num?)?.toDouble() ?? 1.0)
-          .clamp(0.75, 1.0),
+          .clamp(0.0, 1.0),
       frostedEnabled: json['frostedEnabled'] == true,
       frostedStrength: ((json['frostedStrength'] as num?)?.toDouble() ?? 0.0)
           .clamp(0.0, 1.0),
@@ -323,7 +323,7 @@ class ThemeWorkshopStateData {
       if (matGroup != null && matGroup['legacy'] != true) {
         final modeMat = matGroup[mode] as Map?;
         opacity = ((modeMat?['componentOpacity'] as num?)?.toDouble() ?? 1.0)
-            .clamp(0.75, 1.0);
+            .clamp(0.0, 1.0);
         final frost = modeMat?['frostedGlass'] as Map?;
         frostEnabled = frost?['enabled'] == true;
         frostStrength =
@@ -745,7 +745,7 @@ class ThemeWorkshopStateData {
     Map<String, dynamic>? bottomNavOut;
     final hasAnyNavIcon = navIcons.values.any((pair) => pair != null);
     if (includes(ThemeGroup.navigation) &&
-        (bottomNavStyle != null || hasAnyNavIcon)) {
+        (iconTint != 'template' || hasAnyNavIcon || bottomNavStyle != null)) {
       final iconsOut = <String, dynamic>{};
       for (final slot in const ['home', 'market', 'schedule', 'campus', 'me']) {
         final pair = navIcons[slot];
@@ -759,7 +759,6 @@ class ThemeWorkshopStateData {
         }
       }
       bottomNavOut = {
-        if (bottomNavStyle != null) 'style': bottomNavStyle,
         'iconTint': iconTint,
         'icons': iconsOut,
       };
@@ -807,6 +806,7 @@ class ThemeWorkshopStateData {
         : String.fromCharCodes(author.trim().runes.take(20));
     final safeDesc = String.fromCharCodes(description.trim().runes.take(200));
 
+    final exportedLayout = ThemeAppearanceExporter.headerLayout(layout, lightMap, darkMap);
     final manifestJson = <String, dynamic>{
       'formatVersion': 1,
       'minAppVersion': safeVersion,
@@ -827,7 +827,7 @@ class ThemeWorkshopStateData {
       if (bottomNavOut != null) 'bottomNav': bottomNavOut,
       if (fontOut != null) 'font': fontOut,
       if (launcherOut != null) 'launcherIcon': launcherOut,
-      if (includes(ThemeGroup.layout) && layout.isNotEmpty) 'layout': layout,
+      if (includes(ThemeGroup.layout) && exportedLayout.isNotEmpty) 'layout': exportedLayout,
     };
 
     final manifest = ThemeManifest.parse(manifestJson, appVersion: safeVersion);
@@ -1322,7 +1322,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
         _state = ThemeWorkshopStateData.fromInstalled(
           chosen,
           draftId: _state.draftId,
-        );
+        )..bottomNavStyle = provider?.bottomNavStyle.storageValue;
       } else if (chosen is Map<String, dynamic>) {
         _state = ThemeWorkshopStateData.fromDraftJson(chosen);
       }
@@ -3381,10 +3381,10 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
             subtitle: '调节卡片底面的不透明程度',
             value: '${(v.componentOpacity * 100).round()}%',
             slider: Slider(
-              value: v.componentOpacity.clamp(0.75, 1.0),
-              min: 0.75,
+              value: v.componentOpacity.clamp(0.0, 1.0),
+              min: 0.0,
               max: 1.0,
-              divisions: 25,
+              divisions: 100,
               onChanged: (val) => _mutate(
                 () => v.componentOpacity = (val * 100).round() / 100,
               ),
@@ -3474,6 +3474,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
         ThemeHeaderLayoutEditor(
           slotLabel: _headerSlots[_headerSlot]!,
           rawLayout: _state.layout[_headerSlot],
+          decorated: hasHeaderDecoration(_currentVariant.decorations[_headerSlot]),
           onChanged: (next) => _mutate(() {
             if (next == null) {
               _state.layout.remove(_headerSlot);
@@ -3601,7 +3602,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     );
     return [
       _choiceGrid<String?>(
-        title: '底栏样式',
+        title: '本机底栏样式（不随主题导出）',
         values: styles.keys.toList(),
         selected: _state.bottomNavStyle,
         label: (style) => styles[style]!,

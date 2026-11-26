@@ -36,7 +36,7 @@ class AppThemeStyle extends ThemeExtension<AppThemeStyle> {
   final String? errorIllustration;
   final String? titleFontFamily;
 
-  /// 卡片角饰，键为 postCard／campusHeader／campusNotice／campusServices。
+  /// 卡片角饰，键为 postCard／campusHeader／campusNotice／campusServices／fab。
   final Map<String, ThemeOrnamentSpec> ornaments;
 
   /// 校园服务图标的本地图片路径，键为 edu／canteen／ranking／team／map／calendar。

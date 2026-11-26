@@ -1820,7 +1820,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   IconButton(
                     tooltip: '校园服务',
                     onPressed: _openHomeServicePanel,
-                    icon: Icon(Icons.menu_rounded, size: 26, color: foreground),
+                    icon: AppThemeStyle.of(context)
+                            .serviceIcon(context, 'menu', size: 26) ??
+                        Icon(Icons.menu_rounded, size: 26, color: foreground),
                     padding: EdgeInsets.zero,
                   ),
                   if (_showCheckInDot || _unreadAnnouncements.isNotEmpty)
@@ -1876,11 +1878,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       IconButton(
                         tooltip: '消息',
                         onPressed: _openMessages,
-                        icon: Icon(
-                          Icons.chat_bubble_outline_rounded,
-                          size: 25,
-                          color: foreground,
-                        ),
+                        icon: AppThemeStyle.of(context)
+                                .serviceIcon(context, 'messages', size: 25) ??
+                            Icon(
+                              Icons.chat_bubble_outline_rounded,
+                              size: 25,
+                              color: foreground,
+                            ),
                         padding: EdgeInsets.zero,
                       ),
                       if (hasUnread)
@@ -2870,11 +2874,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             fontSize: 14,
             color: AppThemeTokens.of(context).textSecondary,
           ),
-          prefixIcon: Icon(
-            Icons.search_rounded,
-            size: 20,
-            color: AppThemeTokens.of(context).textSecondary,
-          ),
+          prefixIcon: AppThemeStyle.of(context)
+                  .serviceIcon(context, 'search', size: 22) ??
+              Icon(
+                Icons.search_rounded,
+                size: 20,
+                color: AppThemeTokens.of(context).textSecondary,
+              ),
           suffixIcon: _searchController.text.isEmpty
               ? null
               : IconButton(

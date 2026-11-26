@@ -197,7 +197,7 @@ class ThemeHeroLayer extends StatelessWidget {
         // 切换页签后重新测量一次，保活页签的锚点位置可能在后台变化过。
         ThemeHeroController.instance.scheduleMeasure();
         final resolved = ThemeHeaderResolved.of(context, slot);
-        if (resolved.layout.preset != 'immersive' || !resolved.hasDecoration) {
+        if (!resolved.hasDecoration) {
           return const SizedBox.shrink();
         }
         return ListenableBuilder(
@@ -449,12 +449,7 @@ class _ThemeHeroArt extends StatelessWidget {
                 Positioned.fill(
                   child: ThemeHeaderDecorationArea(
                     slot: '$slot-hero',
-                    layout: ThemeHeaderLayoutSpec(
-                      preset: layout.preset,
-                      alignment: layout.alignment,
-                      imageHeight: layout.imageHeight,
-                      imageWidth: 1.0,
-                    ),
+                    layout: layout,
                     background: null,
                     stickers: resolved.stickers,
                     assetResolver: resolved.assetResolver,

@@ -516,6 +516,26 @@ func fullFontRunes(coverageRatio float64) []rune {
 	return runes
 }
 
+func TestThemePackComponentOpacity(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		for _, opacity := range []float64{-0.01, 0, 0.42, 0.75, 1, 1.01} {
+			t.Run(fmt.Sprintf("dark=%t/opacity=%g", dark, opacity), func(t *testing.T) {
+				variant := defaultValidVariant(dark)
+				variant["componentOpacity"] = opacity
+				out, err := parseVariant(variant, "variant", func(ref string, _ themeAssetKind) string {
+					return ref
+				})
+				if opacity < 0 || opacity > 1 {
+					require.Error(t, err)
+					return
+				}
+				require.NoError(t, err)
+				require.Equal(t, opacity, out["componentOpacity"])
+			})
+		}
+	}
+}
+
 func TestThemePackValidatorTable(t *testing.T) {
 	validFont := buildMinimalSFNTFont(fullFontRunes(0.995), "Copyright 2026 SYLU", "OFL-1.1")
 	_, sfntErr := sfnt.Parse(validFont)
@@ -546,6 +566,19 @@ func TestThemePackValidatorTable(t *testing.T) {
 		build    func() ([]byte, ThemeMetadataOverrides)
 		wantCode string
 	}{
+		{
+			name: "页头背景长边 1199 拒绝",
+			build: func() ([]byte, ThemeMetadataOverrides) {
+				m := defaultValidManifest()
+				m["light"].(map[string]any)["decorations"] = map[string]any{
+					"home": map[string]any{"background": map[string]any{"image": "decorations/header.png"}},
+				}
+				assets := defaultValidAssets()
+				assets["decorations/header.png"] = testAssetSpec{Width: 1199, Height: 500}
+				return buildTestThemeZip(t, m, assets), ThemeMetadataOverrides{}
+			},
+			wantCode: ThemeCodeImageInvalid,
+		},
 		{
 			name: "非 ZIP 字节返回 theme_zip_invalid",
 			build: func() ([]byte, ThemeMetadataOverrides) {
@@ -733,6 +766,7 @@ func TestThemePackNormalizationAndFields(t *testing.T) {
 	svc := NewThemePackService(db, t.TempDir())
 
 	m := defaultValidManifest()
+	m["bottomNav"] = map[string]any{"style": "floating", "iconTint": "original"}
 	m["unknownTopField"] = "should-be-stripped"
 	m["source"] = "official" // 普通用户伪造 official 应被强制改为 community
 	m["layout"] = map[string]any{
@@ -796,7 +830,7 @@ func TestThemePackNormalizationAndFields(t *testing.T) {
 		"preview/light.png":         {Width: 1080, Height: 2340, Format: "jpeg_exif_xmp", Color: color.NRGBA{R: 240, G: 248, B: 255, A: 255}},
 		"preview/dark.png":          {Width: 1080, Height: 2340, Format: "webp", Color: color.NRGBA{R: 18, G: 20, B: 24, A: 255}},
 		"wallpaper/sea_bg.webp":     {Width: 64, Height: 64, Format: "webp", Color: color.NRGBA{R: 40, G: 110, B: 180, A: 255}},
-		"decorations/hdr_bg.jpg":    {Width: 120, Height: 60, Format: "jpeg_exif_xmp", Color: color.NRGBA{R: 80, G: 140, B: 200, A: 255}},
+		"decorations/hdr_bg.jpg":    {Width: 1200, Height: 600, Format: "jpeg_exif_xmp", Color: color.NRGBA{R: 80, G: 140, B: 200, A: 255}},
 		"decorations/st_first.webp": {Width: 48, Height: 48, Format: "webp", Color: color.NRGBA{R: 255, G: 200, B: 80, A: 180}},
 		"decorations/st_alpha.png":  {Width: 48, Height: 48, Format: "png", Color: color.NRGBA{R: 255, G: 100, B: 120, A: 128}},
 	}
@@ -840,6 +874,8 @@ func TestThemePackNormalizationAndFields(t *testing.T) {
 
 	var storedManifest map[string]any
 	require.NoError(t, json.Unmarshal(entryBytes["manifest.json"], &storedManifest))
+	require.Equal(t, "original", storedManifest["bottomNav"].(map[string]any)["iconTint"])
+	require.NotContains(t, storedManifest["bottomNav"], "style")
 	require.NotContains(t, storedManifest, "unknownTopField")
 	require.Equal(t, "community", storedManifest["source"])
 	require.Equal(t, pack.FamilyID, storedManifest["id"])

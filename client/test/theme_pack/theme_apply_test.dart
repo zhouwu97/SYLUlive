@@ -75,6 +75,7 @@ PreparedThemePack _pack(
     String color = '#A02080',
     bool wallpaper = false,
     bool material = false,
+    String? fill,
     bool navigation = false,
     String navigationStyle = 'normal'}) {
   final json = themeFixture(
@@ -102,6 +103,9 @@ PreparedThemePack _pack(
         'enabled': true,
         'strength': mode == 'light' ? .3 : .7
       };
+      if (fill != null) {
+        json[mode]['cardStyle'] = {'fill': fill, 'shadow': 'none'};
+      }
     }
   }
   if (navigation) {
@@ -157,26 +161,26 @@ void main() {
     await temp.delete(recursive: true);
   });
 
-  test('完整应用主题同步全部外观设置，覆盖旧液态关闭状态并在重启后保持', () async {
-    await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
+  test('完整应用主题同步全部外观设置，保留设备液态强度与材质并在重启后保持', () async {
+    await provider.setBottomNavAnimationIntensity(.6);
     await provider.setBottomNavClearMaterial(true);
     final theme = await provider.installTheme(_pack(
       wallpaper: true,
       material: true,
       navigation: true,
-      navigationStyle: 'liquid_glass',
+      navigationStyle: 'floating',
     ));
     await provider.applyInstalledTheme(theme, ThemeGroup.applicable);
     expect(provider.bottomNavStyle, BottomNavStyle.liquidGlass);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
-    expect(provider.bottomNavAnimationIntensity, 1);
-    expect(provider.bottomNavClearMaterial, isFalse);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.custom);
+    expect(provider.bottomNavAnimationIntensity, .6);
+    expect(provider.bottomNavClearMaterial, isTrue);
     expect(provider.bottomNavShaderEnabled, isTrue);
     expect(provider.backgroundMode, AppBackgroundMode.custom);
     expect(provider.componentOpacity, .8);
     expect(provider.frostedGlassStrength, .3);
     expect(provider.frostedGlassCustomStrength, .3);
-    expect(provider.customComponentOpacityLevel, closeTo(.2, .0001));
+    expect(provider.customComponentOpacityLevel, closeTo(.8, .0001));
     await provider.setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode.custom);
     expect(provider.componentOpacity, .8);
     expect(provider.frostedGlassStrength, .3);
@@ -186,9 +190,9 @@ void main() {
     final restarted = ThemeProvider(loadOnStart: false, themePackStore: store);
     addTearDown(restarted.dispose);
     await restarted.loadThemeForTesting();
-    expect(restarted.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
-    expect(restarted.bottomNavAnimationIntensity, 1);
-    expect(restarted.bottomNavClearMaterial, isFalse);
+    expect(restarted.bottomNavPerformanceMode, BottomNavPerformanceMode.custom);
+    expect(restarted.bottomNavAnimationIntensity, .6);
+    expect(restarted.bottomNavClearMaterial, isTrue);
     expect(restarted.backgroundMode, AppBackgroundMode.custom);
     expect(restarted.componentOpacity, .95);
   });
@@ -213,7 +217,7 @@ void main() {
     await provider.restorePreviousAppearance();
     expect(provider.backgroundImage, contains(detailed.directory));
     expect(provider.componentOpacity, .8);
-    expect(provider.bottomNavStyle, BottomNavStyle.normal);
+    expect(provider.bottomNavStyle, BottomNavStyle.liquidGlass);
   });
 
   test('工坊修改导航样式同步效果，同样式的图标编辑保留当前强度', () async {
@@ -334,7 +338,7 @@ void main() {
     expect(adopted, isNot(photo.path));
     expect(provider.isThemeVersionActive(installed.manifest.id, 1), isTrue);
     expect(provider.componentOpacity, .8);
-    expect(provider.bottomNavStyle, BottomNavStyle.normal);
+    expect(provider.bottomNavStyle, BottomNavStyle.liquidGlass);
     expect((await provider.installedThemes()).length, 1);
     await photo.delete();
     final restarted = ThemeProvider(loadOnStart: false, themePackStore: store);
@@ -442,7 +446,7 @@ void main() {
     expect(provider.frostedGlass, isTrue);
     expect(provider.canCustomizeCardMaterial, isTrue);
     await provider.setComponentOpacity(.86);
-    expect(provider.customComponentOpacityLevel, .44);
+    expect(provider.customComponentOpacityLevel, .86);
     await provider.setThemeMode(ThemeMode.dark);
     expect(provider.effectiveComponentOpacity, .95);
     expect(provider.frostedGlassStrength, .7);
@@ -466,7 +470,7 @@ void main() {
         throwsA(isA<FileSystemException>()));
     expect(provider.isInTrial, isTrue);
     expect(provider.persistedAppearance.group(ThemeGroup.colors), isNull);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
     await provider.endTrial();
     expect(provider.hasThemeColors, isFalse);
     expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
@@ -475,7 +479,7 @@ void main() {
     preferences.fail = false;
     await provider.applyInstalledTheme(theme, ThemeGroup.defaultApply);
     expect(provider.hasThemeColors, isTrue);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
     expect(provider.componentOpacity, .8);
     expect(provider.frostedGlassStrength, .3);
     expect(
@@ -553,6 +557,91 @@ void main() {
                 child: child!),
             home: screen,
           ));
+
+  for (final brightness in Brightness.values) {
+    for (final trial in [false, true]) {
+      testWidgets('主题染色底面按实际不透明度绘制 ${brightness.name} trial=$trial',
+          (tester) async {
+        await tester.runAsync(() async {
+          final theme =
+              await provider.installTheme(_pack(material: true, fill: 'tint'));
+          await provider.setThemeMode(
+              brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light);
+          if (trial) {
+            await provider
+                .startTrial(installed: theme, groups: {ThemeGroup.material});
+          } else {
+            await provider.applyInstalledTheme(theme, {ThemeGroup.material});
+          }
+        });
+        final boundary = GlobalKey();
+        var taps = 0;
+        await tester.pumpWidget(host(
+            Scaffold(
+                body: RepaintBoundary(
+              key: boundary,
+              child: ColoredBox(
+                  color: Colors.red,
+                  child: SizedBox(
+                    width: 260,
+                    height: 160,
+                    child: Center(
+                        child: AppCardSurface(
+                      width: 180,
+                      height: 90,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => taps++,
+                        child: const Align(
+                            alignment: Alignment.topLeft,
+                            child: SizedBox(
+                                width: 10,
+                                height: 10,
+                                child: ColoredBox(color: Colors.black))),
+                      ),
+                    )),
+                  )),
+            )),
+            brightness: brightness));
+        final palette =
+            provider.buildAppTheme(brightness).extension<AppPalette>()!;
+        final tint = Color.lerp(palette.card, palette.primaryContainer, .32)!;
+        for (final glass in [false, true]) {
+          await tester.runAsync(() => provider.setFrostedGlass(glass));
+          for (final opacity in [0.0, .42, 1.0]) {
+            await tester
+                .runAsync(() => provider.setComponentOpacityLevel(opacity));
+            await tester.pumpAndSettle();
+            final image = (await tester.runAsync(() => (boundary.currentContext!
+                    .findRenderObject()! as RenderRepaintBoundary)
+                .toImage()))!;
+            try {
+              final data = (await tester.runAsync(() => image.toByteData()))!;
+              final offset = (80 * image.width + 130) * 4;
+              final expected =
+                  Color.alphaBlend(tint.withValues(alpha: opacity), Colors.red);
+              for (final (channel, value) in [
+                (0, expected.r),
+                (1, expected.g),
+                (2, expected.b),
+              ]) {
+                expect(data.getUint8(offset + channel), closeTo(value * 255, 2),
+                    reason: 'glass=$glass opacity=$opacity');
+                expect(data.getUint8((40 * image.width + 45) * 4 + channel), 0,
+                    reason: '底色调整不能改变前景图像');
+              }
+            } finally {
+              image.dispose();
+            }
+            await tester.tap(find.byType(GestureDetector).last);
+          }
+        }
+        expect(taps, 6);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      });
+    }
+  }
 
   testWidgets('本机列表加载、失败、重试、空态', (tester) async {
     final failing = _LoadingStore(Directory(path.join(temp.path, 'other')));
@@ -745,16 +834,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(provider.hasThemeColors, isTrue);
     expect(provider.backgroundImage, isNull);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
     expect(find.text('打开导入'), findsOneWidget);
     expect((await tester.runAsync(provider.installedThemes))!.length, 1);
     final confirmation = tester.widget<SnackBar>(find.byType(SnackBar));
     expect(confirmation.persist, isFalse);
     expect(confirmation.duration, const Duration(seconds: 5));
-    await tester.tap(find.text('撤销'));
-    await tester
-        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 80)));
+    // 撤销包含平台小组件同步，在真实异步区启动并等待，避免遗留到下一用例。
+    await tester.runAsync(() async {
+      await tester.tap(find.text('撤销'));
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    });
     await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
     expect(provider.hasThemeColors, isFalse);
     expect(provider.backgroundImage, 'morenbeijing.jpeg');
     expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
@@ -877,8 +969,8 @@ void main() {
       const Color(0xffd84315),
     );
     expect(provider.usesThemeWallpapers, isTrue);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
-    expect(provider.bottomNavShaderEnabled, isTrue);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
+    expect(provider.bottomNavShaderEnabled, isFalse);
     expect(prefs.getString(ThemeProvider.appearanceKey), isNull);
     expect(prefs.getString(ThemeProvider.previousAppearanceKey), isNull);
 
@@ -913,7 +1005,7 @@ void main() {
     await provider.applyTrial();
     expect(provider.isInTrial, isFalse);
     expect(provider.hasThemeColors, isTrue);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
     expect(prefs.getString(ThemeProvider.appearanceKey), isNotNull);
     await provider.restorePreviousAppearance();
     expect(provider.hasThemeColors, isFalse);
@@ -937,7 +1029,7 @@ void main() {
       {ThemeGroup.wallpapers, ThemeGroup.navigation},
     );
     await provider.setThemeMode(ThemeMode.light);
-    await provider.setComponentOpacity(.86);
+    await provider.setComponentOpacity(.42);
     await provider.setScheduleColorPreference(text: true, value: ScheduleColorOption.purple);
     await provider.setScheduleColorPreference(text: false, value: ScheduleColorOption.green);
     expect(provider.currentAppearanceSummary, contains('混搭外观'));
@@ -975,7 +1067,7 @@ void main() {
           .preset,
       AppShapePreset.rounded,
     );
-    expect(cleanProvider.effectiveComponentOpacity, .86);
+    expect(cleanProvider.effectiveComponentOpacity, .42);
     final palette = cleanProvider.buildAppTheme(Brightness.light).extension<AppPalette>()!;
     expect(palette.courseCardText, ScheduleColorOption.purple.color);
     expect(palette.coursePalette, everyElement(ScheduleColorOption.green.color));
@@ -1371,7 +1463,7 @@ void main() {
       appVersion: '1.0.0',
     );
     final decoded = await ThemePackCodec.decode(exported, appVersion: '9.0.0');
-    expect(decoded.manifest.data['layout']['home']['preset'], 'compact');
+    expect(decoded.manifest.data['layout']['home']['preset'], 'immersive');
     expect(decoded.manifest.data['light']['cardStyle']['shadow'], 'soft');
     expect(
       (decoded.manifest.data['light']['decorations']['home']['stickers']
@@ -1510,42 +1602,14 @@ void main() {
       expect(tester.takeException(), isNull);
 
       // 沉浸模板在正式页面里只留锚点和叠在 hero 上的标题，hero 图由主壳背景层绘制。
-      if (preset == 'immersive') {
-        expect(find.byKey(const ValueKey('theme-hero-anchor-home')),
-            findsOneWidget);
-        expect(find.byKey(const ValueKey('home-themed-header-immersive')),
-            findsOneWidget);
-        expect(find.byKey(const ValueKey('home-themed-header-info')),
-            findsNothing);
-        expect(find.byKey(const ValueKey('theme-header-decoration-home')),
-            findsNothing);
-        await tester.ensureVisible(find.text('卡片按钮'));
-        await tester.tap(find.text('卡片按钮'));
-        await tester.pump();
-        continue;
-      }
-
-      // 正式页面装饰区必须包裹 IgnorePointer 与 ExcludeSemantics
-      final decoFinder = find.byKey(
-        const ValueKey('theme-header-decoration-home'),
-      );
-      expect(decoFinder, findsOneWidget);
-      expect(
-        find.ancestor(of: decoFinder, matching: find.byType(IgnorePointer)),
-        findsWidgets,
-      );
-      expect(
-        find.ancestor(of: decoFinder, matching: find.byType(ExcludeSemantics)),
-        findsWidgets,
-      );
-
-      // standard / compact 预设的装饰区在信息区下方
-      final infoRect = tester.getRect(
-        find.byKey(const ValueKey('home-themed-header-info')),
-      );
-      final decoRect = tester.getRect(decoFinder);
-      expect(infoRect.top, lessThan(decoRect.top));
-
+      expect(find.byKey(const ValueKey('theme-hero-anchor-home')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('home-themed-header-immersive')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('home-themed-header-info')),
+          findsNothing);
+      expect(find.byKey(const ValueKey('theme-header-decoration-home')),
+          findsNothing);
       // 卡片按钮可正常点击，不被装饰层劫持
       await tester.ensureVisible(find.text('卡片按钮'));
       await tester.tap(find.text('卡片按钮'));

@@ -233,7 +233,7 @@ void main() {
       }
 
       expect(activeBackdropFilters(), findsNWidgets(4));
-      await checkPixels(.925);
+      await checkPixels(.7);
       for (final y in [140.0, 230.0, 320.0]) {
         await tester.tapAt(Offset(160, y));
       }
@@ -241,7 +241,7 @@ void main() {
       await tester.pumpAndSettle();
       await theme.setComponentOpacityLevel(.4);
       await tester.pumpAndSettle();
-      await checkPixels(.85);
+      await checkPixels(.4);
       await theme.setCleanBackgroundMode();
       await tester.pumpAndSettle();
       await checkPixels(1);

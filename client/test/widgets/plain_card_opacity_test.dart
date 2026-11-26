@@ -49,7 +49,7 @@ void main() {
             ? AppColors.surfaceSecondaryDark
             : AppColors.surfaceSecondaryLight;
         final expected =
-            Color.alphaBlend(base.withValues(alpha: .9), Colors.red);
+            Color.alphaBlend(base.withValues(alpha: .6), Colors.red);
         Rect? before;
         for (final glass in [false, true, false]) {
           await theme.setFrostedGlass(glass);
@@ -144,7 +144,7 @@ void main() {
                               matching: find.byType(Material))
                           .first)
                       .color!;
-          expect(color.a, closeTo(.75 + .25 * level, .01));
+          expect(color.a, closeTo(level, .01));
           final blue = await tester.runAsync(() async {
             final image = await (capture.currentContext!.findRenderObject()!
                     as RenderRepaintBoundary)

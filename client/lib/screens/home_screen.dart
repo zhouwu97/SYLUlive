@@ -23,6 +23,7 @@ import '../services/app_resume_coordinator.dart';
 import '../services/root_page_state_service.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_theme_tokens.dart';
+import '../theme/app_theme_style.dart';
 import '../utils/app_navigator.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
@@ -1557,15 +1558,18 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         ),
               ),
-              child: FloatingActionButton(
-                // 窄宽屏切换底栏/侧栏与路由返回叠加时，固定 heroTag 会触发重复 Hero 断言。
-                heroTag: null,
-                onPressed: () => _showPublishTypeSheet(context),
-                backgroundColor: AppThemeTokens.of(context).primary,
-                elevation: 2,
-                shape: const CircleBorder(),
-                child: Icon(Icons.edit_rounded,
-                    color: AppThemeTokens.of(context).onPrimary, size: 22),
+              child: ThemeOrnamented(
+                slot: 'fab',
+                child: FloatingActionButton(
+                  // 窄宽屏切换底栏/侧栏与路由返回叠加时，固定 heroTag 会触发重复 Hero 断言。
+                  heroTag: null,
+                  onPressed: () => _showPublishTypeSheet(context),
+                  backgroundColor: AppThemeTokens.of(context).primary,
+                  elevation: 2,
+                  shape: const CircleBorder(),
+                  child: Icon(Icons.edit_rounded,
+                      color: AppThemeTokens.of(context).onPrimary, size: 22),
+                ),
               ),
             )
           : null,

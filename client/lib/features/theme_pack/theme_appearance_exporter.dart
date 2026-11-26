@@ -28,6 +28,26 @@ class RawWallpaperInput {
 
 /// 将当前生效的混搭外观（含多主题分组混搭与手动壁纸/材质/导航设置）打包为标准 .sltheme。
 abstract final class ThemeAppearanceExporter {
+  static Map<String, dynamic> headerLayout(
+    Map? layout, Map<String, dynamic> light, Map<String, dynamic> dark,
+  ) {
+    final result = Map<String, dynamic>.from(layout ?? const {});
+    for (final slot in const ['home', 'campus', 'me']) {
+      final lightArt = hasHeaderDecoration((light['decorations'] as Map?)?[slot] as Map?);
+      final darkArt = hasHeaderDecoration((dark['decorations'] as Map?)?[slot] as Map?);
+      if (!lightArt && !darkArt) continue;
+      final header = result[slot] as Map?;
+      // 单侧有装饰时，另一模式仍可使用作者选择的紧凑排版。
+      if (header?['preset'] == 'compact' && lightArt != darkArt) continue;
+      result[slot] = <String, dynamic>{
+        if (header != null) ...Map<String, dynamic>.from(header),
+        'preset': 'immersive',
+        'imageHeight': header?['imageHeight'] ?? 150,
+      };
+    }
+    return result;
+  }
+
   static String sanitizeFileName(String raw, {String fallback = 'theme'}) {
     final cleaned = raw
         .replaceAll(RegExp(r'[\\/:*?"<>|\r\n\t]'), '_')
@@ -40,7 +60,6 @@ abstract final class ThemeAppearanceExporter {
     required String name,
     required String author,
     required String appVersion,
-    required String bottomNavStyle,
     required bool shouldExportManualMaterial,
     required double manualComponentOpacity,
     required bool manualFrostedGlass,
@@ -173,7 +192,7 @@ abstract final class ThemeAppearanceExporter {
         if (modeMat != null) {
           componentOpacity = (modeMat['componentOpacity'] as num? ?? 1.0)
               .toDouble()
-              .clamp(0.75, 1.0);
+              .clamp(0.0, 1.0);
           final frost = modeMat['frostedGlass'] as Map?;
           if (frost != null) {
             frostedGlass = {
@@ -187,7 +206,7 @@ abstract final class ThemeAppearanceExporter {
           }
         }
       } else if (shouldExportManualMaterial) {
-        componentOpacity = manualComponentOpacity.clamp(0.75, 1.0);
+        componentOpacity = manualComponentOpacity.clamp(0.0, 1.0);
         frostedGlass = {
           'enabled': manualFrostedGlass,
           'strength':
@@ -327,7 +346,6 @@ abstract final class ThemeAppearanceExporter {
     }
     if (navigationGroup != null || hasNavIcons) {
       exportedBottomNav = {
-        'style': (navigationGroup?['style'] as String?) ?? bottomNavStyle,
         'iconTint': (navigationGroup?['iconTint'] as String?) ?? 'template',
         'icons': exportedIcons,
       };
@@ -368,11 +386,9 @@ abstract final class ThemeAppearanceExporter {
       };
     }
 
-    Map<String, dynamic>? exportedLayout;
-    if (layoutGroup != null && layoutGroup['value'] is Map) {
-      final rawLayout = Map<String, dynamic>.from(layoutGroup['value'] as Map);
-      if (rawLayout.isNotEmpty) exportedLayout = rawLayout;
-    }
+    final exportedLayout = headerLayout(
+      layoutGroup?['value'] as Map?, lightVariant, darkVariant,
+    );
 
     for (final entry in filesToRead.entries) {
       contents[entry.value] = await File(entry.key).readAsBytes();
@@ -397,7 +413,7 @@ abstract final class ThemeAppearanceExporter {
       if (exportedBottomNav != null) 'bottomNav': exportedBottomNav,
       if (exportedFont != null) 'font': exportedFont,
       if (exportedLauncher != null) 'launcherIcon': exportedLauncher,
-      if (exportedLayout != null) 'layout': exportedLayout,
+      if (exportedLayout.isNotEmpty) 'layout': exportedLayout,
     };
 
     final manifest =

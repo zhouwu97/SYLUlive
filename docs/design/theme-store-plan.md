@@ -61,7 +61,7 @@
 
 | 内容 | 位置 |
 | --- | --- |
-| 外观偏好 | `client/lib/providers/theme_provider.dart`。偏好 key 是类内的 `_xxxKey` 常量；`minComponentOpacity` 为 0.75 |
+| 外观偏好 | `client/lib/providers/theme_provider.dart`。偏好 key 是类内的 `_xxxKey` 常量；卡片不透明度范围以[格式契约](theme-pack-contract.md)为准 |
 | 颜色常量 | `client/lib/theme/app_colors.dart`，全部为 `static const` |
 | ThemeData | `client/lib/theme/app_theme.dart`：`ColorScheme.fromSeed(seedColor: AppColors.brandPrimary)`，暗色 `primaryColor` 固定为 `#7ED6C5` |
 | Token 访问器 | `client/lib/theme/app_theme_tokens.dart` |

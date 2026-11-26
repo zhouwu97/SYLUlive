@@ -136,7 +136,7 @@ Future<Uint8List> _buildValidPackBytes({
 
     if (immersiveAndDecorated) {
       assetDir = await Directory.systemTemp.createTemp('sltheme-p4-assets-');
-      final wallImg = img.Image(width: 320, height: 480);
+      final wallImg = img.Image(width: 1200, height: 480);
       img.fill(wallImg, color: img.ColorRgb8(230, 242, 255));
       final wallPath = p.join(assetDir.path, 'wall.png');
       await File(wallPath).writeAsBytes(img.encodePng(wallImg));

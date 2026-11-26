@@ -253,14 +253,13 @@ class ThemeAppearance {
         case ThemeGroup.navigation:
           final navigation = resolve(manifest.data['bottomNav'] ?? const {})
               as Map<String, dynamic>;
-          final style = navigation['style'] as String? ?? 'liquid_glass';
+          final current = this.group(ThemeGroup.navigation);
           next['navigation'] = {
             'source': source,
-            'iconTint': 'template',
-            'icons': <String, dynamic>{},
-            ...navigation,
-            'style': style,
-            'motion': defaultNavigationMotion(style),
+            'iconTint': navigation['iconTint'] ?? 'template',
+            'icons': navigation['icons'] ?? <String, dynamic>{},
+            if (current?['style'] != null) 'style': current!['style'],
+            if (current?['motion'] != null) 'motion': current!['motion'],
           };
         case ThemeGroup.font:
           final fontData = manifest.data['font'];

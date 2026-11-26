@@ -209,6 +209,12 @@ void main() {
       'imageHeight': 168.0,
       'imageWidth': 0.9,
     };
+    final header = File(path.join(temp.path, 'header.png'));
+    await header.writeAsBytes(img.encodePng(img.Image(width: 320, height: 120)));
+    for (final slot in ['campus', 'me']) {
+      state.light.decorations[slot] = {'background': {'image': header.path}};
+    }
+    state.layout['me'] = {'preset': 'compact'};
     state.light.cardStyle = {'borderWidth': 1.5, 'shadow': 'soft'};
 
     // 草稿保存并重新读取，全部内容一致
@@ -231,7 +237,10 @@ void main() {
       appVersion: '9.0.0',
     );
     expect(decoded.manifest.name, '海盐蓝工坊测试');
-    expect(decoded.manifest.data['bottomNav']['style'], 'liquid_glass');
+    expect(decoded.manifest.data['layout']['campus']['preset'], 'immersive');
+    expect(decoded.manifest.data['layout']['campus']['imageHeight'], 150);
+    expect(decoded.manifest.data['layout']['me']['preset'], 'compact');
+    expect(decoded.manifest.data['bottomNav'], isNot(contains('style')));
     final lightPreview =
         img.decodeImage(decoded.contents[decoded.manifest.data['preview']['light']]!)!;
     expect(lightPreview.width, 1080);

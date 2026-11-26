@@ -621,8 +621,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final session = ReplyNotificationSession.capture(authProvider);
     final syncVersion = ReplyNotificationState.instance.version;
     try {
-      final page =
-          await ReplyNotificationService(authProvider.dio).fetchUnread();
+      final page = await ReplyNotificationService(authProvider.dio,
+              recipientUserId: session.accountId,
+              isCurrentSession: () => session.isCurrent(authProvider))
+          .fetchUnread();
       if (!mounted ||
           requestSerial != _unreadReplyLoadSerial ||
           !session.isCurrent(authProvider) ||
@@ -747,29 +749,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         throw StateError('帖子响应格式错误');
       }
       final post = Post.fromJson(response.data as Map<String, dynamic>);
-      try {
-        await ReplyNotificationService(authProvider.dio,
-                recipientUserId: accountId,
-                isCurrentSession: () => session.owns(
-                    userId: authProvider.user?.id,
-                    sessionEpoch: authProvider.accountSessionEpoch))
-            .markRead(item.id, replyId: item.relatedId, session: session);
-        if ((mounted && notificationSession.isCurrent(authProvider))) {
-          ReplyNotificationState.instance.markRead(
-            accountId: accountId,
-            sessionGeneration: authProvider.sessionGeneration,
-            notificationId: item.id,
-          );
-        }
-      } catch (error) {
-        debugPrint('消费回复通知失败: $error');
-        if ((mounted && notificationSession.isCurrent(authProvider))) {
-          AppFeedback.showSnackBar(context, '标记已读失败，请重试', isError: true);
-        }
-      }
-      if (!(mounted && notificationSession.isCurrent(authProvider))) {
-        return;
-      }
+      if (!mounted) return;
       await Navigator.of(context).push(
         buildPostDetailRoute(post, targetReplyId: item.relatedId),
       );

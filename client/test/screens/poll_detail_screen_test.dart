@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
@@ -100,6 +101,12 @@ Widget _buildScreen(Dio dio,
 }
 
 void main() {
+  setUp(() {
+    final previous = VisibilityDetectorController.instance.updateInterval;
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
+    addTearDown(
+        () => VisibilityDetectorController.instance.updateInterval = previous);
+  });
   testWidgets('投票回复深链定位后兼容旧服务消费单条通知并同步原生', (tester) async {
     final nativeCalls = <MethodCall>[];
     final writes = <Object?>[];
@@ -146,6 +153,11 @@ void main() {
         notificationAuth: _NotificationAuth(dio)));
     await tester.pumpAndSettle();
     expect(find.text('这是统一后的评论'), findsOneWidget);
+    await tester.ensureVisible(find.text('这是统一后的评论'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 550));
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump(const Duration(milliseconds: 60));
     expect(writes, [
       {'post_id': 1, 'reply_id': 21},
       {

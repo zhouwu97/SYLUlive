@@ -6,6 +6,34 @@ import 'package:shenliyuan/services/publish_session_scope.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('批量已读后原生暂时失败，只在同账号刷新时补送回执', () async {
+    const channel = MethodChannel('shenliyuan/notification_open');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      if (calls.length == 1) throw PlatformException(code: 'temporary');
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    var writes = 0;
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
+        if (o.method == 'POST') writes++;
+        h.resolve(
+            Response(requestOptions: o, statusCode: 200, data: {'items': []}));
+      }));
+    final account = ReplyNotificationService(dio, recipientUserId: 7);
+    await account.markSelected([11, 12], replyIds: [31, 32]);
+    await ReplyNotificationService(dio, recipientUserId: 8).fetchPostUnread(10);
+    expect(calls, hasLength(1));
+    await account.fetchPostUnread(10);
+    expect(calls, hasLength(2));
+    expect(calls.last.arguments, calls.first.arguments);
+    expect(writes, 1);
+  });
+
   test('旧服务无回执时，只同步当前账号已成功读取的单条通知', () async {
     final calls = <MethodCall>[];
     const channel = MethodChannel('shenliyuan/notification_open');

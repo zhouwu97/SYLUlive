@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../controllers/post_reply_composer_controller.dart';
 import '../../models/reply.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/post_reply_reads.dart';
 import '../../theme/app_spacing.dart';
 import '../../utils/app_feedback.dart';
 import 'post_reply_thread_frame.dart';
@@ -110,6 +113,9 @@ class _PostReplyThreadSheetState extends State<PostReplyThreadSheet> {
               reply.postId == widget.parentReply.postId &&
               reply.parentReplyId == widget.parentReply.id)
           .toList();
+      if (fetched.isNotEmpty) {
+        unawaited(context.read<PostReplyReads?>()?.refresh());
+      }
       setState(() {
         // 首次请求从头开始，以真实分页结果替换最多两条的预览。
         final byId = <int, Reply>{

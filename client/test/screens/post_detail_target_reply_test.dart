@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'package:shenliyuan/screens/post_detail_screen.dart';
@@ -211,6 +212,17 @@ class FakeDio extends Fake implements Dio {
     void Function(int, int)? onReceiveProgress,
   }) async {
     requestedPaths.add(path);
+    if (path == '/posts/100/notifications/unread') {
+      return Response<T>(
+          requestOptions: RequestOptions(path: path),
+          statusCode: 200,
+          data: {
+            'items': [
+              for (final id in [1, 2, 3, 1000])
+                {'id': 5000 + id, 'post_id': 100, 'related_id': id}
+            ],
+          } as T);
+    }
     if (path.startsWith('/posts/104/replies') ||
         path.startsWith('/posts/105/replies')) {
       return Response<T>(
@@ -687,6 +699,12 @@ Widget _postDetailTestApp(
 }
 
 void main() {
+  setUp(() {
+    final previous = VisibilityDetectorController.instance.updateInterval;
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
+    addTearDown(
+        () => VisibilityDetectorController.instance.updateInterval = previous);
+  });
   setUpAll(() {
     HttpOverrides.global = _MockHttpOverrides();
   });
@@ -742,6 +760,34 @@ void main() {
       expect(surface, findsNothing);
     });
   }
+
+  testWidgets('从信息流进帖只合并消费可见正文；遮挡、短暂停留、折叠和屏外回复保留未读', (tester) async {
+    FakeDio.readTargets.clear();
+    final app = _postDetailTestApp(Post.fromJson(
+        _postJsonWithImages(id: 100, title: '阅读测试', imageUrls: [])));
+    await tester.pumpWidget(app);
+    await tester.pumpAndSettle();
+    final preview =
+        find.textContaining('Second level reply', findRichText: true);
+    await Scrollable.ensureVisible(tester.element(preview), alignment: 0.65);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(FakeDio.readTargets, isEmpty);
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    unawaited(showModalBottomSheet<void>(
+        context: tester.element(preview), builder: (_) => const Text('遮挡评论')));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
+    expect(FakeDio.readTargets, isEmpty);
+    navigator.pop();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump(const Duration(milliseconds: 60));
+    final batch = FakeDio.readTargets.cast<Map>().single;
+    expect(batch['ids'], unorderedEquals([5001, 5002]));
+    await tester.pump(const Duration(seconds: 1));
+    expect(FakeDio.readTargets, hasLength(1));
+  });
 
   testWidgets('PostDetailScreen 滚动到目标子回复并高亮测试', (WidgetTester tester) async {
     FakeDio.readTargets.clear();
@@ -800,7 +846,15 @@ void main() {
       findRichText: true,
     );
     expect(textFinder.hitTestable(), findsOneWidget);
-    expect(FakeDio.readTargets, contains(equals({'post_id': 100, 'reply_id': 3})));
+    await tester.pump(const Duration(milliseconds: 550));
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump(const Duration(milliseconds: 60));
+    final readIds = FakeDio.readTargets
+        .cast<Map>()
+        .expand((body) => body['ids'] as List)
+        .toList();
+    expect(readIds, contains(5003));
+    expect(readIds, isNot(contains(5002)));
 
     // 断言滚动条确实发生了向下的滚动
     expect(scrollable.position.pixels, greaterThan(initialOffset));
@@ -891,7 +945,7 @@ void main() {
     expect(find.text('帖子正文已复制'), findsOneWidget);
   });
 
-  testWidgets('详情页不再请求或显示未读回复提醒', (WidgetTester tester) async {
+  testWidgets('无回复的普通详情不请求未读列表、不展示提醒入口', (WidgetTester tester) async {
     FakeDio.requestedPaths.clear();
     final post = Post(
       id: 102,

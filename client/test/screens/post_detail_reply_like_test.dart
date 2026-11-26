@@ -150,6 +150,9 @@ class LikeTestAuthProvider extends Fake
   bool get isLoggedIn => true;
 
   @override
+  int get accountSessionEpoch => 0;
+
+  @override
   String? get token => 'test-token';
 
   @override

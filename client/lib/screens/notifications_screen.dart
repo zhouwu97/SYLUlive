@@ -589,48 +589,60 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         final session = ReplyNotificationSession.capture(auth);
         if (!session.isCurrent(auth)) return;
         if (id != null && !_openingNotificationIds.add(id)) return;
+        final opensReply = type == 'reply' &&
+            postId != null &&
+            relatedId != null &&
+            relatedId > 0;
+        Future<void> readNotification(int notificationId) async {
+          final accountId = session.accountId;
+          if (accountId == null) return;
+          try {
+            await ReplyNotificationService(auth.dio,
+                recipientUserId: accountId,
+                isCurrentSession: () => displayedSession.owns(
+                    userId: auth.user?.id,
+                    sessionEpoch: auth.accountSessionEpoch)).markRead(
+              notificationId,
+              replyId: type == 'reply' ? relatedId : null,
+              session: displayedSession,
+            );
+            if (!_isCurrentSession(auth, session)) {
+              return;
+            }
+            if (mounted) {
+              setState(() {
+                notification['is_read'] = true;
+              });
+            }
+            if (type == 'reply') {
+              ReplyNotificationState.instance.markRead(
+                accountId: accountId,
+                sessionGeneration: auth.sessionGeneration,
+                notificationId: notificationId,
+              );
+            }
+          } catch (error) {
+            if (!mounted ||
+                !displayedSession.owns(
+                    userId: auth.user?.id,
+                    sessionEpoch: auth.accountSessionEpoch)) {
+              return;
+            }
+            AppFeedback.showSnackBar(
+              context,
+              '标记已读失败，请重试',
+              isError: true,
+            );
+          }
+        }
+
         try {
-          // 已读历史也要校准其他入口，不能因本页红点已消失而跳过系统清理。
-          if ((type == 'reply' || !isRead) &&
+          if (!opensReply &&
+              (type == 'reply' || !isRead) &&
               id != null &&
               type != 'feedback_update' &&
               type != 'feedback_admin_update') {
-            final accountId = session.accountId;
-            if (accountId == null) return;
-            try {
-              await ReplyNotificationService(auth.dio, recipientUserId: accountId, isCurrentSession: () => displayedSession.owns(userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)).markRead(
-                id,
-                replyId: type == 'reply' ? relatedId : null,
-                session: displayedSession,
-              );
-              if (!_isCurrentSession(auth, session)) {
-                return;
-              }
-              if (mounted) {
-                setState(() {
-                  notification['is_read'] = true;
-                });
-              }
-              if (type == 'reply') {
-                ReplyNotificationState.instance.markRead(
-                  accountId: accountId,
-                  sessionGeneration: auth.sessionGeneration,
-                  notificationId: id,
-                );
-              }
-            } catch (error) {
-              if (!mounted ||
-                  !displayedSession.owns(
-                      userId: auth.user?.id,
-                      sessionEpoch: auth.accountSessionEpoch)) {
-                return;
-              }
-              AppFeedback.showSnackBar(
-                context,
-                '标记已读失败，请重试',
-                isError: true,
-              );
-            }
+            await readNotification(id);
           }
 
           if (!_isCurrentSession(auth, session)) return;
@@ -685,8 +697,17 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   context,
                   buildPostDetailRoute(post,
                       targetReplyId: type == 'reply' ? relatedId : null));
+              if (opensReply && mounted && _isCurrentSession(auth, session)) {
+                await _loadReplies();
+              }
             } on DioException catch (error) {
-              if (!mounted) return;
+              if (!mounted || !_isCurrentSession(auth, session)) return;
+              if (opensReply &&
+                  id != null &&
+                  error.response?.statusCode == 404) {
+                await readNotification(id);
+              }
+              if (!mounted || !_isCurrentSession(auth, session)) return;
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                   content: Text(
                       AppFeedback.dioErrorMessage(error, fallback: '打开帖子失败'))));

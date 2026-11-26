@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -17,9 +19,8 @@ import '../../theme/app_spacing.dart';
 import '../../widgets/global_background_wrapper.dart';
 import '../../services/poll_service.dart';
 import '../../services/post_reply_service.dart';
-import '../../services/reply_notification_service.dart';
+import '../../services/post_reply_reads.dart';
 import '../../services/reply_notification_session.dart';
-import '../../services/reply_notification_state.dart';
 import '../../services/idempotency_key.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/app_action_popup_menu.dart';
@@ -75,8 +76,9 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
   late final PollService _service;
   late final PostReplyService _replyService;
   final _replyAnchorKeys = <int, GlobalKey>{};
-  bool _notificationConsumed = false;
-  bool _notificationReadInFlight = false;
+  PostReplyReads? _postReads;
+  bool _targetLocated = false;
+  bool _locatingTarget = false;
   late final ReplyNotificationSession _notificationSession;
 
   @override
@@ -100,6 +102,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
 
   @override
   void dispose() {
+    _postReads?.dispose();
     _replyComposerController.dispose();
     super.dispose();
   }
@@ -167,6 +170,8 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
 
   Future<void> _loadReplies(int postId, {bool loadMore = false}) async {
     if (loadMore && (_loadingMoreReplies || !_repliesHasMore)) return;
+    final auth = context.read<AuthProvider>();
+    final readSession = ReplyNotificationSession.capture(auth);
     final requestVersion = ++_replyRequestVersion;
     final cursor = _repliesNextCursor;
     if (mounted) {
@@ -219,6 +224,15 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
         _repliesRefreshError = null;
         _repliesLoadMoreError = null;
       });
+      if (readSession.isCurrent(auth) &&
+          (_replies.isNotEmpty || widget.targetReplyId != null)) {
+        if (_postReads?.session.isCurrent(auth) != true) {
+          _postReads?.dispose();
+          _postReads = PostReplyReads(auth, postId,
+              targetReplyId: _notificationSession.isCurrent(auth) ? widget.targetReplyId : null);
+        }
+        unawaited(_postReads!.refresh());
+      }
       await _prepareNotificationReply(postId);
     } on DioException catch (error) {
       if (mounted && requestVersion == _replyRequestVersion) {
@@ -280,12 +294,12 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
     if (targetId == null ||
         targetId <= 0 ||
         accountId == null ||
-        _notificationConsumed ||
-        _notificationReadInFlight ||
+        _targetLocated ||
+        _locatingTarget ||
         !current()) {
       return;
     }
-    _notificationReadInFlight = true;
+    _locatingTarget = true;
     try {
       var target = _replies.where((r) => r.id == targetId).firstOrNull;
       Reply? root;
@@ -328,17 +342,11 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
           Scrollable.ensureVisible(anchor, alignment: .1);
         }
       });
-      await ReplyNotificationService(auth.dio,
-              recipientUserId: accountId, isCurrentSession: current)
-          .markReplyRead(postId: postId, replyId: targetId);
-      if (!current()) return;
-      _notificationConsumed = true;
-      ReplyNotificationState.instance.requestRefresh(
-          accountId: accountId, sessionGeneration: auth.sessionGeneration);
+      _targetLocated = true;
     } catch (_) {
       // 目标删除、网络失败或旧响应不消费其他通知；刷新详情后允许重试。
     } finally {
-      _notificationReadInFlight = false;
+      _locatingTarget = false;
     }
   }
 
@@ -434,25 +442,30 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: .08),
-      builder: (sheetContext) => PostReplyThreadSheet(
-        parentReply: parentReply,
-        initialTarget: targetReply,
-        initialReplies: _replies
-            .where((reply) => reply.parentReplyId == parentReply.id)
-            .toList(),
-        onSubmit: _createReply,
-        onNeedLogin: _openLogin,
-        onAuthorTap: widget.onAuthorTap ??
-            (id) => Navigator.push(
-                  sheetContext,
-                  MaterialPageRoute(builder: (_) => UserHomeScreen(userId: id)),
-                ),
-        onMore: (reply) => showReportSheet(
-          sheetContext,
-          targetId: reply.id,
-          targetType: 'reply',
-        ),
-      ),
+      builder: (sheetContext) {
+        final sheet = PostReplyThreadSheet(
+          parentReply: parentReply,
+          initialTarget: targetReply,
+          initialReplies: _replies
+              .where((reply) => reply.parentReplyId == parentReply.id)
+              .toList(),
+          onSubmit: _createReply,
+          onNeedLogin: _openLogin,
+          onAuthorTap: widget.onAuthorTap ??
+              (id) => Navigator.push(
+                    sheetContext,
+                    MaterialPageRoute(
+                        builder: (_) => UserHomeScreen(userId: id)),
+                  ),
+          onMore: (reply) => showReportSheet(
+            sheetContext,
+            targetId: reply.id,
+            targetType: 'reply',
+          ),
+        );
+        return ChangeNotifierProvider<PostReplyReads?>.value(
+            value: _postReads, child: sheet);
+      },
     );
   }
 
@@ -680,7 +693,8 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final page = _buildPage(context);
+    final page = ChangeNotifierProvider<PostReplyReads?>.value(
+        value: _postReads, child: _buildPage(context));
     return context.watch<ThemeProvider?>() == null
         ? page
         : GlobalBackgroundWrapper(child: page);

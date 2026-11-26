@@ -12,6 +12,7 @@ import '../cached_avatar.dart';
 import '../emoji/sticker_catalog.dart';
 import '../post_content_link_text.dart';
 import 'reply_image_media.dart';
+import 'visible_reply_body.dart';
 
 class PostReplyList extends StatelessWidget {
   const PostReplyList({
@@ -187,12 +188,14 @@ class PostReplyItem extends StatelessWidget {
                 ),
                 AiBotIdentity(user: reply.author),
                 const SizedBox(height: 4),
-                _ReplyContent(
-                  reply: reply,
-                  onStickerLongPress: onStickerLongPress,
-                  onImageLongPress: onImageLongPress,
-                  onTextTap: onReply,
-                ),
+                VisibleReplyBody(
+                    reply: reply,
+                    child: _ReplyContent(
+                      reply: reply,
+                      onStickerLongPress: onStickerLongPress,
+                      onImageLongPress: onImageLongPress,
+                      onTextTap: onReply,
+                    )),
                 const SizedBox(height: 6),
                 Row(
                   children: [
@@ -507,32 +510,35 @@ class _ChildReplySummary extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     AiBotIdentity(user: reply.author),
-                    Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: '${reply.author?.nickname ?? '匿名'}：',
-                            style: TextStyle(
-                              color: isDark
-                                  ? Colors.white54
-                                  : const Color(0xFF6B7280),
+                    VisibleReplyBody(
+                      reply: reply,
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '${reply.author?.nickname ?? '匿名'}：',
+                              style: TextStyle(
+                                color: isDark
+                                    ? Colors.white54
+                                    : const Color(0xFF6B7280),
+                              ),
                             ),
-                          ),
-                          TextSpan(
-                            text:
-                                '${reply.displayContent}${reply.hasSticker ? ' [表情]' : ''}',
-                          ),
-                          if (reply.images.any(ReplyImageMedia.hasAnyImageUrl))
-                            const TextSpan(text: ' [图片]'),
-                        ],
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        height: 1.35,
-                        color:
-                            isDark ? Colors.white60 : const Color(0xFF4B5563),
+                            TextSpan(
+                              text:
+                                  '${reply.displayContent}${reply.hasSticker ? ' [表情]' : ''}',
+                            ),
+                            if (reply.images.any(ReplyImageMedia.hasAnyImageUrl))
+                              const TextSpan(text: ' [图片]'),
+                          ],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          height: 1.35,
+                          color:
+                              isDark ? Colors.white60 : const Color(0xFF4B5563),
+                        ),
                       ),
                     ),
                   ],

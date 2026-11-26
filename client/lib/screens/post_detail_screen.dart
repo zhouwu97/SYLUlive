@@ -36,9 +36,9 @@ import '../services/emoji_favorite_service.dart';
 import '../services/async_action_guard.dart';
 import '../services/idempotency_key.dart';
 import '../services/post_reply_cache.dart';
-import '../services/reply_notification_service.dart';
+import '../services/post_reply_reads.dart';
+import '../widgets/post_reply/visible_reply_body.dart';
 import '../services/reply_notification_session.dart';
-import '../services/reply_notification_state.dart';
 import '../utils/app_feedback.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/post_clipboard.dart';
@@ -207,6 +207,7 @@ class _PinPostDialogState extends State<_PinPostDialog> {
 class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   PageRoute<dynamic>? _subscribedRoute;
   late Dio _dio;
+  PostReplyReads? _postReads;
   Post? _post;
   List<Reply> _replies = [];
   bool _isLoading = true;
@@ -280,7 +281,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       _replyComposerController,
       _replyComposerController.focusNode,
     ]);
-    _dio = context.read<AuthProvider>().dio;
+    final auth = context.read<AuthProvider>();
+    _dio = auth.dio;
+    if (auth.isLoggedIn && auth.user != null) {
+      _postReads = PostReplyReads(auth, widget.postId,
+          targetReplyId: widget.targetReplyId);
+    }
     if (widget.initialPost != null) {
       _post = widget.initialPost;
       _isLoading = false;
@@ -341,6 +347,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       appRouteObserver.unsubscribe(this);
     }
     _replyComposerController.dispose();
+    _postReads?.dispose();
     _marketScrollController.dispose();
     _highlightTimer?.cancel();
     super.dispose();
@@ -509,7 +516,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     // 快速路径：目标已在已加载分页中 → 原有滚动/高亮逻辑。
     final loadedTarget = _replies.where((r) => r.id == targetId).firstOrNull;
     if (loadedTarget != null) {
-      unawaited(_consumeTargetReplyNotification(targetId));
       setState(() {}); // 触发重新渲染，确保子组件挂载
       _scheduleScrollToTarget(targetId, 3);
       return;
@@ -546,41 +552,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       return;
     }
     // 目标是根评论本身时打开线程 sheet；子回复目标则锚定到该条并高亮。
-    unawaited(_consumeTargetReplyNotification(targetId));
     final anchored = target.parentReplyId != null;
     await _showReplyThreadSheet(
       parentReply: root,
       anchorReply: anchored ? target : null,
     );
-  }
-
-  final Set<String> _consumedReplyNotificationTargets = {};
-
-  Future<void> _consumeTargetReplyNotification(int replyId) async {
-    final auth = context.read<AuthProvider>();
-    final session = ReplyNotificationSession.capture(auth);
-    final accountId = session.accountId;
-    if (accountId == null) return;
-    final key = '$accountId:${session.accountEpoch}:$replyId';
-    if (!_consumedReplyNotificationTargets.add(key)) return;
-    try {
-      await ReplyNotificationService(auth.dio,
-          recipientUserId: accountId,
-          isCurrentSession: () => session.isCurrent(auth)).markReplyRead(
-        postId: widget.postId,
-        replyId: replyId,
-      );
-      if (!session.isCurrent(auth)) {
-        return;
-      }
-      ReplyNotificationState.instance.requestRefresh(
-        accountId: accountId,
-        sessionGeneration: auth.sessionGeneration,
-      );
-    } catch (_) {
-      // 读取失败保留未读，下次定位允许重试；旧服务端仍可打开原帖。
-      _consumedReplyNotificationTargets.remove(key);
-    }
   }
 
   void _scheduleScrollToTarget(int targetId, int retries) {
@@ -2191,9 +2167,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         ),
       ),
     );
-    return backgroundSettings == null || transparentMode
-        ? page
-        : GlobalBackgroundWrapper(child: page);
+    return ChangeNotifierProvider<PostReplyReads?>.value(
+      value: _postReads,
+      child: backgroundSettings == null || transparentMode
+          ? page
+          : GlobalBackgroundWrapper(child: page),
+    );
   }
 
   /// Scaffold 不随 IME resize 时，由详情页自己为 Composer 预留键盘 viewport。
@@ -4283,26 +4262,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: '${r.author?.nickname ?? '匿名'}：',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w400,
-                          color:
-                              isDark ? Colors.white54 : const Color(0xFF6B7280),
+                VisibleReplyBody(
+                  reply: r,
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: '${r.author?.nickname ?? '匿名'}：',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w400,
+                            color:
+                                isDark ? Colors.white54 : const Color(0xFF6B7280),
+                          ),
                         ),
-                      ),
-                      _buildCompactContentSpan(r, isDark),
-                      if (r.images.any(ReplyImageMedia.hasAnyImageUrl))
-                        const TextSpan(text: ' [图片]'),
-                    ],
+                        _buildCompactContentSpan(r, isDark),
+                        if (r.images.any(ReplyImageMedia.hasAnyImageUrl))
+                          const TextSpan(text: ' [图片]'),
+                      ],
+                    ),
+                    style: const TextStyle(height: 1.35),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  style: const TextStyle(height: 1.35),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -4418,6 +4400,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               .toList();
           final known = sheetChildren.map((r) => r.id).toSet();
           sheetChildren.addAll(fetched.where((r) => !known.contains(r.id)));
+          if (fetched.isNotEmpty) unawaited(_postReads?.refresh());
           final next = data['next_cursor'] as String?;
           sheetChildrenCursor = (next != null && next.isNotEmpty) ? next : null;
           if (sheetChildren.length >= childrenTotal) {
@@ -4446,7 +4429,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       barrierColor: Colors.black.withValues(alpha: 0.08),
       builder: (sheetContext) {
         threadRoute = ModalRoute.of<void>(sheetContext);
-        return StatefulBuilder(
+        final sheet = StatefulBuilder(
           builder: (sheetContentContext, setSheetState) {
             sheetUpdater = () {
               if (sheetContentContext.mounted) setSheetState(() {});
@@ -4551,6 +4534,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
             );
           },
         );
+        return ChangeNotifierProvider<PostReplyReads?>.value(
+            value: _postReads, child: sheet);
       },
     );
 
@@ -4653,7 +4638,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                 ),
                 const SizedBox(height: 4),
                 AiBotIdentity(user: r.author),
-                _buildReplyContent(r, isDark, onTextTap: onReply),
+                VisibleReplyBody(
+                    reply: r,
+                    child: _buildReplyContent(r, isDark, onTextTap: onReply)),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -4870,7 +4857,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    _buildChildContent(child, isDark, onTextTap: onReply),
+                    VisibleReplyBody(
+                        reply: child,
+                        child: _buildChildContent(child, isDark,
+                            onTextTap: onReply)),
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -5468,6 +5458,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         return;
       }
       _applyReplyPage(data, loadMore: loadMore);
+      if (_post?.isPoll != true &&
+          (_replies.isNotEmpty || _activeTargetReplyId != null)) {
+        final auth = context.read<AuthProvider>();
+        if (auth.isLoggedIn && auth.user != null) {
+          if (_postReads?.session.isCurrent(auth) != true) {
+            _postReads?.dispose();
+            _postReads = PostReplyReads(auth, widget.postId);
+          }
+          unawaited(_postReads!.refresh());
+        }
+      }
     } on DioException catch (e) {
       if (!mounted ||
           scope != _replyScope ||

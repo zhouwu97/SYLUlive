@@ -50,7 +50,7 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen>
-    with RouteAware {
+    with RouteAware, WidgetsBindingObserver {
   PageRoute<dynamic>? _subscribedRoute;
   List<Map<String, dynamic>> _notifications = [];
   final Set<int> _openingNotificationIds = <int>{};
@@ -60,6 +60,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   bool _isLoadingMore = false;
   bool _isMarkingAllRead = false;
   bool _hasMore = false;
+  bool _hasServerUnread = false;
+  int? _checkingUnreadFor;
+  Timer? _unreadTimer;
   String? _nextCursor;
   String? _errorMessage;
   String? _loadMoreError;
@@ -67,6 +70,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   late final AuthProvider _auth;
   int? _notificationAccountId;
   int? _notificationAccountEpoch;
+
+  bool get _hasLoadedUnread => _notifications.any((n) => n['is_read'] != true);
+  bool get _showReadAction =>
+      _isMarkingAllRead || _hasServerUnread || _hasLoadedUnread;
 
   @override
   void didChangeDependencies() {
@@ -100,6 +107,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _unreadTimer?.cancel();
+    ReplyNotificationState.instance.removeListener(_onNotificationChange);
     _auth.removeListener(_handleAuthSessionChanged);
     _scrollController.dispose();
     if (_subscribedRoute != null) {
@@ -138,6 +148,13 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     _notificationAccountEpoch = _auth.accountSessionEpoch;
     _auth.addListener(_handleAuthSessionChanged);
     _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addObserver(this);
+    ReplyNotificationState.instance.addListener(_onNotificationChange);
+    // 未开启远程推送的账号也能发现新通知，仅在可见且缺少入口时查询轻量计数。
+    _unreadTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _checkForNewNotifications(),
+    );
     _loadReplies();
   }
 
@@ -152,10 +169,78 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     setState(() {
       _notifications = [];
       _isMarkingAllRead = false;
+      _hasServerUnread = false;
       _hasMore = false;
       _nextCursor = null;
     });
     unawaited(_loadReplies());
+  }
+
+  @override
+  void didPopNext() => _checkForNewNotifications();
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _checkForNewNotifications();
+  }
+
+  void _checkForNewNotifications() {
+    if (!mounted ||
+        _showReadAction ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
+        ModalRoute.isCurrentOf(context) != true ||
+        !TickerMode.valuesOf(context).enabled) {
+      return;
+    }
+    unawaited(_checkUnreadCount(refreshList: true));
+  }
+
+  void _onNotificationChange() {
+    final change = ReplyNotificationState.instance.lastChange;
+    if (change == null ||
+        change.type != ReplyNotificationStateChangeType.refreshRequested ||
+        change.accountId != _auth.user?.id ||
+        change.sessionGeneration != _auth.sessionGeneration) {
+      return;
+    }
+    _checkForNewNotifications();
+  }
+
+  Future<void> _checkUnreadCount({bool refreshList = false}) async {
+    final generation = _requestGeneration;
+    if (!_auth.isLoggedIn ||
+        _isMarkingAllRead ||
+        _checkingUnreadFor == generation) {
+      return;
+    }
+    final session = ReplyNotificationSession.capture(_auth);
+    _checkingUnreadFor = generation;
+    try {
+      final response = await _auth.dio.get('/user/notifications/unread_count');
+      if (!mounted ||
+          generation != _requestGeneration ||
+          _isMarkingAllRead ||
+          !_isCurrentSession(_auth, session)) {
+        return;
+      }
+      final data = response.data;
+      final count = data is Map ? _parseInt(data['count']) : null;
+      if (count == null) return;
+      final hasUnread = count > 0;
+      final newlyDiscovered = hasUnread && !_showReadAction;
+      if (_hasServerUnread != hasUnread) {
+        setState(() => _hasServerUnread = hasUnread);
+      }
+      if (newlyDiscovered &&
+          refreshList &&
+          (!_scrollController.hasClients || _scrollController.offset <= 0)) {
+        unawaited(_loadReplies());
+      }
+    } on DioException {
+      // 计数暂不可用时，列表内已确认的未读仍可操作。
+    } finally {
+      if (_checkingUnreadFor == generation) _checkingUnreadFor = null;
+    }
   }
 
   void _onScroll() {
@@ -281,12 +366,14 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         }
         _nextCursor = next == null || next.isEmpty ? null : next;
         _hasMore = hasMore && _nextCursor != null;
+        if (!_hasMore || _hasLoadedUnread) _hasServerUnread = false;
         _isLoading = false;
         _isRefreshing = false;
         _isLoadingMore = false;
         _loadMoreError = null;
         _errorMessage = null;
       });
+      if (_hasMore && !_hasLoadedUnread) await _checkUnreadCount();
     } on DioException catch (e) {
       _handleLoadError(
         auth,
@@ -367,6 +454,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         _isLoading = false;
         _isRefreshing = false;
         _isLoadingMore = false;
+        _hasServerUnread = false;
         for (var item in _notifications) {
           item['is_read'] = true;
         }
@@ -447,7 +535,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         title: const Text('通知'),
         elevation: 0,
         actions: [
-          if (_notifications.any((n) => n['is_read'] != true))
+          if (_showReadAction)
             TextButton(
               style: TextButton.styleFrom(
                 minimumSize: const Size(44, 44),
@@ -612,7 +700,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             if (mounted) {
               setState(() {
                 notification['is_read'] = true;
+                _hasServerUnread = false;
               });
+              if (_hasMore && !_hasLoadedUnread) unawaited(_checkUnreadCount());
             }
             if (type == 'reply') {
               ReplyNotificationState.instance.markRead(

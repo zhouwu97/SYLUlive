@@ -7,6 +7,7 @@ import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/notifications_screen.dart';
+import 'package:shenliyuan/services/reply_notification_state.dart';
 import 'package:shenliyuan/features/theme_pack/admin_theme_review_screen.dart';
 import 'package:shenliyuan/features/theme_pack/theme_submission_screen.dart';
 
@@ -83,6 +84,98 @@ Future<void> _pumpUntilRequest(
 }
 
 void main() {
+  testWidgets('首屏均已读时按账号未读总数显示全部已读，无需翻页', (tester) async {
+    var count = 10;
+    var writes = 0;
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
+        Object data;
+        if (o.path == '/user/notifications/unread_count') {
+          data = {'count': count};
+        } else if (o.path == '/notifications/read') {
+          count = 0;
+          writes++;
+          data = {};
+        } else {
+          expect(o.queryParameters.containsKey('cursor'), isFalse);
+          data = {
+            ..._notificationPage(isRead: true),
+            'has_more': true,
+            'next_cursor': 'older'
+          };
+        }
+        h.resolve(Response(requestOptions: o, statusCode: 200, data: data));
+      }));
+    await tester.pumpWidget(_app(dio));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('全部已读'));
+    await tester.pumpAndSettle();
+    expect(writes, 1);
+    expect(find.text('全部已读'), findsNothing);
+  });
+
+  testWidgets('切号后忽略旧账号返回的跨页未读数', (tester) async {
+    final dio = Dio();
+    final auth = _Auth(dio);
+    RequestInterceptorHandler? oldHandler;
+    RequestOptions? oldOptions;
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
+      if (o.path == '/user/notifications/unread_count') {
+        oldHandler = h;
+        oldOptions = o;
+        return;
+      }
+      h.resolve(Response(requestOptions: o, statusCode: 200, data: {
+        ..._notificationPage(isRead: true),
+        if (auth.accountId == 1) ...{'has_more': true, 'next_cursor': 'older'},
+      }));
+    }));
+    await tester.pumpWidget(_app(dio, auth: auth));
+    await _pumpUntilRequest(tester, () => oldHandler != null);
+    auth.switchAccount(2);
+    await tester.pumpAndSettle();
+    oldHandler!.resolve(Response(
+        requestOptions: oldOptions!, statusCode: 200, data: {'count': 10}));
+    await tester.pumpAndSettle();
+    expect(find.text('全部已读'), findsNothing);
+  });
+
+  for (final pushed in [true, false]) {
+    testWidgets('留在空通知页时${pushed ? "收到回复推送" : "未启用推送"}也能发现新未读', (tester) async {
+      var arrived = false;
+      var counts = 0;
+      final dio = Dio()
+        ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
+          final isCount = o.path == '/user/notifications/unread_count';
+          if (isCount) counts++;
+          final data = isCount
+              ? {'count': arrived ? 1 : 0}
+              : arrived
+                  ? _notificationPage(content: '新到的回复')
+                  : {'items': [], 'has_more': false};
+          h.resolve(Response(requestOptions: o, statusCode: 200, data: data));
+        }));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpWidget(_app(dio));
+      await tester.pumpAndSettle();
+      expect(find.text('全部已读'), findsNothing);
+      arrived = true;
+      if (pushed) {
+        ReplyNotificationState.instance
+            .requestRefresh(accountId: 2, sessionGeneration: 0);
+        await tester.pump();
+        expect(counts, 0);
+        ReplyNotificationState.instance
+            .requestRefresh(accountId: 1, sessionGeneration: 0);
+      } else {
+        await tester.pump(const Duration(seconds: 30));
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('全部已读'), findsOneWidget);
+      expect(find.text('新到的回复'), findsOneWidget);
+    });
+  }
+
   for (final type in ['theme_pending', 'theme_review']) {
     testWidgets('$type 通知显示主题提示、完整原因并打开对应列表', (tester) async {
       const channel = MethodChannel('shenliyuan/notification_open');

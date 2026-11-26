@@ -83,6 +83,7 @@ import 'services/request_id.dart';
 import 'services/root_page_state_service.dart';
 import 'services/retry_interceptor.dart';
 import 'services/app_resume_coordinator.dart';
+import 'services/reply_notification_state.dart';
 import 'services/account_session_cleanup_coordinator.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/user_calendar_service.dart';
@@ -635,6 +636,23 @@ Future<void> _ackNativeNotificationOpen(String? eventId) async {
   }
 }
 
+void _refreshIncomingReply(Map<String, dynamic> message) {
+  final target = NotificationOpenTarget.parse(message);
+  if (target == null || target.type != NotificationOpenType.reply) return;
+  final auth = appNavigatorKey.currentContext?.read<AuthProvider>();
+  final accountId = auth?.user?.id;
+  if (auth == null ||
+      !auth.isLoggedIn ||
+      accountId == null ||
+      (target.recipientUserId != null && target.recipientUserId != accountId)) {
+    return;
+  }
+  ReplyNotificationState.instance.requestRefresh(
+    accountId: accountId,
+    sessionGeneration: auth.sessionGeneration,
+  );
+}
+
 void _ensureJPushHandlersRegistered() {
   if (_jpushHandlersRegistered) return;
   _jpushHandlersRegistered = true;
@@ -642,6 +660,7 @@ void _ensureJPushHandlersRegistered() {
   pushClient.setHandlers(
     onReceiveNotification: (Map<String, dynamic> message) async {
       if (await _handleDeviceToolJobNotification(message)) return;
+      _refreshIncomingReply(message);
       // 极光 SDK 已展示通知，不弹本地兜底，避免双通知
       await _handlePrivateMessageNotification(
         message,
@@ -651,6 +670,7 @@ void _ensureJPushHandlersRegistered() {
     },
     onNotifyMessageUnShow: (Map<String, dynamic> message) async {
       if (await _handleDeviceToolJobNotification(message)) return;
+      _refreshIncomingReply(message);
       // 极光 SDK 未展示通知，需要 Flutter 本地兜底
       await _handlePrivateMessageNotification(
         message,

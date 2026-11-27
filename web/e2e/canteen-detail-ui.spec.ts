@@ -106,33 +106,3 @@ test('切换店铺后晚到的评价分页不能混入新店',async({page})=>{
   await expect(page.getByText('当前食堂的评价',{exact:true})).toBeVisible();
   await expect(page.getByText('不属于新店的旧分页',{exact:true})).toHaveCount(0);
 });
-
-for(const dark of [false,true])test(`长会话列表独立滚动，输入区留在 AI 面板内 ${dark?'深色':'浅色'}`,async({page},testInfo)=>{
-  await setup(page);
-  if(dark)await page.addInitScript(()=>localStorage.setItem('sylulive-theme','dark'));
-  await page.route('**/api/ai/conversations',route=>route.fulfill({json:{conversations:Array.from({length:60},(_,i)=>({id:i,title:`第 ${i+1} 段校园会话：一个很长的历史问题，检验两行省略和侧栏滚动。`}))}}));
-  await page.goto('ai');
-  const shell=(await page.locator('.ai-shell').boundingBox())!;
-  const input=(await page.getByRole('textbox',{name:'问题',exact:true}).boundingBox())!;
-  expect(input.y+input.height).toBeLessThan(shell.y+shell.height);
-  expect(await page.locator('.ai-history').evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
-  await page.locator('.ai-history-item').last().scrollIntoViewIfNeeded();
-  expect((await page.getByRole('textbox',{name:'问题',exact:true}).boundingBox())!.y).toBe(input.y);
-  expect(await page.locator('.ai-history-item').first().evaluate(el=>getComputedStyle(el).borderRadius)).toBe('10px');
-  await page.screenshot({path:testInfo.outputPath(`ai-conversations-${dark?'dark':'desktop'}.png`),fullPage:true});
-});
-
-test('手机 AI 可展开历史、选择会话，输入与侧栏没有横向溢出',async({page},testInfo)=>{
-  await setup(page);
-  await page.setViewportSize({width:390,height:844});
-  await page.route('**/api/ai/conversations',route=>route.fulfill({json:{conversations:[{id:'a',title:'上一次校园问答'}]}}));
-  await page.route('**/api/ai/conversations/a',route=>route.fulfill({json:{messages:[{role:'assistant',content:'这是之前的校园回答。'}]}}));
-  await page.goto('ai');
-  await expect(page.getByRole('textbox',{name:'问题',exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'历史会话',exact:true}).click();
-  await page.getByRole('button',{name:'上一次校园问答',exact:true}).click();
-  await expect(page.locator('.ai-output')).toContainText('这是之前的校园回答。');
-  await expect(page.getByRole('button',{name:'历史会话',exact:true})).toHaveAttribute('aria-expanded','false');
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-  await page.screenshot({path:testInfo.outputPath('ai-conversations-mobile.png'),fullPage:true});
-});

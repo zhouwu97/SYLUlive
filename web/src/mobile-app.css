@@ -200,7 +200,6 @@
   .mobile-service-row > i:has([data-icon="ai"]) { color: var(--icon-violet); background: color-mix(in srgb, var(--icon-violet) 9%, var(--surface)); }
   .mobile-service-row > i:has([data-icon="admin"]) { color: var(--icon-rose); background: color-mix(in srgb, var(--icon-rose) 9%, var(--surface)); }
   .mobile-service-row > span:last-child { margin-left: auto; color: var(--text-3); font-size: 22px; }
-  .mobile-agent-entry { margin-top: 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
   .mobile-section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 10px; }
   .mobile-section-title h2 { margin: 0; font-size: 21px; }
   .mobile-section-title p { margin: 5px 0 0; color: var(--text-3); font-size: 13px; }

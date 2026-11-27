@@ -95,8 +95,6 @@ import 'services/push_settings_service.dart';
 import 'services/emoji_favorite_repository.dart';
 import 'services/emoji_favorite_service.dart';
 import 'services/browser_credentials_adapter.dart';
-import 'features/ai_device_bridge/device_tool_bridge_host.dart';
-import 'features/ai_device_bridge/device_tool_worker.dart';
 
 import 'platform/platform_bootstrap.dart';
 import 'platform/platform_capabilities.dart';
@@ -659,7 +657,7 @@ void _ensureJPushHandlersRegistered() {
 
   pushClient.setHandlers(
     onReceiveNotification: (Map<String, dynamic> message) async {
-      if (await _handleDeviceToolJobNotification(message)) return;
+      if (_isRetiredAgentNotification(message)) return;
       _refreshIncomingReply(message);
       // 极光 SDK 已展示通知，不弹本地兜底，避免双通知
       await _handlePrivateMessageNotification(
@@ -669,7 +667,7 @@ void _ensureJPushHandlersRegistered() {
       );
     },
     onNotifyMessageUnShow: (Map<String, dynamic> message) async {
-      if (await _handleDeviceToolJobNotification(message)) return;
+      if (_isRetiredAgentNotification(message)) return;
       _refreshIncomingReply(message);
       // 极光 SDK 未展示通知，需要 Flutter 本地兜底
       await _handlePrivateMessageNotification(
@@ -681,7 +679,7 @@ void _ensureJPushHandlersRegistered() {
     onOpenNotification: (Map<String, dynamic> message) async {
       debugPrint('点击通知原始数据: $message');
 
-      if (await _handleDeviceToolJobNotification(message)) return;
+      if (_isRetiredAgentNotification(message)) return;
       if (await _handleUpdateNotification(message)) return;
       if (await _handlePrivateMessageNotification(message, opened: true)) {
         return;
@@ -700,22 +698,9 @@ void _ensureJPushHandlersRegistered() {
   );
 }
 
-/// 设备工具推送体只识别 job_id；参数和个人数据必须由 Worker 使用 JWT 再次拉取。
-Future<bool> _handleDeviceToolJobNotification(
-  Map<String, dynamic> message,
-) async {
-  final extras = extractJPushExtras(message);
-  if (extras['type'] != 'ai_device_job') return false;
-  final jobId = extras['job_id'];
-  if (jobId is String && RegExp(r'^[0-9a-fA-F-]{1,36}$').hasMatch(jobId)) {
-    try {
-      await DeviceToolBridge.handlePush(jobId);
-    } catch (_) {
-      // 设备离线时由前台启动和生命周期恢复补拉 pending 任务。
-    }
-  }
-  return true;
-}
+// 丢弃旧服务发出的校园 Agent 任务推送，避免弹出已下线功能的授权窗。
+bool _isRetiredAgentNotification(Map<String, dynamic> message) =>
+    extractJPushExtras(message)['type'] == 'ai_device_job';
 
 NotificationOpenTarget? _lastOpenedNotificationTarget;
 DateTime? _lastOpenedNotificationAt;
@@ -1677,9 +1662,7 @@ class MyApp extends StatelessWidget {
               provider!..syncSessionUser(auth.user?.id),
         ),
       ],
-      child: const DeviceToolBridgeHost(
-        child: _WidgetDeepLinkHandler(child: _AppContent()),
-      ),
+      child: const _WidgetDeepLinkHandler(child: _AppContent()),
     );
   }
 }

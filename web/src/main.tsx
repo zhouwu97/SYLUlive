@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 import {
   BrowserRouter,
   Link,
+  Navigate,
   NavLink,
   Route,
   Routes,
@@ -55,7 +56,6 @@ const CanteenPage = lazy(() => import('./canteen/canteen-page').then(module => (
 const Campus = lazy(() => import('./campus').then(module => ({default: module.Campus})));
 const RatingsList = lazy(() => import('./catalog').then(module => ({default: module.RatingsList})));
 const CatalogDetail = lazy(() => import('./catalog').then(module => ({default: module.CatalogDetail})));
-const AiPage = lazy(() => import('./ai').then(module => ({default: module.AiPage})));
 const Feedback = lazy(() => import('./feedback').then(module => ({default: module.Feedback})));
 const TicketDetail = lazy(() => import('./feedback').then(module => ({default: module.TicketDetail})));
 const Notifications = lazy(() => import('./feedback').then(module => ({default: module.Notifications})));
@@ -89,7 +89,6 @@ export const navigation = [
   ["competition", "竞赛中心"],
   ["ratings", "教师 · 专业评价"],
   ["polls", "投票 · 组队"],
-  ["ai", "AI 校园助手"],
   ["toolbox", "工具箱"],
   ["feedback", "我的工单"],
   ["profile", "我的主页"],
@@ -156,13 +155,14 @@ function Search() {
   );
 }
 // 分区渐变的颜色归属：与顶栏五个主分区一致
-const zones: Record<string, string> = { dashboard: "home", community: "community", polls: "community", messages: "community", market: "market", schedule: "study", grades: "study", exams: "study", competition: "study", ratings: "study", campus: "discover", canteen: "canteen", toolbox: "discover", ai: "discover" };
+const zones: Record<string, string> = { dashboard: "home", community: "community", polls: "community", messages: "community", market: "market", schedule: "study", grades: "study", exams: "study", competition: "study", ratings: "study", campus: "discover", canteen: "canteen", toolbox: "discover" };
 // 桌面顶栏五个主入口：校园圈与首页同为信息流，并入「首页」，让出位置给食堂；「发现」改名为「校园」。
 const TOP_NAV = [["/", "首页", ["home", "community"]], ["/canteen", "食堂", ["canteen"]], ["/market", "集市", ["market"]], ["/schedule", "学习", ["study"]], ["/campus", "校园", ["discover"]]] as const;
 // 桌面侧栏「校园生活」分组：投票与组队已在首页信息流混排，入口换成校园；手机端抽屉对照 App 保持原样。
 const DESKTOP_SIDEBAR = ["dashboard", "canteen", "market", "schedule", "campus"];
-const DESKTOP_GROWTH = ["grades", "exams", "competition", "ratings", "polls", "community", "ai"];
+const DESKTOP_GROWTH = ["grades", "exams", "competition", "ratings", "polls", "community"];
 const MOBILE_SIDEBAR = ["dashboard", "community", "market", "schedule", "polls"];
+const SIDEBAR_ACCOUNT = ["toolbox", "feedback", "profile", "admin"];
 const DESKTOP_LABELS: Record<string, string> = { canteen: "食堂", campus: "校园" };
 const zoneOf = (active: string) => zones[active] || "home";
 function Shell() {
@@ -256,6 +256,10 @@ function Shell() {
   }, [ui]);
   useEffect(() => {
     const hash = location.hash.slice(1);
+    if (hash === "ai" || hash === "/ai") {
+      navigate("/campus", { replace: true });
+      return;
+    }
     if (navigation.some(([id]) => id === hash))
       navigate(hash === "dashboard" ? "/" : `/${hash}`, { replace: true });
   }, []);
@@ -379,7 +383,7 @@ function Shell() {
               <SidebarBoards />
               <details className="sidebar-more">
                 <summary>学习与校园服务 <Icon name="chevron" size={14} /></summary>
-                {["grades", "exams", "competition", "ratings", "campus", "canteen", "ai"].map(id => navigation.find(item => item[0] === id)!).map(link)}
+                {["grades", "exams", "competition", "ratings", "campus", "canteen"].map(id => navigation.find(item => item[0] === id)!).map(link)}
               </details>
             </> : <>
               <div className="nav-section">
@@ -401,8 +405,8 @@ function Shell() {
               <SidebarBoards />
             </>}
           <div className="nav-section sidebar-account">
-            {navigation
-              .slice(13)
+            {SIDEBAR_ACCOUNT
+              .map(id => navigation.find(item => item[0] === id)!)
               .filter(
                 ([id]) =>
                   id !== "admin" ||
@@ -456,7 +460,7 @@ function Shell() {
                     path="/admin/feedback/:id"
                     element={<TicketDetail admin />}
                   />
-                  <Route path="/ai" element={<AiPage />} />
+                  <Route path="/ai" element={<Navigate to="/campus" replace />} />
                   <Route path="/toolbox" element={<Toolbox />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/user/:id" element={<PublicProfile />} />

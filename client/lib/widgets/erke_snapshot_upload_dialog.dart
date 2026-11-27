@@ -90,7 +90,7 @@ class ErkeSnapshotUploadDialog extends StatelessWidget {
               ),
               const SizedBox(height: 18),
               Text(
-                '上传后，校园 Agent 可以结合二课进度提供更准确的建议。',
+                '上传后，你可单独授权已绑定的 QQ 助手查询这份二课摘要。',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   height: 1.45,
                   color: isDark
@@ -133,7 +133,7 @@ class ErkeSnapshotUploadDialog extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '选择自动上传后，每次更新二课都会同步摘要；可在个人数据保险箱随时关闭或删除。',
+                        '选择自动上传后，每次更新二课都会同步摘要。可在二课页右上角菜单关闭自动上传或删除已上传的快照。',
                         style: theme.textTheme.bodySmall?.copyWith(
                           height: 1.45,
                           color: hintFg,

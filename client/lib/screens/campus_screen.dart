@@ -9,9 +9,7 @@ import 'package:provider/provider.dart';
 import '../widgets/responsive_content.dart';
 import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
-import '../models/ai_capabilities.dart';
 import '../models/exam_schedule.dart';
-import '../services/ai_assistant_service.dart';
 import '../services/app_resume_coordinator.dart';
 import '../services/campus_article_service.dart';
 import '../services/exam_schedule_repository.dart';
@@ -26,7 +24,6 @@ import '../utils/app_navigation.dart';
 import '../utils/app_navigator.dart';
 
 import '../widgets/campus/campus_theme.dart';
-import '../widgets/campus/campus_ai_entry_card.dart';
 import '../widgets/campus/campus_header.dart';
 import '../widgets/campus/campus_feature_notice_card.dart';
 import '../widgets/campus/campus_service_grid.dart';
@@ -35,7 +32,6 @@ import '../widgets/campus/campus_news_card.dart';
 import '../widgets/campus/campus_today_card.dart';
 
 import 'campus_article_detail_screen.dart';
-import 'ai/ai_assistant_screen.dart';
 import 'campus_article_list_screen.dart';
 import 'campus_calendar_screen.dart';
 import 'campus_map_tab_page.dart';
@@ -50,7 +46,6 @@ import '../widgets/app_card.dart';
 class CampusScreen extends StatefulWidget {
   /// 可选依赖仅用于测试；生产环境继续复用全局 Dio 与鉴权头。
   final CampusArticleService? articleService;
-  final AiAssistantService? aiService;
 
   /// 可选时钟注入仅用于测试；生产环境使用真实时间。
   final DateTime Function()? nowProvider;
@@ -58,7 +53,6 @@ class CampusScreen extends StatefulWidget {
   const CampusScreen({
     super.key,
     this.articleService,
-    this.aiService,
     this.nowProvider,
   });
 
@@ -72,8 +66,6 @@ class _CampusScreenState extends State<CampusScreen>
   bool get wantKeepAlive => true;
 
   late CampusArticleService _articleService;
-  late AiAssistantService _aiService;
-  AiCapabilities? _aiCapabilities;
 
   // 最新文章
   CampusArticleSummary? _latestArticle;
@@ -102,7 +94,6 @@ class _CampusScreenState extends State<CampusScreen>
     WidgetsBinding.instance.addObserver(this);
     final dio = getSharedDio();
     _articleService = widget.articleService ?? CampusArticleService(dio);
-    _aiService = widget.aiService ?? AiAssistantService(dio);
     _unregisterResumeRefresh =
         AppResumeCoordinator.instance.registerVisibleRefresh(
       () => _loadAll(force: true),
@@ -163,7 +154,6 @@ class _CampusScreenState extends State<CampusScreen>
     _loadFuture = Future.wait([
       _loadLatest(generation),
       _loadRecent(generation),
-      _loadAiCapabilities(generation),
       _loadTodayItems(generation),
     ]).whenComplete(() {
       if (_loadGeneration == generation) {
@@ -171,22 +161,6 @@ class _CampusScreenState extends State<CampusScreen>
       }
     });
     return _loadFuture!;
-  }
-
-  Future<void> _loadAiCapabilities(int generation) async {
-    try {
-      final capabilities = await _aiService.getCapabilities();
-      if (mounted && _loadGeneration == generation) {
-        setState(() {
-          _aiCapabilities = capabilities.isVisible ? capabilities : null;
-        });
-      }
-    } catch (_) {
-      // AI 能力不可用时不影响校园资讯主体展示。
-      if (mounted && _loadGeneration == generation && _aiCapabilities != null) {
-        setState(() => _aiCapabilities = null);
-      }
-    }
   }
 
   Future<void> _loadLatest(int generation) async {
@@ -365,19 +339,6 @@ class _CampusScreenState extends State<CampusScreen>
     ).push(MaterialPageRoute<void>(builder: (_) => page));
   }
 
-  Future<void> _openAiAssistant({String? initialPrompt}) async {
-    final capabilities = _aiCapabilities;
-    if (capabilities == null) return;
-    await _openPage(
-      AiAssistantScreen(
-        capabilities: capabilities,
-        service: _aiService,
-        dio: getSharedDio(),
-        initialPrompt: initialPrompt,
-      ),
-    );
-  }
-
   void _openArticleDetail(CampusArticleSummary article) {
     HapticFeedback.selectionClick();
     Navigator.of(context).push(
@@ -455,24 +416,11 @@ class _CampusScreenState extends State<CampusScreen>
                       index: todayShown ? 2 : 1,
                       child: _buildLatestCard(isDark),
                     ),
-                    if (_aiCapabilities != null) ...[
-                      const SizedBox(height: 12),
-                      HomeTabRevealItem(
-                        index: todayShown ? 3 : 2,
-                        child: CampusAiEntryCard(
-                          capabilities: _aiCapabilities!,
-                          isDark: isDark,
-                          onTap: _openAiAssistant,
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 12),
                     // 仅保留校园服务区域的 Root Tab Reveal；服务项自身不再
                     // 叠加 stagger、透明度和位移动画。
                     HomeTabRevealItem(
-                      index: _aiCapabilities == null
-                          ? (todayShown ? 3 : 2)
-                          : (todayShown ? 4 : 3),
+                      index: todayShown ? 3 : 2,
                       child: CampusServiceGrid(
                         isDark: isDark,
                         onEduTap: () => _openPage(const EduScreen()),

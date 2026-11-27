@@ -63,7 +63,7 @@ pnpm dev:online
 
 本人绑定不要求学校核验或预先连接教务。缺少学校资料只影响成绩／二课查询，可从 `/web/connected-apps?purpose=personal&view=data` 在网页准备并同步，不需要重绑 QQ，也不影响签到。本人绑定成功后回原 QQ 聊天用 `/sylu-status` 核对领取；`/sylu-checkin` 签到，`/sylu-checkin-status` 查状态，成绩和二课还需同步并授权对应摘要。绑定不会开启每日自动签到。`/web/connected-apps/actions/:id` 显示不可变草稿并由本人确认。提案、机器人自主评论和自主发帖权限默认不选，草稿仍须本人逐条确认；只有独立获准的机器人可自动参与。当前服务的核对、批准、机器人管理和本人确认发布均使用有效登录，不额外要求再次输入密码；旧服务返回 `recent_authentication_required` 时仍保留兼容验证，验证后必须重新核对，不自动重放创建、授权或发布。帖子来源或授权变化时，页面禁止发布并要求重读。
 
-详见 [插件安装与本地配置](../astrbot_plugin_sylulive/README.md)。本地开发务必设置前述 `SYLULIVE_API_ORIGIN`，插件与 `INTEGRATION_PUBLIC_ORIGIN` 均指向本地网页 origin 5173。未启用后端新集成时，这些页面不会伪装成功。该入口不改变现有 Web/Flutter 校园 AI。
+详见 [插件安装与本地配置](../astrbot_plugin_sylulive/README.md)。本地开发务必设置前述 `SYLULIVE_API_ORIGIN`，插件与 `INTEGRATION_PUBLIC_ORIGIN` 均指向本地网页 origin 5173。未启用后端新集成时，这些页面不会伪装成功。
 
 页面可预览并确认同步当前学期最小成绩和二课摘要，成功后仍需另行授权本人查询 scope。个人服务开关关闭、查询失败或旧服务时不可新增私有授权；删除只清对应同步副本，失败/退役不能报告已删除。切换账号或类型会取消旧预览确认，重复提交受控。App 原生授权同样将成绩、二课和发帖默认关闭，并根据当前服务端状态限制选择。反复验收入口见[完整测试清单](../docs/ai/astrbot-full-chain-test-checklist.md)，其中的跨运行时命令串联实际 Web、Go 与原生 AstrBot SDK，使用合成数据和确定性测试模型。
 
@@ -122,8 +122,6 @@ Chrome 打开 `chrome://extensions`，Edge 打开 `edge://extensions`，开启�
 
 食堂页「怀旧食堂」单独展示下架存档，保留历史评分但不显示名次。超级管理员可在怀旧详情「维护怀旧食堂」修改名称和位置，保存失败保留表单。接口、只读权限和旧端兼容见 [食堂下架与怀旧存档](../server/API.md#食堂下架与怀旧存档)；定向验收入口为 `e2e/canteen.spec.ts`。详情页「管理店铺」为管理员提供营业店铺下架、永久删除入口；怀旧店铺的管理与恢复营业只向超级管理员开放，最终由服务端复核权限。下架需填写原因，删除需输入店铺名称，失败保留确认内容。操作成功后刷新相关列表，删除后返回店铺列表。
 
-AI 页面布局由 `src/ai.css` 维护：历史列表独立滚动，长标题最多显示两行，回答与输入区分别占用明确空间；手机通过「历史会话」展开列表。布局改动保留原有会话读取、生成、停止与会话隔离逻辑，回归入口为 `e2e/ai-experience.spec.ts` 和上述渲染用例。
-
 ## 图片预览、通知与工单
 
 共享查看器由 `src/image-viewer.tsx` 与 `src/image-viewer.css` 维护，使用独立的 `media` 弹层。图片默认完整适应视口，支持按钮、滚轮、双击缩放、放大后拖动、双指缩放、方向键切图和 Esc 关闭；单图隐藏翻页。公开图片保留原图入口，工单附件继续通过鉴权接口读取为临时 Blob，关闭页面时由原读取组件回收，不改为公开地址。
@@ -176,7 +174,7 @@ scripts/deploy-web.sh rollback   # 切回上一版本
 
 脚本将当前 HEAD 导出到临时目录，使用该提交的依赖清单、扩展隐私正文和服务端切换脚本。在临时目录执行 check、单测和构建，把 `web/dist` 打成只含 `web/` 的包上传；服务器端 [deploy/deploy-web](../deploy/deploy-web) 解压到 `/var/www/sylulive/releases/<SHA>/`，保留上一版带哈希的 JS/CSS（已打开的页面不白屏），原子切换 `/var/www/sylulive/web` 链接。随后只做最小冒烟：公网 `/web/` 首页即本次版本，且其引用的 JS/CSS 可取到；失败自动切回并删除失败版本。保留最近 5 个版本。不触碰 Nginx、官网首页和后端进程。浏览器 E2E 不在脚本内，按发布风险另行执行。
 
-首次部署新站点时，将 `web/dist/` 内容放到现有站点 `/web/`。参考 `web/deploy/nginx.conf` 合并到原 HTTPS server；保留官网及分享路由，API 与附件使用同源代理，SSE 关闭缓冲。新增收藏和个人 AI 分析需要同时发布本仓库 Go 修改；仅更新静态页面不会让线上旧服务具备新接口。
+首次部署新站点时，将 `web/dist/` 内容放到现有站点 `/web/`。参考 `web/deploy/nginx.conf` 合并到原 HTTPS server；保留官网及分享路由，API 与附件使用同源代理，SSE 关闭缓冲。
 
 发布后请确认 `/web/assistant/assistant.json` 真的以 JSON 返回（例如 `curl -I https://<站点>/web/assistant/assistant.json` 看 `content-type`）。`web/deploy/nginx.conf` 的 `try_files` 会把缺失文件伪装成 200 + `index.html`，此时页面只会提示“本站暂无可用的教务助手安装包”，不会显示下载按钮。
 
@@ -186,7 +184,7 @@ scripts/deploy-web.sh rollback   # 切回上一版本
 
 `web/e2e/experience-audit.spec.ts` 以用户操作检查快捷搜索的焦点、方向键与回车、六个列表的搜索历史回填、手机资讯搜索保留列表视图、结构化校历与旧图片返回的兼容，以及地图失败后的恢复。校历沿用服务端返回的学期、教学周、事件和调课规则，不以只有学年标题表示已展示完整内容。
 
-`web/e2e/ai-experience.spec.ts` 检查历史会话的迟到响应隔离、新建会话清理来源、创建等待与已创建运行的停止恢复、重复提交及账号切换。创建结果尚未返回时只能停止本页等待，页面会明确要求从历史核对服务端结果，不报告运行已取消。这些写入与事件流使用本地合成夹具，不代表真实学校或真实模型端到端验收。
+旧校园问答链接 `/web/ai` 跳转校园页。`web/e2e/ai-experience.spec.ts` 检查桌面和手机端的校园问答入口及旧链接，同时核对页面不发送问答、历史会话或个人成绩分析请求。
 
 已运行的自动化包括共享数据校验、解析与提醒计算、SSE 分帧、课表编辑及冲突、主要路由和移动导航，以及真实 Chromium 扩展加载和握手。Go 测试覆盖收藏、Origin 校验与个人 AI 授权/用量等边界。`web/e2e/assistant-install.spec.ts` 覆盖未装助手时的下载引导与安装步骤、装好后不刷新自动复检（并断言此间不发起学校查询）、以及安装包缺失或通道不符时的降级；`web/src/assistant-package.test.ts` 和 `browser-extension/src/inject.test.ts` 覆盖包清单校验与补注入的站点计划。
 

@@ -580,26 +580,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       break;
                   }
 
-                  final mainContent = Column(
-                    children: [
-                      _buildDateHeader(sc),
-                      Expanded(
-                        child: _buildCourseGrid(sc),
-                      ),
-                    ],
-                  );
-
-                  if (ResponsiveUtil.isDesktop(context)) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildTodayOverview(sc),
-                        Expanded(child: mainContent),
-                      ],
-                    );
-                  }
-
-                  return mainContent;
+                  return _buildStableCourseSurface(sc);
                 },
               );
             },

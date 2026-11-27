@@ -22,6 +22,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font/sfnt"
 	_ "golang.org/x/image/webp"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -1696,18 +1697,48 @@ func validateAndNormalizeThemeImage(data []byte, kind themeAssetKind, assetPath 
 		dst := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 		draw.Draw(dst, dst.Bounds(), &image.Uniform{C: color.Black}, image.Point{}, draw.Src)
 		draw.Draw(dst, dst.Bounds(), decoded, bounds.Min, draw.Over)
-		if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: 88}); err != nil {
-			return nil, "", imgErr()
+		for quality := 88; quality >= 40; quality -= 8 {
+			out.Reset()
+			if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: quality}); err != nil {
+				return nil, "", imgErr()
+			}
+			if int64(out.Len()) <= maxBytes {
+				return out.Bytes(), ".jpg", nil
+			}
 		}
-		return out.Bytes(), ".jpg", nil
 	default:
-		dst := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
-		draw.Draw(dst, dst.Bounds(), decoded, bounds.Min, draw.Src)
-		if err := png.Encode(&out, dst); err != nil {
-			return nil, "", imgErr()
+		// 保留 PNG 调色板，避免透明素材展开为真彩后体积膨胀。
+		encoder := png.Encoder{CompressionLevel: png.BestCompression}
+		for {
+			out.Reset()
+			if err := encoder.Encode(&out, decoded); err != nil {
+				return nil, "", imgErr()
+			}
+			if int64(out.Len()) <= maxBytes {
+				return out.Bytes(), ".png", nil
+			}
+			minSide := 1
+			if kind == themeAssetIcon {
+				minSide = 48
+			}
+			if kind == themeAssetLauncher {
+				minSide = 432
+			}
+			bounds = decoded.Bounds()
+			side := max(bounds.Dx(), bounds.Dy())
+			if side <= minSide {
+				return nil, "", imgErr()
+			}
+			scale := math.Min(0.9, math.Sqrt(float64(maxBytes)/float64(out.Len()))*0.95)
+			nextSide := max(minSide, int(float64(side)*scale))
+			width := max(1, bounds.Dx()*nextSide/side)
+			height := max(1, bounds.Dy()*nextSide/side)
+			dst := image.NewNRGBA(image.Rect(0, 0, width, height))
+			xdraw.CatmullRom.Scale(dst, dst.Bounds(), decoded, bounds, draw.Src, nil)
+			decoded = dst
 		}
-		return out.Bytes(), ".png", nil
 	}
+	return nil, "", imgErr()
 }
 
 func validateThemeFont(data []byte, assetPath string) (string, string, error) {

@@ -121,6 +121,45 @@ void main() {
     expect(pack.contents.keys, ['preview/cover.png']);
   });
 
+  test('商城已验签规范包兼容历史转码超限贴纸，本机文件仍执行制作规格', () async {
+    const sticker = 'decorations/v14-ciallo.png';
+    final manifest = themeFixture()..['source'] = 'official';
+    manifest['light']['ornaments'] = {
+      'fab': {'image': sticker, 'width': 48.0, 'dx': 0.0, 'dy': 0.0},
+    };
+    final pixels = image.Image(width: 512, height: 512, numChannels: 4);
+    var value = 1;
+    for (final pixel in pixels) {
+      value = (value * 1664525 + 1013904223) & 0xffffffff;
+      pixel.setRgba(value & 255, (value >> 8) & 255, (value >> 16) & 255, 128);
+    }
+    final png = Uint8List.fromList(image.encodePng(pixels, level: 0));
+    expect(png.length, greaterThan(512 * 1024));
+    final bytes = themeArchive(manifest, files: {sticker: png});
+    final prepared =
+        await ThemePackCodec.decodeStorePackage(bytes, appVersion: '9.0.0');
+    expect(prepared.contents[sticker], png);
+    expect(prepared.manifest.data['source'], 'official');
+    await expectLater(
+        ThemePackCodec.decodeStorePackage(
+            alterThemeZip(bytes, sticker, size: 8 * 1024 * 1024 + 1),
+            appVersion: '9.0.0'),
+        throwsA(failsWith('theme_image_invalid')));
+    await expectLater(ThemePackCodec.decode(bytes, appVersion: '9.0.0'),
+        throwsA(failsWith('theme_image_invalid')));
+    await expectLater(
+        ThemePackCodec.decodeStorePackage(
+            alterThemeZip(bytes, sticker, crc: true),
+            appVersion: '9.0.0'),
+        throwsA(failsWith('theme_zip_invalid')));
+    await expectLater(
+        ThemePackCodec.decodeStorePackage(
+            alterThemeZip(bytes, sticker,
+                size: ThemePackCodec.maxExpandedBytes + 1),
+            appVersion: '9.0.0'),
+        throwsA(failsWith('theme_too_large')));
+  });
+
   final invalid = <(String, Uint8List Function())>[
     ('theme_zip_invalid', () => Uint8List.fromList([1, 2, 3])),
     ('theme_too_large', () => Uint8List(ThemePackCodec.maxPackageBytes + 1)),

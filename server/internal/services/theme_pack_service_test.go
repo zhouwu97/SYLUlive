@@ -11,6 +11,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -758,6 +759,51 @@ func openSQLiteThemeDB(t *testing.T) *gorm.DB {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	require.NoError(t, db.AutoMigrate(&models.User{}, &models.AdminLog{}, &models.Notification{}, &models.SystemConfig{}, &models.ThemePack{}))
 	return db
+}
+
+func TestThemePackNormalizedImageFitsSlot(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		side  int
+		kind  themeAssetKind
+		limit int
+	}{
+		{"sticker", 768, themeAssetSticker, 512 * 1024},
+		{"illustration", 1024, themeAssetIllustration, 1024 * 1024},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			palette := make(color.Palette, 64)
+			for i := range palette {
+				palette[i] = color.NRGBA{R: uint8(i * 37), G: uint8(i * 71), B: uint8(i * 113), A: 128}
+			}
+			source := image.NewPaletted(image.Rect(0, 0, tc.side, tc.side), palette)
+			rng := rand.New(rand.NewSource(1))
+			for i := range source.Pix {
+				source.Pix[i] = uint8(rng.Intn(len(palette)))
+			}
+			var input bytes.Buffer
+			require.NoError(t, png.Encode(&input, source))
+			require.LessOrEqual(t, input.Len(), tc.limit, "合法输入不能被转码体积膨胀变成不可下载包")
+			output, ext, err := validateAndNormalizeThemeImage(input.Bytes(), tc.kind, "decorations/noise.png")
+			require.NoError(t, err)
+			require.Equal(t, ".png", ext)
+			require.LessOrEqual(t, len(output), tc.limit)
+			decoded, err := png.Decode(bytes.NewReader(output))
+			require.NoError(t, err)
+			require.LessOrEqual(t, decoded.Bounds().Dx(), tc.side)
+			require.Equal(t, decoded.Bounds().Dx(), decoded.Bounds().Dy())
+			_, _, _, a := decoded.At(0, 0).RGBA()
+			require.InDelta(t, 128*257, int(a), 257, "贴纸透明度保留")
+		})
+	}
+	t.Run("small image stays unchanged in size", func(t *testing.T) {
+		output, _, err := validateAndNormalizeThemeImage(encodeSolidPNG(t, 96, 48, color.NRGBA{R: 40, A: 128}), themeAssetSticker, "decorations/small.png")
+		require.NoError(t, err)
+		cfg, err := png.DecodeConfig(bytes.NewReader(output))
+		require.NoError(t, err)
+		require.Equal(t, 96, cfg.Width)
+		require.Equal(t, 48, cfg.Height)
+	})
 }
 
 func TestThemePackNormalizationAndFields(t *testing.T) {

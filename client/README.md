@@ -23,6 +23,7 @@
 - 调课确认页同时展示原安排和新安排。目标位置已有同一课程且时间完全相同的教务原安排时，可勾选合并；不同课程、部分节次重叠和已有本地调整继续提示冲突。恢复原安排会撤销这条调课及其合并效果，不修改教务原始快照。
 - 课程详情的“删除课程”只删除本机所选周次的这次上课安排，支持单周和范围；删除已调课安排时保留其他周次的调整，合并显示的原安排一并删除并分别保留恢复记录。课表菜单“已删除课程”可恢复教务原安排。源安排未变时，重启和重新拉取保留本地删除；学校安排变化后暂停删除并要求重新确认，载入存档沿用原有规则替换行为。周次范围可早于当前周，结束周提前时自动收拢开始周；继续调整保留原有离散周次。
 - 本机课表刷新传递学校真实学期 ID；本科兼容学期码保留 `3/12`，研究生使用学校返回的 ID。
+- 桌面小组件的手动换色与主题包同步按操作顺序保存并刷新，后选的配色生效，未完成的旧同步不会覆盖新选择。刷新失败时选项按已保存设置回显；手动同步的写入和刷新失败会明确报错，保留重试入口。
 - 用户点击课表“保存当前课表为新存档”时，同时保存 App 内存档和公共 JSON 副本；已有 App 内存档可点击导出补写公共副本。
 - Android 10 及以上通过 MediaStore 保存到 `Download/沈理校园/课表存档/` 或 `Download/沈理校园/考试存档/`；Android 9 及以下由系统文件选择器选择保存位置。
 - iPhone 和 iPad 通过系统「文件」选择器选择位置。取消后可从课表存档或考试页重新导出。
@@ -132,11 +133,15 @@ flutter build ios --simulator --debug
 
 真机签名使用维护者的 Apple Developer Team。Runner 和 CourseScheduleWidget 目标需要启用同一个 `group.com.sylu.sylulive` App Group，Runner 同时需要 Push Notifications 和 Associated Domains。APNs 在 Debug 和 Profile 使用开发环境，在 Release 使用生产环境。Universal Links 依赖域名提供与签名应用匹配的 `/.well-known/apple-app-site-association`。
 
+iOS 课表小组件的实际快照读取共享课表，示例课程只用于组件图库预览。全量课表按本地日期和教学周生成当前及后续七天的时间线；退出账号或清空数据会同时移除共享存储中的旧课程和考试。未同步、无课、数据损坏与 App Group 不可用分别显示对应状态。原生数据与日期回归测试位于 `ios/RunnerTests/RunnerTests.swift`，在 Xcode 的 Runner scheme 中执行 Test。
+
 iOS 客户端从 `/api/app/update` 查询 `ios/stable` 版本。管理端创建 iOS 版本时填写 App Store 或 TestFlight 链接，服务端若配置了 `APP_RELEASE_MARKET_HOST_ALLOWLIST`，需包含对应 Apple 域名。App 检出新版后打开商店。
 
 ### iOS 真机测试包
 
 GitHub Actions 的 [Build iOS IPA](../.github/workflows/ios.yml) 在 macOS runner 上构建未签名的 arm64 IPA，包含课表与考试小组件。到对应运行的 Artifacts 下载 `sylulive-ios-unsigned`，解压后用 Windows 签名工具安装到测试设备。免费 Apple 账号的签名有效期为 7 天，远程推送和 Universal Links 需用支持对应能力的签名另行测试。小组件依赖主 App 和扩展共享同一 App Group。
+
+自签或侧载时，签名工具必须保留小组件扩展，并为主 App 和扩展配置同一 App Group 的有效授权；仅保留 entitlement 文件中的声明不能代替签名授权。共享容器不可访问时，App 的小组件设置页会报告签名权限错误；需修正签名、重新安装，再执行“同步全部小组件”。在 iPhone 上验收真实课程显示、跨日换课、退出后旧数据清除和权限失败提示；Windows 上的逻辑测试不覆盖 WidgetKit 与签名运行环境。
 
 ## 运行
 

@@ -6,7 +6,6 @@ import WidgetKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
-  private static let appGroup = "group.com.sylu.sylulive"
   private static let widgetChannel = "shenliyuan/widget"
   private static let appIconChannel = "app_icon"
   private static let deepLinkChannel = "shenliyuan/deeplink"
@@ -169,7 +168,7 @@ import WidgetKit
   private func registerWidgetChannel(_ messenger: FlutterBinaryMessenger) {
     FlutterMethodChannel(name: Self.widgetChannel, binaryMessenger: messenger)
       .setMethodCallHandler { [weak self] call, result in
-        guard let self else {
+        guard self != nil else {
           result(FlutterError(code: "APP_DELEGATE_GONE", message: nil, details: nil))
           return
         }
@@ -178,32 +177,20 @@ import WidgetKit
           return
         }
 
-        if let arguments = call.arguments as? [String: Any] {
-          let defaults = UserDefaults(suiteName: Self.appGroup)
-          if let course = arguments["course_data"] as? String {
-            defaults?.set(course, forKey: "widget_course_data")
-          }
-          if let exam = arguments["exam_data"] as? String {
-            defaults?.set(exam, forKey: "widget_exam_data")
-          }
-          if let appPalette = arguments["app_palette"] as? String {
-            defaults?.set(appPalette, forKey: "widget_app_palette_v1")
-          }
-          if let courseTheme = arguments["course_theme"] as? String {
-            defaults?.set(courseTheme, forKey: "widget_course_theme")
-          }
-          if let examTheme = arguments["exam_theme"] as? String {
-            defaults?.set(examTheme, forKey: "widget_exam_theme")
-          }
-          if let courseGlass = arguments["course_frosted_glass"] as? Bool {
-            defaults?.set(courseGlass, forKey: "widget_course_frosted_glass")
-          }
-          if let examGlass = arguments["exam_frosted_glass"] as? Bool {
-            defaults?.set(examGlass, forKey: "widget_exam_frosted_glass")
-          }
-          defaults?.set(Date().timeIntervalSince1970, forKey: "widget_updated_at")
-          defaults?.synchronize()
+        guard let arguments = call.arguments as? [String: Any] else {
+          result(FlutterError(code: "INVALID_ARGUMENTS", message: "小组件同步参数无效", details: nil))
+          return
         }
+        guard let defaults = HomeWidgetSharedStore.open() else {
+          result(FlutterError(
+            code: "WIDGET_APP_GROUP_UNAVAILABLE",
+            message: "小组件共享存储不可用，请使用主 App 与小组件均具有相同 App Group 权限的签名重新安装",
+            details: nil
+          ))
+          return
+        }
+        HomeWidgetSharedStore.write(arguments, to: defaults)
+        defaults.synchronize()
         if #available(iOS 14.0, *) {
           WidgetCenter.shared.reloadTimelines(ofKind: "CourseScheduleWidget")
           WidgetCenter.shared.reloadTimelines(ofKind: "ExamScheduleWidget")

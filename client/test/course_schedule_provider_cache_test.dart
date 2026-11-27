@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
@@ -13,6 +14,9 @@ import 'package:shenliyuan/providers/course_schedule_provider.dart';
 import 'package:shenliyuan/models/course_term.dart';
 import 'package:shenliyuan/repositories/schedule_override_repository.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
+import 'package:shenliyuan/services/home_widget_service.dart';
+import 'package:shenliyuan/models/home_widget_config.dart';
+import 'package:shenliyuan/platform/app_platform.dart';
 
 import 'helpers/personal_snapshot_test_fakes.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -86,6 +90,40 @@ void main() {
   CourseScheduleProvider createProvider([Dio? dio]) {
     return CourseScheduleProvider(dio, createSnapshotStore);
   }
+
+  test('iOS App Group 不可用时保留主课表和失败原因，修复权限后可重新同步', () async {
+    AppPlatforms.currentOverrides = AppPlatform.ios;
+    addTearDown(() => AppPlatforms.currentOverrides = null);
+    const channel = MethodChannel('shenliyuan/widget');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final refreshStarted = Completer<void>();
+    var failRefresh = true;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'updateWidget' && failRefresh) {
+        if (!refreshStarted.isCompleted) refreshStarted.complete();
+        throw PlatformException(code: 'WIDGET_APP_GROUP_UNAVAILABLE', message: '共享存储不可用');
+      }
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    final provider = createProvider()..syncSessionContext('1001', '2403130233');
+    addTearDown(provider.dispose);
+    await provider.applyFetchedCourses([
+      <String, dynamic>{'name': '真实课程', 'time': 1, 'end_time': 2,
+        'week_day': 4, 'weeks': [1, 3]},
+    ]);
+    await refreshStarted.future;
+    await Future<void>.delayed(Duration.zero);
+    expect(provider.courses.single.name, '真实课程');
+    expect(HomeWidgetService.syncStatus.stage, HomeWidgetSyncStage.failed);
+    expect(HomeWidgetService.syncStatus.errorCode, 'WIDGET_APP_GROUP_UNAVAILABLE');
+    expect(HomeWidgetService.syncStatus.writeSucceeded, isTrue);
+    expect(HomeWidgetService.syncStatus.refreshSucceeded, isFalse);
+    failRefresh = false;
+    await HomeWidgetService.syncKind(HomeWidgetKind.course);
+    expect(HomeWidgetService.syncStatus.stage, HomeWidgetSyncStage.success);
+    expect(HomeWidgetService.syncStatus.errorCode, isNull);
+  });
 
   test('跨周调课合并在进程重建、教务重同步后保留，恢复时还原源和目标周', () async {
     final provider = createProvider()..syncSessionContext('1001', '2403130233');

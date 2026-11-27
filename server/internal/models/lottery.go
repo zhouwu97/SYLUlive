@@ -21,6 +21,7 @@ type LotteryEvent struct {
 	Title        string               `gorm:"size:100;not null" json:"title"`
 	Description  string               `gorm:"type:text" json:"description"`
 	PrizeName    string               `gorm:"size:100;not null" json:"prize_name"`
+	PrizeImage   string               `gorm:"size:500;default:''" json:"prize_image"`
 	DrawTime     time.Time            `json:"draw_time"`
 	Status       int                  `gorm:"default:0;index" json:"status"`
 	WinnerID     *uint                `json:"winner_id"`

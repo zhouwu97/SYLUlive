@@ -1,6 +1,7 @@
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../widgets/app_choice_chip.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../widgets/app_page_background.dart';
 import '../models/home_widget_config.dart';
@@ -62,7 +63,11 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
           a.theme == HomeWidgetTheme.appTheme,
     );
     if (followsSystem) {
-      HomeWidgetService.syncAll();
+      HomeWidgetService.syncAll().catchError((Object error) {
+        if (mounted) {
+          AppFeedback.error(_syncFailureMessage(error), context: context);
+        }
+      });
     }
   }
 
@@ -92,16 +97,18 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
     setState(() => _appearances[next.kind] = next);
     try {
       await HomeWidgetService.updateAppearance(next);
-    } catch (_) {
+    } catch (error) {
       // 较早请求的失败不能回滚用户随后已经选择的新主题。
       if (!mounted || _appearanceUpdateVersions[next.kind] != version) return;
-      if (previous != null) {
-        setState(() => _appearances[next.kind] = previous);
-      }
+      // 原生刷新失败时偏好已保存，按实际存储回显，避免后续改字号又写回旧配色。
+      final saved = await HomeWidgetService.getAppearance(next.kind);
+      if (!mounted || _appearanceUpdateVersions[next.kind] != version) return;
+      setState(() => _appearances[next.kind] = saved);
       final message = previous != null && previous.fontSize != next.fontSize
-          ? '字号设置失败，请重试'
-          : '小组件设置保存失败，请重试';
-      AppFeedback.error(message, context: context);
+          ? '字号更新未完成，请重试'
+          : '小组件设置更新未完成，请重试';
+      AppFeedback.error(_syncFailureMessage(error, fallback: message),
+          context: context);
     }
   }
 
@@ -167,7 +174,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
       await HomeWidgetService.syncKind(kind);
     } catch (error) {
       if (mounted) {
-        AppFeedback.error('小组件同步失败，请检查状态后重试', context: context);
+        AppFeedback.error(_syncFailureMessage(error), context: context);
         setState(() {});
       }
       return;
@@ -187,14 +194,22 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
     setState(() => _syncingAll = true);
     try {
       await HomeWidgetService.syncAll();
-    } catch (_) {
-      if (mounted) AppFeedback.error('小组件同步失败，请检查状态后重试', context: context);
+      await _load();
+      if (mounted) AppFeedback.success('全部桌面小组件已同步', context: context);
+    } catch (error) {
+      if (mounted) {
+        AppFeedback.error(_syncFailureMessage(error), context: context);
+      }
+    } finally {
+      if (mounted) setState(() => _syncingAll = false);
     }
-    await _load();
-    if (!mounted) return;
-    setState(() => _syncingAll = false);
-    AppFeedback.success('全部桌面小组件已同步', context: context);
   }
+
+  String _syncFailureMessage(Object error,
+          {String fallback = '小组件同步失败，请检查状态后重试'}) =>
+      error is PlatformException && error.code == 'WIDGET_APP_GROUP_UNAVAILABLE'
+          ? error.message ?? fallback
+          : fallback;
 
   @override
   Widget build(BuildContext context) =>
@@ -265,7 +280,9 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
         leading: Icon(failed ? Icons.error_outline : Icons.sync),
         title: Text(label),
         subtitle: Text(failed
-            ? '失败阶段：${status.errorCode == 'native_refresh_failed' ? '刷新系统小组件' : '写入共享存储'}'
+            ? status.errorCode == 'WIDGET_APP_GROUP_UNAVAILABLE'
+                ? status.errorMessage ?? '小组件共享存储不可用'
+                : '失败阶段：${status.errorCode == 'native_refresh_failed' ? '刷新系统小组件' : '写入共享存储'}'
             : status.lastRefreshAt == null
                 ? '可在此处手动同步'
                 : '最后同步：${status.lastRefreshAt}'),

@@ -33,6 +33,7 @@ type LotteryEventResponse struct {
 	Title            string                     `json:"title"`
 	Description      string                     `json:"description"`
 	PrizeName        string                     `json:"prize_name"`
+	PrizeImage       string                     `json:"prize_image"`
 	DrawTime         time.Time                  `json:"draw_time"`
 	Status           int                        `json:"status"`
 	WinnerID         *uint                      `json:"winner_id"`
@@ -71,6 +72,7 @@ func toLotteryEventResponse(event models.LotteryEvent, participantCount int64, j
 		Title:            event.Title,
 		Description:      event.Description,
 		PrizeName:        event.PrizeName,
+		PrizeImage:       event.PrizeImage,
 		DrawTime:         event.DrawTime,
 		Status:           event.Status,
 		WinnerID:         event.WinnerID,

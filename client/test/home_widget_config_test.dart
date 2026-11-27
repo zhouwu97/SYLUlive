@@ -12,6 +12,28 @@ import 'package:shenliyuan/services/exam_schedule_repository.dart';
 import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
 import 'package:shenliyuan/features/academic/storage/academic_connection_store.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/features/theme_pack/theme_appearance.dart';
+
+class _DelayedWidgetPaletteStore extends MemoryPreferencesStore {
+  final started = Completer<void>();
+  final release = Completer<void>();
+  @override
+  Future<bool> setString(String key, String value) async {
+    final saved = await super.setString(key, value);
+    if (key == HomeWidgetPreferenceKeys.appPalette && !started.isCompleted) {
+      started.complete();
+      await release.future;
+    }
+    return saved;
+  }
+}
+
+class _FailingWidgetPaletteStore extends MemoryPreferencesStore {
+  String? failedKey;
+  @override
+  Future<bool> setString(String key, String value) async =>
+      key == failedKey ? false : await super.setString(key, value);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -113,6 +135,80 @@ void main() {
         HomeWidgetTheme.dark,
       );
     });
+
+    test('主题包同步尚未结束时手动换色，最后一次选择不能被旧同步覆盖', () async {
+      final store = _DelayedWidgetPaletteStore();
+      AppPreferencesStore.setCustomInstance(store);
+      addTearDown(() => AppPreferencesStore.setCustomInstance(null));
+      final refreshThemes = <String?>[];
+      const channel = MethodChannel('shenliyuan/widget');
+      final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'updateWidget') {
+          refreshThemes.add((call.arguments as Map)['course_theme'] as String?);
+        }
+        return null;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final themeSync = HomeWidgetService.syncThemeAppearance(
+          const ThemeAppearance.empty(), prefs: store, courseThemeOverride: 'appTheme');
+      await store.started.future;
+      final manualChange = HomeWidgetService.updateAppearance(const HomeWidgetAppearance(
+          kind: HomeWidgetKind.course, theme: HomeWidgetTheme.dark, title: '课表'));
+      await Future<void>.delayed(Duration.zero);
+      store.release.complete();
+      await Future.wait([themeSync, manualChange]);
+      expect((await HomeWidgetService.getAppearance(HomeWidgetKind.course)).theme,
+          HomeWidgetTheme.dark);
+      expect(refreshThemes.last, 'dark');
+    });
+
+    test('主题同步原生刷新失败后，新选择仍能保存并刷新', () async {
+      AppPreferencesStore.setMockInitialValues({});
+      final prefs = await AppPreferencesStore.getInstance();
+      final refreshThemes = <String?>[];
+      const channel = MethodChannel('shenliyuan/widget');
+      final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'updateWidget') {
+          refreshThemes.add((call.arguments as Map)['course_theme'] as String?);
+          if (refreshThemes.length == 1) throw PlatformException(code: 'WIDGET_UPDATE_FAILED');
+        }
+        return null;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final sync = HomeWidgetService.syncThemeAppearance(const ThemeAppearance.empty(),
+          prefs: prefs, courseThemeOverride: 'appTheme');
+      final rejected = expectLater(sync, throwsStateError);
+      final manual = HomeWidgetService.updateAppearance(const HomeWidgetAppearance(
+          kind: HomeWidgetKind.course, theme: HomeWidgetTheme.dark, title: '课表'));
+      await Future.wait([rejected, manual]);
+      expect(refreshThemes, ['appTheme', 'dark']);
+      expect((await HomeWidgetService.getAppearance(HomeWidgetKind.course)).theme,
+          HomeWidgetTheme.dark);
+    });
+
+    for (final failedKey in [HomeWidgetPreferenceKeys.appPalette,
+      HomeWidgetPreferenceKeys.courseTheme, HomeWidgetPreferenceKeys.examTheme,
+      'widget_course_data']) {
+      test('主题同步写入失败明确报错，修复存储后可重试：$failedKey', () async {
+        final store = _FailingWidgetPaletteStore();
+        AppPreferencesStore.setCustomInstance(store);
+        addTearDown(() => AppPreferencesStore.setCustomInstance(null));
+        await store.setString('widget_course_data', jsonEncode({
+          'schema_version': 2, 'courses': [{'name': '测试课程'}],
+        }));
+        store.failedKey = failedKey;
+        Future<void> apply() => HomeWidgetService.syncThemeAppearance(
+            const ThemeAppearance.empty(), prefs: store,
+            courseThemeOverride: 'appTheme', examThemeOverride: 'appTheme');
+        await expectLater(apply(), throwsStateError);
+        store.failedKey = null;
+        await apply();
+        expect(store.getString(HomeWidgetPreferenceKeys.courseTheme), 'appTheme');
+        expect(store.getString(HomeWidgetPreferenceKeys.examTheme), 'appTheme');
+      });
+    }
 
     test('copyWith 修改其他外观字段不会丢失字号', () {
       const appearance = HomeWidgetAppearance(
@@ -388,6 +484,28 @@ void main() {
         null,
       );
     });
+
+    for (final failStorage in [false, true]) {
+    test('已有考试缓存时手动同步仍报告${failStorage ? '写入' : '原生刷新'}失败', () async {
+      final prefs = _FailingWidgetPaletteStore();
+      AppPreferencesStore.setCustomInstance(prefs);
+      addTearDown(() => AppPreferencesStore.setCustomInstance(null));
+      const identity = AcademicIdentityKey(appUserId: '1',
+          providerId: AcademicProviderId.syluUndergraduate, studentId: '20230001');
+      await AcademicConnectionStore(identity, prefs).setConnected(true);
+      await HomeWidgetService.syncExamData(const [], identity: identity);
+      if (failStorage) prefs.failedKey = 'widget_exam_data';
+      final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(const MethodChannel('shenliyuan/widget'), (call) async {
+        if (!failStorage && call.method == 'updateWidget') {
+          throw PlatformException(code: 'WIDGET_UPDATE_FAILED');
+        }
+        return null;
+      });
+      await expectLater(HomeWidgetService.syncAll(), throwsStateError);
+      await expectLater(HomeWidgetService.syncKind(HomeWidgetKind.exam), throwsStateError);
+    });
+    }
 
     test('A账号拉取考试并同步 -> 退出登录 -> 小组件数据与本地考试被清除 (A->logout)', () async {
       AppPreferencesStore.setMockInitialValues({});

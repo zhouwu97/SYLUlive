@@ -1,5 +1,92 @@
 import {test, expect} from '@playwright/test';
 
+for (const width of [375, 1440]) {
+  test(`QQ 绑定协议门禁弹窗保留连接码，失败可重试且不自动授权 ${width}`, async ({page}) => {
+    await page.setViewportSize({width, height: 900});
+    let accepted = false, confirmations = 0, lookups = 0;
+    const otherWrites: string[] = [];
+    await page.route('**/api/**', route => {
+      if (route.request().method() !== 'GET') otherWrites.push(new URL(route.request().url()).pathname);
+      return route.fulfill({json: {items: []}});
+    });
+    await page.route('**/api/user/profile', route => route.fulfill({json: {id: 991, role: 'user', nickname: '协议测试同学'}}));
+    await page.route('**/api/connected-apps', route => route.fulfill({json: {bindings: []}}));
+    await page.route('**/api/connected-apps/device-requests/lookup', route => {
+      lookups++;
+      return route.fulfill(accepted ? {json: {
+        consent_id: 'synthetic-request', installation_name: '测试助手', installation_id: 'synthetic-install',
+        user_code: 'ABCD-1234', requested_scopes: ['profile:read_minimal', 'checkin:write'],
+        confirmation_nonce: 'synthetic-nonce', expires_at: '2099-01-01T00:00:00Z',
+      }} : {status: 403, json: {code: 'legal_consent_required'}});
+    });
+    await page.route('**/api/user/legal-consents', route => {
+      confirmations++;
+      if (confirmations === 1) return route.fulfill({status: 503, json: {message: '暂时不能保存确认'}});
+      accepted = true;
+      return route.fulfill({json: {ok: true}});
+    });
+    await page.goto('connected-apps?purpose=personal&user_code=ABCD-1234');
+    const lookup = page.getByRole('button', {name: '查看授权请求', exact: true});
+    await lookup.click();
+    const dialog = page.getByRole('dialog', {name: '确认协议后继续授权', exact: true});
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('旧版本的同意不能代替对新内容的确认');
+    await expect(dialog.getByRole('button', {name: '确认协议', exact: true})).toBeDisabled();
+    await dialog.screenshot({path: test.info().outputPath(`binding-legal-${width}.png`)});
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await dialog.getByRole('button', {name: '关闭', exact: true}).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByLabel('一次性连接码', {exact: true})).toHaveValue('ABCD-1234');
+    expect(confirmations).toBe(0);
+    await lookup.click();
+    await dialog.getByRole('checkbox').check();
+    await dialog.getByRole('button', {name: '确认协议', exact: true}).click();
+    await expect(dialog.getByRole('alert')).toContainText('暂时不能保存确认');
+    await expect(dialog.getByRole('checkbox')).toBeChecked();
+    await dialog.getByRole('button', {name: '确认协议', exact: true}).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText('协议已确认，连接码和权限选择已保留。', {exact: false})).toBeVisible();
+    expect(lookups).toBe(2);
+    expect(otherWrites).toEqual([]);
+    await lookup.click();
+    await expect(page.getByRole('button', {name: '授权此助手', exact: true})).toBeVisible();
+    expect(lookups).toBe(3);
+    expect(otherWrites).toEqual([]);
+  });
+}
+
+test('协议保存期间切换账号，旧确认结果不回填新账号', async ({page}) => {
+  await page.route('**/api/**', route => route.fulfill({json: {items: []}}));
+  await page.route('**/api/user/profile', route => route.fulfill({json: {id: 991, role: 'user', nickname: '原账号'}}));
+  await page.route('**/api/connected-apps', route => route.fulfill({json: {bindings: []}}));
+  await page.route('**/api/connected-apps/device-requests/lookup', route => route.fulfill({status: 403, json: {code: 'legal_consent_required'}}));
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let finished!: () => void;
+  const completed = new Promise<void>(resolve => { finished = resolve; });
+  await page.route('**/api/user/legal-consents', async route => {
+    await pending;
+    await route.fulfill({json: {ok: true}}).catch(() => {});
+    finished();
+  });
+  await page.goto('connected-apps?purpose=personal&user_code=ABCD-1234');
+  await page.getByRole('button', {name: '查看授权请求', exact: true}).click();
+  const dialog = page.getByRole('dialog', {name: '确认协议后继续授权', exact: true});
+  await dialog.getByRole('checkbox').check();
+  const started = page.waitForRequest('**/api/user/legal-consents');
+  await dialog.getByRole('button', {name: '确认协议', exact: true}).click();
+  await started;
+  await expect(dialog.getByRole('button', {name: '正在确认…', exact: true})).toBeDisabled();
+  await page.route('**/api/user/profile', route => route.fulfill({json: {id: 992, role: 'user', nickname: '新账号'}}));
+  await page.evaluate(() => { const channel = new BroadcastChannel('sylulive-auth'); channel.postMessage('changed'); channel.close(); });
+  await expect(page.getByText(/当前校园账号：新账号/)).toBeVisible();
+  release();
+  await completed;
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText('协议已确认，连接码和权限选择已保留。', {exact: false})).toHaveCount(0);
+  await expect(page.getByLabel('一次性连接码', {exact: true})).toHaveValue('ABCD-1234');
+});
+
 test('基础协议门禁可恢复，教务专项授权单独勾选，不自动重放业务写入', async ({page}) => {
   let accepted = false;
   const confirmations: Record<string, unknown>[] = [], otherWrites: string[] = [];

@@ -1855,6 +1855,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<Uint8List> exportCurrentAppearance({
+    ThemePreviewCapture? capturePreview,
     String? customName,
     String? authorName,
     String? appVersion,
@@ -1891,6 +1892,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         (manualPortrait != null || manualLandscape != null);
     return ThemeAppearanceExporter.export(
       appearance: effective,
+      capturePreview: capturePreview,
       name: customName ?? (_trial == null ? suggestedExportName :
           effective.singleThemeName ?? '我的混搭外观'),
       author: authorName ?? '本机导出',

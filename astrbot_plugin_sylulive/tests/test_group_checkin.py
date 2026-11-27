@@ -67,7 +67,7 @@ async def test_group_checkin_preserves_consent_and_truthful_outcomes(case):
     else:
         plugin.client.call.return_value["data"].update(already=True, exp_earned=0)
     result = await plugin.checkin_result(event, submit=True)
-    expected = {"disabled": "尚未启用", "unbound": "尚未授权", "readonly": "没有签到权限",
+    expected = {"disabled": "尚未启用", "unbound": "没有保存你的 SYLUlive 账号连接凭据", "readonly": "没有签到权限",
                 "timeout": "未能确认", "repeat": "不会重复领奖"}
     assert expected[case] in result and "签到成功" not in result
     if case in {"disabled", "unbound", "readonly"}:

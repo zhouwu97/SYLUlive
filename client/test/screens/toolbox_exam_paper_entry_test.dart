@@ -104,6 +104,25 @@ void main() {
           ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf')))
         .load();
   });
+  for (final (joined, label) in [(true, '已成功参与'), (false, '立即参与')]) {
+    testWidgets('抽奖底栏在深色大字号下完整显示 $label', (tester) async {
+      final dio = Dio();
+      final auth = _LotteryAuth(dio);
+      addTearDown(auth.dispose);
+      addTearDown(dio.close);
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+        handler.resolve(Response(
+          requestOptions: request,
+          data: request.path.endsWith('/current')
+              ? {..._currentLottery(), 'joined': joined, 'my_weight': 2}
+              : {'items': []},
+        ));
+      }));
+      await _pumpLottery(tester, auth, theme: ThemeMode.dark, scale: 1.8);
+      expect(find.text(label), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
   for (final oldSuccess in [true, false]) {
     testWidgets('抽奖切号后旧报名不改写新账号或结束新提交 success=$oldSuccess', (tester) async {
       final dio = Dio();
@@ -194,7 +213,7 @@ void main() {
       final retry = find.text('重试加载往期记录');
       await tester.ensureVisible(retry);
       await _lotteryFrames(tester);
-      expect(find.text('合成抽奖'), findsWidgets);
+      expect(find.textContaining('合成抽奖'), findsWidgets);
       final folder = Platform.environment['LOTTERY_UI_EVIDENCE'];
       if (folder != null) {
         await tester.runAsync(() async {

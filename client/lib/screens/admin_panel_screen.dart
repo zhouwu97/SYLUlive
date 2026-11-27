@@ -107,30 +107,13 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             .get(path,
                 queryParameters: queryParameters,
                 options: Options(extra: session.requestExtra))
-            .timeout(const Duration(seconds: 8));
+            // 弱网下 Dio 自身还会重试，外层上限要留出重试时间，否则晚到的成功结果会被当成失败。
+            .timeout(const Duration(seconds: 20));
       } catch (error) {
-        debugPrint('[AdminPanel] pending count request failed: $error');
+        debugPrint('[AdminPanel] pending count request failed: $path $error');
         return null;
       }
     }
-
-    final responses = await Future.wait<Response<dynamic>?>([
-      safeGet('/reports', queryParameters: {'status': 'pending'}),
-      safeGet('/admin/featured-applications'),
-      safeGet('/teachers/pending'),
-      safeGet('/majors/pending'),
-      safeGet('/admin/invitations/pending'),
-      safeGet('/admin/removals/pending'),
-      safeGet('/admin/exam-papers/pending-count'),
-      safeGet('/canteens/pending'),
-      safeGet('/admin/course-evaluations/pending',
-          queryParameters: {'limit': 50}),
-      safeGet('/admin/appeals/review'),
-      safeGet('/admin/security/overview', queryParameters: {'range': '24h'}),
-      safeGet('/admin/themes', queryParameters: {'status': 'pending'}),
-    ]);
-
-    if (!_owns(session) || generation != _loadGeneration) return;
 
     int? getCount(Response<dynamic>? response) {
       if (response == null) return null;
@@ -165,17 +148,46 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           .pendingHighCount;
     }
 
+    var anyFailed = false;
+    // 每组到了就先显示，不等最慢的那个请求。
+    Future<void> load(List<Future<Response<dynamic>?>> requests,
+        void Function(List<Response<dynamic>?> responses) apply) async {
+      final responses = await Future.wait(requests);
+      if (!_owns(session) || generation != _loadGeneration) return;
+      if (responses.any((response) => response == null)) anyFailed = true;
+      setState(() => apply(responses));
+    }
+
+    await Future.wait([
+      load([safeGet('/reports', queryParameters: {'status': 'pending'})],
+          (r) => _reportsCount = getCount(r[0])),
+      load([safeGet('/admin/featured-applications')],
+          (r) => _featuredCount = getCount(r[0])),
+      load([
+        safeGet('/teachers/pending'),
+        safeGet('/majors/pending'),
+        safeGet('/canteens/pending'),
+        safeGet('/admin/course-evaluations/pending',
+            queryParameters: {'limit': 50}),
+      ], (r) => _reviewTasksCount = sumCounts(r)),
+      load([
+        safeGet('/admin/invitations/pending'),
+        safeGet('/admin/removals/pending'),
+      ], (r) => _adminTasksCount = sumCounts(r)),
+      load([safeGet('/admin/exam-papers/pending-count')],
+          (r) => _examPapersCount = getCount(r[0])),
+      load([safeGet('/admin/appeals/review')],
+          (r) => _courtReviewCount = getCount(r[0])),
+      load([
+        safeGet('/admin/security/overview', queryParameters: {'range': '24h'})
+      ], (r) => _securityCount = getSecurityCount(r[0])),
+      load([safeGet('/admin/themes', queryParameters: {'status': 'pending'})],
+          (r) => _themeCount = getCount(r[0])),
+    ]);
+
+    if (!_owns(session) || generation != _loadGeneration) return;
     setState(() {
-      _reportsCount = getCount(responses[0]);
-      _featuredCount = getCount(responses[1]);
-      _reviewTasksCount =
-          sumCounts([responses[2], responses[3], responses[7], responses[8]]);
-      _adminTasksCount = sumCounts([responses[4], responses[5]]);
-      _examPapersCount = getCount(responses[6]);
-      _courtReviewCount = getCount(responses[9]);
-      _securityCount = getSecurityCount(responses[10]);
-      _themeCount = getCount(responses[11]);
-      _hasLoadError = responses.any((response) => response == null);
+      _hasLoadError = anyFailed;
       _isLoading = false;
     });
   }
@@ -337,7 +349,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           icon: Icons.palette_outlined,
                           iconColor: Theme.of(context).colorScheme.primary,
                           title: '主题审核',
-                          subtitle: _isLoading
+                          subtitle: _isLoading && _themeCount == null
                               ? '正在加载主题待办'
                               : _themeCount == null
                                   ? '主题待办加载失败，请刷新重试'
@@ -839,7 +851,8 @@ class _AdminMetricPill extends StatelessWidget {
                         : Colors.orange[100])
                     : (isDark ? Colors.white24 : Colors.grey[200]),
                 borderRadius: BorderRadius.circular(10)),
-            child: isLoading
+            // 数字已到就先显示，其余请求还在加载也不再转圈。
+            child: isLoading && count == null
                 ? const SizedBox(
                     width: 10,
                     height: 10,

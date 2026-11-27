@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="一只鹈鹕骑着自行车沿海岸线前进的纯 SVG 2D 动画。">
+  <title>鹈鹕骑自行车 · SVG 2D 动画</title>
+  <style>
+    /* Hallmark · playful coastal motion · inline SVG illustration · no external assets */
+    /* Critique · the illustration carries the page; controls stay quiet and optional. */
+    /* Waive 26b · the single pause control is always available, so a disabled state has no meaning. */
+    :root {
+      --ink: #17324d;
+      --muted: #557087;
+      --paper: #f7fbf8;
+      --surface: #fffdf8;
+      --sky-top: #9bd9e6;
+      --sky-bottom: #f6d6ad;
+      --sun: #ffb45c;
+      --coral: #ef806f;
+      --coral-dark: #c85c55;
+      --teal: #2a9d9a;
+      --teal-dark: #217a7c;
+      --cream: #fff0cf;
+      --white: #ffffff;
+      --shadow: rgba(23, 50, 77, .16);
+      --line: rgba(23, 50, 77, .18);
+      --radius-card: 28px;
+      --font-body: ui-rounded, "Avenir Next", "Segoe UI", sans-serif;
+      --font-display: ui-rounded, "Avenir Next", "Segoe UI", sans-serif;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      overflow-x: clip;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: var(--font-body);
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .page {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 32px 20px;
+      box-sizing: border-box;
+    }
+
+    .scene-card {
+      width: min(1120px, 100%);
+      overflow: clip;
+      border-radius: var(--radius-card);
+      background: var(--surface);
+      box-shadow: 0 22px 60px var(--shadow);
+    }
+
+    .intro {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 32px 40px 24px;
+    }
+
+    .intro h1 {
+      max-width: 680px;
+      margin: 0;
+      color: var(--ink);
+      font-family: var(--font-display);
+      font-size: clamp(2.25rem, 5vw, 4.6rem);
+      line-height: .98;
+      letter-spacing: -.055em;
+      text-wrap: balance;
+      overflow-wrap: break-word;
+      min-width: 0;
+    }
+
+    .intro p {
+      max-width: 460px;
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.6vw, 1.2rem);
+      line-height: 1.5;
+    }
+
+    .pause-button {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--ink);
+      border-radius: 999px;
+      padding: 12px 16px;
+      color: var(--ink);
+      background: var(--cream);
+      cursor: pointer;
+      transition: transform .2s ease, background-color .2s ease, color .2s ease;
+    }
+
+    .pause-button:hover {
+      transform: translateY(-2px);
+      background: var(--sun);
+    }
+
+    .pause-button:active {
+      transform: translateY(0);
+    }
+
+    .pause-button:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+    }
+
+    .pause-button:focus-visible {
+      outline: 3px solid var(--teal);
+      outline-offset: 4px;
+    }
+
+    .pause-icon {
+      width: 14px;
+      height: 14px;
+      display: inline-block;
+      position: relative;
+    }
+
+    .pause-icon::before,
+    .pause-icon::after {
+      content: "";
+      position: absolute;
+      top: 1px;
+      width: 4px;
+      height: 12px;
+      border-radius: 2px;
+      background: currentColor;
+    }
+
+    .pause-icon::before { left: 1px; }
+    .pause-icon::after { right: 1px; }
+
+    .is-paused .pause-icon::before {
+      left: 2px;
+      width: 10px;
+      height: 12px;
+      top: 1px;
+      border-radius: 0;
+      background: currentColor;
+      clip-path: polygon(0 0, 100% 50%, 0 100%);
+    }
+
+    .is-paused .pause-icon::after {
+      display: none;
+    }
+
+    .art-wrap {
+      position: relative;
+      background: var(--sky-top);
+    }
+
+    .art-wrap::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 20px;
+      background: var(--teal-dark);
+      opacity: .18;
+      pointer-events: none;
+    }
+
+    .art {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+    }
+
+    .motion {
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    .bird-bob {
+      animation: bob 1.4s ease-in-out infinite;
+      transform-origin: center bottom;
+    }
+
+    .wing {
+      transform-box: fill-box;
+      transform-origin: 78% 74%;
+      animation: flap .72s ease-in-out infinite alternate;
+    }
+
+    .bike-wheel {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: spin 1.8s linear infinite;
+    }
+
+    .pedal {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: spin .72s linear infinite;
+    }
+
+    .cloud {
+      animation: drift 16s linear infinite;
+    }
+
+    .cloud.slow {
+      animation-duration: 23s;
+      animation-delay: -9s;
+    }
+
+    .road-dash {
+      animation: road 1.6s linear infinite;
+    }
+
+    .scene-card.is-paused .motion,
+    .scene-card.is-paused .wing,
+    .scene-card.is-paused .bike-wheel,
+    .scene-card.is-paused .pedal,
+    .scene-card.is-paused .cloud,
+    .scene-card.is-paused .road-dash {
+      animation-play-state: paused;
+    }
+
+    .caption {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 16px 40px 20px;
+      color: var(--muted);
+      background: var(--surface);
+      font-size: .92rem;
+    }
+
+    .caption span:last-child {
+      color: var(--coral-dark);
+      font-weight: 700;
+    }
+
+    @keyframes bob {
+      0%, 100% { transform: translateY(0) rotate(-1deg); }
+      50% { transform: translateY(-8px) rotate(1deg); }
+    }
+
+    @keyframes flap {
+      0% { transform: rotate(5deg); }
+      100% { transform: rotate(-13deg); }
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes drift {
+      from { transform: translateX(-140px); }
+      to { transform: translateX(1160px); }
+    }
+
+    @keyframes road {
+      from { transform: translateX(0); }
+      to { transform: translateX(-110px); }
+    }
+
+    @media (max-width: 700px) {
+      .page { padding: 16px 12px; }
+      .intro { display: block; padding: 24px 24px 20px; }
+      .pause-button { margin-top: 16px; }
+      .caption { padding: 16px 24px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .bird-bob,
+      .wing,
+      .bike-wheel,
+      .pedal,
+      .cloud,
+      .road-dash {
+        animation: none !important;
+      }
+
+      .pause-button { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="scene-card" aria-labelledby="title">
+      <header class="intro">
+        <div>
+          <h1 id="title">风从海边来。</h1>
+          <p>一只鹈鹕骑着小自行车，沿着海岸线去买晚餐。</p>
+        </div>
+        <button class="pause-button" type="button" aria-pressed="false">
+          <span class="pause-icon" aria-hidden="true"></span>
+          <span class="pause-label">暂停动画</span>
+        </button>
+      </header>
+
+      <div class="art-wrap">
+        <svg class="art" viewBox="0 0 1200 675" role="img" aria-labelledby="svg-title svg-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="svg-title">鹈鹕骑自行车经过海边</title>
+          <desc id="svg-desc">一只戴着红色帽子的鹈鹕骑着青绿色自行车，海浪、太阳和云朵在身后缓慢移动。</desc>
+          <defs>
+            <linearGradient id="skyGradient" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0" style="stop-color: var(--sky-top)" />
+              <stop offset="1" style="stop-color: var(--sky-bottom)" />
+            </linearGradient>
+            <linearGradient id="waterGradient" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0" style="stop-color: var(--teal)" />
+              <stop offset="1" style="stop-color: var(--teal-dark)" />
+            </linearGradient>
+            <filter id="softShadow" x="-30%" y="-30%" width="160%" height="180%">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="blur" />
+              <feOffset dy="10" result="offset" />
+              <feComponentTransfer><feFuncA type="linear" slope=".18" /></feComponentTransfer>
+              <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </defs>
+
+          <rect width="1200" height="675" fill="url(#skyGradient)" />
+          <circle cx="1000" cy="140" r="66" style="fill: var(--sun)" opacity=".92" />
+          <circle cx="1000" cy="140" r="94" style="fill: var(--sun)" opacity=".16" />
+
+          <g class="cloud" opacity=".82" style="fill: var(--white)">
+            <path d="M-80 168 C-38 119 5 127 25 156 C45 102 124 97 144 155 C185 147 211 177 214 207 H-80Z" />
+          </g>
+          <g class="cloud slow" opacity=".56" style="fill: var(--white)">
+            <path d="M-180 284 C-152 239 -98 241 -78 274 C-52 220 23 220 50 275 C85 268 111 292 113 319 H-180Z" />
+          </g>
+
+          <path d="M0 345 C120 306 230 314 343 349 C472 389 555 378 672 347 C787 317 894 303 1023 334 C1100 352 1156 350 1200 337 V675 H0Z" fill="url(#waterGradient)" />
+          <path d="M0 388 C104 361 191 369 278 398 C365 428 455 438 570 405 C703 368 806 350 928 374 C1050 398 1125 397 1200 379" fill="none" stroke="var(--white)" stroke-width="10" opacity=".45" stroke-linecap="round" />
+          <path d="M0 438 C117 406 205 420 308 450 C411 480 490 486 588 456 C726 413 824 405 949 430 C1051 451 1120 454 1200 439" fill="none" stroke="var(--white)" stroke-width="7" opacity=".27" stroke-linecap="round" />
+
+          <path d="M0 475 C152 456 247 492 370 511 C493 530 589 514 695 487 C840 451 976 468 1091 501 C1141 515 1174 515 1200 511 V675 H0Z" style="fill: var(--cream)" />
+          <path d="M0 563 C182 533 329 582 479 584 C624 586 730 543 875 550 C1028 557 1105 598 1200 580 V675 H0Z" style="fill: var(--coral)" opacity=".17" />
+
+          <g class="road-dash" opacity=".46" style="fill: var(--coral-dark)">
+            <rect x="48" y="595" width="78" height="9" rx="4.5" />
+            <rect x="262" y="595" width="78" height="9" rx="4.5" />
+            <rect x="476" y="595" width="78" height="9" rx="4.5" />
+            <rect x="690" y="595" width="78" height="9" rx="4.5" />
+            <rect x="904" y="595" width="78" height="9" rx="4.5" />
+            <rect x="1118" y="595" width="78" height="9" rx="4.5" />
+          </g>
+
+          <g class="bird-bob motion" filter="url(#softShadow)">
+            <g class="bike-frame" fill="none" stroke="var(--ink)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M480 520 L524 451 L684 451 L744 520 M524 451 L584 520 L744 520 M584 520 L684 451" stroke="var(--teal-dark)" stroke-width="10" />
+              <path d="M524 451 L508 419 M498 419 h34 M684 451 L695 411 M680 411 h32" stroke-width="8" />
+            </g>
+
+            <g class="bike-wheel" fill="none" stroke="var(--ink)" stroke-width="7">
+              <circle cx="480" cy="520" r="68" style="fill: var(--white)" opacity=".36" />
+              <path d="M480 452 V588 M412 520 H548 M432 472 L528 568 M528 472 L432 568" opacity=".52" />
+            </g>
+            <g class="bike-wheel" fill="none" stroke="var(--ink)" stroke-width="7">
+              <circle cx="744" cy="520" r="68" style="fill: var(--white)" opacity=".36" />
+              <path d="M744 452 V588 M676 520 H812 M696 472 L792 568 M792 472 L696 568" opacity=".52" />
+            </g>
+
+            <g class="pedal" fill="none" stroke="var(--ink)" stroke-width="8" stroke-linecap="round">
+              <circle cx="584" cy="520" r="20" style="fill: var(--sun)" />
+              <path d="M584 520 L612 496 M584 520 L555 541" />
+              <path d="M609 494 h25 M552 540 h-24" stroke-width="6" />
+            </g>
+
+            <path d="M533 441 Q545 381 607 364 Q660 351 704 390 L682 451 H530Z" style="fill: var(--coral)" stroke="var(--ink)" stroke-width="8" stroke-linejoin="round" />
+
+            <g class="pelican-body">
+              <ellipse cx="606" cy="326" rx="103" ry="116" style="fill: var(--white)" stroke="var(--ink)" stroke-width="8" />
+              <ellipse cx="645" cy="369" rx="62" ry="74" style="fill: var(--cream)" opacity=".9" />
+              <circle cx="615" cy="204" r="67" style="fill: var(--white)" stroke="var(--ink)" stroke-width="8" />
+              <path d="M648 224 C695 207 770 218 812 246 C772 274 702 279 648 256Z" style="fill: var(--sun)" stroke="var(--ink)" stroke-width="8" stroke-linejoin="round" />
+              <path d="M683 238 Q749 248 800 246" fill="none" stroke="var(--coral-dark)" stroke-width="5" stroke-linecap="round" opacity=".62" />
+              <circle cx="630" cy="188" r="10" style="fill: var(--ink)" />
+              <circle cx="633" cy="184" r="3" style="fill: var(--white)" />
+              <path d="M558 185 Q618 120 682 175 L671 195 Q615 166 568 207Z" style="fill: var(--coral)" stroke="var(--ink)" stroke-width="8" stroke-linejoin="round" />
+              <path d="M558 186 Q613 163 673 185" fill="none" stroke="var(--coral-dark)" stroke-width="6" />
+              <path d="M579 411 Q576 463 548 485" fill="none" stroke="var(--ink)" stroke-width="15" stroke-linecap="round" />
+              <path d="M666 410 Q674 459 699 484" fill="none" stroke="var(--ink)" stroke-width="15" stroke-linecap="round" />
+              <path d="M538 487 q-26 13 -37 1 M697 486 q24 15 36 1" fill="none" stroke="var(--sun)" stroke-width="13" stroke-linecap="round" />
+            </g>
+
+            <path class="wing" d="M574 299 Q505 279 468 328 Q493 380 575 383 Q611 355 574 299Z" style="fill: var(--teal)" stroke="var(--ink)" stroke-width="8" stroke-linejoin="round" />
+            <path d="M499 329 Q536 343 566 348" fill="none" stroke="var(--white)" stroke-width="6" opacity=".6" stroke-linecap="round" />
+            <path d="M687 326 Q715 313 731 331" fill="none" stroke="var(--ink)" stroke-width="8" stroke-linecap="round" />
+            <circle cx="732" cy="331" r="10" style="fill: var(--coral)" stroke="var(--ink)" stroke-width="6" />
+          </g>
+
+          <g opacity=".88" style="fill: var(--teal-dark)">
+            <path d="M103 491 q20-39 40 0 q20-39 40 0 v44 h-80Z" />
+            <path d="M1030 489 q19-45 39 0 q20-45 39 0 v48 h-78Z" />
+          </g>
+        </svg>
+      </div>
+
+      <footer class="caption">
+        <span>纯 SVG 绘制 · 无外部素材</span>
+        <span>沿海公路，慢慢骑。</span>
+      </footer>
+    </section>
+  </main>
+
+  <noscript>动画会在启用 JavaScript 时支持暂停控制；插图本身无需脚本即可显示。</noscript>
+
+  <script>
+    const card = document.querySelector('.scene-card');
+    const pauseButton = document.querySelector('.pause-button');
+    const pauseLabel = document.querySelector('.pause-label');
+
+    pauseButton.addEventListener('click', () => {
+      const paused = card.classList.toggle('is-paused');
+      pauseButton.setAttribute('aria-pressed', String(paused));
+      pauseLabel.textContent = paused ? '继续动画' : '暂停动画';
+    });
+  </script>
+</body>
+</html>

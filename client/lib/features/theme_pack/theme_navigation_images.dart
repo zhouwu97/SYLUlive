@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 typedef ThemeNavigationImages = Map<int, (ImageProvider, ImageProvider)>;
 
+const originalThemeNavigationIconSize = 44.0;
+
 ThemeNavigationImages themeNavigationImages(Map<String, dynamic>? navigation,
     {ImageProvider Function(String)? imageProvider}) {
   final icons = navigation?['icons'] as Map? ?? const {};

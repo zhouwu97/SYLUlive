@@ -724,6 +724,74 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('原画在横竖导航居中放大，只保留读屏标签', (tester) async {
+    final position = ValueNotifier(0.0);
+    addTearDown(position.dispose);
+    final boundary = GlobalKey();
+    final image = MemoryImage(img.encodePng(img.fill(
+        img.Image(width: 44, height: 44), color: img.ColorRgb8(255, 0, 0))));
+    final images = {0: (image, image)};
+    Widget navigation(Widget child) => host(Scaffold(
+          body: Center(
+            child: RepaintBoundary(
+              key: boundary,
+              child: SizedBox(width: 360, height: 460, child: child),
+            ),
+          ),
+        ));
+
+    for (final axis in Axis.values) {
+      await tester.pumpWidget(navigation(LiquidBottomNav(
+        currentIndex: 0,
+        visualIndexListenable: position,
+        onTap: (_) {},
+        axis: axis,
+        shaderEnabled: false,
+        themeImages: images,
+        originalIcons: true,
+      )));
+      await settleEmojiQAImages(tester, boundary.currentContext!, [image]);
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('首页'), findsOneWidget);
+      final item = find.byKey(const ValueKey('bottom-nav-item-0'));
+      final center =
+          tester.getCenter(item) - tester.getTopLeft(find.byKey(boundary));
+      final colors = await tester.runAsync(() async {
+        final render =
+            boundary.currentContext!.findRenderObject() as RenderRepaintBoundary;
+        final screenshot = await render.toImage();
+        try {
+          final pixels = (await screenshot.toByteData())!;
+          return [
+            for (var delta = -21; delta <= 21; delta++)
+              pixels.getUint32(((center.dy + delta).floor() * screenshot.width +
+                      center.dx.floor()) *
+                  4),
+          ];
+        } finally {
+          screenshot.dispose();
+        }
+      });
+      expect(colors, everyElement(0xff0000ff));
+
+      for (final original in [true, false]) {
+        await tester.pumpWidget(navigation(FloatingBottomNav(
+          currentIndex: 0,
+          onTap: (_) {},
+          axis: axis,
+          originalIcons: original,
+          themeImages: images,
+        )));
+        await tester.pumpAndSettle();
+        final iconSize = original ? 44.0 : 24.0;
+        expect(tester.getSize(find.byType(Image)), Size.square(iconSize));
+        expect(find.text('首页'), original ? findsNothing : findsOneWidget);
+        expect(find.text('集市'), findsOneWidget);
+        expect(find.bySemanticsLabel('首页'), findsOneWidget);
+      }
+    }
+  }, semanticsEnabled: true);
+
   testWidgets('导入取消、错误文件、权限失败后可重新选择；离开页面后旧读取不回填', (tester) async {
     final completer = Completer<String?>();
     var calls = 0;

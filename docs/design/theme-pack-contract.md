@@ -112,6 +112,8 @@ UTF-8 编码，大小不超过 64KB。
 | `iconTint` | `template`（默认）或 `original`。`template` 模式只取图标的 alpha 通道，再按 `navSelected` 或 `navUnselected` 着色 |
 | `icons` | 键为 `home`、`market`、`schedule`、`campus`、`me`，值为 `{ "normal": path, "selected": path }` 或 null。每个槽位的两态必须同时给出 |
 
+手机底栏和平板竖向侧栏对配置了 `original` 原画图标的入口居中绘制 44 dp 图标，不显示可见文字标签；读屏标签保留。`template` 和未配置图标的入口维持原有图标与可见标签。此规则不改变导航栏高度、尺寸或材质。
+
 ### 2.5 `font`
 
 | 字段 | 必填 | 约束 |

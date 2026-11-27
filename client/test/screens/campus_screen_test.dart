@@ -46,16 +46,16 @@ void main() {
       expect(find.text('校园资讯'), findsOneWidget);
     });
 
-    testWidgets('公益 AI 能力不可用时不显示 AI 入口', (tester) async {
+    testWidgets('校园首页不再显示校园 Agent 和个人助手', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(home: CampusScreen()),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.text('个人 AI 助手'), findsNothing);
-      expect(find.text('本机个人数据与已配置的兼容模型'), findsNothing);
-      expect(find.text('沈理 AI'), findsNothing);
+      expect(find.text('校园 Agent'), findsNothing);
+      expect(find.text('个人助手'), findsNothing);
+      expect(find.text('校园服务'), findsOneWidget);
     });
 
     testWidgets('加载状态下显示骨架屏而非占位文案', (tester) async {

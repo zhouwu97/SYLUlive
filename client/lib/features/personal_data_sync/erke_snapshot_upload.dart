@@ -49,7 +49,9 @@ class PreferenceErkeSnapshotUploadPolicyStore
         await preferences.setString(_key, 'never_upload');
         return;
       case ErkeSnapshotUploadPolicy.askEveryUpdate:
-        await preferences.remove(_key);
+        if (!await preferences.remove(_key)) {
+          throw StateError('无法清除二课摘要的上传偏好');
+        }
         return;
       case ErkeSnapshotUploadPolicy.uploadThisTime:
         throw ArgumentError('仅本次上传不能作为持久化策略');

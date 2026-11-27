@@ -4488,7 +4488,7 @@
 /* 桌面「校园」一级页：服务入口一行八项；公告列表与右侧地图／日历并列，右列吸顶，避免长列表旁出现大段空白。 */
 @media (min-width:601px) {
   .campus-page .campus-services {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 
   .campus-page .campus-services .quick {

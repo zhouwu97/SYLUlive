@@ -319,7 +319,7 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
     if (snapshot.isPartial) return '缓存包含未更新数据，摘要暂未上传，请完整刷新后重试';
     try {
       await uploader.upload(snapshot);
-      return '二课摘要已按授权上传，可供校园 Agent 使用';
+      return '二课摘要已按授权上传';
     } on ErkeSnapshotUploadException {
       return '二课已更新，但摘要上传失败';
     }

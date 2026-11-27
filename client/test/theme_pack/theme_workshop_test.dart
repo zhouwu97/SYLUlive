@@ -483,6 +483,18 @@ void main() {
     await tester.tap(thumbnail);
     await tester.pumpAndSettle();
     expect(find.text('全屏预览'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'AI 助手'), findsNothing);
+    final campusPreview = find.widgetWithText(ChoiceChip, '校园');
+    await tester.ensureVisible(campusPreview);
+    await tester.tap(campusPreview);
+    await tester.pumpAndSettle();
+    expect(find.text('校园 · 正常'), findsOneWidget);
+    expect(find.text('校园 Agent'), findsNothing);
+    expect(find.text('个人助手'), findsNothing);
+    final homePreview = find.widgetWithText(ChoiceChip, '首页');
+    await tester.ensureVisible(homePreview);
+    await tester.tap(homePreview);
+    await tester.pumpAndSettle();
     for (final label in ['加载', '空态', '失败', '权限']) {
       final state = find.widgetWithText(ChoiceChip, label);
       await tester.ensureVisible(state);

@@ -382,6 +382,39 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     return policy ?? ErkeSnapshotUploadPolicy.askEveryUpdate;
   }
 
+  Future<void> _stopErkeSnapshotAutoUpload() async {
+    final auth = context.read<AuthProvider>();
+    final user = auth.user;
+    if (!auth.isLoggedIn || user == null) return;
+    final session = PublishSessionScope(
+      accountId: user.id,
+      accountSessionEpoch: auth.accountSessionEpoch,
+    );
+    final policy = PreferenceErkeSnapshotUploadPolicyStore(
+      appUserId: user.id.toString(),
+    );
+    var saved = false;
+    try {
+      if (await policy.read() == ErkeSnapshotUploadPolicy.autoUploadSummary) {
+        await policy.write(ErkeSnapshotUploadPolicy.askEveryUpdate);
+      }
+      saved = true;
+    } catch (_) {
+      // 持久化失败时告知用户，避免把仍生效的自动上传误报为已关闭。
+    }
+    if (mounted &&
+        session.owns(
+          userId: auth.user?.id,
+          sessionEpoch: auth.accountSessionEpoch,
+        )) {
+      AppFeedback.showSnackBar(
+        context,
+        saved ? '已关闭二课摘要自动上传' : '关闭自动上传失败，请重试',
+        isError: !saved,
+      );
+    }
+  }
+
   Future<void> _deleteUploadedErkeSnapshot() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
@@ -395,7 +428,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: const Text('删除已上传二课快照？'),
-        content: const Text('删除后校园 Agent 将无法继续读取该快照。'),
+        content:
+            const Text('删除后，已授权的 QQ 助手将无法查询这份摘要。本机二课记录会保留。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -526,6 +560,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                     AppFeedback.showSnackBar(context, '本地缓存已清除');
                     setState(() {});
                   }
+                } else if (value == 'stop_snapshot_auto_upload') {
+                  await _stopErkeSnapshotAutoUpload();
                 } else if (value == 'delete_uploaded_snapshot') {
                   await _deleteUploadedErkeSnapshot();
                 }
@@ -541,6 +577,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                     value: 'forget_credentials', child: Text('清除已保存密码')),
                 const PopupMenuItem(
                     value: 'clear_cache', child: Text('清除本地缓存')),
+                const PopupMenuItem(
+                  value: 'stop_snapshot_auto_upload',
+                  child: Text('关闭二课摘要自动上传'),
+                ),
                 const PopupMenuItem(
                   value: 'delete_uploaded_snapshot',
                   child: Text('删除已上传二课快照'),

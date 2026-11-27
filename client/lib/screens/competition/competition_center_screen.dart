@@ -12,11 +12,9 @@ import 'package:provider/provider.dart';
 import '../../widgets/app_page_background.dart';
 import '../../widgets/responsive_content.dart';
 import '../../config/beta_release_policy.dart';
-import '../../models/agent_context.dart';
 import '../../models/competition.dart';
 import '../../models/competition_dashboard_summary.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/ai_assistant_service.dart';
 import '../../services/competition_signal_service.dart';
 import '../../services/domain_change_bus.dart';
 import '../../utils/app_feedback.dart';
@@ -39,7 +37,6 @@ import 'competition_my_hub_screen.dart';
 import 'competition_preference_screen.dart';
 
 import 'competition_admin_center_screen.dart';
-import '../ai/ai_assistant_screen.dart';
 import '../../widgets/app_card.dart';
 
 class CompetitionCenterScreen extends StatefulWidget {
@@ -1622,7 +1619,6 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
   Map<String, dynamic> _eventRaw = {};
   bool _loading = true;
   String? _error;
-  bool _askingAgent = false;
 
   @override
   void initState() {
@@ -1672,44 +1668,6 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
         AppFeedback.dioErrorMessage(e, fallback: '加入失败，请先登录'),
         isError: true,
       );
-    }
-  }
-
-  Future<void> _askAgent(CompetitionEvent event) async {
-    if (_askingAgent) return;
-    setState(() => _askingAgent = true);
-    final dio = context.read<AuthProvider>().dio;
-    try {
-      final service = AiAssistantService(dio);
-      final capabilities = await service.getCapabilities();
-      if (!mounted) return;
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => AiAssistantScreen(
-            capabilities: capabilities,
-            service: service,
-            dio: dio,
-            initialPrompt: '我适合参加这个比赛吗？',
-            launchContext: AgentLaunchContext(
-              entrypoint: 'competition_detail',
-              contextRefs: <AgentContextRef>[
-                AgentContextRef(type: 'competition_event', id: '${event.id}'),
-              ],
-              suggestedIntent: '评估当前赛事是否适合我，并结合时间安排给出建议',
-            ),
-          ),
-        ),
-      );
-    } on AiAssistantServiceException catch (error) {
-      if (mounted) {
-        AppFeedback.showSnackBar(context, error.message, isError: true);
-      }
-    } catch (_) {
-      if (mounted) {
-        AppFeedback.showSnackBar(context, '校园 Agent 暂不可用', isError: true);
-      }
-    } finally {
-      if (mounted) setState(() => _askingAgent = false);
     }
   }
 
@@ -1958,26 +1916,6 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                           ),
                           icon: const Icon(Icons.add),
                           label: const Text('加入我的计划'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed:
-                              _askingAgent ? null : () => _askAgent(event),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: titleColor,
-                            side: BorderSide(
-                              color: CompetitionUiTokens.borderColor(isDark),
-                            ),
-                          ),
-                          icon: _askingAgent
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.auto_awesome_outlined),
-                          label:
-                              Text(_askingAgent ? '正在打开 Agent…' : '问问 Agent'),
                         ),
                       ],
                     ),

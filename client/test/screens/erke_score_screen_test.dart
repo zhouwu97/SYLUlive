@@ -227,6 +227,30 @@ void main() {
     auth.dispose();
   });
 
+  testWidgets('二课页可关闭摘要自动上传并保留本机成绩', (tester) async {
+    final auth = _Auth();
+    addTearDown(auth.dispose);
+    final policy = PreferenceErkeSnapshotUploadPolicyStore(appUserId: '77');
+    await policy.write(ErkeSnapshotUploadPolicy.autoUploadSummary);
+    await tester.pumpWidget(ChangeNotifierProvider<AuthProvider>.value(
+      value: auth,
+      child: GoldenTestApp(
+        home: ErkeScoreScreen(
+          credentialStore: DeviceCredentialStore(secretStore: MemorySecretStore()),
+          createRepository: (u, s, vpn) => _Repo(u, s, vpn),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('关闭二课摘要自动上传'));
+    await tester.pumpAndSettle();
+    expect(await policy.read(), ErkeSnapshotUploadPolicy.askEveryUpdate);
+    expect(find.text('毕业要求完成度'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   for (final profile in ['light', 'dark', 'large-text']) {
     testWidgets('$profile 已保存密码时保留成绩后台更新、错误恢复、退出重开', (tester) async {
       await setGoldenViewport(tester, GoldenViewports.phone360x800);

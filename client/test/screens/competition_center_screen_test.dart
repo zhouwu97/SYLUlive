@@ -290,6 +290,7 @@ void main() {
           expect(find.text(text), findsOneWidget);
           expect(tester.takeException(), isNull);
         }
+        expect(find.text('问问 Agent', skipOffstage: false), findsNothing);
         expect(find.text('not_recorded'), findsNothing);
       });
     }

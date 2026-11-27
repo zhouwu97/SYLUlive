@@ -42,6 +42,7 @@ void main() {
           textScaler: TextScaler.linear(1.3), home: CampusCalendarScreen()),
     ));
     await tester.pumpAndSettle();
+    expect(find.textContaining('问 Agent', skipOffstage: false), findsNothing);
     await tester.tap(find.byTooltip('更多操作'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('查看官方原图'));

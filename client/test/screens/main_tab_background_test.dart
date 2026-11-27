@@ -14,7 +14,6 @@ import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/campus_screen.dart';
 import 'package:shenliyuan/screens/market_screen.dart';
-import 'package:shenliyuan/services/ai_assistant_service.dart';
 import 'package:shenliyuan/services/campus_article_service.dart';
 import 'package:shenliyuan/widgets/global_background_wrapper.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
@@ -25,6 +24,7 @@ import '../helpers/load_test_fonts.dart';
 
 class _Api {
   final dio = Dio();
+  final paths = <String>[];
   Completer<void>? pending;
   bool fail = false;
   bool empty = false;
@@ -32,6 +32,7 @@ class _Api {
   _Api() {
     dio.interceptors
         .add(InterceptorsWrapper(onRequest: (options, handler) async {
+      paths.add(options.path);
       await pending?.future;
       if (fail) {
         handler.reject(DioException(
@@ -57,7 +58,11 @@ class _Api {
               'page_size': 6,
               'has_more': false,
             },
-          '/ai/capabilities' => {'enabled': false},
+          '/ai/capabilities' => {
+              'enabled': true,
+              'access_allowed': true,
+              'chat_enabled': true,
+            },
           _ => {
               'posts': empty
                   ? []
@@ -113,7 +118,6 @@ Widget _screen(_Api api, bool market) => market
     ? const MarketScreen()
     : CampusScreen(
         articleService: CampusArticleService(api.dio),
-        aiService: AiAssistantService(api.dio),
         nowProvider: () => DateTime(2026, 10, 25),
       );
 
@@ -219,6 +223,11 @@ void main() {
         expect(customColor, isNot(cleanColor));
         final title = market ? '闲置自行车测试' : '校园通知测试';
         expect(find.text(title), findsOneWidget);
+        if (!market) {
+          expect(api.paths, isNot(contains('/ai/capabilities')));
+          expect(find.text('校园 Agent'), findsNothing);
+          expect(find.text('个人助手'), findsNothing);
+        }
 
         final captions = market
             ? ['集市', '校园二手、求购和办事信息', '共 1 条']

@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 
 import '../widgets/app_page_background.dart';
 import '../models/campus_calendar.dart';
-import '../models/agent_context.dart';
 import '../models/campus_timeline.dart';
 import '../models/exam_schedule.dart';
 import '../models/user_calendar.dart';
@@ -16,11 +15,8 @@ import '../providers/course_schedule_provider.dart';
 import '../providers/user_calendar_provider.dart';
 import '../services/exam_schedule_repository.dart';
 import '../services/app_resume_coordinator.dart';
-import '../services/ai_assistant_service.dart';
 import '../services/domain_change_bus.dart';
 import '../services/unified_timeline_service.dart';
-import '../utils/app_feedback.dart';
-import 'ai/ai_assistant_screen.dart';
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/app_card.dart';
 
@@ -42,7 +38,6 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
   final _examRepository = ExamScheduleRepository();
   List<ExamModel> _importedExams = const [];
   List<CompetitionTimelineEntry> _competitionTimeline = const [];
-  bool _askingAgent = false;
   DateTime? _pendingSelectedDate;
   bool _isMonthPagerScrolling = false;
   bool? _pendingMonthPagerScrolling;
@@ -144,47 +139,6 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
       return Provider.of<AuthProvider>(context, listen: false);
     } on ProviderNotFoundException {
       return null;
-    }
-  }
-
-  Future<void> _openAgentForSelectedDate() async {
-    if (_askingAgent) return;
-    setState(() => _askingAgent = true);
-    final dio = context.read<AuthProvider>().dio;
-    try {
-      final service = AiAssistantService(dio);
-      final capabilities = await service.getCapabilities();
-      if (!mounted) return;
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => AiAssistantScreen(
-            capabilities: capabilities,
-            service: service,
-            dio: dio,
-            initialPrompt: '这天有什么安排？',
-            launchContext: AgentLaunchContext(
-              entrypoint: 'calendar',
-              contextRefs: <AgentContextRef>[
-                AgentContextRef(
-                  type: 'date',
-                  id: _formatContextDate(_selectedDate),
-                ),
-              ],
-              suggestedIntent: '总结这一天的安排，并判断是否还有可用时间',
-            ),
-          ),
-        ),
-      );
-    } on AiAssistantServiceException catch (error) {
-      if (mounted) {
-        AppFeedback.showSnackBar(context, error.message, isError: true);
-      }
-    } catch (_) {
-      if (mounted) {
-        AppFeedback.showSnackBar(context, '校园 Agent 暂不可用', isError: true);
-      }
-    } finally {
-      if (mounted) setState(() => _askingAgent = false);
     }
   }
 
@@ -347,8 +301,6 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
                       .toList(growable: false),
               timelineItems: selectedTimeline,
               isDark: isDark,
-              isAskingAgent: _askingAgent,
-              onAskAgent: _openAgentForSelectedDate,
             ),
           ),
         ],
@@ -1372,8 +1324,6 @@ class _DayDetailCard extends StatelessWidget {
     required this.personalEvents,
     required this.timelineItems,
     required this.isDark,
-    required this.isAskingAgent,
-    required this.onAskAgent,
   });
 
   final CampusDayInfo info;
@@ -1381,8 +1331,6 @@ class _DayDetailCard extends StatelessWidget {
   final List<UserCalendarEvent> personalEvents;
   final List<CampusTimelineItem> timelineItems;
   final bool isDark;
-  final bool isAskingAgent;
-  final VoidCallback onAskAgent;
 
   @override
   Widget build(BuildContext context) {
@@ -1478,31 +1426,6 @@ class _DayDetailCard extends StatelessWidget {
             _DetailLine(line: line, isDark: isDark),
             if (line != eventLines.last) const SizedBox(height: 10),
           ],
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: isAskingAgent ? null : onAskAgent,
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(44),
-              foregroundColor: isDark
-                  ? _CalendarPalette.darkPrimary
-                  : _CalendarPalette.primary,
-              side: BorderSide(
-                color: isDark
-                    ? _CalendarPalette.darkPrimary.withValues(alpha: 0.45)
-                    : _CalendarPalette.primary.withValues(alpha: 0.35),
-              ),
-            ),
-            icon: isAskingAgent
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.auto_awesome_outlined, size: 18),
-            label: Text(
-              isAskingAgent ? '正在打开 Agent…' : '问 Agent：这天怎么安排？',
-            ),
-          ),
         ],
       ),
     );
@@ -1741,11 +1664,6 @@ String _dayStatus(CampusDayInfo info, List<ExamModel> exams) {
   if (info.isWeekend) return '周末';
   return '非教学周';
 }
-
-String _formatContextDate(DateTime date) =>
-    '${date.year.toString().padLeft(4, '0')}-'
-    '${date.month.toString().padLeft(2, '0')}-'
-    '${date.day.toString().padLeft(2, '0')}';
 
 String _timelineTypeLabel(CampusTimelineType type) => switch (type) {
       CampusTimelineType.course => '课程安排',

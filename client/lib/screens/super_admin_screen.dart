@@ -763,10 +763,11 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                 .map((e) => '${e['title'] ?? ''}')
                 .firstOrNull;
 
+        final bottomInset = MediaQuery.paddingOf(context).bottom;
         return Stack(
           children: [
             ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 104),
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 104 + bottomInset),
               children: [
                 if (_lotteryEvents.isNotEmpty) ...[
                   _buildLotteryPeriodChips(event.id),
@@ -780,7 +781,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             ),
             Positioned(
               right: 16,
-              bottom: 16,
+              bottom: 16 + bottomInset,
               child: FloatingActionButton.extended(
                 heroTag: 'lottery-publish',
                 backgroundColor: AppThemeTokens.of(context).primary,

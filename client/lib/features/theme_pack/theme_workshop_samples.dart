@@ -7,8 +7,6 @@ import '../../models/user.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../../theme/app_theme_style.dart';
-import '../../widgets/ai/ai_input_composer.dart';
-import '../../widgets/ai/ai_mode_switch.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/campus/campus_header.dart';
 import '../../widgets/floating_bottom_nav.dart';
@@ -33,7 +31,6 @@ enum WorkshopSamplePage {
   me('我'),
   userHome('个人主页'),
   settings('设置'),
-  ai('AI 助手'),
   toolbox('工具箱');
 
   const WorkshopSamplePage(this.label);
@@ -135,13 +132,10 @@ class ThemeWorkshopSampleStage extends StatefulWidget {
 
 class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
   final ValueNotifier<double> _navVisual = ValueNotifier<double>(0);
-  final TextEditingController _aiInputController = TextEditingController();
-  bool _aiPersonalMode = false;
 
   @override
   void dispose() {
     _navVisual.dispose();
-    _aiInputController.dispose();
     super.dispose();
   }
 
@@ -755,63 +749,6 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
               title: '消息通知提醒',
               subtitle: '课程与考试提醒处于开启状态',
               onTap: () {},
-            ),
-          ],
-        );
-      case WorkshopSamplePage.ai:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            AiModeSwitch(
-              isPersonalMode: _aiPersonalMode,
-              onModeChanged: (v) => setState(() => _aiPersonalMode = v),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: tokens.bubbleOutgoing,
-                  borderRadius: BorderRadius.circular(shape.md),
-                ),
-                child: Text(
-                  '帮我看看今天下午有什么课？',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: tokens.bubbleOutgoingText,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: tokens.bubbleIncoming,
-                  borderRadius: BorderRadius.circular(shape.md),
-                ),
-                child: Text(
-                  '下午 13:30 在主教 302 有《高等数学 A》。',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: tokens.bubbleIncomingText,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            AiInputComposer(
-              controller: _aiInputController,
-              maxCharacters: 500,
-              enabled: true,
-              running: false,
-              hintText: '输入校园问题…',
-              onSend: (_) {},
             ),
           ],
         );

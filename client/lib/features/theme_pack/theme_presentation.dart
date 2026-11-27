@@ -24,12 +24,14 @@ class ThemePresentationOverride extends InheritedWidget {
     required this.appearance,
     this.brightnessOverride,
     this.assetResolver,
+    this.heroSlot,
     required super.child,
   });
 
   final ThemeAppearance appearance;
   final Brightness? brightnessOverride;
   final ThemeAssetProviderResolver? assetResolver;
+  final String? heroSlot;
 
   static ThemePresentationOverride? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<ThemePresentationOverride>();
@@ -38,6 +40,7 @@ class ThemePresentationOverride extends InheritedWidget {
   bool updateShouldNotify(ThemePresentationOverride oldWidget) =>
       oldWidget.appearance.data != appearance.data ||
       oldWidget.brightnessOverride != brightnessOverride ||
+      oldWidget.heroSlot != heroSlot ||
       oldWidget.assetResolver != assetResolver;
 }
 
@@ -438,6 +441,13 @@ class ThemeHeaderFrame extends StatelessWidget {
       return infoWidget;
     }
 
+    if (ThemePresentationOverride.maybeOf(context)?.heroSlot == slot) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [SizedBox(height: layout.imageHeight), infoWidget],
+      );
+    }
+
     // 沉浸模板：hero 图由背景层的 ThemeHeroLayer 铺到状态栏下方绘制，这里只留出
     // 图片可见区并登记锚点；信息卡紧接锚点，压住 hero 底边。正式页面以外（导入预览、
     // 工坊、设置编辑）没有背景层，仍使用内嵌装饰区，保证预览可见。
@@ -446,7 +456,17 @@ class ThemeHeaderFrame extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ThemeHeroAnchor(slot: slot, height: layout.imageHeight),
+          if (slot == 'campus' && ResponsiveUtil.useSideNavigation(context))
+            LayoutBuilder(builder: (context, constraints) {
+              final scale = ((constraints.maxWidth + 32) / 420).clamp(1.0, 2.4);
+              return ThemeHeroAnchor(
+                slot: slot,
+                height: (layout.imageHeight + ThemeHeroLayer.overlap) * scale -
+                    ThemeHeroLayer.overlap,
+              );
+            })
+          else
+            ThemeHeroAnchor(slot: slot, height: layout.imageHeight),
           infoWidget,
         ],
       );
@@ -489,9 +509,11 @@ class ThemeHeaderFrame extends StatelessWidget {
     );
   }
 
-  /// 手机主壳使用背景层 hero；平板、预览和二级路由使用所属内容栏的内嵌装饰区。
-  static bool immersiveEnabled(BuildContext context) =>
-      !ResponsiveUtil.useSideNavigation(context) &&
+  /// 主壳使用背景层 hero，平板须位于承载 hero 的内容栏内。
+  static bool immersiveEnabled(BuildContext context, {bool inHeroPane = false}) =>
+      (!ResponsiveUtil.useSideNavigation(context) ||
+          inHeroPane ||
+          context.findAncestorWidgetOfExactType<ThemeHeroPane>() != null) &&
       ThemePresentationOverride.maybeOf(context) == null &&
       ModalRoute.of(context)?.isFirst != false;
 }

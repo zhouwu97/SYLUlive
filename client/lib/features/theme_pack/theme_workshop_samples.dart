@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../models/post.dart';
 import '../../models/user.dart';
@@ -19,6 +22,7 @@ import '../../widgets/post_card.dart';
 import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_tile.dart';
 import 'theme_appearance.dart';
+import 'theme_hero_layer.dart';
 import 'theme_manifest.dart';
 import 'theme_navigation_images.dart';
 import 'theme_presentation.dart';
@@ -118,6 +122,7 @@ class ThemeWorkshopSampleStage extends StatefulWidget {
     required this.sampleState,
     this.showDialogOverlay = false,
     this.onFocusTarget,
+    this.onTabSelected,
   });
 
   final ThemeAppearance appearance;
@@ -127,6 +132,7 @@ class ThemeWorkshopSampleStage extends StatefulWidget {
   final WorkshopSampleState sampleState;
   final bool showDialogOverlay;
   final ValueChanged<WorkshopFocusTarget>? onFocusTarget;
+  final ValueChanged<WorkshopSamplePage>? onTabSelected;
 
   @override
   State<ThemeWorkshopSampleStage> createState() =>
@@ -134,13 +140,17 @@ class ThemeWorkshopSampleStage extends StatefulWidget {
 }
 
 class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
+  static const _topBarHeight = 42.0;
+  static const _searchHeight = 34.0;
   final ValueNotifier<double> _navVisual = ValueNotifier<double>(0);
+  final ScrollController _scroll = ScrollController(keepScrollOffset: false);
   final TextEditingController _aiInputController = TextEditingController();
   bool _aiPersonalMode = false;
 
   @override
   void dispose() {
     _navVisual.dispose();
+    _scroll.dispose();
     _aiInputController.dispose();
     super.dispose();
   }
@@ -180,6 +190,16 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
       imageProvider: (p) => widget.assetResolver(p) ?? AssetImage(p),
     );
     final originalIcons = navigation?['iconTint'] == 'original';
+    final heroSlot = switch (widget.page) {
+      WorkshopSamplePage.home => 'home',
+      WorkshopSamplePage.campus => 'campus',
+      WorkshopSamplePage.me => 'me',
+      _ => null,
+    };
+    void selectTab(int index) {
+      widget.onTabSelected?.call(WorkshopSamplePage.values[index]);
+      widget.onFocusTarget?.call(WorkshopFocusTarget.icons);
+    }
     final navTab = switch (widget.page) {
       WorkshopSamplePage.market => 1,
       WorkshopSamplePage.schedule => 2,
@@ -193,12 +213,25 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
       appearance: widget.appearance,
       brightnessOverride: widget.brightness,
       assetResolver: widget.assetResolver,
+      heroSlot: heroSlot,
       child: Theme(
         data: theme,
         child: Builder(
           builder: (stageCtx) {
             final tokens = AppThemeTokens.of(stageCtx);
             final shape = AppShape.of(stageCtx);
+            final hero = heroSlot == null
+                ? null
+                : ThemeHeaderResolved.of(stageCtx, heroSlot);
+            final immersive = hero?.hasDecoration == true;
+            final home = widget.page == WorkshopSamplePage.home;
+            final heroSpace = !immersive
+                ? 0.0
+                : home
+                    ? HomeThemedHeaderBanner.immersiveHeight(stageCtx)
+                    : hero!.layout.imageHeight;
+            final heroHeight = _topBarHeight + 8 + heroSpace +
+                (home ? _searchHeight : 0) + ThemeHeroLayer.overlap;
             final showBottomNav = const {
               WorkshopSamplePage.home,
               WorkshopSamplePage.market,
@@ -227,21 +260,73 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
                               ),
                       ),
                     ),
+                    if (immersive)
+                      Positioned.fill(
+                        child: ListenableBuilder(
+                          listenable: _scroll,
+                          child: ThemeHeroArt(
+                            slot: heroSlot!,
+                            resolved: hero!,
+                            height: heroHeight,
+                            controlsHeight: ThemeHeroLayer.overlap +
+                                (home ? _searchHeight : 0),
+                          ),
+                          builder: (context, art) {
+                            final offset = _scroll.hasClients
+                                ? math.max(0.0, _scroll.offset)
+                                : 0.0;
+                            final remaining = home
+                                ? math.max(_topBarHeight, heroHeight - offset)
+                                : heroHeight;
+                            return Stack(children: [
+                              Positioned(
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                height: remaining,
+                                child: ClipRect(
+                                  child: Stack(children: [
+                                    Positioned(
+                                      top: -math.min(offset, heroHeight - _topBarHeight) / 2,
+                                      left: 0,
+                                      right: 0,
+                                      height: heroHeight,
+                                      child: Opacity(
+                                        opacity: home ? 1 : ThemeHeroLayer.scrollOpacity(offset, heroHeight),
+                                        child: art,
+                                      ),
+                                    ),
+                                  ]),
+                                ),
+                              ),
+                            ]);
+                          },
+                        ),
+                      ),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _buildTopAppBar(tokens),
+                        _buildTopAppBar(stageCtx, tokens, immersive: immersive),
                         Expanded(
                           child: SingleChildScrollView(
+                            key: ValueKey(widget.page),
+                            controller: _scroll,
                             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                             child: widget.sampleState !=
                                     WorkshopSampleState.normal
-                                ? _buildNonNormalState(
+                                ? Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (immersive) SizedBox(height: heroSpace),
+                                      if (immersive && home) _buildSearch(stageCtx, tokens, shape),
+                                      _buildNonNormalState(
                                     stageCtx,
                                     tokens,
                                     shape,
                                     cardOpacity,
                                     frostStrength,
+                                      ),
+                                    ],
                                   )
                                 : _buildPageBody(
                                     stageCtx,
@@ -249,6 +334,7 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
                                     shape,
                                     cardOpacity,
                                     frostStrength,
+                                    heroSpace: heroSpace,
                                   ),
                           ),
                         ),
@@ -263,8 +349,7 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
                                     child: LiquidBottomNav(
                                       currentIndex: navTab,
                                       visualIndexListenable: _navVisual,
-                                      onTap: (_) => widget.onFocusTarget
-                                          ?.call(WorkshopFocusTarget.icons),
+                                      onTap: selectTab,
                                       themeImages: navImages,
                                       originalIcons: originalIcons,
                                       shaderEnabled: false,
@@ -272,8 +357,7 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
                                   )
                                 : FloatingBottomNav(
                                     currentIndex: navTab,
-                                    onTap: (_) => widget.onFocusTarget
-                                        ?.call(WorkshopFocusTarget.icons),
+                                    onTap: selectTab,
                                     docked: navigation?['style'] == 'normal',
                                     themeImages: navImages,
                                     originalIcons: originalIcons,
@@ -281,6 +365,23 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
                           ),
                       ],
                     ),
+                    if (home)
+                      Positioned(
+                        right: 20,
+                        bottom: 94,
+                        child: ThemeOrnamented(
+                          slot: 'fab',
+                          child: FloatingActionButton.small(
+                            heroTag: null,
+                            onPressed: () => widget.onFocusTarget
+                                ?.call(WorkshopFocusTarget.icons),
+                            shape: const CircleBorder(),
+                            backgroundColor: tokens.primary,
+                            foregroundColor: tokens.onPrimary,
+                            child: const Icon(Icons.edit_rounded),
+                          ),
+                        ),
+                      ),
                     if (widget.showDialogOverlay)
                       Positioned.fill(
                         child: ColoredBox(
@@ -318,16 +419,24 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
     );
   }
 
-  Widget _buildTopAppBar(AppThemeTokens tokens) {
+  Widget _buildTopAppBar(BuildContext context, AppThemeTokens tokens,
+      {required bool immersive}) {
+    final style = AppThemeStyle.of(context);
     return Container(
-      height: 42,
+      key: const ValueKey('workshop-preview-top-bar'),
+      height: _topBarHeight,
       padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
+      decoration: immersive ? null : BoxDecoration(
         color: tokens.appBarBackground,
         border: Border(bottom: BorderSide(color: tokens.divider)),
       ),
       child: Row(
         children: [
+          if (widget.page == WorkshopSamplePage.home) ...[
+            style.serviceIcon(context, 'menu', size: 22) ??
+                Icon(Icons.menu_rounded, size: 22, color: tokens.appBarForeground),
+            const SizedBox(width: 8),
+          ],
           Expanded(
             child: Text(
               '${widget.page.label} · ${widget.sampleState.label}',
@@ -340,7 +449,10 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
               ),
             ),
           ),
-          if (widget.onFocusTarget != null)
+          if (widget.page == WorkshopSamplePage.home)
+            style.serviceIcon(context, 'messages', size: 22) ??
+                Icon(Icons.notifications_none_rounded, size: 22, color: tokens.appBarForeground)
+          else if (widget.onFocusTarget != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
@@ -356,6 +468,33 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearch(BuildContext context, AppThemeTokens tokens, AppShape shape) {
+    return Container(
+      key: const ValueKey('workshop-preview-search'),
+      height: _searchHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: tokens.searchFill,
+        borderRadius: BorderRadius.circular(shape.pill),
+      ),
+      child: Row(
+        children: [
+          AppThemeStyle.of(context).serviceIcon(context, 'search', size: 18) ??
+              Icon(Icons.search, size: 18, color: tokens.textTertiary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '搜索帖子标题或版块话题…',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12.5, color: tokens.textTertiary),
+            ),
+          ),
         ],
       ),
     );
@@ -451,8 +590,9 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
     AppThemeTokens tokens,
     AppShape shape,
     double cardOpacity,
-    double frostStrength,
-  ) {
+    double frostStrength, {
+    required double heroSpace,
+  }) {
     switch (widget.page) {
       case WorkshopSamplePage.home:
         return Column(
@@ -463,30 +603,11 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
               behavior: HitTestBehavior.opaque,
               onTap: () =>
                   widget.onFocusTarget?.call(WorkshopFocusTarget.layoutHome),
-              child: const HomeThemedHeaderBanner(feedModeLabel: '推荐'),
+              child: heroSpace > 0
+                  ? SizedBox(height: heroSpace)
+                  : const HomeThemedHeaderBanner(feedModeLabel: '推荐'),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: tokens.searchFill,
-                borderRadius: BorderRadius.circular(shape.pill),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.search, size: 16, color: tokens.textTertiary),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      '搜索帖子标题或版块话题…',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: tokens.textTertiary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildSearch(context, tokens, shape),
             const SizedBox(height: 8),
             GestureDetector(
               key: const ValueKey('workshop-preview-post-card'),
@@ -965,6 +1086,72 @@ class _ThemeWorkshopSampleStageState extends State<ThemeWorkshopSampleStage> {
 
 /// 导出用的 360×780 离屏渲染卡片（pixelRatio 3.0 生成 1080×2340 PNG）。
 class ThemeWorkshopExportStage extends StatelessWidget {
+  static Future<(Uint8List, Uint8List)> capture(
+    BuildContext context,
+    ThemeAppearance appearance,
+    ThemeAssetProviderResolver assetResolver,
+  ) async {
+    final overlay = Overlay.of(context);
+    final lightKey = GlobalKey();
+    final darkKey = GlobalKey();
+    final entry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: -4000,
+        top: -4000,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RepaintBoundary(
+              key: lightKey,
+              child: ThemeWorkshopExportStage(
+                appearance: appearance,
+                brightness: Brightness.light,
+                assetResolver: assetResolver,
+              ),
+            ),
+            RepaintBoundary(
+              key: darkKey,
+              child: ThemeWorkshopExportStage(
+                appearance: appearance,
+                brightness: Brightness.dark,
+                assetResolver: assetResolver,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      final images = <Future<void>>[];
+      void collect(Element element) {
+        final widget = element.widget;
+        if (widget is Image) {
+          images.add(precacheImage(widget.image, element));
+        }
+        element.visitChildren(collect);
+      }
+      for (final key in [lightKey, darkKey]) {
+        (key.currentContext! as Element).visitChildren(collect);
+      }
+      await Future.wait(images);
+      await WidgetsBinding.instance.endOfFrame;
+      Future<Uint8List> grab(GlobalKey key) async {
+        final boundary =
+            key.currentContext!.findRenderObject() as RenderRepaintBoundary;
+        final image = await boundary.toImage(pixelRatio: 3.0);
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+        image.dispose();
+        return byteData!.buffer.asUint8List();
+      }
+
+      return (await grab(lightKey), await grab(darkKey));
+    } finally {
+      entry.remove();
+    }
+  }
+
   const ThemeWorkshopExportStage({
     super.key,
     required this.appearance,
@@ -989,12 +1176,15 @@ class ThemeWorkshopExportStage extends StatelessWidget {
         ),
         child: Directionality(
           textDirection: TextDirection.ltr,
-          child: ThemeWorkshopSampleStage(
-            appearance: appearance,
-            brightness: brightness,
-            assetResolver: assetResolver,
-            page: WorkshopSamplePage.home,
-            sampleState: WorkshopSampleState.normal,
+          child: Material(
+            type: MaterialType.transparency,
+            child: ThemeWorkshopSampleStage(
+              appearance: appearance,
+              brightness: brightness,
+              assetResolver: assetResolver,
+              page: WorkshopSamplePage.home,
+              sampleState: WorkshopSampleState.normal,
+            ),
           ),
         ),
       ),

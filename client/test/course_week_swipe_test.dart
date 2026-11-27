@@ -17,6 +17,7 @@ import 'package:shenliyuan/screens/course_schedule_settings_screen.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:shenliyuan/theme/app_palette.dart';
 import 'package:shenliyuan/theme/app_theme.dart';
+import 'package:shenliyuan/theme/app_theme_style.dart';
 import 'package:shenliyuan/features/academic/storage/academic_persistence_gate.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
@@ -24,11 +25,19 @@ import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dar
 import 'package:shenliyuan/models/course_term.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/features/theme_pack/theme_manifest.dart';
+import 'package:shenliyuan/features/theme_pack/theme_appearance.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_codec.dart';
 import 'package:shenliyuan/features/theme_pack/theme_pack_store.dart';
 
 import 'helpers/load_test_fonts.dart';
 import 'theme_pack/theme_pack_test.dart' show themeFixture, themeImage;
+
+class _ScheduleAppearanceProvider extends ThemeProvider {
+  _ScheduleAppearanceProvider(this.appearance) : super(loadOnStart: false);
+
+  @override
+  final ThemeAppearance appearance;
+}
 
 class _FailingDisplayPreferences extends MemoryPreferencesStore {
   bool fail = true;
@@ -451,6 +460,60 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
     expect(page.scheduleProvider.courses.where((c) => c.name == '手动补课'),
         hasLength(1));
+    expect(tester.takeException(), isNull);
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('平板今日概览和周网格使用主题材质', (tester) async {
+    final directory = await tester.runAsync(
+        () => Directory.systemTemp.createTemp('schedule-tablet-theme-'));
+    addTearDown(() => directory!.delete(recursive: true));
+    final art = File('${directory!.path}/decorations/art.png');
+    art.parent.createSync();
+    art.writeAsBytesSync(themeImage(256, 256));
+    final manifest = themeFixture();
+    for (final mode in ['light', 'dark']) {
+      manifest[mode]['componentOpacity'] = 0.7;
+      manifest[mode]['frostedGlass'] = {'enabled': true, 'strength': 0.3};
+      manifest[mode]['cardStyle'] = {'fill': 'tint', 'shadow': 'soft'};
+      manifest[mode]['cardArt'] = {'image': 'decorations/art.png'};
+      manifest[mode]['tokens']['courseCardText'] = '#FFFFFF';
+    }
+    final theme = _ScheduleAppearanceProvider(const ThemeAppearance.empty().apply(
+      ThemeManifest.parse(manifest, appVersion: '9.0.0'),
+      ThemeGroup.defaultApply,
+      directory.path,
+    ));
+    final page = await _pumpCourse(tester,
+        physicalSize: const Size(1280, 800), appearanceProvider: theme,
+        seededCourses: [
+      {
+        'id': 1,
+        'name': '今日测试课程',
+        'weekday': DateTime.now().weekday,
+        'start_section': 1,
+        'end_section': 2,
+        'weeks': [1],
+      },
+    ]);
+    final overview = find.byKey(const ValueKey('schedule-tablet-overview'));
+    final grid = find.byKey(const ValueKey('schedule-tablet-grid'));
+    for (final surface in [overview, grid]) {
+      expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+          findsWidgets);
+      expect(find.descendant(of: surface, matching: find.byType(ThemeCardArt)),
+          findsWidgets);
+      expect(tester.widgetList<Container>(find.descendant(
+        of: surface, matching: find.byType(Container),
+      )).map((container) => container.decoration).whereType<BoxDecoration>()
+          .any((box) => box.boxShadow?.isNotEmpty ?? false), isTrue);
+      expect(tester.widgetList<DecoratedBox>(find.descendant(
+        of: surface, matching: find.byType(DecoratedBox),
+      )).map((box) => box.decoration).whereType<BoxDecoration>()
+          .any((box) => (box.color?.a ?? 1) < 1), isTrue);
+    }
+    final course = find.descendant(of: overview, matching: find.text('今日测试课程'));
+    expect(tester.widget<Text>(course).style!.color, Colors.white);
     expect(tester.takeException(), isNull);
     await _disposeCourse(tester, page);
   });

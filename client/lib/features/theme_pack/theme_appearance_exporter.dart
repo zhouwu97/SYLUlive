@@ -12,6 +12,11 @@ import 'theme_contrast.dart';
 import 'theme_manifest.dart';
 import 'theme_pack_codec.dart';
 
+typedef ThemePreviewCapture = Future<(Uint8List, Uint8List)> Function(
+  ThemeManifest manifest,
+  Map<String, Uint8List> contents,
+);
+
 class RawWallpaperInput {
   const RawWallpaperInput({
     required this.bytes,
@@ -57,6 +62,7 @@ abstract final class ThemeAppearanceExporter {
 
   static Future<Uint8List> export({
     required ThemeAppearance appearance,
+    ThemePreviewCapture? capturePreview,
     required String name,
     required String author,
     required String appVersion,
@@ -426,10 +432,16 @@ abstract final class ThemeAppearanceExporter {
               _normalizeWallpaperBytes(normalizedContents[key]!, key);
         }
       }
-      normalizedContents['preview/light.jpg'] = _renderPreviewJpeg(lightVariant);
-      normalizedContents['preview/dark.jpg'] = _renderPreviewJpeg(darkVariant);
       return normalizedContents;
     });
+
+    final rendered = await capturePreview?.call(manifest, finalized);
+    final (light, dark) = await Isolate.run(() => rendered == null
+        ? (_renderPreviewJpeg(lightVariant), _renderPreviewJpeg(darkVariant))
+        : (encodePreviewJpeg(img.decodePng(rendered.$1)!),
+            encodePreviewJpeg(img.decodePng(rendered.$2)!)));
+    finalized['preview/light.jpg'] = light;
+    finalized['preview/dark.jpg'] = dark;
 
     return ThemePackCodec.encode(manifest, finalized);
   }

@@ -112,6 +112,73 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('沉浸预览从顶边铺图，搜索框和信息卡叠在 hero 上', (tester) async {
+    final image = MemoryImage(themeImage(64, 64));
+    final appearance = ThemeAppearance({
+      'decoration': {
+        'light': {
+          for (final slot in ['home', 'campus', 'me'])
+            slot: {'background': {'image': 'hero.png'}},
+          'ornaments': {
+            'fab': {'image': 'hero.png', 'corner': 'topRight', 'width': 16},
+          },
+          'serviceIcons': {'menu': 'hero.png', 'messages': 'hero.png', 'search': 'hero.png'},
+        },
+      },
+    });
+
+    for (final (page, slot) in [
+      (WorkshopSamplePage.home, 'home'),
+      (WorkshopSamplePage.campus, 'campus'),
+      (WorkshopSamplePage.me, 'me'),
+    ]) {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 360,
+              height: 560,
+              child: ThemeWorkshopSampleStage(
+                appearance: appearance,
+                brightness: Brightness.light,
+                assetResolver: (_) => image,
+                page: page,
+                sampleState: WorkshopSampleState.normal,
+              ),
+            ),
+          ),
+        ),
+      ));
+      final art = tester.getRect(find.byKey(ValueKey('theme-hero-$slot')));
+      final topBar = find.byKey(const ValueKey('workshop-preview-top-bar'));
+      expect(art.top, tester.getTopLeft(topBar).dy);
+      expect(art.width, 360);
+      if (page == WorkshopSamplePage.home) {
+        final search = find.byKey(const ValueKey('workshop-preview-search'));
+        expect(tester.getBottomLeft(search).dy, lessThan(art.bottom));
+        expect(find.byKey(const ValueKey('home-themed-header-info')), findsNothing);
+        for (final icon in ['menu', 'messages', 'search']) {
+          expect(find.byKey(ValueKey('theme-service-icon-$icon')), findsOneWidget);
+        }
+        expect(find.byKey(const ValueKey('theme-ornament-fab')), findsOneWidget);
+      } else {
+        final header = find.byKey(ValueKey('workshop-preview-header-$slot'));
+        expect(tester.getTopLeft(header).dy + 150, closeTo(art.bottom - 28, 0.01));
+        expect(tester.getBottomLeft(header).dy, greaterThan(art.bottom));
+      }
+      expect(tester.takeException(), isNull);
+    }
+
+    await tester.pumpWidget(MaterialApp(
+      home: ThemeWorkshopExportStage(
+        appearance: appearance,
+        brightness: Brightness.dark,
+        assetResolver: (_) => image,
+      ),
+    ));
+    expect(find.byKey(const ValueKey('theme-hero-home')), findsNothing);
+  });
+
   test('工坊推导：#2F7FD8 常量角色映射、覆盖优先、8 色课表对比度与色相不变自动修正', () {
     const seed = Color(0xFF2F7FD8);
     final derived = ThemeResolver.deriveTokens(
@@ -427,7 +494,7 @@ void main() {
     await tester.tap(find.widgetWithText(ChoiceChip, '正常'));
     await tester.pumpAndSettle();
     await _captureWorkshop(tester, previewBoundary, 'fullscreen-preview');
-    await tester.tap(find.byKey(const ValueKey('home-themed-header-info')));
+    await tester.tap(find.byKey(const ValueKey('workshop-preview-header-home')));
     await tester.pumpAndSettle();
     expect(
         find.byKey(const ValueKey('workshop-editor-layout')), findsOneWidget);

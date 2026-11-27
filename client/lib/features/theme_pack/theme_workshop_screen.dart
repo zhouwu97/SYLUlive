@@ -7,7 +7,6 @@ import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -332,7 +331,7 @@ class ThemeWorkshopStateData {
       final decos = <String, Map<String, dynamic>?>{};
       if (decoGroup != null) {
         final modeDeco = decoGroup[mode] as Map? ?? const {};
-        for (final slot in const ['home', 'campus', 'me']) {
+        for (final slot in const ['home', 'campus', 'me', 'ornaments', 'serviceIcons']) {
           final item = modeDeco[slot] as Map?;
           if (item != null) decos[slot] = Map<String, dynamic>.from(item);
         }
@@ -677,9 +676,11 @@ class ThemeWorkshopStateData {
         }
       }
 
+      final ornaments = v.decorations['ornaments'];
+      final serviceIcons = v.decorations['serviceIcons'];
       Map<String, dynamic>? decosOut;
       if (includes(ThemeGroup.decoration) &&
-          v.decorations.values.any((d) => d != null)) {
+          const ['home', 'campus', 'me'].any((slot) => v.decorations[slot] != null)) {
         decosOut = {};
         for (final slot in const ['home', 'campus', 'me']) {
           final item = v.decorations[slot];
@@ -732,6 +733,19 @@ class ThemeWorkshopStateData {
             v.cardStyle!.isNotEmpty)
           'cardStyle': v.cardStyle,
         if (decosOut != null) 'decorations': decosOut,
+        if (includes(ThemeGroup.decoration) && ornaments != null)
+          'ornaments': {
+            for (final entry in ornaments.entries)
+              entry.key: {
+                ...Map<String, dynamic>.from(entry.value as Map),
+                'image': await registerAsset(entry.value['image'] as String, 'decorations'),
+              },
+          },
+        if (includes(ThemeGroup.decoration) && serviceIcons != null)
+          'serviceIcons': {
+            for (final entry in serviceIcons.entries)
+              entry.key: await registerAsset(entry.value as String, 'icons'),
+          },
       };
     }
 
@@ -1330,57 +1344,7 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     _scheduleAutosave();
   }
 
-  Future<(Uint8List, Uint8List)> _captureOffscreenPreviews(
-    ThemeAppearance appearance,
-  ) async {
-    final overlay = Overlay.of(context);
-    final lightKey = GlobalKey();
-    final darkKey = GlobalKey();
-    final entry = OverlayEntry(
-      builder: (_) => Positioned(
-        left: -4000,
-        top: -4000,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RepaintBoundary(
-              key: lightKey,
-              child: ThemeWorkshopExportStage(
-                appearance: appearance,
-                brightness: Brightness.light,
-                assetResolver: _resolveLocalImage,
-              ),
-            ),
-            RepaintBoundary(
-              key: darkKey,
-              child: ThemeWorkshopExportStage(
-                appearance: appearance,
-                brightness: Brightness.dark,
-                assetResolver: _resolveLocalImage,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    overlay.insert(entry);
-    try {
-      await WidgetsBinding.instance.endOfFrame;
-      await WidgetsBinding.instance.endOfFrame;
-      Future<Uint8List> grab(GlobalKey key) async {
-        final boundary =
-            key.currentContext!.findRenderObject() as RenderRepaintBoundary;
-        final image = await boundary.toImage(pixelRatio: 3.0);
-        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-        image.dispose();
-        return byteData!.buffer.asUint8List();
-      }
 
-      return (await grab(lightKey), await grab(darkKey));
-    } finally {
-      entry.remove();
-    }
-  }
 
   Future<void> _openExportSheet() async {
     if (_exporting) return;
@@ -1545,7 +1509,9 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
       }
       final appVer = widget.appVersion ?? await _resolveAppVersion();
       if (!mounted) return;
-      final (lightPng, darkPng) = await _captureOffscreenPreviews(appearance);
+      final (lightPng, darkPng) = await ThemeWorkshopExportStage.capture(
+        context, appearance, _resolveLocalImage,
+      );
       final (bytes, prepared) = await draft._exportPack(
         appVersion: appVer,
         renderedLightPng: lightPng,

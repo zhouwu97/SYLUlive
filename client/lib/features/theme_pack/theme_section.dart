@@ -14,11 +14,14 @@ import '../../widgets/settings/settings_tile.dart';
 import 'installed_themes_screen.dart';
 import 'launcher_icon_service.dart';
 import 'theme_appearance_exporter.dart';
+import 'theme_appearance.dart';
 import 'theme_beta_notice.dart';
 import 'theme_import_screen.dart';
 import 'theme_layout_decoration_screen.dart';
+import 'theme_manifest.dart';
 import 'theme_store_screen.dart';
 import 'theme_submission_screen.dart';
+import 'theme_workshop_samples.dart';
 
 class ThemeSection extends StatefulWidget {
   const ThemeSection({
@@ -129,7 +132,19 @@ class _ThemeSectionState extends State<ThemeSection> {
     });
     try {
       final version = await _currentAppVersion();
-      final bytes = await provider.exportCurrentAppearance(appVersion: version);
+      final bytes = await provider.exportCurrentAppearance(
+        appVersion: version,
+        capturePreview: (manifest, contents) {
+          if (!mounted) throw StateError('主题设置已关闭');
+          final appearance = const ThemeAppearance.empty().apply(
+            manifest, ThemeGroup.values.toSet(), '',
+          );
+          return ThemeWorkshopExportStage.capture(context, appearance, (path) {
+            final bytes = contents[path.startsWith('/') ? path.substring(1) : path];
+            return bytes == null ? null : MemoryImage(bytes);
+          });
+        },
+      );
       if (!mounted) return;
       final fileName =
           '${ThemeAppearanceExporter.sanitizeFileName(provider.suggestedExportName)}.sltheme';

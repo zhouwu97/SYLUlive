@@ -24,6 +24,7 @@ class ThemeHeroController extends ChangeNotifier {
   final Map<String, double> _restBottom = {};
   final Map<String, double> _extend = {};
   bool _measureScheduled = false;
+  bool _removedAnchor = false;
 
   /// 锚点底边当前的全局纵坐标；槽位没有锚点时为 null。
   double? bottomOf(String slot) => _bottom[slot];
@@ -45,7 +46,8 @@ class ThemeHeroController extends ChangeNotifier {
     _bottom.remove(slot);
     _restBottom.remove(slot);
     _extend.remove(slot);
-    notifyListeners();
+    _removedAnchor = true;
+    scheduleMeasure();
   }
 
   /// 滚动或布局变化后调用；同一帧内多次调用只测量一次。
@@ -54,7 +56,8 @@ class ThemeHeroController extends ChangeNotifier {
     _measureScheduled = true;
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _measureScheduled = false;
-      var changed = false;
+      var changed = _removedAnchor;
+      _removedAnchor = false;
       for (final entry in _anchors.entries) {
         final measured = entry.value._measure();
         if (measured == null) continue;
@@ -171,11 +174,50 @@ class ThemeHeroScrollListener extends StatelessWidget {
 }
 
 /// 背景层中的沉浸 hero。只在主壳当前页签对应的槽位为 immersive 且有页头背景或贴纸时绘制。
+class ThemeHeroPane extends StatelessWidget {
+  const ThemeHeroPane({super.key, required this.slot, required this.child});
+
+  final String slot;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final immersive = ResponsiveUtil.useSideNavigation(context) &&
+        ThemeHeaderFrame.immersiveEnabled(context, inHeroPane: true) &&
+        ThemeHeaderResolved.of(context, slot).hasDecoration;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (immersive)
+          ClipRect(
+            key: ValueKey('theme-hero-pane-$slot'),
+            child: Stack(children: [ThemeHeroLayer(slot: slot)]),
+          ),
+        KeyedSubtree(key: ValueKey('theme-hero-content-$slot'), child: child),
+        if (immersive && slot != 'home')
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: ThemeStatusBarScrim(slot: slot),
+          ),
+      ],
+    );
+  }
+}
+
 class ThemeHeroLayer extends StatelessWidget {
-  const ThemeHeroLayer({super.key});
+  const ThemeHeroLayer({super.key, this.slot});
+
+  final String? slot;
 
   /// hero 底边超出锚点的距离，即第一张内容卡压住 hero 的高度。
   static const double overlap = 28;
+
+  static double scrollOpacity(double scrolled, double height) {
+    final progress = (scrolled / (height * 0.7)).clamp(0.0, 1.0);
+    return 1.0 - Curves.easeIn.transform(progress);
+  }
 
   static String? slotForTab(int tab) => switch (tab) {
         0 => 'home',
@@ -186,6 +228,8 @@ class ThemeHeroLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final paneSlot = slot;
+    if (paneSlot != null) return _buildSlot(context, paneSlot);
     if (ResponsiveUtil.useSideNavigation(context)) {
       return const SizedBox.shrink();
     }
@@ -194,68 +238,71 @@ class ThemeHeroLayer extends StatelessWidget {
       builder: (context, tab, _) {
         final slot = slotForTab(tab);
         if (slot == null) return const SizedBox.shrink();
-        // 切换页签后重新测量一次，保活页签的锚点位置可能在后台变化过。
-        ThemeHeroController.instance.scheduleMeasure();
-        final resolved = ThemeHeaderResolved.of(context, slot);
-        if (!resolved.hasDecoration) {
+        return _buildSlot(context, slot);
+      },
+    );
+  }
+
+  Widget _buildSlot(BuildContext context, String slot) {
+    // 切换页签后重新测量一次，保活页签的锚点位置可能在后台变化过。
+    ThemeHeroController.instance.scheduleMeasure();
+    final resolved = ThemeHeaderResolved.of(context, slot);
+    if (!resolved.hasDecoration) {
+      return const SizedBox.shrink();
+    }
+    return ListenableBuilder(
+      listenable: ThemeHeroController.instance,
+      builder: (context, _) {
+        final controller = ThemeHeroController.instance;
+        final bottom = controller.bottomOf(slot);
+        final rest = controller.restBottomOf(slot);
+        if (bottom == null || rest == null || rest <= 0) {
           return const SizedBox.shrink();
         }
-        return ListenableBuilder(
-          listenable: ThemeHeroController.instance,
-          builder: (context, _) {
-            final controller = ThemeHeroController.instance;
-            final bottom = controller.bottomOf(slot);
-            final rest = controller.restBottomOf(slot);
-            if (bottom == null || rest == null || rest <= 0) {
-              return const SizedBox.shrink();
-            }
-            final heroHeight = rest + overlap;
-            final scrolled = (rest - bottom).clamp(0.0, heroHeight);
-            final extend = controller.extendOf(slot);
-            final art = _ThemeHeroArt(
-              slot: slot,
-              resolved: resolved,
-              height: heroHeight,
-              controlsHeight: extend + overlap,
-            );
-            if (extend > 0) {
-              // 图铺到吸顶控件背后时不淡出：控件吸顶那一刻视差定格，
-              // hero 被裁成状态栏 + 控件高度的横幅，继续留在顶栏背后。
-              final pinnedBottom =
-                  MediaQuery.paddingOf(context).top + extend - 4;
-              final pinScroll = math.max(0.0, rest - pinnedBottom);
-              final shift = math.min(scrolled, pinScroll) * 0.5;
-              return Positioned(
-                left: 0,
-                right: 0,
-                top: 0,
-                height: math.max(heroHeight - scrolled, pinnedBottom),
-                child: Stack(
-                  clipBehavior: Clip.hardEdge,
-                  children: [
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      top: -shift,
-                      height: heroHeight,
-                      child: art,
-                    ),
-                  ],
+        final heroHeight = rest + overlap;
+        final scrolled = (rest - bottom).clamp(0.0, heroHeight);
+        final extend = controller.extendOf(slot);
+        final art = ThemeHeroArt(
+          slot: slot,
+          resolved: resolved,
+          height: heroHeight,
+          controlsHeight: extend + overlap,
+        );
+        if (extend > 0) {
+          // 图铺到吸顶控件背后时不淡出：控件吸顶那一刻视差定格，
+          // hero 被裁成状态栏 + 控件高度的横幅，继续留在顶栏背后。
+          final pinnedBottom =
+              MediaQuery.paddingOf(context).top + extend - 4;
+          final pinScroll = math.max(0.0, rest - pinnedBottom);
+          final shift = math.min(scrolled, pinScroll) * 0.5;
+          return Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            height: math.max(heroHeight - scrolled, pinnedBottom),
+            child: Stack(
+              clipBehavior: Clip.hardEdge,
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: -shift,
+                  height: heroHeight,
+                  child: art,
                 ),
-              );
-            }
-            // 视差：hero 以内容一半的速度上移；滚过 hero 高度的 70% 时完全淡出。
-            final progress = (scrolled / (heroHeight * 0.7)).clamp(0.0, 1.0);
-            final opacity = 1.0 - Curves.easeIn.transform(progress);
-            if (opacity <= 0.01) return const SizedBox.shrink();
-            return Positioned(
-              left: 0,
-              right: 0,
-              top: -scrolled * 0.5,
-              height: heroHeight,
-              child: Opacity(opacity: opacity, child: art),
-            );
-          },
+              ],
+            ),
+          );
+        }
+        // 视差：hero 以内容一半的速度上移；滚过 hero 高度的 70% 时完全淡出。
+        final opacity = scrollOpacity(scrolled, heroHeight);
+        if (opacity <= 0.01) return const SizedBox.shrink();
+        return Positioned(
+          left: 0,
+          right: 0,
+          top: -scrolled * 0.5,
+          height: heroHeight,
+          child: Opacity(opacity: opacity, child: art),
         );
       },
     );
@@ -265,12 +312,16 @@ class ThemeHeroLayer extends StatelessWidget {
 /// 校园、我两页没有吸顶顶栏：内容滚过 hero 后在状态栏后面补一条页面底色，
 /// 卡片不会直接压在状态栏图标下面。首页自带吸顶状态栏条，不用这里。
 class ThemeStatusBarScrim extends StatelessWidget {
-  const ThemeStatusBarScrim({super.key});
+  const ThemeStatusBarScrim({super.key, this.slot});
+
+  final String? slot;
 
   @override
   Widget build(BuildContext context) {
     final inset = MediaQuery.paddingOf(context).top;
     if (inset <= 0) return const SizedBox.shrink();
+    final paneSlot = slot;
+    if (paneSlot != null) return _buildSlot(context, paneSlot, inset);
     return ValueListenableBuilder<int>(
       valueListenable: currentHomeTabIndex,
       builder: (context, tab, _) {
@@ -280,29 +331,33 @@ class ThemeStatusBarScrim extends StatelessWidget {
           _ => null,
         };
         if (slot == null) return const SizedBox.shrink();
-        return ListenableBuilder(
-          listenable: ThemeHeroController.instance,
-          builder: (context, _) {
-            final controller = ThemeHeroController.instance;
-            final bottom = controller.bottomOf(slot);
-            final rest = controller.restBottomOf(slot);
-            if (bottom == null || rest == null || rest <= inset) {
-              return const SizedBox.shrink();
-            }
-            // 锚点底边（信息卡上沿）离状态栏还剩 48 像素时开始补底色。
-            final t = ((inset + 48 - bottom) / 48).clamp(0.0, 1.0);
-            if (t <= 0) return const SizedBox.shrink();
-            final background = AppThemeTokens.of(context).background;
-            return IgnorePointer(
-              child: SizedBox(
-                height: inset,
-                width: double.infinity,
-                child: ColoredBox(
-                  color: background.withValues(alpha: 0.94 * t),
-                ),
-              ),
-            );
-          },
+        return _buildSlot(context, slot, inset);
+      },
+    );
+  }
+
+  Widget _buildSlot(BuildContext context, String slot, double inset) {
+    return ListenableBuilder(
+      listenable: ThemeHeroController.instance,
+      builder: (context, _) {
+        final controller = ThemeHeroController.instance;
+        final bottom = controller.bottomOf(slot);
+        final rest = controller.restBottomOf(slot);
+        if (bottom == null || rest == null || rest <= inset) {
+          return const SizedBox.shrink();
+        }
+        // 锚点底边（信息卡上沿）离状态栏还剩 48 像素时开始补底色。
+        final t = ((inset + 48 - bottom) / 48).clamp(0.0, 1.0);
+        if (t <= 0) return const SizedBox.shrink();
+        final background = AppThemeTokens.of(context).background;
+        return IgnorePointer(
+          child: SizedBox(
+            height: inset,
+            width: double.infinity,
+            child: ColoredBox(
+              color: background.withValues(alpha: 0.94 * t),
+            ),
+          ),
         );
       },
     );
@@ -351,7 +406,7 @@ class ThemeHeroSlice extends StatelessWidget {
             right: 0,
             top: -top - shift,
             height: heroHeight,
-            child: _ThemeHeroArt(
+            child: ThemeHeroArt(
               slot: slot,
               resolved: ThemeHeaderResolved.of(context, slot),
               height: heroHeight,
@@ -364,7 +419,7 @@ class ThemeHeroSlice extends StatelessWidget {
   }
 }
 
-class _ThemeHeroArt extends StatelessWidget {
+class ThemeHeroArt extends StatelessWidget {
   /// 顶部压一层页面底色保证状态栏可读；底部渐隐进页面。图铺到控件背后时，
   /// 从控件上沿开始加重遮罩，标签和搜索框落在半透明底色上。
   LinearGradient _scrim(Color background) {
@@ -400,7 +455,8 @@ class _ThemeHeroArt extends StatelessWidget {
   }
 
 
-  const _ThemeHeroArt({
+  const ThemeHeroArt({
+    super.key,
     required this.slot,
     required this.resolved,
     required this.height,
@@ -419,13 +475,11 @@ class _ThemeHeroArt extends StatelessWidget {
     final background = AppThemeTokens.of(context).background;
     final rawBackground = resolved.background;
     final imagePath = rawBackground?['image'] as String?;
-    final width = MediaQuery.sizeOf(context).width;
     final layout = resolved.layout;
     return ExcludeSemantics(
       child: IgnorePointer(
         child: SizedBox(
           key: ValueKey('theme-hero-$slot'),
-          width: width,
           height: height,
           child: Stack(
             fit: StackFit.expand,

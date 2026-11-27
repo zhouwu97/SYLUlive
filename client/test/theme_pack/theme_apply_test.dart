@@ -1690,7 +1690,7 @@ void main() {
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 60)));
   });
 
-  testWidgets('主题页头横竖屏和分栏切换保留完整插画与交互，收窄恢复手机沉浸布局',
+  testWidgets('沉浸页头随分栏缩放并保留信息区交互',
       (tester) async {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -1723,17 +1723,21 @@ void main() {
           tester.view.physicalSize = size;
           await tester.binding.setSurfaceSize(size);
           final tablet = size.width >= 600;
+          final header = ThemeHeaderFrame(
+            slot: slot,
+            defaultBuilder: (_) => const SizedBox(),
+            standardInfoBuilder: (_, __) => FilledButton(
+                onPressed: () => taps++, child: const Text('打开页面')),
+            compactInfoBuilder: (_, __) => const SizedBox(),
+          );
           await tester.pumpWidget(host(Scaffold(body: Stack(children: [
             const ThemeHeroLayer(),
             Align(alignment: Alignment.topRight, child: SizedBox(
               width: columnWidth,
-              child: SingleChildScrollView(child: ThemeHeaderFrame(
+              child: ThemeHeroPane(
                 slot: slot,
-                defaultBuilder: (_) => const SizedBox(),
-                standardInfoBuilder: (_, __) => FilledButton(
-                  onPressed: () => taps++, child: const Text('打开页面')),
-                compactInfoBuilder: (_, __) => const SizedBox(),
-              )),
+                child: SingleChildScrollView(child: header),
+              ),
             )),
           ])), brightness: brightness, scale: 1.5));
           // 先完成明暗主题过渡，再等待新主题选中的图片解码。
@@ -1743,27 +1747,15 @@ void main() {
               tester.widgetList<Image>(find.byType(Image)).map((image) => image.image));
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
+          final anchor = find.byType(ThemeHeroAnchor);
+          expect(anchor, findsOneWidget);
+          expect(find.byKey(ValueKey('theme-header-decoration-$slot')), findsNothing);
           if (tablet) {
-            expect(find.byType(ThemeHeroAnchor), findsNothing);
-            final decoration = find.byKey(ValueKey('theme-header-decoration-$slot'));
-            final rect = tester.getRect(decoration);
-            expect(rect.left, greaterThanOrEqualTo(size.width - columnWidth));
-            expect(rect.right, lessThanOrEqualTo(size.width));
-            expect(rect.width / rect.height,
-                closeTo(brightness == Brightness.light ? 1.5 : 500 / 185, 0.01),
-                reason: '插画容器沿用原图比例，不留下横屏色带');
-            expect(rect.height, lessThanOrEqualTo(300));
-            final artwork = tester.widget<Image>(find.descendant(of: decoration, matching: find.byType(Image)).first);
-            expect(artwork.fit, BoxFit.contain, reason: '横竖屏均完整呈现角色图');
-            final info = tester.getRect(find.byType(FilledButton));
-            if (columnWidth >= 600) {
-              expect(info.right, lessThan(rect.left));
-            } else {
-              expect(info.top, greaterThanOrEqualTo(rect.bottom));
-            }
-          } else {
-            expect(find.byType(ThemeHeroAnchor), findsOneWidget);
-            expect(find.byKey(ValueKey('theme-header-decoration-$slot')), findsNothing);
+            final hero = tester.getRect(find.byKey(ValueKey('theme-hero-$slot')));
+            expect(hero.left, size.width - columnWidth);
+            expect(hero.right, size.width);
+            expect(hero.top, 0);
+            expect(hero.bottom, tester.getRect(anchor).bottom + ThemeHeroLayer.overlap);
           }
           await tester.tap(find.text('打开页面'));
           await tester.pump();

@@ -28,7 +28,7 @@ void main() {
     for (final strength in [0.0, .35, 1.0]) {
       await appearance.setFrostedGlassStrength(strength);
       for (final level in [0.0, .25, .5, .75, 1.0]) {
-        await appearance.setComponentOpacityLevel(level);
+        await appearance.setComponentOpacity(.75 + .25 * level);
         await tester.pumpAndSettle();
         final card = tester.widget<AppCardSurface>(find.byType(AppCardSurface));
         expect(card.surfaceOpacity, .75 + .25 * level);
@@ -53,7 +53,7 @@ void main() {
         final appearance = ThemeProvider(loadOnStart: false);
         addTearDown(appearance.dispose);
         await appearance.setBackgroundImage('morenbeijing.jpeg');
-        await appearance.setComponentOpacityLevel(.6);
+        await appearance.setComponentOpacity(.9);
         const tint = Color(0x14FF9800);
         const content = SizedBox(key: Key('content'), width: 220, height: 100);
         final surface = switch (kind) {

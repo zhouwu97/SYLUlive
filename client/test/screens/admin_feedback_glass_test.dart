@@ -105,7 +105,7 @@ Future<({ThemeProvider theme, GlobalKey capture})> _pump(
   final theme = ThemeProvider(loadOnStart: false);
   await theme.setBackgroundImage('morenbeijing.jpeg', fillScreen: true);
   await theme.setFrostedGlass(true);
-  await theme.setComponentOpacityLevel(.7);
+  await theme.setComponentOpacity(.925);
   addTearDown(theme.dispose);
   final capture = GlobalKey();
   await tester.pumpWidget(MultiProvider(
@@ -199,7 +199,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(list.controller!.offset, greaterThan(0));
       expect(tester.takeException(), isNull);
-      await env.theme.setComponentOpacityLevel(.35);
+      await env.theme.setComponentOpacity(.8375);
       await tester.pumpAndSettle();
       final filterColor = tester
           .widgetList<DecoratedBox>(

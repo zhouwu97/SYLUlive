@@ -81,7 +81,7 @@ void main() {
       final theme = await _createProvider();
       await theme.setBackgroundImage('test_bg.jpg');
       await theme.setFrostedGlass(true);
-      await theme.setComponentOpacityLevel(0.7);
+      await theme.setComponentOpacity(.925);
       await tester.pumpWidget(ChangeNotifierProvider.value(
         value: theme,
         child: MaterialApp(
@@ -99,7 +99,7 @@ void main() {
               .decoration as BoxDecoration)
           .color!;
       expect(surface().a, closeTo(.925, 0.01));
-      await theme.setComponentOpacityLevel(0.4);
+      await theme.setComponentOpacity(.85);
       await tester.pump();
       expect(surface().a, closeTo(.85, 0.01));
       await theme.setCleanBackgroundMode();

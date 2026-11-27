@@ -71,7 +71,7 @@ void main() {
       final theme = await _createProvider();
       await theme.setBackgroundImage('morenbeijing.jpeg', fillScreen: true);
       await theme.setFrostedGlass(true);
-      await theme.setComponentOpacityLevel(0.7);
+      await theme.setComponentOpacity(.925);
       final capture = GlobalKey();
       await tester.pumpWidget(RepaintBoundary(
         key: capture,
@@ -174,7 +174,7 @@ void main() {
           tester.widget<DecoratedBox>(fill).decoration as BoxDecoration;
       expect(decoration().color!.a, closeTo(.925, 0.01));
       expect(decoration().border, isNull);
-      await theme.setComponentOpacityLevel(0.4);
+      await theme.setComponentOpacity(.85);
       await tester.pumpAndSettle();
       expect(decoration().color!.a, closeTo(.85, 0.01));
       for (final strength in [.35, 0.0, 1.0]) {

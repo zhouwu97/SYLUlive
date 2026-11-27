@@ -102,7 +102,7 @@ void main() {
       addTearDown(theme.dispose);
       await theme.setBackgroundImage('morenbeijing.jpeg');
       await theme.setFrostedGlass(true);
-      await theme.setComponentOpacityLevel(.7);
+      await theme.setComponentOpacity(.925);
       const child = SizedBox(key: Key('content'), width: 160, height: 100);
       final card = switch (kind) {
         'material' => const AppCardMaterial(color: Colors.white, child: child),

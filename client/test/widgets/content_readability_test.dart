@@ -99,7 +99,7 @@ void main() {
           await tester.pumpAndSettle();
           final before = tester.getRect(find.text(title));
           await theme.setBackgroundImage('morenbeijing.jpeg');
-          await theme.setComponentOpacityLevel(0);
+          await theme.setComponentOpacity(.75);
           for (final glass in [false, true, false]) {
             await theme.setFrostedGlass(glass);
             await tester.pumpAndSettle();

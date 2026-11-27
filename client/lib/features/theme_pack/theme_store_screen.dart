@@ -16,6 +16,9 @@ import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/report_sheet.dart';
+import '../../services/publish_session_scope.dart';
+import '../../widgets/security_session_guard.dart';
+import 'admin_theme_review_screen.dart' show showThemeReasonDialog;
 import 'theme_appearance.dart';
 import 'theme_manifest.dart';
 import 'theme_pack_store.dart';
@@ -81,6 +84,7 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
   bool _storeDisabled = false;
   String? _error;
   bool _applyingOriginal = false;
+  bool _removingTheme = false;
 
   bool get _showOriginalDefault =>
       (_selectedTag == null ||
@@ -217,6 +221,55 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
     }
   }
 
+  Future<void> _removeTheme(ThemeCatalogItem item) async {
+    if (_removingTheme) return;
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || auth.user?.isAdmin != true) return;
+    final session = PublishSessionScope(
+      accountId: auth.user!.id,
+      accountSessionEpoch: auth.accountSessionEpoch,
+    );
+    setState(() => _removingTheme = true);
+    try {
+      final decision = await showThemeReasonDialog(
+        context,
+        title: '下架《${item.name}》',
+        confirmLabel: '确认下架',
+      );
+      if (decision == null ||
+          !mounted ||
+          !SecuritySessionGuard.owns(auth, session, requireAdmin: true)) {
+        return;
+      }
+      await _repo().adminRemove(
+        item.familyId,
+        reasonCode: decision.$1,
+        note: decision.$2,
+        session: session,
+      );
+      if (!mounted ||
+          !SecuritySessionGuard.owns(auth, session, requireAdmin: true)) {
+        return;
+      }
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已下架《${item.name}》，本机已安装副本保留')),
+      );
+      await _refreshAll();
+    } catch (error) {
+      if (!mounted ||
+          !SecuritySessionGuard.owns(auth, session, requireAdmin: true)) {
+        return;
+      }
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('下架失败：$error，请重试')),
+      );
+    } finally {
+      if (mounted) setState(() => _removingTheme = false);
+    }
+  }
+
   Future<void> _openDetail(ThemeCatalogItem item) async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -283,6 +336,8 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final auth = context.watch<AuthProvider?>();
+    final canRemove = auth?.isLoggedIn == true && auth?.user?.isAdmin == true;
     final repo = _repo();
 
     return Scaffold(
@@ -520,11 +575,29 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
                                   ? item.previewDark
                                   : item.previewLight),
                               alignment: Alignment.topCenter,
-                              installed: installed?.manifest.version == item.version
-                                  ? installed
-                                  : null,
+                              installed:
+                                  installed?.manifest.version == item.version
+                                      ? installed
+                                      : null,
                             ),
                             badge: _badgeFor(item),
+                            removalAction: canRemove
+                                ? TextButton(
+                                    key: ValueKey(
+                                        'theme-store-remove-${item.familyId}'),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor:
+                                          Theme.of(context).colorScheme.error,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8),
+                                      minimumSize: const Size(48, 48),
+                                    ),
+                                    onPressed: _removingTheme
+                                        ? null
+                                        : () => _removeTheme(item),
+                                    child: const Text('下架'),
+                                  )
+                                : null,
                             onTap: () => _openDetail(item),
                           );
                         },
@@ -724,8 +797,10 @@ class _ThemeCatalogCard extends StatelessWidget {
     required this.preview,
     required this.badge,
     required this.onTap,
+    this.removalAction,
   });
 
+  final Widget? removalAction;
   final String name;
   final String subtitle;
   final Widget preview;
@@ -800,28 +875,35 @@ class _ThemeCatalogCard extends StatelessWidget {
               decoration: BoxDecoration(
                 border: Border(top: BorderSide(color: tokens.divider)),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: tokens.textSecondary,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: tokens.textSecondary,
-                    ),
-                  ),
+                  if (removalAction != null) removalAction!,
                 ],
               ),
             ),

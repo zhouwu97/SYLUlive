@@ -870,6 +870,111 @@ void main() {
     expect(find.text('latest-next'), findsNothing);
   });
 
+  testWidgets('商城下架权限、取消、失败重试、切号与成功刷新', (tester) async {
+    const fid = '11111111-2222-4333-8444-555555555555';
+    var removed = false;
+    var fail = true;
+    var requests = 0;
+    final dio = Dio(BaseOptions(baseUrl: 'https://fixture.test/api'));
+    dio.httpClientAdapter = _StreamStubAdapter((o) async {
+      if (o.uri.path.endsWith('/remove')) {
+        requests++;
+        expect(o.data['reasonCode'], 'copyright');
+        if (fail) {
+          return ResponseBody.fromString('{"error":"失败"}', 503, headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType]
+          });
+        }
+        removed = true;
+      }
+      return ResponseBody.fromString(
+          jsonEncode({
+            'items': removed
+                ? []
+                : [
+                    {
+                      'familyId': fid,
+                      'version': 1,
+                      'name': '海盐蓝',
+                      'author': {'id': 1, 'nickname': '作者', 'avatarUrl': ''},
+                      'tags': [],
+                      'source': 'official',
+                      'previewLight': '',
+                      'previewDark': '',
+                      'packageUrl': '/test.sltheme',
+                      'packageSize': 100,
+                      'packageSha256': '',
+                      'minAppVersion': '1.0.0',
+                      'downloads': 1,
+                    }
+                  ]
+          }),
+          200,
+          headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType]
+          });
+    });
+    final auth = _TestAuth(Dio());
+    addTearDown(auth.dispose);
+    final boundary = GlobalKey();
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_wrapWithProviders(
+        auth: auth,
+        themeProvider: themeProvider,
+        home: RepaintBoundary(
+            key: boundary,
+            child: ThemeStoreScreen(
+                repository: ThemeStoreRepository(dio), appVersion: '1.7.12'))));
+    await _settleIo(tester);
+    expect(find.text('下架'), findsNothing);
+    for (final role in ['admin', 'super_admin']) {
+      auth.switchUser(id: 1, role: role);
+      await tester.pumpAndSettle();
+      expect(find.text('下架'), findsOneWidget);
+    }
+    await captureEmojiQA(tester, boundary, 'theme-store-admin-remove');
+    await tester.tap(find.text('下架'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(requests, 0);
+    for (var step = 0; step < 3; step++) {
+      await tester.tap(find.text('下架'));
+      await tester.pumpAndSettle();
+      expect(
+          tester
+              .widget<FilledButton>(
+                  find.byKey(const ValueKey('admin-theme-confirm-reject')))
+              .onPressed,
+          isNull);
+      await tester.tap(find.byKey(const ValueKey('theme-reason-copyright')));
+      await tester.pump();
+      if (step == 1) {
+        auth.switchUser(id: 2);
+        await tester.pump();
+      }
+      if (step == 2) fail = false;
+      await tester.tap(find.text('确认下架'));
+      await _settleIo(tester);
+      if (step == 0) {
+        expect(find.textContaining('下架失败'), findsOneWidget);
+        expect(requests, 1,
+            reason: tester.widget<Text>(find.textContaining('下架失败')).data);
+      } else if (step == 1) {
+        expect(requests, 1);
+        expect(find.text('下架'), findsNothing);
+        auth.switchUser(id: 1, role: 'admin');
+        await tester.pumpAndSettle();
+      }
+    }
+    expect(requests, 2);
+    expect(find.text('海盐蓝'), findsNothing);
+    expect(find.text('默认主题（经典）'), findsOneWidget);
+    expect(find.textContaining('本机已安装副本保留'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('商城列表状态、详情六态按钮与跨页面全局试用横条', (tester) async {
     const familyId = '11111111-2222-4333-8444-555555555555';
     var storeState = 'disabled'; // disabled -> error -> empty -> loaded

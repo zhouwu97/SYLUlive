@@ -158,11 +158,11 @@ UTF-8 编码，大小不超过 64KB。
 | `preset` | `standard`（默认）、`compact`、`immersive`。当前明暗模式有背景或贴纸时使用沉浸页头；无装饰时 compact 使用紧凑信息区，其余使用标准信息区 |
 | `alignment` | `start`（默认）、`center`、`end`，只控制页头标识与摘要的水平对齐 |
 | `imageHeight` | 96–280，默认 150，单位 dp，表示沉浸页头的预留高度。已规范化的旧包沿用其中记录的高度 |
-| `imageWidth` | 0.45–1.0，默认 1.0，旧字段，仅供兼容读取。手机 hero 整宽，平板按内容栏排版 |
+| `imageWidth` | 0.45–1.0，默认 1.0，旧字段，仅供兼容读取。手机 hero 整宽，平板 hero 填满所属内容栏 |
 
 **immersive（沉浸页头）**：在主壳的首页、校园、我三个页签里，页头背景图作为 hero 画在页面背景层中，从屏幕顶部（状态栏下方）铺到内容区锚点下方 28dp，顶栏、搜索框、页头信息和第一张内容卡都叠在 hero 上。hero 顶部用 `background` 色从 62% 透明度渐变到 0，保证顶栏文字清楚；底部最后 18% 渐隐到 `background`。首页不再显示单独的信息卡，标题直接叠在 hero 上；校园、我的信息卡上压 hero 底边。滚动时 hero 以内容一半的速度上移，滚过 hero 高度 70% 时完全淡出。贴纸坐标按 hero 区域换算。导入预览、主题工坊、设置编辑和二级页面没有背景层，immersive 在这些地方仍按"装饰区在信息区之前"显示。`imageWidth` 对 immersive 不生效，hero 始终整宽。
 
-明暗共用布局，装饰分别判断。无装饰时信息区自然排版。有装饰的槽位导出为 immersive；若只有一个明暗变体有装饰且作者显式选择 compact，导出保留 compact 供另一模式使用。信息区依内容和系统文字缩放自然增长，图片区尺寸不能限制资料、通知、按钮的高度。宽屏按页面所在内容栏计算尺寸，不能跨过分栏边界。
+明暗共用布局，装饰分别判断。无装饰时信息区自然排版。有装饰的槽位导出为 immersive；若只有一个明暗变体有装饰且作者显式选择 compact，导出保留 compact 供另一模式使用。信息区依内容和系统文字缩放自然增长，图片区尺寸不能限制资料、通知、按钮的高度。平板侧栏下，hero 从所属内容栏顶部铺到锚点下方，沿用手机渐隐规则，在内容栏边界裁切。
 
 明暗变体的 `cardStyle`（圆角统一由顶层 `shape` 档位控制，不在 `cardStyle` 中重复声明）：
 
@@ -172,6 +172,8 @@ UTF-8 编码，大小不超过 64KB。
 | `shadow` | `none`、`soft`、`medium`；省略时沿用组件默认阴影。soft 为黑色 8%／12%（亮／暗），offset (0,2)、blur 8；medium 为黑色 12%／18%，offset (0,4)、blur 16；spread 均为 0 |
 
 作用对象是首批范围中的共享内容卡片、帖子卡片、商品卡片和 AI 内容卡片。课程色块、输入控件、弹层、系统控件及用户图片不套用这组卡片几何参数；它们仍读取各自的 Token 和 AppShape。componentOpacity 只影响容器底面，不给文字、商品照片、头像和操作按钮整体加透明度。
+
+平板分栏课表在课表区域绘制 `schedule` 壁纸，横屏优先使用 `landscape`。今日概览与周网格容器使用 `componentOpacity`、`frostedGlass`、`cardStyle` 和 `cardArt`。概览内的课程色块使用 `coursePalette` 和 `courseCardText`。
 
 ### 2.8 页头装饰
 
@@ -187,13 +189,13 @@ UTF-8 编码，大小不超过 64KB。
 | 字段 | 约束 |
 | --- | --- |
 | `image` | decorations/ 下的 PNG 或 WebP，允许透明 |
-| `x`、`y` | 0–1，贴纸中心相对页头独立装饰区的坐标 |
+| `x`、`y` | 0–1，贴纸中心相对 hero 或内嵌装饰区的坐标 |
 | `width` | 0.08–0.40，占装饰区宽度的比例；保持图片比例 |
 | `rotation` | -180–180，单位度，默认 0，顺时针为正 |
 
 image、x、y、width 必填；rotation 可省略。数值字段只接受有限数，不能使用 NaN 或无穷值。
 
-手机主壳由沉浸页头承载当前模式的装饰，平板及编辑预览使用内容栏内的图片区。无装饰时不预留图片区。背景、贴纸均裁切到该区，贴纸按数组顺序从后向前绘制。它们不进入语义树、不响应点击，不能覆盖页头的信息区、真实个人资料、功能入口、系统状态栏或全局试用横条。页头信息区使用不透明的 card 底面与 textPrimary／textSecondary，图片不参与文字背景合成。
+手机和平板主壳均由沉浸页头承载当前模式的装饰，编辑和导入预览使用内嵌装饰区。无装饰时不预留图片区。背景、贴纸均裁切到所在区域，贴纸按数组顺序从后向前绘制。它们不进入语义树、不响应点击，绘制在页头信息、真实个人资料、功能入口、系统状态栏和全局试用横条下方。校园和我的页头信息区使用不透明的 card 底面与 textPrimary／textSecondary。
 
 装饰仅属于当前设备外观，不上传为个人资料，不改写用户主页已有封面，也不覆盖其他作者的头像、封面和内容图片。九个页面共用配色与组件风格；装饰槽位仅出现在上述三个页头。
 
@@ -302,7 +304,7 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 **默认值与对比度规则的关系**：默认的 `textSecondary` 亮色值 `#747B82`，在 `card`（`#FFFFFF`）上的对比度为 4.29，在 `background`（`#FFFAF4`）上为 4.13；默认的 `tagText` 亮色值 `#147C72` 在 `tagBackground`（`#EEF2F0`）上的对比度为 4.47，均达不到第 5 节要求的 4.5。
 
 - 内置默认外观保留既有显示效果。本周课程卡片沿用白字，默认外观不经过商城的对比度检查。
-- 官方主题"沈理青"把亮色 `textSecondary` 改为 `#6E757C`（在 `card` 上为 4.67，在 `background` 上为 4.5），亮色 `tagText` 改为 `#107A70`（原值对比度 4.47），亮色 `courseCardText` 保留 `#1F2328`。
+- 官方主题"沈理青"把亮色 `textSecondary` 改为 `#6E757C`（在 `card` 上为 4.67，在 `background` 上为 4.5），亮色 `tagText` 改为 `#107A70`（原值对比度 4.47）。
 
 **默认课程色板**：`#448AFF`、`#00C853`、`#9C27B0`、`#FF5252`、`#FF9800`，即 `courseColors` 的现值。课程卡片的颜色等于 `色板[hash % 长度]` 以 0.45 的不透明度显示，这个规则保持不变。
 
@@ -357,7 +359,8 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 | `card` | 亮色用 `surfaceContainerLowest`，暗色用 `surfaceContainer` |
 | `cardBorder`、`divider`、`timetableGrid` | `outlineVariant` |
 | `outline` | `outline` |
-| `textPrimary`、`bubbleIncomingText`、`appBarForeground`、`courseCardText` | `onSurface` |
+| `textPrimary`、`bubbleIncomingText`、`appBarForeground` | `onSurface` |
+| `courseCardText` | 固定 `#FFFFFF`，与内置默认外观一致 |
 | `textSecondary`、`navUnselected` | `onSurfaceVariant` |
 | `textTertiary` | `onSurfaceVariant` 以 75% 不透明度合成 |
 | `textDisabled` | `onSurface` 以 38% 不透明度合成 |
@@ -371,11 +374,7 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 | `feedFeaturedText` | `onTertiaryContainer` |
 | `timetableToday` | `primary` 以 12% 不透明度合成 |
 
-**课程色板生成**：
-
-1. 用 `Hct` 读取种子色的色相 H。`material_color_utilities` 已经由 Flutter SDK 引入，在 `pubspec.yaml` 中声明为直接依赖，版本写 `any`。
-2. 生成 8 个颜色，第 i 个的色相为 `H + i × 45`。色度：亮色 48，暗色 40。色调：亮色 60，暗色 70。
-3. 每个颜色和课程文字的对比度达不到 4.5 时，用下面的"自动修正"调整。
+**课程色板生成**：工坊的「恢复原版课程色」直接给出原版 UI 的五色 `#448AFF`、`#00C853`、`#9C27B0`、`#FF5252`、`#FF9800`，配白色课程文字。作者可以逐个改色。
 
 **对比度计算**：按 WCAG 2.1 计算对比度。带透明度的颜色，先合成到它实际所在的背景上再计算。
 
@@ -393,8 +392,9 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 | `tagText` | `tagBackground` | 4.5 |
 | `appBarForeground` | `appBarBackground` | 4.5 |
 | `bubbleOutgoingText` | `bubbleOutgoing` | 4.5 |
-| `courseCardText` | 色板中每个颜色以 0.45 不透明度合成到 `background` 后的颜色 | 4.5 |
 | `navSelected`、`navUnselected` | `navBackground` | 3.0 |
+
+课程块文字与色板不参与硬性对比度检查：课程块按用户设置的不透明度叠在课表背景上，白字配原版五色与内置默认外观一致。
 
 不达标时，各处的处理：
 

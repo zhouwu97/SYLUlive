@@ -1344,7 +1344,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   ),
                 ),
               ),
-              child: Stack(children: [_buildMobileLayout(isDark)]),
+              child: ThemeHeroPane(
+                slot: 'home',
+                child: Builder(
+                  builder: (paneContext) => _buildMobileLayout(isDark, paneContext),
+                ),
+              ),
             ),
           ),
         ),
@@ -1912,8 +1917,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   // ---- Mobile Layout ----
-  Widget _buildMobileLayout(bool isDark) {
-    final immersive = HomeThemedHeaderBanner.isImmersive(context);
+  Widget _buildMobileLayout(bool isDark, BuildContext paneContext) {
+    final immersive = HomeThemedHeaderBanner.isImmersive(paneContext);
     final photoBackground = context.watch<ThemeProvider>().needsPhotoContrast;
     final tokens = AppThemeTokens.of(context);
     final bar = Color.alphaBlend(tokens.appBarBackground, tokens.background);

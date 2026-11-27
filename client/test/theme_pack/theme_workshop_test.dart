@@ -140,23 +140,10 @@ void main() {
         seedColor: seed,
         brightness: brightness,
       );
-      final bg = ThemeContrast.parseColor(tokens['background']!);
-      final courseText = ThemeContrast.parseColor(tokens['courseCardText']!);
-      final courses = ThemeResolver.generateCoursePalette(
-        seedColor: seed,
-        brightness: brightness,
-        background: bg,
-        courseCardText: courseText,
-      );
-      expect(courses.length, 8);
-      for (final hex in courses) {
-        final composed = Color.alphaBlend(
-          ThemeContrast.parseColor(hex).withValues(alpha: 0.45),
-          bg,
-        );
-        expect(ThemeContrast.ratio(courseText, composed),
-            greaterThanOrEqualTo(4.5));
-      }
+      // 课程文字与色板沿用原版 UI：白字配蓝、绿、紫、红、橙五色。
+      expect(tokens['courseCardText'], '#FFFFFF');
+      final courses = ThemeResolver.generateCoursePalette(brightness: brightness);
+      expect(courses, ['#448AFF', '#00C853', '#9C27B0', '#FF5252', '#FF9800']);
     }
 
     // 自动修正低对比前景：达到 4.5 阈值且保持 HCT 色相不变

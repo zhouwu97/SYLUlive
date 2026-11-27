@@ -42,12 +42,7 @@ void main() {
         overrides: Map<String, String>.from(variant['tokens'] ?? {}),
       );
       variant['tokens'] = tokens;
-      variant['coursePalette'] ??= ThemeResolver.generateCoursePalette(
-        seedColor: seed,
-        brightness: mode,
-        background: ThemeContrast.parseColor(tokens['background']!),
-        courseCardText: ThemeContrast.parseColor(tokens['courseCardText']!),
-      );
+      variant['coursePalette'] ??= ThemeResolver.generateCoursePalette(brightness: mode);
     }
     final pubspec = await File('pubspec.yaml').readAsString();
     final version = RegExp(

@@ -1508,8 +1508,12 @@ class _HomeScreenState extends State<HomeScreen>
               child: LiquidGlassBackground(
                   child: Stack(children: [
             Positioned.fill(
-              child:
-                  CustomBackgroundLayer(canvasSize: MediaQuery.sizeOf(context)),
+              child: CustomBackgroundLayer(
+                canvasSize: MediaQuery.sizeOf(context),
+                scheduleLeftInset: useSideRail && _currentIndex == 2
+                    ? sideWidth
+                    : 0,
+              ),
             ),
             Row(children: [
               SizedBox(width: useSideRail ? sideWidth : 0),
@@ -1519,12 +1523,13 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
             ]),
-            const Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: ThemeStatusBarScrim(),
-            ),
+            if (!useSideRail)
+              const Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: ThemeStatusBarScrim(),
+              ),
           ]))),
           if (useSideRail)
             Positioned(

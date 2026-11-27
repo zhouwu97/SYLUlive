@@ -651,7 +651,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       return _buildStableSemesterStartState(
                           context, sc, isDark);
                     case ScheduleViewState.ready:
-                      return _buildStableCourseSurface(sc, isDark);
+                      return _buildStableCourseSurface(sc);
                   }
                 },
               );
@@ -728,10 +728,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
-  Widget _buildStableCourseSurface(
-    CourseScheduleProvider sc,
-    bool isDark,
-  ) {
+  Widget _buildStableCourseSurface(CourseScheduleProvider sc) {
     final mainContent = Column(
       children: [
         _buildDateHeader(sc),
@@ -742,15 +739,26 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildTodayOverview(sc, isDark),
-          Expanded(child: mainContent),
+          _buildTodayOverview(sc),
+          Expanded(
+            child: AppCardSurface(
+              key: const ValueKey('schedule-tablet-grid'),
+              margin: const EdgeInsets.only(top: 16, right: 16, bottom: 16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: AppThemeTokens.of(context).cardBorder),
+              ),
+              child: mainContent,
+            ),
+          ),
         ],
       );
     }
     return mainContent;
   }
 
-  Widget _buildTodayOverview(CourseScheduleProvider sc, bool isDark) {
+  Widget _buildTodayOverview(CourseScheduleProvider sc) {
+    final tokens = AppThemeTokens.of(context);
     final today = DateTime.now();
     final academicWeek = sc.getAcademicWeek(_weekStart) ?? 1;
     final targetDate = _weekStart.add(Duration(days: today.weekday - 1));
@@ -766,12 +774,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       ..sort((a, b) => a.startSection.compareTo(b.startSection));
 
     return AppCardSurface(
+      key: const ValueKey('schedule-tablet-overview'),
       width: 320,
       margin: const EdgeInsets.only(right: 16, top: 16, bottom: 16, left: 16),
       decoration: BoxDecoration(
-        color: AppThemeTokens.of(context)
-            .card
-            .withValues(alpha: isDark ? 0.2 : 0.5),
+        color: tokens.card,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: AppThemeTokens.of(context).cardBorder,
@@ -836,7 +843,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       final providerPeriodLabel = _providerPeriodLabel(c);
                       final color = getCourseColor(
                         c.name,
-                        palette: AppThemeTokens.of(context).coursePalette,
+                        palette: tokens.coursePalette,
                         courseCode: c.courseCode,
                         location: c.location,
                       ).withValues(alpha: 1.0);
@@ -845,7 +852,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.15),
+                          color: color,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: color.withValues(alpha: 0.3)),
                         ),
@@ -860,14 +867,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: color.withValues(alpha: 0.2),
+                                    color: tokens.courseCardText.withValues(alpha: 0.16),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
                                     providerPeriodLabel ??
                                         '${_starts[startIndex]} - ${_ends[endIndex]}',
                                     style: TextStyle(
-                                      color: color,
+                                      color: tokens.courseCardText,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
                                     ),
@@ -878,7 +885,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   Text(
                                     '第${c.startSection}-${c.endSection}节',
                                     style: TextStyle(
-                                      color: color.withValues(alpha: 0.8),
+                                      color: tokens.courseCardText,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -889,7 +896,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                             Text(
                               c.name,
                               style: TextStyle(
-                                color: AppThemeTokens.of(context).textPrimary,
+                                color: tokens.courseCardText,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
                                 height: 1.2,
@@ -903,15 +910,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   Icon(
                                     Icons.location_on,
                                     size: 14,
-                                    color: color.withValues(alpha: 0.8),
+                                    color: tokens.courseCardText,
                                   ),
                                   const SizedBox(width: 4),
                                   Expanded(
                                     child: Text(
                                       c.location!,
                                       style: TextStyle(
-                                        color: AppThemeTokens.of(context)
-                                            .textPrimary,
+                                        color: tokens.courseCardText,
                                         fontSize: 13,
                                       ),
                                     ),
@@ -926,15 +932,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   Icon(
                                     Icons.person,
                                     size: 14,
-                                    color: color.withValues(alpha: 0.8),
+                                    color: tokens.courseCardText,
                                   ),
                                   const SizedBox(width: 4),
                                   Expanded(
                                     child: Text(
                                       c.teacher!,
                                       style: TextStyle(
-                                        color: AppThemeTokens.of(context)
-                                            .textPrimary,
+                                        color: tokens.courseCardText,
                                         fontSize: 13,
                                       ),
                                     ),

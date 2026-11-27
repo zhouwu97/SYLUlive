@@ -99,7 +99,8 @@ abstract final class ThemeResolver {
       'feedSectionSurface': scheme.secondaryContainer,
       'feedFeaturedSurface': scheme.tertiaryContainer,
       'feedFeaturedText': scheme.onTertiaryContainer,
-      'courseCardText': scheme.onSurface,
+      // 课程块文字与内置默认外观一致用白色，不参与硬性对比度检查。
+      'courseCardText': const Color(0xFFFFFFFF),
       'timetableGrid': scheme.outlineVariant,
       'timetableToday': blendOnBg(scheme.primary, 0.12),
     };
@@ -119,30 +120,11 @@ abstract final class ThemeResolver {
     return result;
   }
 
-  /// 按契约第 4 节生成 8 色课程色板，并确保每项以 0.45 alpha 叠到 background 后与 courseCardText 对比度 ≥ 4.5。
-  static List<String> generateCoursePalette({
-    required Color seedColor,
-    required Brightness brightness,
-    required Color background,
-    required Color courseCardText,
-  }) {
-    final seedHct = Hct.fromInt(seedColor.toARGB32());
-    final chroma = brightness == Brightness.light ? 48.0 : 40.0;
-    final initialTone = brightness == Brightness.light ? 60.0 : 70.0;
-    final result = <String>[];
-    for (var i = 0; i < 8; i++) {
-      final hue = (seedHct.hue + i * 45.0) % 360.0;
-      final baseColor = Color(Hct.from(hue, chroma, initialTone).toInt());
-      final fixed = autoFixCourseColorForContrast(
-        courseColor: baseColor,
-        courseCardText: courseCardText,
-        background: background,
-        threshold: 4.5,
-      );
-      result.add(formatHex(fixed));
-    }
-    return result;
-  }
+  /// 课程色板沿用原版 UI 的五色（蓝、绿、紫、红、橙），配白色课程文字。
+  static List<String> generateCoursePalette({required Brightness brightness}) => [
+        for (final color in AppPalette.defaults(brightness).coursePalette)
+          formatHex(color),
+      ];
 
   /// 保持 HCT 色相和色度不变，每次将色调移动 1 直至达到阈值；0 或 100 仍不达标则保留原色。
   static Color autoFixColorForContrast({
@@ -181,44 +163,6 @@ abstract final class ThemeResolver {
       }
     }
     return foreground;
-  }
-
-  /// 修正单个课程块颜色（以 0.45 alpha 叠在 background 上），保持色相与色度不变。
-  static Color autoFixCourseColorForContrast({
-    required Color courseColor,
-    required Color courseCardText,
-    required Color background,
-    double threshold = 4.5,
-  }) {
-    double eval(Color candidate) {
-      final composedBg =
-          Color.alphaBlend(candidate.withValues(alpha: 0.45), background);
-      final front = Color.alphaBlend(courseCardText, composedBg);
-      return ThemeContrast.ratio(front, composedBg);
-    }
-
-    if (eval(courseColor) >= threshold) return courseColor;
-
-    final hct = Hct.fromInt(courseColor.withAlpha(0xFF).toARGB32());
-    final hue = hct.hue;
-    final chroma = hct.chroma;
-    final startTone = hct.tone.round().clamp(0, 100);
-    // 深色文字优先提亮课程底色，浅色文字优先压暗课程底色。
-    final preferLighter = courseCardText.computeLuminance() < 0.5;
-    final directions = preferLighter ? const [1, -1] : const [-1, 1];
-
-    for (final step in directions) {
-      var tone = startTone;
-      while (true) {
-        tone += step;
-        if (tone < 0 || tone > 100) break;
-        final candidate = Color(Hct.from(hue, chroma, tone.toDouble()).toInt());
-        if (eval(candidate) >= threshold) {
-          return candidate;
-        }
-      }
-    }
-    return courseColor;
   }
 
   /// 检查单个明暗变体的全部对比度项（契约第 5 节）。
@@ -267,17 +211,6 @@ abstract final class ThemeResolver {
     compare('bubbleOutgoingText', 'bubbleOutgoing', 4.5);
     compare('navSelected', 'navBackground', 3.0);
     compare('navUnselected', 'navBackground', 3.0);
-    for (var i = 0; i < palette.coursePalette.length; i++) {
-      compare(
-        'courseCardText',
-        'coursePalette[$i]',
-        4.5,
-        composed: Color.alphaBlend(
-          palette.coursePalette[i].withValues(alpha: 0.45),
-          palette.background,
-        ),
-      );
-    }
     return issues;
   }
 
@@ -292,7 +225,6 @@ abstract final class ThemeResolver {
     required List<String> coursePalette,
   }) {
     final nextTokens = Map<String, String>.from(tokens);
-    final nextCourses = List<String>.from(coursePalette);
     final changed = <String, String>{};
 
     Color readToken(String key) => ThemeContrast.parseColor(nextTokens[key]!);
@@ -352,28 +284,9 @@ abstract final class ThemeResolver {
       }
     }
 
-    final pageBg = readToken('background');
-    final courseText = readToken('courseCardText');
-    for (var i = 0; i < nextCourses.length; i++) {
-      final raw = ThemeContrast.parseColor(nextCourses[i]);
-      final fixed = autoFixCourseColorForContrast(
-        courseColor: raw,
-        courseCardText: courseText,
-        background: pageBg,
-        threshold: 4.5,
-      );
-      // 若调整课程块本身到了 0/100 仍不够（例如 courseCardText 自身在灰色区），再微调 courseCardText。
-      final composed =
-          Color.alphaBlend(fixed.withValues(alpha: 0.45), pageBg);
-      if (ThemeContrast.ratio(Color.alphaBlend(courseText, composed), composed) >=
-          4.5) {
-        nextCourses[i] = formatHex(fixed);
-      }
-    }
-
     return (
       tokens: nextTokens,
-      coursePalette: nextCourses,
+      coursePalette: coursePalette,
       changedOverrides: changed,
     );
   }

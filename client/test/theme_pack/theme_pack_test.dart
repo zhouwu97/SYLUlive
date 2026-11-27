@@ -467,7 +467,9 @@ void main() {
     }
     final issues =
         ThemeContrast.check(ThemeManifest.parse(manifest, appVersion: '9.0.0'));
-    expect(issues.length, 28);
+    // 9 条规则 × 明暗两套；课程块文字不参与硬性对比度检查。
+    expect(issues.length, 18);
+    expect(issues.any((issue) => issue.foreground == 'courseCardText'), isFalse);
     expect(issues.every((issue) => issue.ratio == 1), isTrue);
   });
   final badFields = <(String, void Function(Map<String, dynamic>))>[

@@ -240,12 +240,7 @@ class ThemeWorkshopStateData {
         seedColor: seed,
         brightness: brightness,
       );
-      final courses = ThemeResolver.generateCoursePalette(
-        seedColor: seed,
-        brightness: brightness,
-        background: ThemeContrast.parseColor(tokens['background']!),
-        courseCardText: ThemeContrast.parseColor(tokens['courseCardText']!),
-      );
+      final courses = ThemeResolver.generateCoursePalette(brightness: brightness);
       final fixed = ThemeResolver.autoFixVariant(
         brightness: brightness,
         tokens: tokens,
@@ -3132,7 +3127,6 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
 
   List<Widget> _buildCourseSegments() {
     final v = _currentVariant;
-    final tokens = v.effectiveTokens(_brightness);
     final appTokens = AppThemeTokens.of(context);
     final tonal = Theme.of(context)
         .colorScheme
@@ -3187,16 +3181,11 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
     return [
       _settingRow(
         leading: _rowIcon(Icons.auto_awesome_outlined),
-        title: '从种子色生成',
-        subtitle: '按当前种子色重新推导 8 种课程色',
+        title: '恢复原版课程色',
+        subtitle: '蓝、绿、紫、红、橙五色，配白色课程文字',
         trailing: _rowValue('生成'),
         onTap: () {
-          final generated = ThemeResolver.generateCoursePalette(
-            seedColor: ThemeContrast.parseColor(v.seedColor),
-            brightness: _brightness,
-            background: ThemeContrast.parseColor(tokens['background']!),
-            courseCardText: ThemeContrast.parseColor(tokens['courseCardText']!),
-          );
+          final generated = ThemeResolver.generateCoursePalette(brightness: _brightness);
           _mutate(() => v.coursePalette = generated);
         },
       ),

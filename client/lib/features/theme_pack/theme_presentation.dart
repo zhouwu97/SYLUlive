@@ -489,9 +489,11 @@ class ThemeHeaderFrame extends StatelessWidget {
     );
   }
 
-  /// 手机主壳使用背景层 hero；平板、预览和二级路由使用所属内容栏的内嵌装饰区。
-  static bool immersiveEnabled(BuildContext context) =>
-      !ResponsiveUtil.useSideNavigation(context) &&
+  /// 主壳使用背景层 hero，平板须位于承载 hero 的内容栏内。
+  static bool immersiveEnabled(BuildContext context, {bool inHeroPane = false}) =>
+      (!ResponsiveUtil.useSideNavigation(context) ||
+          inHeroPane ||
+          context.findAncestorWidgetOfExactType<ThemeHeroPane>() != null) &&
       ThemePresentationOverride.maybeOf(context) == null &&
       ModalRoute.of(context)?.isFirst != false;
 }

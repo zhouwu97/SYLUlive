@@ -799,6 +799,22 @@ void main() {
   });
 
   testWidgets('完整文件导入预览、按组应用与重复点击门禁', (tester) async {
+    final preferences = _FailingPreferences();
+    AppPreferencesStore.setCustomInstance(preferences);
+    Future<void> waitUntil(bool Function() ready, {required String reason}) async {
+      for (var i = 0; i < 200 && !ready(); i++) {
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(ready(), isTrue, reason: reason);
+    }
+
+    Future<void> waitFor(Finder finder) async {
+      await waitUntil(() => finder.evaluate().isNotEmpty, reason: '$finder');
+      expect(finder, findsOneWidget);
+    }
+
     await tester.runAsync(() async {
       await provider.setBackgroundImage('morenbeijing.jpeg');
       await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
@@ -818,20 +834,28 @@ void main() {
                 )))));
     await tester.tap(find.text('打开导入'));
     await tester.pumpAndSettle();
-    await tester.runAsync(() async {
-      await tester.tap(find.text('选择主题文件'));
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-    });
-    await tester.pumpAndSettle();
-    expect(find.text('应用效果预览'), findsOneWidget);
+    await tester.runAsync(() => tester.tap(find.text('选择主题文件')));
+    await waitFor(find.text('应用效果预览'));
     expect(find.textContaining('本机主题'), findsOneWidget);
-    await tester.runAsync(() async {
-      await tester.tap(find.text('保存并应用'));
-      await tester.pump();
-      await tester.tap(find.text('正在保存…'));
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    });
-    await tester.pumpAndSettle();
+
+    final hold = (await tester.runAsync(() async => Completer<void>()))!;
+    preferences.hold = hold;
+    try {
+      await tester.runAsync(() => tester.tap(find.text('保存并应用')));
+      final saving = find.widgetWithText(FilledButton, '正在保存…');
+      await waitFor(saving);
+      expect(tester.widget<FilledButton>(saving).onPressed, isNull);
+      await tester.tap(saving);
+    } finally {
+      preferences.hold = null;
+      await tester.runAsync(() async => hold.complete());
+    }
+    await waitUntil(
+      () => find.byType(ThemeImportScreen, skipOffstage: false)
+          .evaluate().isEmpty,
+      reason: '应用后退出导入页',
+    );
+    expect(find.text('主题已应用'), findsOneWidget);
     expect(provider.hasThemeColors, isTrue);
     expect(provider.backgroundImage, isNull);
     expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
@@ -841,12 +865,8 @@ void main() {
     expect(confirmation.persist, isFalse);
     expect(confirmation.duration, const Duration(seconds: 5));
     // 撤销包含平台小组件同步，在真实异步区启动并等待，避免遗留到下一用例。
-    await tester.runAsync(() async {
-      await tester.tap(find.text('撤销'));
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-    });
-    await tester.pumpAndSettle();
-    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.runAsync(() => tester.tap(find.text('撤销')));
+    await waitUntil(() => !provider.hasThemeColors, reason: '等待撤销已应用的主题');
     expect(provider.hasThemeColors, isFalse);
     expect(provider.backgroundImage, 'morenbeijing.jpeg');
     expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);

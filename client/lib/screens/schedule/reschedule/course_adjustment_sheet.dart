@@ -63,7 +63,7 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
   @override
   void initState() {
     super.initState();
-    _scope = '${widget.provider.sessionKey}:${widget.provider.currentTerm.id}';
+    _scope = '${widget.provider.contextGeneration}:${widget.provider.sessionKey}:${widget.provider.currentTerm.id}';
     _weekOffset = widget.existingOverride?.weekOffset ?? 0;
     _replaceSameCourse = widget.existingOverride?.replaceSameCourse ?? false;
   }
@@ -114,7 +114,7 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
   Future<void> _save() async {
     if (_saving) return;
     if (_scope !=
-        '${widget.provider.sessionKey}:${widget.provider.currentTerm.id}') {
+        '${widget.provider.contextGeneration}:${widget.provider.sessionKey}:${widget.provider.currentTerm.id}') {
       setState(() => _saveError = '账号或学期已切换，请关闭后重新打开课表');
       return;
     }
@@ -218,7 +218,8 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
             course: widget.course,
             currentAcademicWeek: widget.currentAcademicWeek,
             totalTeachingWeeks: widget.provider.currentTerm.maxWeek,
-            sourceWeeks: base.weeks,
+            sourceWeeks: widget.existingOverride != null || widget.course.weeks.isEmpty
+                ? base.weeks : widget.course.weeks.toSet(),
             initialAffectedWeeks:
                 _affectedWeeks ?? widget.existingOverride?.affectedWeeks,
             onBack: () => Navigator.pop(context),

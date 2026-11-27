@@ -14,6 +14,9 @@ class SelectWeeksSheet extends StatefulWidget {
   final VoidCallback? onBack;
   final VoidCallback? onClose;
   final ValueChanged<Set<int>> onNext;
+  final bool deleting;
+  final bool saving;
+  final String? saveError;
 
   const SelectWeeksSheet({
     super.key,
@@ -25,6 +28,9 @@ class SelectWeeksSheet extends StatefulWidget {
     this.onBack,
     this.onClose,
     required this.onNext,
+    this.deleting = false,
+    this.saving = false,
+    this.saveError,
   });
 
   static Future<Set<int>?> show(
@@ -59,6 +65,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
   late int _startWeek;
   late int _endWeek;
   late Set<int> _courseWeeks;
+  Set<int>? _initialSelection;
 
   @override
   void initState() {
@@ -81,6 +88,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
       ?..sort();
     _startWeek = initial?.isNotEmpty == true ? initial!.first : firstWeek;
     _endWeek = initial?.isNotEmpty == true ? initial!.last : lastWeek;
+    _initialSelection = initial?.isNotEmpty == true ? initial!.toSet() : null;
 
     // 如果当前周在课程周次范围内，默认指定范围从当前周开始
     if (initial == null || initial.isEmpty) {
@@ -98,6 +106,8 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
     if (_onlyCurrentWeek) {
       return {widget.currentAcademicWeek};
     }
+    // 返回或编辑草稿时保留精确集合；用户改动范围后才按区间重新选择。
+    if (_initialSelection != null) return _initialSelection!;
     final set = <int>{};
     for (var w = _startWeek; w <= _endWeek; w++) {
       set.add(w);
@@ -127,7 +137,9 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
           color: tokens.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        child: SingleChildScrollView(
+        child: AbsorbPointer(
+          absorbing: widget.saving,
+          child: SingleChildScrollView(
             child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -147,7 +159,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
               children: [
                 Expanded(
                   child: Text(
-                    '调整课程安排 (1/3)',
+                    widget.deleting ? '删除本地课程' : '调整课程安排 (1/3)',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -176,6 +188,11 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
               style: TextStyle(fontSize: 12, color: tokens.textSecondary),
             ),
             const SizedBox(height: 16),
+            if (widget.deleting) ...[
+              Text('仅删除本机所选周次的这次上课安排，不影响学校教务课表。可从课表菜单“已删除课程”恢复教务原安排。',
+                  style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
+              const SizedBox(height: 16),
+            ],
             const AppCardDivider(),
             const SizedBox(height: 12),
             Text(
@@ -230,6 +247,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
                         if (val == null) return;
                         setState(() {
                           _startWeek = val;
+                          _initialSelection = null;
                           if (_endWeek < _startWeek) _endWeek = _startWeek;
                         });
                       },
@@ -241,10 +259,13 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
                       label: '结束周',
                       value: _endWeek,
                       tokens: tokens,
-                      minWeek: _startWeek,
                       onChanged: (val) {
                         if (val == null) return;
-                        setState(() => _endWeek = val);
+                        setState(() {
+                          _endWeek = val;
+                          _initialSelection = null;
+                          if (_startWeek > _endWeek) _startWeek = _endWeek;
+                        });
                       },
                     ),
                   ),
@@ -285,6 +306,11 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
                 ],
               ),
             ),
+            if (widget.saveError != null) ...[
+              const SizedBox(height: 12),
+              Semantics(liveRegion: true,
+                  child: Text(widget.saveError!, style: TextStyle(color: tokens.error))),
+            ],
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -292,22 +318,22 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
               child: FilledButton(
                 style: FilledButton.styleFrom(
                   textStyle: Theme.of(context).textTheme.labelLarge,
-                  backgroundColor: tokens.primary,
+                  backgroundColor: widget.deleting ? tokens.error : tokens.primary,
                   foregroundColor: tokens.onPrimary,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                onPressed: actual.isEmpty
+                onPressed: actual.isEmpty || widget.saving
                     ? null
                     : () => widget.onNext(_actualAffectedWeeks),
-                child: const Text('下一步：选择目标时间',
+                child: Text(widget.saving ? '正在删除…' : widget.deleting ? '删除所选周次' : '下一步：选择目标时间',
                     style:
-                        TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                        const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
               ),
             ),
           ],
-        )),
+        ))),
       ),
     );
   }
@@ -317,15 +343,12 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
     required int value,
     required AppThemeTokens tokens,
     required ValueChanged<int?> onChanged,
-    int minWeek = 1,
   }) {
     final maxWeek = widget.totalTeachingWeeks ??
         (_courseWeeks.isEmpty
             ? value
             : _courseWeeks.reduce((a, b) => a > b ? a : b));
-    final items = List.generate(maxWeek, (i) => i + 1)
-        .where((w) => w >= minWeek)
-        .toList();
+    final items = List.generate(maxWeek, (i) => i + 1);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

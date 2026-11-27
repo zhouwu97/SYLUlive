@@ -118,6 +118,63 @@ void main() {
     expect(restored.overrides, isEmpty);
   });
 
+  for (final allWeeks in [false, true]) {
+    test('本地删除${allWeeks ? '全部' : '部分'}周次后冷启动、重同步和恢复保留原快照', () async {
+      final provider = createProvider()..syncSessionContext('1001', '2403130233');
+      addTearDown(provider.dispose);
+      const term = CourseTerm(id: '2026_3', year: '2026', semester: 3, title: '测试学期');
+      final raw = [<String, dynamic>{
+        'name': '删除恢复测试', 'course_code': 'CANCEL', 'time': 3,
+        'end_time': 4, 'week_day': 3, 'weeks': [8, 9, 10],
+      }];
+      await provider.applyFetchedCoursesForTerm(term: term, rawCourses: raw);
+      final course = provider.baseSchedule.single;
+      final meeting = course.meetings.single;
+      final removed = await provider.createCancelOverride(courseKey: course.courseKey,
+          meetingKey: meeting.meetingKey, affectedWeeks: allWeeks ? {8, 9, 10} : {9},
+          sourceSnapshotHash: meeting.computeSnapshotHash());
+      final restored = createProvider()..syncSessionContext('1001', '2403130233');
+      addTearDown(restored.dispose);
+      await restored.loadCachedCoursesIfAvailable();
+      expect(restored.baseSchedule, hasLength(1));
+      expect(restored.overrides.single.id, removed.id);
+      expect(restored.courses.expand((c) => c.weeks).toList(), allWeeks ? <int>[] : [8, 10]);
+      await restored.applyFetchedCoursesForTerm(term: term, rawCourses: raw);
+      expect(restored.overrides.single.isActive, isTrue);
+      await restored.restoreBaseMeeting(removed.id);
+      expect(restored.courses.single.weeks, [8, 9, 10]);
+      final afterRecovery = createProvider()..syncSessionContext('1001', '2403130233');
+      addTearDown(afterRecovery.dispose);
+      await afterRecovery.loadCachedCoursesIfAvailable();
+      expect(afterRecovery.courses.single.weeks, [8, 9, 10]);
+      expect(afterRecovery.overrides, isEmpty);
+    });
+  }
+
+  test('学校移除已删除课程后，冷启动保留孤立记录并可移除', () async {
+    final provider = createProvider()..syncSessionContext('1001', '2403130233');
+    addTearDown(provider.dispose);
+    final raw = [<String, dynamic>{
+      'name': '学校已移除的课程', 'course_code': 'REMOVED', 'time': 3,
+      'end_time': 4, 'week_day': 3, 'weeks': [9],
+    }];
+    await provider.applyFetchedCourses(raw);
+    final course = provider.baseSchedule.single;
+    final meeting = course.meetings.single;
+    final removed = await provider.createCancelOverride(courseKey: course.courseKey,
+        meetingKey: meeting.meetingKey, affectedWeeks: {9},
+        sourceSnapshotHash: meeting.computeSnapshotHash());
+    await provider.applyFetchedCourses([]);
+    final restored = createProvider()..syncSessionContext('1001', '2403130233');
+    addTearDown(restored.dispose);
+    await restored.loadCachedCoursesIfAvailable();
+    expect(restored.baseSchedule, isEmpty);
+    expect(restored.overrides.single.id, removed.id);
+    await restored.restoreBaseMeeting(removed.id);
+    expect(restored.courses, isEmpty);
+    expect(restored.overrides, isEmpty);
+  });
+
   test('后台重建时密钥暂不可读不应判为空课表，重试恢复原学期和课程', () async {
     final flakySecureStore = _TemporarilyUnavailableSecureStore();
     secureStore = flakySecureStore;

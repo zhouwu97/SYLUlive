@@ -206,6 +206,9 @@ func main() {
 	if err := models.PrepareCompetitionCatalogMigration(db); err != nil {
 		log.Fatal("竞赛目录预迁移失败:", err)
 	}
+	// 空库首次启动时这两张表由 AutoMigrate 新建，其约束和迁移记录在下方直接补齐；已有库仍走版本化迁移。
+	freshAIUserPermissions := !db.Migrator().HasTable(&models.AIUserPermission{})
+	freshCompetitionCalendar := !db.Migrator().HasTable(&models.UserCompetitionCalendarItem{})
 
 	if err := db.AutoMigrate(
 		&models.User{},
@@ -462,6 +465,11 @@ func main() {
 	if err := models.MigrateCanteenLocations(db); err != nil {
 		log.Fatal("食堂位置与店名索引迁移失败:", err)
 	}
+	if freshAIUserPermissions {
+		if err := models.CreateAIUserPermissionChecks(db); err != nil {
+			log.Fatal("新建 AI 授权表约束失败:", err)
+		}
+	}
 	if err := models.ValidateAIUserPermissionSchema(db); err != nil {
 		log.Fatal("AI_PERMISSION_SCHEMA_INVALID:", err)
 	}
@@ -543,6 +551,11 @@ func main() {
 	}
 	if err := models.ApplyCompetitionRatingMigration(db); err != nil {
 		log.Fatal("竞赛评级字段迁移失败:", err)
+	}
+	if freshCompetitionCalendar {
+		if _, err := models.ApplyCompetitionCalendarDedupMigration(db); err != nil {
+			log.Fatal("新建竞赛计划去重迁移失败:", err)
+		}
 	}
 	if err := models.VerifyCompetitionCalendarDedupMigration(db); err != nil {
 		log.Fatal("竞赛计划数据约束未就绪:", err)

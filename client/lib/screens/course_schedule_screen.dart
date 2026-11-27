@@ -593,7 +593,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildTodayOverview(sc, isDark),
+                        _buildTodayOverview(sc),
                         Expanded(child: mainContent),
                       ],
                     );

@@ -241,11 +241,7 @@ class ThemeWorkshopStateData {
         brightness: brightness,
       );
       final courses = ThemeResolver.generateCoursePalette(
-        seedColor: seed,
-        brightness: brightness,
-        background: ThemeContrast.parseColor(tokens['background']!),
-        courseCardText: ThemeContrast.parseColor(tokens['courseCardText']!),
-      );
+          seedColor: seed, brightness: brightness);
       final fixed = ThemeResolver.autoFixVariant(
         brightness: brightness,
         tokens: tokens,
@@ -3132,7 +3128,6 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
 
   List<Widget> _buildCourseSegments() {
     final v = _currentVariant;
-    final tokens = v.effectiveTokens(_brightness);
     final appTokens = AppThemeTokens.of(context);
     final tonal = Theme.of(context)
         .colorScheme
@@ -3188,17 +3183,22 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
       _settingRow(
         leading: _rowIcon(Icons.auto_awesome_outlined),
         title: '从种子色生成',
-        subtitle: '按当前种子色重新推导 8 种课程色',
+        subtitle: '按主题色生成 6 种课程色，配白色课程文字',
         trailing: _rowValue('生成'),
         onTap: () {
           final generated = ThemeResolver.generateCoursePalette(
-            seedColor: ThemeContrast.parseColor(v.seedColor),
-            brightness: _brightness,
-            background: ThemeContrast.parseColor(tokens['background']!),
-            courseCardText: ThemeContrast.parseColor(tokens['courseCardText']!),
-          );
+              seedColor: ThemeContrast.parseColor(v.seedColor),
+              brightness: _brightness);
           _mutate(() => v.coursePalette = generated);
         },
+      ),
+      _settingRow(
+        leading: _rowIcon(Icons.restart_alt_rounded),
+        title: '恢复原版课程色',
+        subtitle: '蓝、绿、紫、红、橙五色',
+        trailing: _rowValue('恢复'),
+        onTap: () => _mutate(() =>
+            v.coursePalette = ThemeResolver.originalCoursePalette(_brightness)),
       ),
       Padding(
         padding: const EdgeInsets.all(10),

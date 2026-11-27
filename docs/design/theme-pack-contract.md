@@ -302,7 +302,7 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 **默认值与对比度规则的关系**：默认的 `textSecondary` 亮色值 `#747B82`，在 `card`（`#FFFFFF`）上的对比度为 4.29，在 `background`（`#FFFAF4`）上为 4.13；默认的 `tagText` 亮色值 `#147C72` 在 `tagBackground`（`#EEF2F0`）上的对比度为 4.47，均达不到第 5 节要求的 4.5。
 
 - 内置默认外观保留既有显示效果。本周课程卡片沿用白字，默认外观不经过商城的对比度检查。
-- 官方主题"沈理青"把亮色 `textSecondary` 改为 `#6E757C`（在 `card` 上为 4.67，在 `background` 上为 4.5），亮色 `tagText` 改为 `#107A70`（原值对比度 4.47），亮色 `courseCardText` 保留 `#1F2328`。
+- 官方主题"沈理青"把亮色 `textSecondary` 改为 `#6E757C`（在 `card` 上为 4.67，在 `background` 上为 4.5），亮色 `tagText` 改为 `#107A70`（原值对比度 4.47）。
 
 **默认课程色板**：`#448AFF`、`#00C853`、`#9C27B0`、`#FF5252`、`#FF9800`，即 `courseColors` 的现值。课程卡片的颜色等于 `色板[hash % 长度]` 以 0.45 的不透明度显示，这个规则保持不变。
 
@@ -357,7 +357,8 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 | `card` | 亮色用 `surfaceContainerLowest`，暗色用 `surfaceContainer` |
 | `cardBorder`、`divider`、`timetableGrid` | `outlineVariant` |
 | `outline` | `outline` |
-| `textPrimary`、`bubbleIncomingText`、`appBarForeground`、`courseCardText` | `onSurface` |
+| `textPrimary`、`bubbleIncomingText`、`appBarForeground` | `onSurface` |
+| `courseCardText` | 固定 `#FFFFFF`，与内置默认外观一致 |
 | `textSecondary`、`navUnselected` | `onSurfaceVariant` |
 | `textTertiary` | `onSurfaceVariant` 以 75% 不透明度合成 |
 | `textDisabled` | `onSurface` 以 38% 不透明度合成 |
@@ -371,11 +372,7 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 | `feedFeaturedText` | `onTertiaryContainer` |
 | `timetableToday` | `primary` 以 12% 不透明度合成 |
 
-**课程色板生成**：
-
-1. 用 `Hct` 读取种子色的色相 H。`material_color_utilities` 已经由 Flutter SDK 引入，在 `pubspec.yaml` 中声明为直接依赖，版本写 `any`。
-2. 生成 8 个颜色，第 i 个的色相为 `H + i × 45`。色度：亮色 48，暗色 40。色调：亮色 60，暗色 70。
-3. 每个颜色和课程文字的对比度达不到 4.5 时，用下面的"自动修正"调整。
+**课程色板生成**：「从种子色生成」从种子色相起每 60° 取一色，共 6 色，色度 52，色调亮色 56、暗色 60，配白色课程文字；「恢复原版课程色」给出原版 UI 的五色 `#448AFF`、`#00C853`、`#9C27B0`、`#FF5252`、`#FF9800`。作者可以逐个改色，主题包应提供与插画配色协调的色板。
 
 **对比度计算**：按 WCAG 2.1 计算对比度。带透明度的颜色，先合成到它实际所在的背景上再计算。
 
@@ -393,8 +390,9 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 | `tagText` | `tagBackground` | 4.5 |
 | `appBarForeground` | `appBarBackground` | 4.5 |
 | `bubbleOutgoingText` | `bubbleOutgoing` | 4.5 |
-| `courseCardText` | 色板中每个颜色以 0.45 不透明度合成到 `background` 后的颜色 | 4.5 |
 | `navSelected`、`navUnselected` | `navBackground` | 3.0 |
+
+课程块文字与色板不参与硬性对比度检查：课程块按用户设置的不透明度叠在课表背景上，白字配原版五色与内置默认外观一致。
 
 不达标时，各处的处理：
 

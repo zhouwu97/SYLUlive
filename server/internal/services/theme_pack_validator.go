@@ -1571,24 +1571,6 @@ func checkManifestContrast(manifest map[string]any) error {
 				)
 			}
 		}
-
-		courseText := parseHexARGB(tokens["courseCardText"])
-		coursePalette := variant["coursePalette"].([]string)
-		for i, cHex := range coursePalette {
-			c := parseHexARGB(cHex)
-			c.a = 0.45
-			base := alphaBlend(c, pageBg)
-			front := alphaBlend(courseText, base)
-			if contrastRatio(front, base) < 4.5 {
-				field := fmt.Sprintf("%s.coursePalette[%d]", mode, i)
-				return newThemeError(
-					http.StatusBadRequest,
-					ThemeCodeContrastLow,
-					field,
-					fmt.Sprintf("文字与背景对比度不足：courseCardText / coursePalette[%d]", i),
-				)
-			}
-		}
 	}
 	return nil
 }

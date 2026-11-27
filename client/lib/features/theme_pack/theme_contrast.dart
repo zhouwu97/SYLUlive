@@ -54,12 +54,6 @@ abstract final class ThemeContrast {
       compare('bubbleOutgoingText', 'bubbleOutgoing', 4.5);
       compare('navSelected', 'navBackground', 3);
       compare('navUnselected', 'navBackground', 3);
-      for (var i = 0; i < palette.coursePalette.length; i++) {
-        compare('courseCardText', 'coursePalette[$i]', 4.5,
-            composed: Color.alphaBlend(
-                palette.coursePalette[i].withValues(alpha: .45),
-                palette.background));
-      }
     }
     return issues;
   }

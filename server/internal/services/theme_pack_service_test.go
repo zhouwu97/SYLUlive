@@ -1102,19 +1102,14 @@ func TestThemePackLifecycleAndConcurrencySQLite(t *testing.T) {
 }
 
 func TestThemeSubmissionRejectsLowContrast(t *testing.T) {
-	for _, field := range []string{"textPrimary", "coursePalette"} {
+	for _, field := range []string{"textPrimary"} {
 		t.Run(field, func(t *testing.T) {
 			manifest := defaultValidManifest()
 			light := manifest["light"].(map[string]any)
 			tokens := light["tokens"].(map[string]any)
-			if field == "textPrimary" {
-				tokens["textPrimary"] = "#FFFFFF"
-				tokens["background"] = "#FFFFFF"
-				tokens["card"] = "#FFFFFF"
-			} else {
-				tokens["courseCardText"] = "#FFFFFF"
-				light["coursePalette"] = []any{"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"}
-			}
+			tokens["textPrimary"] = "#FFFFFF"
+			tokens["background"] = "#FFFFFF"
+			tokens["card"] = "#FFFFFF"
 			_, err := ValidateAndNormalizeThemePack(buildTestThemeZip(t, manifest, defaultValidAssets()), ThemeMetadataOverrides{})
 			var problem *ThemePackError
 			require.ErrorAs(t, err, &problem)

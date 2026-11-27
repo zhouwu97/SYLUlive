@@ -140,23 +140,14 @@ void main() {
         seedColor: seed,
         brightness: brightness,
       );
-      final bg = ThemeContrast.parseColor(tokens['background']!);
-      final courseText = ThemeContrast.parseColor(tokens['courseCardText']!);
+      // 课程文字统一白色；色板跟随种子色，原版五色作为恢复选项。
+      expect(tokens['courseCardText'], '#FFFFFF');
       final courses = ThemeResolver.generateCoursePalette(
-        seedColor: seed,
-        brightness: brightness,
-        background: bg,
-        courseCardText: courseText,
-      );
-      expect(courses.length, 8);
-      for (final hex in courses) {
-        final composed = Color.alphaBlend(
-          ThemeContrast.parseColor(hex).withValues(alpha: 0.45),
-          bg,
-        );
-        expect(ThemeContrast.ratio(courseText, composed),
-            greaterThanOrEqualTo(4.5));
-      }
+          seedColor: seed, brightness: brightness);
+      expect(courses.length, 6);
+      expect(courses.toSet().length, 6);
+      expect(ThemeResolver.originalCoursePalette(brightness),
+          ['#448AFF', '#00C853', '#9C27B0', '#FF5252', '#FF9800']);
     }
 
     // 自动修正低对比前景：达到 4.5 阈值且保持 HCT 色相不变

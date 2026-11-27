@@ -45,8 +45,6 @@ void main() {
       variant['coursePalette'] ??= ThemeResolver.generateCoursePalette(
         seedColor: seed,
         brightness: mode,
-        background: ThemeContrast.parseColor(tokens['background']!),
-        courseCardText: ThemeContrast.parseColor(tokens['courseCardText']!),
       );
     }
     final pubspec = await File('pubspec.yaml').readAsString();

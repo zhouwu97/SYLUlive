@@ -11,3 +11,4 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/sylulive-mcp /sylulive-mcp
 USER nonroot:nonroot
 ENTRYPOINT ["/sylulive-mcp"]
+CMD ["-http", ":8091"]

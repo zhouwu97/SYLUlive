@@ -65,3 +65,18 @@ def test_academic_tls_context_adds_legacy_school_cipher_without_disabling_valida
     assert context.minimum_version == ssl.TLSVersion.TLSv1_2
     assert context.verify_mode == ssl.CERT_REQUIRED
     assert context.check_hostname is True
+
+
+def test_erke_crawler_enables_tls_verification_with_webvpn_adapter(monkeypatch):
+    import erke_crawler
+
+    monkeypatch.setattr(erke_crawler.ddddocr, "DdddOcr", lambda **kwargs: object())
+    instance = erke_crawler.SyluCrawler()
+    assert instance.session.verify is True
+    adapter = instance.session.get_adapter(f"{erke_crawler.SyluCrawler.VPN_BASE}/login")
+    assert isinstance(adapter, erke_crawler._WebVpnTLSAdapter)
+    ctx = adapter._ssl_context
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+    assert ctx.check_hostname is True
+    assert ctx.minimum_version == ssl.TLSVersion.TLSv1_2
+    assert not (ctx.verify_flags & ssl.VERIFY_X509_PARTIAL_CHAIN)

@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string] $OutputDirectory,
     [string] $ApiUrl = $env:APP_API_URL,

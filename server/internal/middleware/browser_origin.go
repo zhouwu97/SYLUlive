@@ -31,7 +31,11 @@ func BrowserOriginGuard(trustedOrigins ...string) gin.HandlerFunc {
 		}
 		u, err := url.Parse(origin)
 		_, explicitlyAllowed := allowed[origin]
-		if err != nil || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && u.Scheme != "http") || (!strings.EqualFold(u.Host, c.Request.Host) && !explicitlyAllowed) {
+		requestHTTPS := c.Request.TLS != nil ||
+			strings.EqualFold(c.Request.URL.Scheme, "https") ||
+			strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")), "https")
+		sameOrigin := strings.EqualFold(u.Host, c.Request.Host) && (!requestHTTPS || u.Scheme == "https")
+		if err != nil || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && u.Scheme != "http") || (!sameOrigin && !explicitlyAllowed) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": "origin_rejected", "error": "请从本站页面发起操作"})
 			return
 		}

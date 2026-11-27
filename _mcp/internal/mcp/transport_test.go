@@ -119,6 +119,24 @@ func TestHTTPTransportInitializeCallCloseReconnectAndGrantIsolation(t *testing.T
 	}
 }
 
+func TestExtractBearerTokenCaseInsensitive(t *testing.T) {
+	for _, tc := range []struct {
+		header string
+		want   string
+	}{
+		{"Bearer g_abc", "g_abc"},
+		{"bearer g_abc", "g_abc"},
+		{"BEARER   g_abc  ", "g_abc"},
+		{"Basic dXNlcjpwYXNz", ""},
+		{"Bearer", ""},
+		{"", ""},
+	} {
+		if got := extractBearerToken(tc.header); got != tc.want {
+			t.Fatalf("extractBearerToken(%q) = %q, want %q", tc.header, got, tc.want)
+		}
+	}
+}
+
 func TestStdioTransportInitializeCallCloseReconnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

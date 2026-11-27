@@ -56,6 +56,6 @@ async def verify_internal_token(
 
     provided = auth[len("Bearer "):]
 
-    # 常量时间比较，防止时序攻击
-    if not hmac.compare_digest(provided, token):
+    # 常量时间比较，防止时序攻击；统一编码为 UTF-8 bytes 避免非 ASCII 请求头触发 TypeError 500
+    if not hmac.compare_digest(provided.encode("utf-8"), token.encode("utf-8")):
         raise HTTPException(status_code=401, detail="Invalid token")

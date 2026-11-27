@@ -320,9 +320,25 @@ func (h *AppUpdateHandler) Download(c *gin.Context) {
 	if h.useAccelRedirect {
 		// X-Accel-Redirect：让 Nginx 通过 internal location 投递文件。Nginx
 		// 反代需要把 accelPrefix 的 alias 指向 cfg.AppReleaseDir。
-		// 路径用 filepath.ToSlash 还原为 UNIX 风格，Nginx 期望正斜杠。
-		relative := strings.TrimPrefix(filepath.ToSlash(apkPath), filepath.ToSlash(h.svc.ReleaseDir()))
-		relative = strings.TrimPrefix(relative, "/")
+		// LocateAPK 返回绝对路径，先将 ReleaseDir 转为绝对路径再求相对路径，
+		// 避免 APP_RELEASE_DIR 配置为相对路径时前缀裁切失效。
+		absReleaseDir, err := filepath.Abs(h.svc.ReleaseDir())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "release storage misconfigured",
+				"code":  "storage_misconfigured",
+			})
+			return
+		}
+		rel, err := filepath.Rel(absReleaseDir, apkPath)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "release storage misconfigured",
+				"code":  "storage_misconfigured",
+			})
+			return
+		}
+		relative := strings.TrimPrefix(filepath.ToSlash(rel), "/")
 		c.Header("X-Accel-Redirect", h.accelPrefix+relative)
 		c.Status(http.StatusOK)
 		return

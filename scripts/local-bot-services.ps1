@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('Start','Stop','Restart','Status')][string]$Action = 'Status',
     [ValidateSet('All','AstrBot','SnowLuma')][string]$Service = 'All'
 )

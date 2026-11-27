@@ -662,16 +662,24 @@ func main() {
 
 	// CORS 仅允许显式配置的可信来源，生产环境不能反射任意 Origin。
 	allowedOrigins := make(map[string]struct{})
-	for _, origin := range strings.Split(os.Getenv("CORS_ALLOW_ORIGINS"), ",") {
+	var allowedOriginList []string
+	addAllowedOrigin := func(origin string) {
 		if origin = strings.TrimSpace(origin); origin != "" {
-			allowedOrigins[origin] = struct{}{}
+			if _, exists := allowedOrigins[origin]; !exists {
+				allowedOrigins[origin] = struct{}{}
+				allowedOriginList = append(allowedOriginList, origin)
+			}
 		}
 	}
+	for _, origin := range strings.Split(os.Getenv("CORS_ALLOW_ORIGINS"), ",") {
+		addAllowedOrigin(origin)
+	}
 	if len(allowedOrigins) == 0 && os.Getenv("GIN_MODE") != "release" {
-		allowedOrigins["http://localhost:3000"] = struct{}{}
-		allowedOrigins["http://localhost:8080"] = struct{}{}
+		addAllowedOrigin("http://localhost:3000")
+		addAllowedOrigin("http://localhost:8080")
 	}
 	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Add("Vary", "Origin")
 		origin := c.GetHeader("Origin")
 		if origin != "" {
 			if _, allowed := allowedOrigins[origin]; !allowed {
@@ -703,7 +711,7 @@ func main() {
 
 	})
 	// CORS 只控制浏览器读取响应；写入还必须校验 Origin，并兼容显式允许的独立 Web 入口。
-	r.Use(middleware.BrowserOriginGuard(strings.Split(os.Getenv("CORS_ALLOW_ORIGINS"), ",")...))
+	r.Use(middleware.BrowserOriginGuard(allowedOriginList...))
 	// 公开高成本读取接口单独限流，避免把读滥用塞进来源封禁查询，
 	// 也避免攻击者用大量 GET 请求直接放大帖子和搜索查询。
 	r.Use(middleware.ReadAbuseRateLimitMiddleware(

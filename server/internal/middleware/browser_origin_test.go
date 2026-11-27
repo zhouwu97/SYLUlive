@@ -23,6 +23,7 @@ func TestBrowserOriginGuard(t *testing.T) {
 		{"来源包含路径", "https://sylulive.online/path", "", 403},
 		{"来源包含查询", "https://sylulive.online?x=1", "", 403},
 		{"来源包含片段", "https://sylulive.online#x", "", 403},
+		{"HTTPS 请求拒绝 HTTP 降级同主机来源", "http://sylulive.online", "", 403},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := gin.New()

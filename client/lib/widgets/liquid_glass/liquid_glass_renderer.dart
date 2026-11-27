@@ -14,8 +14,22 @@ import 'liquid_glass_scene.dart';
 Future<ui.FragmentProgram>? _program;
 
 /// Shared shader code, but each mounted navigation owns its mutable uniforms.
-Future<ui.FragmentProgram> loadLiquidGlassProgram() =>
-    _program ??= ui.FragmentProgram.fromAsset('shaders/liquid_glass.frag');
+Future<ui.FragmentProgram> loadLiquidGlassProgram() {
+  final existing = _program;
+  if (existing != null) return existing;
+  final future = ui.FragmentProgram.fromAsset('shaders/liquid_glass.frag');
+  _program = future;
+  // 失败的 Future 不永久驻留缓存，允许后续重试恢复并避免测试间级联异常。
+  future.then<void>(
+    (_) {},
+    onError: (Object _, StackTrace __) {
+      if (identical(_program, future)) {
+        _program = null;
+      }
+    },
+  );
+  return future;
+}
 
 class LiquidGlassRenderer extends StatefulWidget {
   const LiquidGlassRenderer({

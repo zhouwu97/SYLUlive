@@ -19,6 +19,8 @@ import (
 
 const ContractVersion = "5"
 
+var defaultHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
 type Backend interface {
 	Call(context.Context, string, string, json.RawMessage) (json.RawMessage, error)
 }
@@ -45,7 +47,7 @@ func (b HTTPBackend) Call(ctx context.Context, capability, grant string, argumen
 	}
 	client := b.Client
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultHTTPClient
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+path, strings.NewReader(string(arguments)))
 	if err != nil {
@@ -114,9 +116,17 @@ func addMapTool(server *mcp.Server, name, description string, backend serverBack
 	})
 }
 
+func extractBearerToken(header string) string {
+	fields := strings.Fields(header)
+	if len(fields) == 2 && strings.EqualFold(fields[0], "Bearer") {
+		return fields[1]
+	}
+	return ""
+}
+
 func NewHTTPHandler(backend HTTPBackend) http.Handler {
 	handler := mcp.NewStreamableHTTPHandler(func(request *http.Request) *mcp.Server {
-		grant := strings.TrimSpace(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "))
+		grant := extractBearerToken(request.Header.Get("Authorization"))
 		return NewServer(backend, grant)
 	}, nil)
 	return auth.RequireBearerToken(func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
@@ -141,7 +151,12 @@ func Run(ctx context.Context, backend HTTPBackend, httpAddr string, stdio bool) 
 		return NewServer(backend, grant).Run(ctx, &mcp.StdioTransport{})
 	}
 	server := &http.Server{Addr: httpAddr, Handler: NewHTTPHandler(backend), ReadHeaderTimeout: 5 * time.Second}
-	go func() { <-ctx.Done(); _ = server.Shutdown(context.Background()) }()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
 	return server.ListenAndServe()
 }
 

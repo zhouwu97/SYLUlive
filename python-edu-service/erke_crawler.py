@@ -29,15 +29,51 @@
 import base64
 import binascii
 import json
+import os
+from pathlib import Path
 import re
+import ssl
 import sys
 from urllib.parse import quote_plus, urlencode
 
 import ddddocr
 import requests
+from requests.adapters import HTTPAdapter
 from bs4 import BeautifulSoup
 from Crypto.Cipher import AES, PKCS1_v1_5
 from Crypto.PublicKey import RSA
+
+
+_ACADEMIC_CHAIN_PATH = Path(__file__).resolve().parent / "certs" / "sylu-academic-chain.pem"
+
+
+def _webvpn_tls_context() -> ssl.SSLContext:
+    """创建 WebVPN 专用 TLS 上下文：补齐学校公开中间链，强制校验证书与主机名。"""
+    context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    if _ACADEMIC_CHAIN_PATH.is_file():
+        context.load_verify_locations(cafile=str(_ACADEMIC_CHAIN_PATH))
+    extra_ca = os.getenv("WEBVPN_CA_BUNDLE", "").strip()
+    if extra_ca:
+        context.load_verify_locations(cafile=extra_ca)
+    context.verify_flags &= ~ssl.VERIFY_X509_PARTIAL_CHAIN
+    return context
+
+
+class _WebVpnTLSAdapter(HTTPAdapter):
+    """为 WebVPN 域名注入带中间链的严格 TLS 上下文，禁止 verify=False。"""
+
+    def __init__(self, ssl_context: ssl.SSLContext, *args, **kwargs):
+        self._ssl_context = ssl_context
+        super().__init__(*args, **kwargs)
+
+    def init_poolmanager(self, *args, **kwargs):
+        kwargs["ssl_context"] = self._ssl_context
+        return super().init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, *args, **kwargs):
+        kwargs["ssl_context"] = self._ssl_context
+        return super().proxy_manager_for(*args, **kwargs)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -98,9 +134,10 @@ class SyluCrawler:
                 Cookie 名: wengine_vpn_ticketwebvpn_sylu_edu_cn
                 如果用户已在外网完成 VPN 认证，可传入此票据跳过 VPN 登录步骤
         """
-        # ── 创建 requests.Session (保持全局 Cookie) ──
+        # ── 创建 requests.Session (保持全局 Cookie，严格开启 TLS 校验) ──
         self.session = requests.Session()
-        self.session.verify = False  # WebVPN 证书链不完整
+        self.session.verify = True
+        self.session.mount(f"{self.VPN_BASE}/", _WebVpnTLSAdapter(_webvpn_tls_context()))
         self.session.headers["User-Agent"] = self.USER_AGENT
 
         # ── 注入 WebVPN 票据 ──

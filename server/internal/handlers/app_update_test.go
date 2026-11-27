@@ -440,6 +440,28 @@ func TestDownload_AccelModeSetsHeaderNoBody(t *testing.T) {
 	require.Equal(t, "application/vnd.android.package-archive", w.Header().Get("Content-Type"))
 }
 
+func TestDownload_AccelModeWithRelativeReleaseDir(t *testing.T) {
+	db := newAppUpdateTestDB(t)
+	tmpRoot := t.TempDir()
+	relDir := filepath.Join("nested", "releases")
+	absDir := filepath.Join(tmpRoot, relDir)
+	require.NoError(t, os.MkdirAll(absDir, 0o755))
+	content := bytes.Repeat([]byte("AB"), 80)
+	seedRealAPK(t, db, absDir, 1602, models.AppReleaseStatusPublished, content)
+
+	origWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tmpRoot))
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+
+	r, _ := newAppUpdateDownloadRouter(t, db, filepath.Join(".", relDir), true)
+	id := latestReleaseID(t, db)
+	w := mustDoUpdateRequest(t, r, "/api/app/releases/"+formatID(id)+"/download", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "/_internal/app-releases/android/stable/1602/shenliyuan-1602.apk", w.Header().Get("X-Accel-Redirect"))
+	require.Empty(t, w.Body.Bytes())
+}
+
 // latestReleaseID 返回 DB 中最新一条 AppRelease 的 ID，便于测试拼接 URL。
 func latestReleaseID(t *testing.T, db *gorm.DB) uint {
 	t.Helper()

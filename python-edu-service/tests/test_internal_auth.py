@@ -77,6 +77,19 @@ class TestWrongToken:
                     )
         assert exc.value.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_non_ascii_token_returns_401_not_type_error(self):
+        with pytest.raises(HTTPException) as exc:
+            mod = _reload_auth_module()
+            with patch.object(mod, "_INTERNAL_SERVICE_TOKEN", None):
+                with patch.dict(os.environ, {"INTERNAL_SERVICE_TOKEN": "secret123"}):
+                    mock_request = MagicMock()
+                    await mod.verify_internal_token(
+                        mock_request,
+                        authorization="Bearer 非ASCII令牌",
+                    )
+        assert exc.value.status_code == 401
+
 
 class TestCorrectToken:
     """正确 Token → 通过"""

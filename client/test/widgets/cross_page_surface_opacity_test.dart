@@ -16,6 +16,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/services/emoji_favorite_service.dart';
 import 'package:shenliyuan/widgets/about_app_sheet.dart';
 import 'package:shenliyuan/widgets/ai/ai_mode_switch.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:shenliyuan/widgets/course/course_import_sheet.dart';
 import 'package:shenliyuan/widgets/course/course_semester_start_sheet.dart';
 import 'package:shenliyuan/widgets/course/course_semester_start_picker.dart';
@@ -42,7 +43,6 @@ Finder _boxAround(Finder child) => find
     .first;
 
 Finder _target(String scene) => _boxAround(switch (scene) {
-      'about' => find.text('当前版本'),
       'term' || 'import' => find.byType(ListTile).at(1),
       'semester' || 'picker' => find.text('尚未选择'),
       'emoji' => find.byTooltip('表情管理'),
@@ -184,15 +184,22 @@ void main() {
           await tester.tap(find.text('设置开学日期'));
           await tester.pumpAndSettle();
         }
-        final target = _target(scene);
+        final aboutVersion = find.text('当前版本');
+        final target = scene == 'about'
+            ? find.ancestor(
+                of: aboutVersion, matching: find.byType(AppCardSurface)).first
+            : _target(scene);
         final rect = tester.getRect(target);
         final point = switch (scene) {
+          'about' => Offset(rect.left + 8, tester.getCenter(aboutVersion).dy),
           'semester' || 'picker' => Offset(rect.left + 8, rect.top + 8),
           'emoji' => Offset(rect.left + 2, rect.center.dy),
           'exam' => Offset(rect.left + 1, rect.center.dy),
           _ => Offset(rect.left + 8, rect.center.dy),
         };
         final reference = switch (scene) {
+          'about' => Offset(
+              point.dx, tester.getCenter(find.text('自动更新状态')).dy),
           'semester' || 'picker' || 'emoji' => Offset(point.dx, rect.top - 5),
           'exam' => Offset(
               tester.getRect(find.byType(GlassContainer)).left + 4, point.dy),

@@ -6,7 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:gal/gal.dart';
 
 import '../utils/app_feedback.dart';
-import 'campus/campus_theme.dart';
+import '../theme/app_palette.dart';
+import '../theme/app_theme_tokens.dart';
 
 const String kGroupChatNumber = '692905367';
 const String kGroupChatQrAsset = 'assets/images/group_chat_qr.png';
@@ -47,31 +48,23 @@ class _GroupChatDialogState extends State<_GroupChatDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    const accent = CampusTheme.primary;
-    final dialogBackground = isDark ? const Color(0xFF1E1E2E) : Colors.white;
-    final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
-    final labelColor = isDark ? Colors.white54 : const Color(0xFF9094A6);
-    final descriptionColor = isDark ? Colors.white70 : const Color(0xFF4F5568);
-    final valuePanelColor =
-        isDark ? const Color(0x0AFFFFFF) : const Color(0x08000000);
-    final valueBorderColor =
-        isDark ? const Color(0x0DFFFFFF) : const Color(0x0D000000);
+    final colors = AppThemeTokens.of(context);
+    final scheme = Theme.of(context).colorScheme;
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
         AppAlertDialog(
-          backgroundColor: dialogBackground,
+          backgroundColor: colors.surfaceElevated,
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(AppShape.of(context).lg),
           ),
           title: Row(
             children: [
-              const Icon(Icons.group_rounded, color: accent),
+              Icon(Icons.group_rounded, color: colors.primary),
               const SizedBox(width: 8),
-              Text('加入群聊', style: TextStyle(color: titleColor)),
+              Text('加入群聊', style: TextStyle(color: colors.textPrimary)),
             ],
           ),
           content: SingleChildScrollView(
@@ -102,7 +95,7 @@ class _GroupChatDialogState extends State<_GroupChatDialog> {
                         '点击二维码保存到相册',
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.white38 : Colors.black38,
+                          color: colors.textSecondary,
                         ),
                       ),
                     ],
@@ -113,7 +106,7 @@ class _GroupChatDialogState extends State<_GroupChatDialog> {
                   '软件 QQ 群',
                   style: TextStyle(
                     fontSize: 13,
-                    color: labelColor,
+                    color: colors.textSecondary,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -124,16 +117,16 @@ class _GroupChatDialogState extends State<_GroupChatDialog> {
                     vertical: 12,
                   ),
                   decoration: BoxDecoration(
-                    color: valuePanelColor,
+                    color: colors.surfaceMuted,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: valueBorderColor),
+                    border: Border.all(color: colors.cardBorder),
                   ),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.numbers_rounded,
                         size: 18,
-                        color: accent,
+                        color: colors.primary,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -145,7 +138,7 @@ class _GroupChatDialogState extends State<_GroupChatDialog> {
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.6,
-                            color: titleColor,
+                            color: colors.textPrimary,
                           ),
                         ),
                       ),
@@ -158,7 +151,7 @@ class _GroupChatDialogState extends State<_GroupChatDialog> {
                   style: TextStyle(
                     fontSize: 13,
                     height: 1.4,
-                    color: descriptionColor,
+                    color: colors.textSecondary,
                   ),
                 ),
               ],
@@ -166,14 +159,14 @@ class _GroupChatDialogState extends State<_GroupChatDialog> {
           ),
           actions: [
             TextButton(
-              style: TextButton.styleFrom(foregroundColor: accent),
+              style: TextButton.styleFrom(foregroundColor: colors.primary),
               onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
               child: const Text('知道了'),
             ),
             FilledButton.icon(
               style: FilledButton.styleFrom(
-                backgroundColor: accent,
-                foregroundColor: Colors.white,
+                backgroundColor: colors.primary,
+                foregroundColor: colors.onPrimary,
               ),
               onPressed: _copyGroupNumber,
               icon: const Icon(Icons.copy_rounded, size: 16),
@@ -192,9 +185,7 @@ class _GroupChatDialogState extends State<_GroupChatDialog> {
                 color: Colors.transparent,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: isDark
-                        ? const Color(0xFF30313F)
-                        : const Color(0xFF2D3142),
+                    color: scheme.inverseSurface,
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
@@ -204,18 +195,19 @@ class _GroupChatDialogState extends State<_GroupChatDialog> {
                       ),
                     ],
                   ),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.check_circle_outline_rounded,
-                            color: Colors.white, size: 18),
-                        SizedBox(width: 8),
+                            color: scheme.onInverseSurface, size: 18),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'QQ群号已复制到剪贴板',
-                            style: TextStyle(color: Colors.white),
+                            style: TextStyle(color: scheme.onInverseSurface),
                           ),
                         ),
                       ],
@@ -231,50 +223,47 @@ class _GroupChatDialogState extends State<_GroupChatDialog> {
 }
 
 Future<void> _handleDownload(BuildContext context) async {
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  const accent = CampusTheme.primary;
-  final dialogBackground = isDark ? const Color(0xFF1E1E2E) : Colors.white;
-  final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
-  final contentColor = isDark ? Colors.white70 : const Color(0xFF4F5568);
-
   final confirm = await showAppDialog<bool>(
     context: context,
-    builder: (ctx) => AppAlertDialog(
-      backgroundColor: dialogBackground,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
-      title: Row(
-        children: [
-          const Icon(Icons.save_alt_rounded, color: accent),
-          const SizedBox(width: 8),
-          Text('保存二维码', style: TextStyle(color: titleColor)),
-        ],
-      ),
-      content: Text(
-        '是否将群聊二维码保存到手机相册？',
-        style: TextStyle(
-          color: contentColor,
-          fontSize: 15,
+    builder: (ctx) {
+      final colors = AppThemeTokens.of(ctx);
+      return AppAlertDialog(
+        backgroundColor: colors.surfaceElevated,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppShape.of(ctx).lg),
         ),
-      ),
-      actions: [
-        TextButton(
-          style: TextButton.styleFrom(foregroundColor: accent),
-          onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('取消'),
+        title: Row(
+          children: [
+            Icon(Icons.save_alt_rounded, color: colors.primary),
+            const SizedBox(width: 8),
+            Text('保存二维码', style: TextStyle(color: colors.textPrimary)),
+          ],
         ),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: accent,
-            foregroundColor: Colors.white,
+        content: Text(
+          '是否将群聊二维码保存到手机相册？',
+          style: TextStyle(
+            color: colors.textSecondary,
+            fontSize: 15,
           ),
-          onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('确定'),
         ),
-      ],
-    ),
+        actions: [
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: colors.primary),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: colors.primary,
+              foregroundColor: colors.onPrimary,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确定'),
+          ),
+        ],
+      );
+    },
   );
 
   if (confirm != true) return;

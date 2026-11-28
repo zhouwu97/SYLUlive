@@ -11,6 +11,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/repositories/browsing_history_repository.dart';
 import 'package:shenliyuan/screens/browsing_history_screen.dart';
 import 'package:shenliyuan/screens/schedule/course_detail_sheet.dart';
+import 'package:shenliyuan/screens/schedule/course_cancellation_sheet.dart';
 import 'package:shenliyuan/screens/schedule/reschedule/confirm_change_sheet.dart';
 import 'package:shenliyuan/services/schedule/schedule_conflict_service.dart';
 import 'package:shenliyuan/models/schedule/course.dart';
@@ -89,7 +90,7 @@ void main() {
       await appearance.setBackgroundImage('morenbeijing.jpeg');
       await appearance.trySetCustomBackgroundMode();
       await appearance.setFrostedGlass(true);
-      await appearance.setComponentOpacityLevel(0);
+      await appearance.setComponentOpacity(.75);
 
       await tester.pumpWidget(
         MultiProvider(
@@ -133,7 +134,7 @@ void main() {
               .color!
               .a,
           .75,
-          reason: '新刻度最低档的详情底面使用 75% 不透明度');
+          reason: '详情底面保留显式设置的 75% 不透明度');
       expect(activeBackdropFilters(), findsOneWidget,
           reason: '最低档的详情仍必须真实模糊背后内容');
       expect(find.text('数字图像处理'), findsOneWidget);
@@ -310,6 +311,78 @@ void main() {
       expect(find.text('返回修改'), findsOneWidget);
       expect(find.text('保留冲突并保存'), findsOneWidget);
     });
+  });
+
+  testWidgets('未调整的第10周不关联第9周的旧调整', (tester) async {
+    final provider = CourseScheduleProvider();
+    addTearDown(provider.dispose);
+    const meeting = Meeting(meetingKey: 'meeting', weekday: 1,
+        startSection: 3, endSection: 4, weeks: {8, 9, 10});
+    provider.setBaseScheduleForTesting([Course(
+      courseKey: 'course', semesterId: provider.currentTerm.id,
+      source: CourseSource.edu, name: '分周调整', meetings: const [meeting],
+    )]);
+    await provider.createRescheduleOverride(
+        courseKey: 'course', meetingKey: 'meeting', affectedWeeks: {9},
+        toWeekday: 3, toStartSection: 3, toEndSection: 4,
+        sourceSnapshotHash: meeting.computeSnapshotHash());
+    final untouched = provider.courses.firstWhere((c) => !c.isOverridden);
+    await tester.pumpWidget(MultiProvider(providers: [
+      ChangeNotifierProvider.value(value: provider),
+      ChangeNotifierProvider<AuthProvider>(create: (_) => _TestAuthProvider()),
+      ChangeNotifierProvider<CourseEvaluationProvider>(
+          create: (_) => _TestCourseEvaluationProvider()),
+    ], child: MaterialApp(home: Scaffold(body: CourseDetailSheet(
+      course: untouched, currentAcademicWeek: 10,
+    )))));
+    await tester.pumpAndSettle();
+    expect(find.text('调整课程安排'), findsOneWidget);
+    expect(find.text('继续调整'), findsNothing);
+    await tester.tap(find.text('调整课程安排'));
+    await tester.pumpAndSettle();
+    expect(find.text('第 10 周（共 1 周）'), findsOneWidget);
+  });
+
+  testWidgets('课程详情删除单周后关闭，记录入口恢复原安排', (tester) async {
+    final provider = CourseScheduleProvider();
+    addTearDown(provider.dispose);
+    const meeting = Meeting(meetingKey: 'meeting', weekday: 1,
+        startSection: 3, endSection: 4, weeks: {8, 9, 10});
+    provider.setBaseScheduleForTesting([Course(courseKey: 'course',
+        semesterId: provider.currentTerm.id, source: CourseSource.edu,
+        name: '本地删除链路', meetings: const [meeting])]);
+    bool? changed;
+    await tester.pumpWidget(MultiProvider(providers: [
+      ChangeNotifierProvider.value(value: provider),
+      ChangeNotifierProvider<AuthProvider>(create: (_) => _TestAuthProvider()),
+      ChangeNotifierProvider<CourseEvaluationProvider>(create: (_) => _TestCourseEvaluationProvider()),
+    ], child: MaterialApp(home: Scaffold(body: Builder(builder: (context) => Column(children: [
+      TextButton(onPressed: () async {
+        changed = await CourseDetailSheet.show(context,
+            course: const CourseBlock(id: 1, courseCode: 'C1', name: '本地删除链路',
+              weekday: 1, startSection: 3, endSection: 4, weeks: [8, 9, 10],
+              color: '#147C72', courseKey: 'course', meetingKey: 'meeting'),
+            currentAcademicWeek: 9);
+      }, child: const Text('打开详情')),
+      TextButton(onPressed: () => CancelledCoursesSheet.show(context, provider: provider),
+          child: const Text('查看删除记录')),
+    ]))))));
+    await tester.tap(find.text('打开详情'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('删除课程'));
+    await tester.tap(find.text('删除课程'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('删除所选周次'));
+    await tester.tap(find.text('删除所选周次'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CourseDetailSheet), findsNothing);
+    expect(changed, isTrue);
+    await tester.tap(find.text('查看删除记录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('恢复教务原安排'));
+    await tester.pumpAndSettle();
+    expect(provider.courses.single.weeks, [8, 9, 10]);
+    expect(find.text('暂无本地删除记录'), findsOneWidget);
   });
 
   group('BrowsingHistoryScreen 浏览记录测试 (Section 30 & 43)', () {

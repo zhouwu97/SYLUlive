@@ -24,12 +24,14 @@ class ThemePresentationOverride extends InheritedWidget {
     required this.appearance,
     this.brightnessOverride,
     this.assetResolver,
+    this.heroSlot,
     required super.child,
   });
 
   final ThemeAppearance appearance;
   final Brightness? brightnessOverride;
   final ThemeAssetProviderResolver? assetResolver;
+  final String? heroSlot;
 
   static ThemePresentationOverride? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<ThemePresentationOverride>();
@@ -38,6 +40,7 @@ class ThemePresentationOverride extends InheritedWidget {
   bool updateShouldNotify(ThemePresentationOverride oldWidget) =>
       oldWidget.appearance.data != appearance.data ||
       oldWidget.brightnessOverride != brightnessOverride ||
+      oldWidget.heroSlot != heroSlot ||
       oldWidget.assetResolver != assetResolver;
 }
 
@@ -45,30 +48,28 @@ class ThemeHeaderLayoutSpec {
   const ThemeHeaderLayoutSpec({
     this.preset = 'standard',
     this.alignment = 'start',
-    this.imageHeight = 160.0,
-    this.imageWidth = 1.0,
+    this.imageHeight = 150.0,
   });
 
   final String preset;
   final String alignment;
   final double imageHeight;
-  final double imageWidth;
 
-  factory ThemeHeaderLayoutSpec.fromMap(Map<String, dynamic>? raw) {
-    if (raw == null) return const ThemeHeaderLayoutSpec();
-    final preset = raw['preset'] as String?;
-    final alignment = raw['alignment'] as String?;
-    final height = (raw['imageHeight'] as num?)?.toDouble() ?? 160.0;
-    final width = (raw['imageWidth'] as num?)?.toDouble() ?? 1.0;
+  factory ThemeHeaderLayoutSpec.fromMap(Map<String, dynamic>? raw, {bool decorated = false}) {
+    final preset = raw?['preset'] as String?;
+    final alignment = raw?['alignment'] as String?;
+    final height = (raw?['imageHeight'] as num?)?.toDouble() ?? 150.0;
+    final effectivePreset = switch (preset) {
+      _ when decorated => 'immersive',
+      'compact' => 'compact',
+      _ => 'standard',
+    };
     return ThemeHeaderLayoutSpec(
-      preset: const {'standard', 'compact', 'immersive'}.contains(preset)
-          ? preset!
-          : 'standard',
+      preset: effectivePreset,
       alignment: const {'start', 'center', 'end'}.contains(alignment)
           ? alignment!
           : 'start',
-      imageHeight: height.isFinite ? height.clamp(96.0, 280.0) : 160.0,
-      imageWidth: width.isFinite ? width.clamp(0.45, 1.0) : 1.0,
+      imageHeight: height.isFinite ? height.clamp(96.0, 280.0) : 150.0,
     );
   }
 
@@ -100,7 +101,6 @@ class ThemeHeaderLayoutSpec {
         'preset': preset,
         'alignment': alignment,
         'imageHeight': imageHeight,
-        'imageWidth': imageWidth,
       };
 }
 
@@ -161,7 +161,7 @@ class ThemeHeaderResolved {
 
     return ThemeHeaderResolved(
       hasCustomLayout: rawHeader != null,
-      layout: ThemeHeaderLayoutSpec.fromMap(rawHeader),
+      layout: ThemeHeaderLayoutSpec.fromMap(rawHeader, decorated: hasHeaderDecoration(rawDeco)),
       background: rawBg == null ? null : Map<String, dynamic>.from(rawBg),
       stickers: stickers,
       assetResolver: override?.assetResolver ?? defaultResolver,
@@ -210,11 +210,9 @@ class ThemeHeaderDecorationArea extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final availableWidth = constraints.maxWidth.isFinite
+        final boxWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : MediaQuery.sizeOf(context).width;
-        final boxWidth =
-            (availableWidth * layout.imageWidth).clamp(1.0, availableWidth);
         final tablet = ResponsiveUtil.useSideNavigation(context) && !transparent;
         final boxHeight = this.boxHeight ??
             (tablet
@@ -340,7 +338,7 @@ class ThemeHeaderDecorationArea extends StatelessWidget {
     final rotationDeg =
         ((sticker['rotation'] as num?)?.toDouble() ?? 0.0).clamp(-180.0, 180.0);
 
-    final stickerWidth = (boxWidth * widthRatio).clamp(12.0, boxWidth);
+    final stickerWidth = math.min(boxWidth, math.max(12.0, boxWidth * widthRatio));
     final decodeWidth = (stickerWidth * dpr).round().clamp(32, 1024);
     final provider = ResizeImage(
       rawProvider,
@@ -443,15 +441,32 @@ class ThemeHeaderFrame extends StatelessWidget {
       return infoWidget;
     }
 
+    if (ThemePresentationOverride.maybeOf(context)?.heroSlot == slot) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [SizedBox(height: layout.imageHeight), infoWidget],
+      );
+    }
+
     // 沉浸模板：hero 图由背景层的 ThemeHeroLayer 铺到状态栏下方绘制，这里只留出
     // 图片可见区并登记锚点；信息卡紧接锚点，压住 hero 底边。正式页面以外（导入预览、
     // 工坊、设置编辑）没有背景层，仍使用内嵌装饰区，保证预览可见。
-    if (layout.preset == 'immersive' && immersiveEnabled(context)) {
+    if (immersiveEnabled(context)) {
       return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ThemeHeroAnchor(slot: slot, height: layout.imageHeight),
+          if (slot == 'campus' && ResponsiveUtil.useSideNavigation(context))
+            LayoutBuilder(builder: (context, constraints) {
+              final scale = ((constraints.maxWidth + 32) / 420).clamp(1.0, 2.4);
+              return ThemeHeroAnchor(
+                slot: slot,
+                height: (layout.imageHeight + ThemeHeroLayer.overlap) * scale -
+                    ThemeHeroLayer.overlap,
+              );
+            })
+          else
+            ThemeHeroAnchor(slot: slot, height: layout.imageHeight),
           infoWidget,
         ],
       );
@@ -472,9 +487,7 @@ class ThemeHeaderFrame extends StatelessWidget {
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: layout.preset == 'immersive'
-                ? [decorationWidget, SizedBox(height: spacing), infoWidget]
-                : [infoWidget, SizedBox(height: spacing), decorationWidget],
+            children: [decorationWidget, SizedBox(height: spacing), infoWidget],
           );
         }
         return Row(
@@ -492,23 +505,15 @@ class ThemeHeaderFrame extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: layout.preset == 'immersive'
-          ? [
-              decorationWidget,
-              SizedBox(height: spacing),
-              infoWidget,
-            ]
-          : [
-              infoWidget,
-              SizedBox(height: spacing),
-              decorationWidget,
-            ],
+      children: [decorationWidget, SizedBox(height: spacing), infoWidget],
     );
   }
 
-  /// 手机主壳使用背景层 hero；平板、预览和二级路由使用所属内容栏的内嵌装饰区。
-  static bool immersiveEnabled(BuildContext context) =>
-      !ResponsiveUtil.useSideNavigation(context) &&
+  /// 主壳使用背景层 hero，平板须位于承载 hero 的内容栏内。
+  static bool immersiveEnabled(BuildContext context, {bool inHeroPane = false}) =>
+      (!ResponsiveUtil.useSideNavigation(context) ||
+          inHeroPane ||
+          context.findAncestorWidgetOfExactType<ThemeHeroPane>() != null) &&
       ThemePresentationOverride.maybeOf(context) == null &&
       ModalRoute.of(context)?.isFirst != false;
 }
@@ -529,8 +534,7 @@ class HomeThemedHeaderBanner extends StatelessWidget {
   /// 当前首页是否走沉浸模板：标题叠在背景层 hero 上，页头控件要透明。
   static bool isImmersive(BuildContext context) {
     final resolved = ThemeHeaderResolved.of(context, 'home');
-    return resolved.layout.preset == 'immersive' &&
-        resolved.hasDecoration &&
+    return resolved.hasDecoration &&
         ThemeHeaderFrame.immersiveEnabled(context);
   }
 

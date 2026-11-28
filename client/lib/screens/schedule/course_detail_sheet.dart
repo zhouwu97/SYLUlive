@@ -8,6 +8,7 @@ import '../../theme/app_colors.dart';
 import '../course_schedule_screen.dart' show getCourseColor;
 import '../../widgets/course/course_evaluation_section.dart';
 import 'reschedule/course_adjustment_sheet.dart';
+import 'course_cancellation_sheet.dart';
 import '../../utils/week_formatter.dart';
 
 /// 课程详情与本地调整 BottomSheet（升级版）
@@ -27,14 +28,14 @@ class CourseDetailSheet extends StatelessWidget {
 
   static const _weekdays = ['一', '二', '三', '四', '五', '六', '日'];
 
-  static void show(
+  static Future<bool?> show(
     BuildContext context, {
     required CourseBlock course,
     required int currentAcademicWeek,
     VoidCallback? onEditCustomCourse,
     VoidCallback? onDeleteCustomCourse,
   }) {
-    showModalBottomSheet(
+    return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -64,7 +65,8 @@ class CourseDetailSheet extends StatelessWidget {
       final matches = provider.overrides.where((o) =>
           o.courseKey == course.courseKey &&
           o.meetingKey == course.meetingKey &&
-          o.isActive);
+          o.status == ScheduleOverrideStatus.needsReview &&
+          o.affectedWeeks.contains(currentAcademicWeek));
       if (matches.isNotEmpty) relatedOverride = matches.first;
     }
 
@@ -363,7 +365,7 @@ class CourseDetailSheet extends StatelessWidget {
                             if (overrideId != null) {
                               try {
                                 await provider.restoreBaseMeeting(overrideId);
-                                if (context.mounted) Navigator.pop(context);
+                                if (context.mounted) Navigator.pop(context, true);
                               } catch (e) {
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -403,6 +405,22 @@ class CourseDetailSheet extends StatelessWidget {
                     ),
                   ),
                 ],
+
+                if (!isCustom) Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('删除课程'),
+                    style: TextButton.styleFrom(foregroundColor: tokens.error),
+                    onPressed: () async {
+                      final deleted = await CourseCancellationSheet.show(context,
+                          course: course, provider: provider,
+                          currentAcademicWeek: currentAcademicWeek,
+                          existingOverride: relatedOverride);
+                      if (deleted == true && context.mounted) Navigator.pop(context, true);
+                    },
+                  ),
+                ),
 
                 // 评价区（仅正式教务课程展示）
                 if (!isCustom) ...[
@@ -503,6 +521,6 @@ class CourseDetailSheet extends StatelessWidget {
       currentAcademicWeek: currentAcademicWeek,
       existingOverride: existingOverride,
     );
-    if (changed == true && context.mounted) Navigator.pop(context);
+    if (changed == true && context.mounted) Navigator.pop(context, true);
   }
 }

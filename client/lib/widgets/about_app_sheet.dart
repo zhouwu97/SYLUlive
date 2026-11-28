@@ -1,14 +1,16 @@
-import '../providers/theme_provider.dart';
-import '../config/app_contacts.dart';
-import 'package:provider/provider.dart';
-import 'app_card.dart';
-import 'app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:package_info_plus/package_info_plus.dart';
+
+import '../config/app_contacts.dart';
 import '../platform/contracts/external_navigator.dart';
 import '../services/app_update_preferences.dart';
+import '../theme/app_palette.dart';
+import '../theme/app_theme_style.dart';
+import '../theme/app_theme_tokens.dart';
 import '../utils/update_checker.dart';
+import 'app_card.dart';
+import 'app_dialog.dart';
 import 'group_chat_dialog.dart';
 
 class AboutAppSheet extends StatefulWidget {
@@ -45,37 +47,31 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final customBackground =
-        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
-
-    // 颜色令牌
-    final pageBg = isDark ? const Color(0xFF101219) : const Color(0xFFFFFAF4);
-    final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
-    final accent = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
-    final accentSoft =
-        isDark ? accent.withValues(alpha: 0.14) : const Color(0xFFEAF6F3);
-    final border =
-        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFECE4DA);
-    final text = isDark ? Colors.white : const Color(0xFF1F2328);
-    final subText = isDark ? Colors.white70 : const Color(0xFF747B82);
+    final colors = AppThemeTokens.of(context);
+    final shape = AppShape.of(context);
+    final text = colors.textPrimary;
+    final subText = appContentSecondaryColor(context, colors.textSecondary);
+    final cardDecoration = BoxDecoration(
+      color: colors.card,
+      borderRadius: BorderRadius.circular(shape.lg),
+      border: Border.all(color: colors.cardBorder),
+    );
 
     return FractionallySizedBox(
       heightFactor: 0.72,
       child: AppCardSurface(
+        applyCardStyle: false,
         decoration: BoxDecoration(
-          color: pageBg,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(28),
-            topRight: Radius.circular(28),
-          ),
+          color: colors.background,
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(shape.sheet)),
         ),
         child: SafeArea(
           child: Column(
             children: [
               // 拖拽指示条与关闭按钮
               Padding(
-                padding: const EdgeInsets.only(top: 12, right: 16),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -84,11 +80,13 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: border,
+                        color: colors.outline,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
                     IconButton(
+                      tooltip:
+                          MaterialLocalizations.of(context).closeButtonTooltip,
                       icon: Icon(Icons.close_rounded, color: subText),
                       onPressed: () => Navigator.pop(context),
                     ),
@@ -120,12 +118,12 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                       const SizedBox(height: 16),
                       Text(
                         '沈理校园',
-                        style: TextStyle(
+                        style: AppThemeStyle.of(context).title(TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 1.2,
                           color: text,
-                        ),
+                        )),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -140,7 +138,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: accentSoft,
+                          color: colors.tagBackground,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
@@ -148,7 +146,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: accent,
+                            color: colors.tagText,
                           ),
                         ),
                       ),
@@ -156,28 +154,20 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
 
                       // 版本信息卡
                       _buildSectionTitle('版本信息', text),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: customBackground ? Colors.transparent : cardBg,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : border),
-                        ),
+                      AppCardSurface(
+                        decoration: cardDecoration,
                         child: Column(
                           children: [
                             _buildInfoRow(
                                 '当前版本', _currentVersion, text, subText,
                                 height: 52),
                             const AppCardDivider(
-                                height: 1,
-                                indent: 16,
-                                endIndent: 16),
+                                height: 1, indent: 16, endIndent: 16),
                             _buildInfoRow(
                                 '自动更新状态', _autoUpdateStatus, text, subText,
                                 height: 52),
                             const AppCardDivider(
-                                height: 1,
-                                indent: 16,
-                                endIndent: 16),
+                                height: 1, indent: 16, endIndent: 16),
                             InkWell(
                               onTap: () {
                                 UpdateChecker.check(context,
@@ -187,16 +177,10 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                                   height: 52),
                             ),
                             const AppCardDivider(
-                                height: 1,
-                                indent: 16,
-                                endIndent: 16),
+                                height: 1, indent: 16, endIndent: 16),
                             InkWell(
                               onTap: () => _launchUrl(
                                   'https://github.com/zhouwu97/SYLUlive/releases'),
-                              borderRadius: const BorderRadius.only(
-                                bottomLeft: Radius.circular(20),
-                                bottomRight: Radius.circular(20),
-                              ),
                               child: _buildActionRow(
                                   'GitHub Releases 备用下载', text, subText,
                                   height: 52),
@@ -208,26 +192,22 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
 
                       // 开发者卡片
                       _buildSectionTitle('开发者', text),
-                      Container(
+                      AppCardSurface(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 16),
-                        decoration: BoxDecoration(
-                          color: customBackground ? Colors.transparent : cardBg,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : border),
-                        ),
+                        decoration: cardDecoration,
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: accentSoft,
+                                color: colors.primaryContainer,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Icon(Icons.code_rounded,
-                                  size: 20, color: accent),
+                                  size: 20, color: colors.onPrimaryContainer),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -261,61 +241,41 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
 
                       // 相关链接列表
                       _buildSectionTitle('相关链接', text),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: customBackground ? Colors.transparent : cardBg,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : border),
-                        ),
+                      AppCardSurface(
+                        decoration: cardDecoration,
                         child: Column(
                           children: [
                             _buildLinkRow(
                               icon: Icons.device_hub_rounded,
-                              iconColor: accent,
-                              iconBg: accentSoft,
+                              iconColor: colors.onPrimaryContainer,
+                              iconBg: colors.primaryContainer,
                               title: '开源仓库与源码',
                               text: text,
                               subText: subText,
-                              border: border,
                               onTap: () => _launchUrl(
                                   'https://github.com/zhouwu97/SYLUlive'),
                             ),
                             const AppCardDivider(
-                                height: 1,
-                                indent: 56,
-                                endIndent: 16),
+                                height: 1, indent: 56, endIndent: 16),
                             _buildLinkRow(
                               icon: Icons.group_rounded,
-                              iconColor: const Color(0xFF2F80ED),
-                              iconBg: isDark
-                                  ? const Color(0xFF2F80ED)
-                                      .withValues(alpha: 0.14)
-                                  : const Color(0xFF2F80ED)
-                                      .withValues(alpha: 0.1),
+                              iconColor: colors.onPrimaryContainer,
+                              iconBg: colors.primaryContainer,
                               title: '加入群聊',
                               text: text,
                               subText: subText,
-                              border: border,
                               onTap: () => showGroupChatDialog(context),
                             ),
                             const AppCardDivider(
-                                height: 1,
-                                indent: 56,
-                                endIndent: 16),
+                                height: 1, indent: 56, endIndent: 16),
                             _buildLinkRow(
                               icon: Icons.email_rounded,
-                              iconColor: const Color(0xFFF59E0B),
-                              iconBg: isDark
-                                  ? const Color(0xFFF59E0B)
-                                      .withValues(alpha: 0.14)
-                                  : const Color(0xFFF59E0B)
-                                      .withValues(alpha: 0.1),
+                              iconColor: colors.tagText,
+                              iconBg: colors.tagBackground,
                               title: '联系作者',
                               text: text,
                               subText: subText,
-                              border: border,
                               onTap: () => _showAuthorContactDialog(context),
-                              isLast: true,
                             ),
                           ],
                         ),
@@ -347,7 +307,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
       padding: const EdgeInsets.only(left: 4, bottom: 8),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Text(
+        child: ThemeSectionTitle(
           title,
           style: TextStyle(
             fontSize: 13,
@@ -424,16 +384,10 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
     required String title,
     required Color text,
     required Color subText,
-    required Color border,
     required VoidCallback onTap,
-    bool isLast = false,
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: isLast
-          ? const BorderRadius.only(
-              bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20))
-          : BorderRadius.zero,
       child: SizedBox(
         height: 56,
         child: Padding(
@@ -471,31 +425,22 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
   }
 
   void _showAuthorContactDialog(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final dialogBackground = isDark ? const Color(0xFF1E1E2E) : Colors.white;
-    final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
-    final labelColor = isDark ? Colors.white54 : const Color(0xFF9094A6);
-    final descriptionColor = isDark ? Colors.white70 : const Color(0xFF4F5568);
-    final valuePanelColor =
-        isDark ? const Color(0x0AFFFFFF) : const Color(0x08000000);
-    final valueBorderColor =
-        isDark ? const Color(0x0DFFFFFF) : const Color(0x0D000000);
-    const accent = Colors.orange;
-
     showAppDialog<void>(
       context: context,
       builder: (dialogContext) {
+        final colors = AppThemeTokens.of(dialogContext);
         return AppAlertDialog(
-          backgroundColor: dialogBackground,
+          backgroundColor: colors.surfaceElevated,
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(AppShape.of(dialogContext).lg),
           ),
+          scrollable: true,
           title: Row(
             children: [
-              const Icon(Icons.email_rounded, color: accent),
+              Icon(Icons.email_rounded, color: colors.primary),
               const SizedBox(width: 8),
-              Text('联系作者', style: TextStyle(color: titleColor)),
+              Text('联系作者', style: TextStyle(color: colors.textPrimary)),
             ],
           ),
           content: Column(
@@ -506,7 +451,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                 '作者邮箱',
                 style: TextStyle(
                   fontSize: 13,
-                  color: labelColor,
+                  color: colors.textSecondary,
                 ),
               ),
               const SizedBox(height: 10),
@@ -515,10 +460,6 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                 dialogContext: dialogContext,
                 author: AppContacts.pureHomozygoteName,
                 email: AppContacts.pureHomozygoteEmail,
-                titleColor: titleColor,
-                labelColor: labelColor,
-                panelColor: valuePanelColor,
-                borderColor: valueBorderColor,
               ),
               const SizedBox(height: 10),
               _buildAuthorEmailRow(
@@ -526,10 +467,6 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                 dialogContext: dialogContext,
                 author: AppContacts.scoreDropperName,
                 email: AppContacts.scoreDropperEmail,
-                titleColor: titleColor,
-                labelColor: labelColor,
-                panelColor: valuePanelColor,
-                borderColor: valueBorderColor,
               ),
               const SizedBox(height: 10),
               _buildAuthorEmailRow(
@@ -537,10 +474,6 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                 dialogContext: dialogContext,
                 author: AppContacts.nowName,
                 email: AppContacts.nowEmail,
-                titleColor: titleColor,
-                labelColor: labelColor,
-                panelColor: valuePanelColor,
-                borderColor: valueBorderColor,
               ),
               const SizedBox(height: 12),
               Text(
@@ -548,14 +481,14 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.4,
-                  color: descriptionColor,
+                  color: colors.textSecondary,
                 ),
               ),
             ],
           ),
           actions: [
             TextButton(
-              style: TextButton.styleFrom(foregroundColor: accent),
+              style: TextButton.styleFrom(foregroundColor: colors.primary),
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('知道了'),
             ),
@@ -570,25 +503,22 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
     required BuildContext dialogContext,
     required String author,
     required String email,
-    required Color titleColor,
-    required Color labelColor,
-    required Color panelColor,
-    required Color borderColor,
   }) {
+    final colors = AppThemeTokens.of(dialogContext);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
       decoration: BoxDecoration(
-        color: panelColor,
+        color: colors.surfaceMuted,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: borderColor),
+        border: Border.all(color: colors.cardBorder),
       ),
       child: Row(
         children: [
-          const Icon(
+          Icon(
             Icons.alternate_email_rounded,
             size: 18,
-            color: Colors.orange,
+            color: colors.primary,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -600,7 +530,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: labelColor,
+                    color: colors.textSecondary,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -613,7 +543,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
-                      color: titleColor,
+                      color: colors.textPrimary,
                     ),
                   ),
                 ),
@@ -625,7 +555,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
             onPressed: () =>
                 _copyAuthorEmail(context, dialogContext, author, email),
             icon: const Icon(Icons.copy_rounded, size: 20),
-            color: Colors.orange,
+            color: colors.primary,
           ),
         ],
       ),

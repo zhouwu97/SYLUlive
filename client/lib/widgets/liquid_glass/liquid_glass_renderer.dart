@@ -428,11 +428,18 @@ class _GlassPainter extends CustomPainter {
       final position = 4 + (i + .5) * item;
       final center = vertical ? size.width / 2 : position;
       final top = vertical ? position - 32 : 0.0;
+      final artworkOnly =
+          settings.originalIcons && settings.themeImages.containsKey(i);
+      final iconSize = artworkOnly ? originalThemeNavigationIconSize : 24.0;
+      final iconTop = artworkOnly
+          ? (vertical ? position : size.height / 2) - iconSize / 2
+          : top + 12;
       final image = resources.icons[i * 2 + (accent ? 1 : 0)]?.image;
       if (image != null) {
         paintImage(
             canvas: canvas,
-            rect: Rect.fromLTWH(center - 12, top + 12, 24, 24),
+            rect: Rect.fromLTWH(
+                center - iconSize / 2, iconTop, iconSize, iconSize),
             image: image,
             fit: BoxFit.contain,
             colorFilter: settings.originalIcons
@@ -448,7 +455,7 @@ class _GlassPainter extends CustomPainter {
             style: TextStyle(
               fontFamily: icon.fontFamily,
               package: icon.fontPackage,
-              fontSize: 24,
+              fontSize: iconSize,
               color: color,
               height: 1,
             ),
@@ -456,30 +463,32 @@ class _GlassPainter extends CustomPainter {
           textDirection: TextDirection.ltr,
         )..layout();
         iconPainter.paint(
-            canvas, Offset(center - iconPainter.width / 2, top + 12));
+            canvas, Offset(center - iconPainter.width / 2, iconTop));
         iconPainter.dispose();
       }
-      final label = TextPainter(
-        text: TextSpan(
-          text: settings.labels[i],
-          style: TextStyle(
-            fontFamily: fontFamily,
-            fontFamilyFallback: fontFamilyFallback,
-            fontSize: 11 * textScale.clamp(1.0, 1.6),
-            fontWeight: FontWeight.w600,
-            color: color,
-            height: 1.1,
+      if (!artworkOnly) {
+        final label = TextPainter(
+          text: TextSpan(
+            text: settings.labels[i],
+            style: TextStyle(
+              fontFamily: fontFamily,
+              fontFamilyFallback: fontFamilyFallback,
+              fontSize: 11 * textScale.clamp(1.0, 1.6),
+              fontWeight: FontWeight.w600,
+              color: color,
+              height: 1.1,
+            ),
           ),
-        ),
-        maxLines: 1,
-        ellipsis: '…',
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: vertical ? size.width - 8 : item - 4);
-      label.paint(canvas, Offset(center - label.width / 2, top + 39));
-      label.dispose();
+          maxLines: 1,
+          ellipsis: '…',
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: vertical ? size.width - 8 : item - 4);
+        label.paint(canvas, Offset(center - label.width / 2, top + 39));
+        label.dispose();
+      }
       if (settings.badges[i] == true) {
         canvas.drawCircle(
-          Offset(center + 12, top + 13),
+          Offset(center + iconSize / 2, iconTop + 1),
           4,
           Paint()..color = const Color(0xffff4d58), // theme: fixed 未读消息状态色
         );

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/schedule/course.dart';
 import 'package:shenliyuan/models/schedule/course_source.dart';
@@ -58,6 +59,19 @@ class _FailingPreferences extends MemoryPreferencesStore {
   @override
   Future<bool> setString(String key, String value) async =>
       fail ? false : await super.setString(key, value);
+}
+
+class _DelayedPreferences extends MemoryPreferencesStore {
+  Completer<bool>? pending;
+  final started = Completer<void>();
+  @override
+  Future<bool> setString(String key, String value) async {
+    if (pending != null && key.startsWith('schedule_overrides_v1_')) {
+      if (!started.isCompleted) started.complete();
+      if (!await pending!.future) return false;
+    }
+    return super.setString(key, value);
+  }
 }
 
 void main() {
@@ -362,4 +376,118 @@ void main() {
         throwsStateError);
     expect(provider.overrides, isEmpty);
   });
+
+  for (final adjusted in [false, true]) {
+    test('按周删除${adjusted ? '已调课' : '原始'}安排，保留其他周次与课程并可恢复', () async {
+      final provider = CourseScheduleProvider();
+      addTearDown(provider.dispose);
+      final term = provider.currentTerm.id;
+      provider.setBaseScheduleForTesting([
+        _course().copyWith(semesterId: term),
+        _course(key: 'other').copyWith(semesterId: term),
+      ]);
+      ScheduleOverride? existing;
+      if (adjusted) {
+        existing = await provider.createRescheduleOverride(
+            courseKey: 'course', meetingKey: 'meeting', affectedWeeks: {9, 10},
+            weekOffset: -1, toWeekday: 2, toStartSection: 5, toEndSection: 6,
+            sourceSnapshotHash: _course().meetings.single.computeSnapshotHash());
+      }
+      final cancelled = await provider.createCancelOverride(
+          courseKey: 'course', meetingKey: 'meeting', affectedWeeks: {9},
+          overrideId: existing?.id,
+          sourceSnapshotHash: _course().meetings.single.computeSnapshotHash());
+      expect(provider.courses.where((c) => c.courseKey == 'other').single.weeks, [8, 9, 10]);
+      expect(provider.courses.where((c) => c.courseKey == 'course' && !c.isOverridden).single.weeks,
+          adjusted ? [8] : [8, 10]);
+      if (adjusted) {
+        expect(provider.overrides.firstWhere((o) => o.id == existing!.id).affectedWeeks, {10});
+        expect(provider.courses.where((c) => c.courseKey == 'course' && c.isOverridden).single.weeks, [9]);
+      }
+      await provider.restoreBaseMeeting(cancelled.id);
+      expect(provider.courses.where((c) => c.courseKey == 'course' && !c.isOverridden).single.weeks,
+          adjusted ? [8, 9] : [8, 9, 10]);
+    });
+  }
+
+  test('删除拒绝空周次、非上课周、过期快照和未选中的其他调整', () async {
+    final provider = CourseScheduleProvider();
+    addTearDown(provider.dispose);
+    provider.setBaseScheduleForTesting([_course().copyWith(semesterId: provider.currentTerm.id)]);
+    final hash = _course().meetings.single.computeSnapshotHash();
+    for (final input in [(<int>{}, hash), ({7}, hash), ({9}, 'stale')]) {
+      await expectLater(provider.createCancelOverride(courseKey: 'course', meetingKey: 'meeting',
+          affectedWeeks: input.$1, sourceSnapshotHash: input.$2), throwsStateError);
+    }
+    await provider.createRescheduleOverride(courseKey: 'course', meetingKey: 'meeting',
+        affectedWeeks: {9}, toWeekday: 2, toStartSection: 5, toEndSection: 6,
+        sourceSnapshotHash: hash);
+    await expectLater(provider.createCancelOverride(courseKey: 'course', meetingKey: 'meeting',
+        affectedWeeks: {9}, sourceSnapshotHash: hash), throwsStateError);
+    expect(provider.overrides.single.type, ScheduleOverrideType.reschedule);
+  });
+
+  test('删除合并显示的课程时，同时移除被合并的教务原安排', () async {
+    final provider = CourseScheduleProvider();
+    addTearDown(provider.dispose);
+    provider.setBaseScheduleForTesting([_course().copyWith(semesterId: provider.currentTerm.id)]);
+    final hash = _course().meetings.single.computeSnapshotHash();
+    final merged = await provider.createRescheduleOverride(courseKey: 'course',
+        meetingKey: 'meeting', affectedWeeks: {9}, weekOffset: -1,
+        replaceSameCourse: true, toWeekday: 1, toStartSection: 5, toEndSection: 6,
+        sourceSnapshotHash: hash);
+    await provider.createCancelOverride(courseKey: 'course', meetingKey: 'meeting',
+        affectedWeeks: {9}, sourceSnapshotHash: hash, overrideId: merged.id);
+    expect(provider.courses.single.weeks, [10]);
+    for (final id in provider.overrides.map((o) => o.id).toList()) {
+      await provider.restoreBaseMeeting(id);
+    }
+    expect(provider.courses.single.weeks, [8, 9, 10]);
+  });
+
+  test('删除保存失败不拆散原调整，重试成功后只删除所选周', () async {
+    final preferences = _FailingPreferences()..fail = false;
+    AppPreferencesStore.setCustomInstance(preferences);
+    final provider = CourseScheduleProvider();
+    addTearDown(provider.dispose);
+    provider.setBaseScheduleForTesting([_course().copyWith(semesterId: provider.currentTerm.id)]);
+    final old = await provider.createRescheduleOverride(courseKey: 'course', meetingKey: 'meeting',
+        affectedWeeks: {9, 10}, toWeekday: 2, toStartSection: 5, toEndSection: 6,
+        sourceSnapshotHash: _course().meetings.single.computeSnapshotHash());
+    preferences.fail = true;
+    Future<ScheduleOverride> remove() => provider.createCancelOverride(
+        courseKey: 'course', meetingKey: 'meeting', affectedWeeks: {9},
+        sourceSnapshotHash: old.sourceSnapshotHash, overrideId: old.id);
+    await expectLater(remove(), throwsStateError);
+    expect(provider.overrides.single.affectedWeeks, {9, 10});
+    final persisted = await ScheduleOverrideRepository().loadOverrides(semesterId: provider.currentTerm.id);
+    expect(persisted.single.affectedWeeks, {9, 10});
+    preferences.fail = false;
+    await remove();
+    expect(provider.overrides.firstWhere((o) => o.id == old.id).affectedWeeks, {10});
+  });
+
+  for (final restoring in [false, true]) {
+    test('${restoring ? '恢复' : '删除'}保存期间切换会话，不回填旧课表', () async {
+      final preferences = _DelayedPreferences();
+      AppPreferencesStore.setCustomInstance(preferences);
+      final provider = CourseScheduleProvider();
+      addTearDown(provider.dispose);
+      provider.setBaseScheduleForTesting([_course().copyWith(semesterId: provider.currentTerm.id)]);
+      Future<ScheduleOverride> remove() => provider.createCancelOverride(
+          courseKey: 'course', meetingKey: 'meeting', affectedWeeks: {9},
+          sourceSnapshotHash: _course().meetings.single.computeSnapshotHash());
+      String? id;
+      if (restoring) id = (await remove()).id;
+      preferences.pending = Completer<bool>();
+      final pending = restoring ? provider.restoreBaseMeeting(id!) : remove();
+      final rejected = expectLater(pending, throwsStateError);
+      await preferences.started.future;
+      provider.clearAllUserState();
+      preferences.pending!.complete(true);
+      await rejected;
+      expect(provider.courses, isEmpty);
+      expect(provider.overrides, isEmpty);
+    });
+  }
 }

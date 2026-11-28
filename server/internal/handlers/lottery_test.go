@@ -29,6 +29,9 @@ func newLotteryHandlerTestDB(t *testing.T) *gorm.DB {
 		&models.LotteryEvent{},
 		&models.LotteryParticipant{},
 		&models.Announcement{},
+		&models.File{},
+		&models.FileUploadGrant{},
+		&models.ImageVariant{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
@@ -220,6 +223,118 @@ func TestCreateLotteryEventPublishesNewCurrentEventAndClosesOldOne(t *testing.T)
 	}
 }
 
+func TestCreateLotteryEventPrizeImage(t *testing.T) {
+	cases := []struct {
+		name       string
+		prizeImage string
+		wantCode   int
+	}{
+		{"本站上传图片并转为公开", "/uploads/2026/11/prize.png", http.StatusCreated},
+		{"不传图片", "", http.StatusCreated},
+		{"上传记录不存在", "/uploads/2026/11/missing.png", http.StatusBadRequest},
+		{"外部链接", "https://example.com/a.png", http.StatusBadRequest},
+		{"路径穿越", "/uploads/../config.yaml", http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newLotteryHandlerTestDB(t)
+			file := models.File{Hash: "h1", Path: "/uploads/2026/11/prize.png", Size: 1, MimeType: "image/png"}
+			require.NoError(t, db.Create(&file).Error)
+
+			recorder := performJSONRequest(t, NewSuperAdminHandler(db).CreateLotteryEvent, http.MethodPost, "/api/super/lottery", map[string]any{
+				"title":       "期末冲刺",
+				"prize_name":  "咖啡券",
+				"prize_image": tc.prizeImage,
+				"draw_time":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			})
+			require.Equal(t, tc.wantCode, recorder.Code, recorder.Body.String())
+			if tc.wantCode != http.StatusCreated {
+				return
+			}
+			var created models.LotteryEvent
+			require.NoError(t, db.First(&created).Error)
+			require.Equal(t, tc.prizeImage, created.PrizeImage)
+			require.NoError(t, db.First(&file, file.ID).Error)
+			wantScope := models.FileAccessPrivate
+			if tc.prizeImage != "" {
+				wantScope = models.FileAccessPublic
+			}
+			require.Equal(t, wantScope, file.AccessScope)
+		})
+	}
+}
+
+func TestUpdateLotteryEventPrizeImage(t *testing.T) {
+	const oldPath = "/uploads/2026/11/old.png"
+	const newPath = "/uploads/2026/11/new.png"
+	cases := []struct {
+		name       string
+		prizeImage any
+		status     int
+		zeroRows   bool
+		wantCode   int
+		wantPath   string
+		wantOld    models.FileAccessScope
+		wantNew    models.FileAccessScope
+	}{
+		{"替换", newPath, 0, false, http.StatusOK, newPath, models.FileAccessPrivate, models.FileAccessPublic},
+		{"清空", "", 0, false, http.StatusOK, "", models.FileAccessPrivate, models.FileAccessPrivate},
+		{"省略", nil, 0, false, http.StatusOK, oldPath, models.FileAccessPublic, models.FileAccessPrivate},
+		{"图片不存在", "/uploads/2026/11/missing.png", 0, false, http.StatusBadRequest, oldPath, models.FileAccessPublic, models.FileAccessPrivate},
+		{"活动已结束", newPath, models.LotteryStatusDrawn, false, http.StatusBadRequest, oldPath, models.FileAccessPublic, models.FileAccessPrivate},
+		{"条件更新未影响任何行", newPath, 0, true, http.StatusBadRequest, oldPath, models.FileAccessPublic, models.FileAccessPrivate},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newLotteryHandlerTestDB(t)
+			handler := NewSuperAdminHandler(db)
+			const operatorID uint = 42
+			old := models.File{Hash: "old", Path: oldPath, MimeType: "image/png", UploaderID: operatorID, AccessScope: models.FileAccessPublic}
+			next := models.File{Hash: "new", Path: newPath, MimeType: "image/png", UploaderID: operatorID}
+			require.NoError(t, db.Create(&old).Error)
+			require.NoError(t, db.Create(&next).Error)
+			event := models.LotteryEvent{
+				Title: "原活动", PrizeName: "奖品", PrizeImage: oldPath,
+				DrawTime: time.Now().Add(time.Hour), Status: tc.status,
+			}
+			require.NoError(t, db.Create(&event).Error)
+			if tc.zeroRows {
+				// 在 SQLite 中模拟条件更新失败，覆盖事务内的零行分支。
+				require.NoError(t, db.Exec(`CREATE TRIGGER lottery_update_no_rows
+					BEFORE UPDATE ON lottery_events BEGIN SELECT RAISE(IGNORE); END`).Error)
+			}
+			payload := map[string]any{
+				"title": "更新活动", "prize_name": "奖品",
+				"draw_time": event.DrawTime.UTC().Format(time.RFC3339),
+			}
+			if tc.prizeImage != nil {
+				payload["prize_image"] = tc.prizeImage
+			}
+			recorder := performJSONRequest(t, func(c *gin.Context) {
+				c.Set("user_id", operatorID)
+				c.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(event.ID), 10)}}
+				handler.UpdateLotteryEvent(c)
+			}, http.MethodPut, "/api/super/lottery/1", payload)
+			require.Equal(t, tc.wantCode, recorder.Code, recorder.Body.String())
+			if tc.zeroRows || tc.status == models.LotteryStatusDrawn {
+				require.Contains(t, recorder.Body.String(), "lottery_not_ongoing")
+			}
+			var saved models.LotteryEvent
+			require.NoError(t, db.First(&saved, event.ID).Error)
+			require.Equal(t, tc.wantPath, saved.PrizeImage)
+			if tc.wantCode == http.StatusOK {
+				require.Equal(t, "更新活动", saved.Title)
+			} else {
+				require.Equal(t, event.Title, saved.Title)
+			}
+			require.NoError(t, db.First(&old, old.ID).Error)
+			require.NoError(t, db.First(&next, next.ID).Error)
+			require.Equal(t, tc.wantOld, old.AccessScope)
+			require.Equal(t, tc.wantNew, next.AccessScope)
+		})
+	}
+}
+
 func TestDeleteLotteryEventRemovesEventAndParticipants(t *testing.T) {
 	db := newLotteryHandlerTestDB(t)
 	handler := NewSuperAdminHandler(db)
@@ -233,10 +348,16 @@ func TestDeleteLotteryEventRemovesEventAndParticipants(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 
+	prizeImage := models.File{
+		Hash: "deleted-prize", Path: "/uploads/2026/11/deleted.png",
+		MimeType: "image/png", AccessScope: models.FileAccessPublic,
+	}
+	require.NoError(t, db.Create(&prizeImage).Error)
 	event := models.LotteryEvent{
 		Title:       "待删除抽奖",
 		Description: "测试删除",
 		PrizeName:   "奖品",
+		PrizeImage:  prizeImage.Path,
 		DrawTime:    time.Now().Add(time.Hour),
 		Status:      0,
 	}
@@ -277,6 +398,56 @@ func TestDeleteLotteryEventRemovesEventAndParticipants(t *testing.T) {
 	}
 	if participantCount != 0 {
 		t.Fatalf("expected participants deleted, count=%d", participantCount)
+	}
+	require.NoError(t, db.First(&prizeImage, prizeImage.ID).Error)
+	require.Equal(t, models.FileAccessPrivate, prizeImage.AccessScope)
+}
+
+func TestGetLotteryParticipantsOrdersWinnerBeforePagination(t *testing.T) {
+	cases := []struct {
+		name   string
+		winner bool
+		want   []int
+	}{
+		{"最早报名者中奖", true, []int{0, 2}},
+		{"没有中奖者", false, []int{2, 1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newLotteryHandlerTestDB(t)
+			now := time.Now()
+			users := []models.User{
+				{StudentID: "winner-first", PasswordHash: "test", Nickname: "最早报名"},
+				{StudentID: "winner-middle", PasswordHash: "test", Nickname: "中间报名"},
+				{StudentID: "winner-last", PasswordHash: "test", Nickname: "最后报名"},
+			}
+			require.NoError(t, db.Create(&users).Error)
+			event := models.LotteryEvent{
+				Title: "活动", PrizeName: "奖品", DrawTime: now, Status: models.LotteryStatusNoWinner,
+			}
+			if tc.winner {
+				event.Status, event.WinnerID = models.LotteryStatusDrawn, &users[0].ID
+			}
+			require.NoError(t, db.Create(&event).Error)
+			for i, user := range users {
+				require.NoError(t, db.Create(&models.LotteryParticipant{
+					LotteryID: event.ID, UserID: user.ID, CreatedAt: now.Add(time.Duration(i) * time.Minute),
+				}).Error)
+			}
+			recorder := performJSONRequest(t, NewSuperAdminHandler(db).GetLotteryParticipants,
+				http.MethodGet, "/api/super/lottery/participants?page=1&page_size=2", nil)
+			require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+			var response struct {
+				Participants []LotteryParticipantResponse `json:"participants"`
+				Total        int                          `json:"total"`
+			}
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+			require.Equal(t, len(users), response.Total)
+			require.Len(t, response.Participants, len(tc.want))
+			for i, index := range tc.want {
+				require.Equal(t, users[index].ID, response.Participants[i].UserID)
+			}
+		})
 	}
 }
 

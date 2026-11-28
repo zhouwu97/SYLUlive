@@ -10,6 +10,9 @@ class LotteryEvent {
   final String title;
   final String description;
   final String prizeName;
+
+  /// 奖品图的 /uploads/ 路径；空串表示未上传。
+  final String prizeImage;
   final DateTime drawTime;
   final int status; // 0: 进行中, 1: 已开奖, 2: 已流拍, 3: 已取消
   final int? winnerId;
@@ -24,6 +27,7 @@ class LotteryEvent {
     required this.title,
     required this.description,
     required this.prizeName,
+    this.prizeImage = '',
     required this.drawTime,
     required this.status,
     this.winnerId,
@@ -61,6 +65,7 @@ class LotteryEvent {
       title: json['title']?.toString() ?? '',
       description: json['description']?.toString() ?? '',
       prizeName: json['prize_name']?.toString() ?? '',
+      prizeImage: json['prize_image']?.toString() ?? '',
       drawTime:
           DateTime.tryParse(json['draw_time']?.toString() ?? '') ?? DateTime.now(),
       status: (json['status'] as num?)?.toInt() ?? statusOngoing,

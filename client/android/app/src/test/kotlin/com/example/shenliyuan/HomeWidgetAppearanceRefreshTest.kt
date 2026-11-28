@@ -249,4 +249,35 @@ class HomeWidgetAppearanceRefreshTest {
             darkExam.findViewById<TextView>(R.id.tv_widget_title).currentTextColor,
         )
     }
+
+    @Test fun `跟随App与固定配色反复切换时复用视图不残留旧颜色`() {
+        val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        prefs.edit().putString("flutter.widget_app_palette_v1", """{
+            "light":{"background":"#FFF5F9FF","primaryText":"#FF102030","secondaryText":"#FF405060","mutedText":"#FF708090","accent":"#FF2F7FD8","divider":"#FFD0E0F0"},
+            "dark":{"background":"#FF0E1113","primaryText":"#FFF0F4F8","secondaryText":"#FFA0B0C0","mutedText":"#FF8090A0","accent":"#FF84BAFF","divider":"#FF253038"}
+        }""").commit()
+        for (variant in NativeWidgetVariant.entries) {
+            val host = AppWidgetHostView(context)
+            var root: android.view.View? = null
+            for (theme in listOf(NativeHomeWidgetTheme.APP_THEME, NativeHomeWidgetTheme.DARK,
+                NativeHomeWidgetTheme.APP_THEME, NativeHomeWidgetTheme.CAMPUS_BLUE,
+                NativeHomeWidgetTheme.APP_THEME, NativeHomeWidgetTheme.LIGHT)) {
+                save(theme, NativeHomeWidgetFontSize.STANDARD)
+                val views = HomeWidgetRenderer.build(context, 150 + variant.ordinal, variant)
+                if (root == null) {
+                    root = views.apply(context, host)
+                    host.addView(root)
+                } else views.reapply(context, root)
+                val palette = HomeWidgetThemeConfig.resolve(context, theme)
+                val tint = root!!.findViewById<android.widget.ImageView>(R.id.widget_bg_tint)
+                assertEquals(if (theme == NativeHomeWidgetTheme.APP_THEME) android.view.View.VISIBLE
+                    else android.view.View.GONE, tint.visibility)
+                assertEquals(palette.primaryTextColor, root.findViewById<TextView>(R.id.tv_widget_title).currentTextColor)
+                val list = root.findViewById<AbsListView>(variant.listViewId)
+                val item = list.adapter.getView(0, null, list)
+                val titleId = if (variant.kind == NativeHomeWidgetKind.COURSE) R.id.tv_course_name else R.id.tv_exam_name
+                assertEquals(palette.primaryTextColor, item.findViewById<TextView>(titleId).currentTextColor)
+            }
+        }
+    }
 }

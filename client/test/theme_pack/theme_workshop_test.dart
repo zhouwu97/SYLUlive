@@ -112,6 +112,73 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('沉浸预览从顶边铺图，搜索框和信息卡叠在 hero 上', (tester) async {
+    final image = MemoryImage(themeImage(64, 64));
+    final appearance = ThemeAppearance({
+      'decoration': {
+        'light': {
+          for (final slot in ['home', 'campus', 'me'])
+            slot: {'background': {'image': 'hero.png'}},
+          'ornaments': {
+            'fab': {'image': 'hero.png', 'corner': 'topRight', 'width': 16},
+          },
+          'serviceIcons': {'menu': 'hero.png', 'messages': 'hero.png', 'search': 'hero.png'},
+        },
+      },
+    });
+
+    for (final (page, slot) in [
+      (WorkshopSamplePage.home, 'home'),
+      (WorkshopSamplePage.campus, 'campus'),
+      (WorkshopSamplePage.me, 'me'),
+    ]) {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 360,
+              height: 560,
+              child: ThemeWorkshopSampleStage(
+                appearance: appearance,
+                brightness: Brightness.light,
+                assetResolver: (_) => image,
+                page: page,
+                sampleState: WorkshopSampleState.normal,
+              ),
+            ),
+          ),
+        ),
+      ));
+      final art = tester.getRect(find.byKey(ValueKey('theme-hero-$slot')));
+      final topBar = find.byKey(const ValueKey('workshop-preview-top-bar'));
+      expect(art.top, tester.getTopLeft(topBar).dy);
+      expect(art.width, 360);
+      if (page == WorkshopSamplePage.home) {
+        final search = find.byKey(const ValueKey('workshop-preview-search'));
+        expect(tester.getBottomLeft(search).dy, lessThan(art.bottom));
+        expect(find.byKey(const ValueKey('home-themed-header-info')), findsNothing);
+        for (final icon in ['menu', 'messages', 'search']) {
+          expect(find.byKey(ValueKey('theme-service-icon-$icon')), findsOneWidget);
+        }
+        expect(find.byKey(const ValueKey('theme-ornament-fab')), findsOneWidget);
+      } else {
+        final header = find.byKey(ValueKey('workshop-preview-header-$slot'));
+        expect(tester.getTopLeft(header).dy + 150, closeTo(art.bottom - 28, 0.01));
+        expect(tester.getBottomLeft(header).dy, greaterThan(art.bottom));
+      }
+      expect(tester.takeException(), isNull);
+    }
+
+    await tester.pumpWidget(MaterialApp(
+      home: ThemeWorkshopExportStage(
+        appearance: appearance,
+        brightness: Brightness.dark,
+        assetResolver: (_) => image,
+      ),
+    ));
+    expect(find.byKey(const ValueKey('theme-hero-home')), findsNothing);
+  });
+
   test('工坊推导：#2F7FD8 常量角色映射、覆盖优先、8 色课表对比度与色相不变自动修正', () {
     const seed = Color(0xFF2F7FD8);
     final derived = ThemeResolver.deriveTokens(
@@ -140,23 +207,14 @@ void main() {
         seedColor: seed,
         brightness: brightness,
       );
-      final bg = ThemeContrast.parseColor(tokens['background']!);
-      final courseText = ThemeContrast.parseColor(tokens['courseCardText']!);
+      // 课程文字统一白色；色板跟随种子色，原版五色作为恢复选项。
+      expect(tokens['courseCardText'], '#FFFFFF');
       final courses = ThemeResolver.generateCoursePalette(
-        seedColor: seed,
-        brightness: brightness,
-        background: bg,
-        courseCardText: courseText,
-      );
-      expect(courses.length, 8);
-      for (final hex in courses) {
-        final composed = Color.alphaBlend(
-          ThemeContrast.parseColor(hex).withValues(alpha: 0.45),
-          bg,
-        );
-        expect(ThemeContrast.ratio(courseText, composed),
-            greaterThanOrEqualTo(4.5));
-      }
+          seedColor: seed, brightness: brightness);
+      expect(courses.length, 6);
+      expect(courses.toSet().length, 6);
+      expect(ThemeResolver.originalCoursePalette(brightness),
+          ['#448AFF', '#00C853', '#9C27B0', '#FF5252', '#FF9800']);
     }
 
     // 自动修正低对比前景：达到 4.5 阈值且保持 HCT 色相不变
@@ -209,6 +267,12 @@ void main() {
       'imageHeight': 168.0,
       'imageWidth': 0.9,
     };
+    final header = File(path.join(temp.path, 'header.png'));
+    await header.writeAsBytes(img.encodePng(img.Image(width: 320, height: 120)));
+    for (final slot in ['campus', 'me']) {
+      state.light.decorations[slot] = {'background': {'image': header.path}};
+    }
+    state.layout['me'] = {'preset': 'compact'};
     state.light.cardStyle = {'borderWidth': 1.5, 'shadow': 'soft'};
 
     // 草稿保存并重新读取，全部内容一致
@@ -231,7 +295,10 @@ void main() {
       appVersion: '9.0.0',
     );
     expect(decoded.manifest.name, '海盐蓝工坊测试');
-    expect(decoded.manifest.data['bottomNav']['style'], 'liquid_glass');
+    expect(decoded.manifest.data['layout']['campus']['preset'], 'immersive');
+    expect(decoded.manifest.data['layout']['campus']['imageHeight'], 150);
+    expect(decoded.manifest.data['layout']['me']['preset'], 'compact');
+    expect(decoded.manifest.data['bottomNav'], isNot(contains('style')));
     final lightPreview =
         img.decodeImage(decoded.contents[decoded.manifest.data['preview']['light']]!)!;
     expect(lightPreview.width, 1080);
@@ -439,7 +506,7 @@ void main() {
     await tester.tap(find.widgetWithText(ChoiceChip, '正常'));
     await tester.pumpAndSettle();
     await _captureWorkshop(tester, previewBoundary, 'fullscreen-preview');
-    await tester.tap(find.byKey(const ValueKey('home-themed-header-info')));
+    await tester.tap(find.byKey(const ValueKey('workshop-preview-header-home')));
     await tester.pumpAndSettle();
     expect(
         find.byKey(const ValueKey('workshop-editor-layout')), findsOneWidget);

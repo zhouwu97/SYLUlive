@@ -49,7 +49,7 @@ abstract final class ThemePackCodec {
     return prepared;
   }
 
-  /// 商城规范包已在服务端做过完整校验并由下载器核对过一次 SHA-256，仅解包校验 ZIP CRC32 并注册字体。
+  /// 商城规范包已在服务端做过完整校验并由下载器核对过一次 SHA-256，只执行包体、单图 8MiB、解压总量、ZIP CRC32 与字体安全检查。
   static Future<PreparedThemePack> decodeStorePackage(
     Uint8List bytes, {
     required String appVersion,
@@ -139,13 +139,16 @@ abstract final class ThemePackCodec {
       final contents = <String, Uint8List>{};
       for (final item in headers.entries) {
         for (final kind in references[item.key]!) {
-          if (item.value.uncompressedSize > _assetLimit(kind)) {
+          final limit = preserveStoreSource && kind != ThemeAssetKind.font
+              ? 8 * 1024 * 1024
+              : _assetLimit(kind);
+          if (item.value.uncompressedSize > limit) {
             throw ThemePackError(
                 kind == ThemeAssetKind.font
                     ? 'theme_font_invalid'
                     : 'theme_image_invalid',
                 item.key,
-                '文件大小 ${(item.value.uncompressedSize / (1024 * 1024)).toStringAsFixed(2)}MB，上限 ${_assetLimit(kind) / (1024 * 1024)}MB');
+                '文件大小 ${item.value.uncompressedSize} 字节，上限 $limit 字节');
           }
         }
         final content = readVerifiedZipEntry(item.value);

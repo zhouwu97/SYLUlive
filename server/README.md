@@ -69,6 +69,8 @@ go run ./cmd
 
 迁移由服务端启动流程和仓库迁移脚本共同维护。生产执行前先备份 PostgreSQL，并在独立环境验证升级、回滚和安全表清理。不要直接修改生产表结构绕过迁移。
 
+全新空库启动一次即可完成建表：本次启动新建的 `ai_user_permissions` 会按 `sql/20260725_ai_user_permissions.sql`、`20260726_ai_external_model_permission.sql` 补齐命名 CHECK，新建的 `user_competition_calendar_items` 会直接执行竞赛计划去重迁移。已有库不受影响，仍按版本化 SQL 和 `cmd/migrate_competition_calendar` 维护，启动时只校验。AI/RAG 相关表依赖 pgvector，仍需按 `sql/20260719_ai_runtime_rag.sql` 单独执行。
+
 食堂店名复合唯一索引随版本 `20261123_01_canteen_name_index` 一次性升级。首次启动会锁定店铺表，在同一事务中补齐旧位置、规范名和驳回占位名并切换索引。升级失败时原索引、数据和版本记录一并恢复。已提交的升级在后续启动时跳过；回退应用版本时保留复合索引。
 
 资料“获赞”按当前有效点赞事实查询，与“收到的赞”明细保持同一口径，见 [API](API.md#6-消息与通知-messages)。用户/关联作者批量查询共用一次汇总；点赞表启动迁移增加 `idx_like_target(target_type,target_id)`，原唯一索引保留。数据库 `users.total_likes_received` 只保留兼容写入和校准快照，历史错值不影响新版接口。旧校准命令现在默认只预览，显式连接与写入步骤见 [运维入口](../docs/ops/backend.md#获赞兼容快照校准)。

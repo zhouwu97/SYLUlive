@@ -279,7 +279,6 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   static const bool _defaultPredictiveBack = false;
   static const double _defaultBackgroundBlur = 0.0;
   static const bool _defaultFrostedGlass = false;
-  static const double minComponentOpacity = .75;
 
   static const String _frostedGlassKey = 'frosted_glass_enabled';
   static const String _frostedGlassStrengthKey = 'frosted_glass_strength';
@@ -380,20 +379,14 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       (_activeMaterial?['componentOpacity'] as num?)?.toDouble() ??
       _componentOpacity;
 
-  /// 调节档位 0–100% 对应实际底色 75–100%，历史偏好按实际底色换算。
+  /// 界面百分比直接对应底色不透明度，已有偏好保留实际底色。
   double get componentOpacityLevel => componentOpacity.isFinite
-      ? ((componentOpacity - minComponentOpacity) / (1 - minComponentOpacity))
-          .clamp(0.0, 1.0)
+      ? componentOpacity.clamp(0.0, 1.0)
       : 1.0;
 
   /// 显式主题材质按变体绘制；原手动材质仅在自定义背景下生效。
   double get effectiveComponentOpacity =>
-      _materialGroup != null && _materialGroup!['legacy'] != true
-          ? componentOpacity.clamp(minComponentOpacity, 1.0)
-          : shouldShowCustomBackground
-              ? minComponentOpacity +
-                  (1 - minComponentOpacity) * componentOpacityLevel
-              : 1.0;
+      canCustomizeCardMaterial ? componentOpacityLevel : 1.0;
 
   // 简洁模式只暂停材质，保留自定义背景下已保存的开关和强度。
   bool get frostedGlass => _activeMaterial == null
@@ -457,15 +450,10 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// 当前外观在 [slot]（home / campus / me）使用沉浸页头且有页头图片或贴纸。
   /// 主壳这三个页面此时必须保持透明，hero 画在它们下面的背景层里。
   bool hasImmersiveHero(String slot) {
-    final layout = appearance.group(ThemeGroup.layout)?['value'] as Map?;
-    final header = layout?[slot] as Map?;
-    if (header?['preset'] != 'immersive') return false;
     final decoration =
         (appearance.group(ThemeGroup.decoration)?[_appearanceMode] as Map?)?[
             slot] as Map?;
-    final stickers = decoration?['stickers'] as List?;
-    return decoration?['background'] != null ||
-        (stickers != null && stickers.isNotEmpty);
+    return hasHeaderDecoration(decoration);
   }
 
   static bool isBundledAssetBackground(String imagePath) {
@@ -961,12 +949,10 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> setComponentOpacityLevel(double value) {
     if (!value.isFinite) return Future<bool>.value(false);
     final level = (value.clamp(0.0, 1.0) * 100).round() / 100;
-    return setComponentOpacity(
-      minComponentOpacity + (1 - minComponentOpacity) * level,
-    );
+    return setComponentOpacity(level);
   }
 
-  /// 保存底色偏好，界面滑块通过 [setComponentOpacityLevel] 换算后调用。
+  /// 保存底色偏好，界面滑块通过 [setComponentOpacityLevel] 按百分比取整。
   Future<bool> setComponentOpacity(double value) {
     if (!value.isFinite) return Future<bool>.value(false);
     if (_trial != null) {
@@ -1196,7 +1182,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
           ? (frostedGlassCustomStrength, customComponentOpacityLevel)
           : _frostedGlassPreset(mode);
       return _patchTrialMaterial({
-        'componentOpacity': minComponentOpacity + (1 - minComponentOpacity) * opacityLevel,
+        'componentOpacity': opacityLevel,
         'frostedGlass': {'enabled': strength > 0, 'strength': strength},
       });
     }
@@ -1209,8 +1195,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       FrostedGlassPerformanceMode.highQuality => true,
       FrostedGlassPerformanceMode.custom => strength > 0,
     };
-    final opacity = minComponentOpacity +
-        (1 - minComponentOpacity) * opacityLevel;
+    final opacity = opacityLevel;
     _frostedGlass = enabled;
     _frostedGlassStrength = strength;
     _componentOpacity = opacity;
@@ -1388,8 +1373,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     final mode = next.group(ThemeGroup.material)![_appearanceMode] as Map;
     final frost = mode['frostedGlass'] as Map;
     final strength = frost['enabled'] == true ? (frost['strength'] as num).toDouble() : 0.0;
-    final opacity = _roundPercent((((mode['componentOpacity'] as num).toDouble() - minComponentOpacity)
-        / (1 - minComponentOpacity)).clamp(0.0, 1.0));
+    final opacity = _roundPercent((mode['componentOpacity'] as num).toDouble());
     final custom = _modeForFrostedGlass(strength, opacity) == FrostedGlassPerformanceMode.custom;
     _updateTrialAppearance(next,
         customFrostedStrength: custom ? strength : rememberedStrength,
@@ -1871,6 +1855,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<Uint8List> exportCurrentAppearance({
+    ThemePreviewCapture? capturePreview,
     String? customName,
     String? authorName,
     String? appVersion,
@@ -1905,18 +1890,13 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         persistedMat != null && persistedMat['legacy'] != true;
     final shouldExportManualMat = !hasExplicitMaterial &&
         (manualPortrait != null || manualLandscape != null);
-    final persistedNavStyle =
-        (_bottomNavPerformanceMode == BottomNavPerformanceMode.off
-                ? BottomNavStyle.floating
-                : _bottomNavStyle)
-            .storageValue;
     return ThemeAppearanceExporter.export(
       appearance: effective,
+      capturePreview: capturePreview,
       name: customName ?? (_trial == null ? suggestedExportName :
           effective.singleThemeName ?? '我的混搭外观'),
       author: authorName ?? '本机导出',
       appVersion: appVersion ?? '1.0.0',
-      bottomNavStyle: persistedNavStyle,
       shouldExportManualMaterial: shouldExportManualMat,
       manualComponentOpacity: _componentOpacity,
       manualFrostedGlass: _frostedGlass,
@@ -2148,7 +2128,9 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         final hadThemeWidgets = _appearance.group(ThemeGroup.widgets) != null;
         final cleared = defaultTheme == null
             ? const ThemeAppearance.empty()
-            : const ThemeAppearance.empty().apply(
+            : ThemeAppearance({
+                'navigation': const ThemeAppearance.originalDefault().group(ThemeGroup.navigation),
+              }).apply(
                 defaultTheme.manifest,
                 builtInDefaultGroups
                     .intersection(defaultTheme.manifest.groups),

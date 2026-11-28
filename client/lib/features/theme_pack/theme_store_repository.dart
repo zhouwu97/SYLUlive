@@ -530,6 +530,7 @@ class ThemeStoreRepository {
     String? license,
     bool rightsConfirmed = true,
     CancelToken? cancelToken,
+    ProgressCallback? onSendProgress,
   }) async {
     final formData = FormData.fromMap({
       'idempotencyKey': idempotencyKey,
@@ -551,6 +552,7 @@ class ThemeStoreRepository {
         '/themes/submissions',
         data: formData,
         cancelToken: cancelToken,
+        onSendProgress: onSendProgress,
         options: Options(
           sendTimeout: const Duration(minutes: 3),
           receiveTimeout: const Duration(minutes: 3),

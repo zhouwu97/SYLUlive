@@ -1,4 +1,5 @@
 import '../widgets/app_page_background.dart';
+import '../features/theme_pack/theme_hero_layer.dart';
 import '../theme/app_theme_tokens.dart';
 import 'dart:async';
 
@@ -380,7 +381,9 @@ class _CampusScreenState extends State<CampusScreen>
               ? Colors.transparent
               : AppPageBackground.color(
                   context, AppThemeTokens.of(context).background),
-      body: ResponsiveContent.page(
+      body: ThemeHeroPane(
+        slot: 'campus',
+        child: ResponsiveContent.page(
           child: SafeArea(
         bottom: false,
         child: RefreshIndicator(
@@ -452,7 +455,7 @@ class _CampusScreenState extends State<CampusScreen>
             ],
           ),
         ),
-      )),
+      ))),
     );
   }
 

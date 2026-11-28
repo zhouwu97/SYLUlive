@@ -21,7 +21,7 @@ void main() {
           await appearance.setBackgroundImage('morenbeijing.jpeg');
           if (clean) await appearance.setCleanBackgroundMode();
           await appearance.setFrostedGlass(glass);
-          await appearance.setComponentOpacityLevel(.7);
+          await appearance.setComponentOpacity(.925);
           int? selected;
           await tester.pumpWidget(ChangeNotifierProvider.value(
             value: appearance,

@@ -8,6 +8,9 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/widgets/about_app_sheet.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
+import 'package:shenliyuan/theme/app_palette.dart';
+import 'package:shenliyuan/theme/app_theme.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 import '../helpers/golden_viewport.dart';
 
 class _NoUpdateCoordinator extends AppUpdateCoordinator {
@@ -37,10 +40,16 @@ void main() {
       addTearDown(theme.dispose);
       await theme.setBackgroundImage('morenbeijing.jpeg');
       await theme.setFrostedGlass(true);
+      final palette = AppPalette.defaults(brightness).copyWith(
+        background: const Color(0xffeef3fc),
+        card: const Color(0xfffafbff),
+        tagText: const Color(0xff735887),
+        surfaceElevated: const Color(0xfffcfdff),
+      );
       await tester.pumpWidget(ChangeNotifierProvider.value(
         value: theme,
         child: MaterialApp(
-          theme: ThemeData(brightness: brightness),
+          theme: AppTheme.build(brightness: brightness, palette: palette),
           builder: (context, child) => MediaQuery(
               data: MediaQuery.of(context)
                   .copyWith(textScaler: const TextScaler.linear(1.3)),
@@ -49,12 +58,24 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle();
+      final surfaces = tester.widgetList<AppCardSurface>(
+        find.descendant(
+            of: find.byType(AboutAppSheet),
+            matching: find.byType(AppCardSurface)),
+      );
+      expect(
+          surfaces
+              .map((surface) => (surface.decoration as BoxDecoration).color),
+          [palette.background, palette.card, palette.card, palette.card]);
+      expect(tester.widget<Text>(find.text('Version 1.6.6')).style?.color,
+          palette.tagText);
       for (final label in ['加入群聊', '联系作者']) {
         await tester.ensureVisible(find.text(label));
         await tester.pumpAndSettle();
         await tester.tap(find.text(label));
         await tester.pumpAndSettle();
-        expect(find.byType(AppDialog), findsOneWidget);
+        expect(tester.widget<AppDialog>(find.byType(AppDialog)).backgroundColor,
+            palette.surfaceElevated);
         expect(tester.takeException(), isNull);
         await tester.tap(find.text('知道了'));
         await tester.pump();

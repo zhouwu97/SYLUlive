@@ -22,6 +22,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font/sfnt"
 	_ "golang.org/x/image/webp"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -177,8 +178,8 @@ const (
 
 // 卡片角饰位置与可替换入口图标的键，与客户端 ThemeManifest 保持一致。
 var (
-	themeOrnamentSlots   = []string{"postCard", "campusHeader", "campusNotice", "campusServices"}
-	themeServiceIconKeys = []string{"edu", "canteen", "ranking", "team", "map", "calendar", "erke", "fitness", "exam", "papers", "sites", "cloudGame", "lottery"}
+	themeOrnamentSlots   = []string{"postCard", "campusHeader", "campusNotice", "campusServices", "fab"}
+	themeServiceIconKeys = []string{"edu", "canteen", "ranking", "team", "map", "calendar", "erke", "fitness", "exam", "papers", "sites", "cloudGame", "lottery", "menu", "messages", "search"}
 )
 
 type themeAssetRef struct {
@@ -648,11 +649,10 @@ func parseAndValidateManifest(source map[string]any, currentAppVersion string) (
 		}
 		navOut := map[string]any{}
 		if navObj["style"] != nil {
-			styleStr, err := parseJSONChoice(navObj["style"], "bottomNav.style", []string{"normal", "floating", "liquid_glass"})
+			_, err := parseJSONChoice(navObj["style"], "bottomNav.style", []string{"normal", "floating", "liquid_glass"})
 			if err != nil {
 				return nil, nil, err
 			}
-			navOut["style"] = styleStr
 		}
 		tintRaw := any("template")
 		if navObj["iconTint"] != nil {
@@ -880,7 +880,7 @@ func parseVariant(raw any, field string, addRef func(string, themeAssetKind) str
 	}
 
 	if v["componentOpacity"] != nil {
-		op, err := parseJSONNumber(v["componentOpacity"], field+".componentOpacity", 0.75, 1.0)
+		op, err := parseJSONNumber(v["componentOpacity"], field+".componentOpacity", 0.0, 1.0)
 		if err != nil {
 			return nil, err
 		}
@@ -1311,7 +1311,7 @@ func parseHeaderLayout(raw any, field string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	imgH, err := parseJSONNumberDefault(v["imageHeight"], 160, field+".imageHeight", 96, 280)
+	imgH, err := parseJSONNumberDefault(v["imageHeight"], 150, field+".imageHeight", 96, 280)
 	if err != nil {
 		return nil, err
 	}
@@ -1572,24 +1572,6 @@ func checkManifestContrast(manifest map[string]any) error {
 				)
 			}
 		}
-
-		courseText := parseHexARGB(tokens["courseCardText"])
-		coursePalette := variant["coursePalette"].([]string)
-		for i, cHex := range coursePalette {
-			c := parseHexARGB(cHex)
-			c.a = 0.45
-			base := alphaBlend(c, pageBg)
-			front := alphaBlend(courseText, base)
-			if contrastRatio(front, base) < 4.5 {
-				field := fmt.Sprintf("%s.coursePalette[%d]", mode, i)
-				return newThemeError(
-					http.StatusBadRequest,
-					ThemeCodeContrastLow,
-					field,
-					fmt.Sprintf("文字与背景对比度不足：courseCardText / coursePalette[%d]", i),
-				)
-			}
-		}
 	}
 	return nil
 }
@@ -1673,7 +1655,7 @@ func validateAndNormalizeThemeImage(data []byte, kind themeAssetKind, assetPath 
 			return nil, "", imgErr()
 		}
 	case themeAssetHeader:
-		if maxSide > 2048 {
+		if maxSide < 1200 || maxSide > 2048 {
 			return nil, "", imgErr()
 		}
 	case themeAssetSticker, themeAssetIllustration:
@@ -1715,18 +1697,48 @@ func validateAndNormalizeThemeImage(data []byte, kind themeAssetKind, assetPath 
 		dst := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 		draw.Draw(dst, dst.Bounds(), &image.Uniform{C: color.Black}, image.Point{}, draw.Src)
 		draw.Draw(dst, dst.Bounds(), decoded, bounds.Min, draw.Over)
-		if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: 88}); err != nil {
-			return nil, "", imgErr()
+		for quality := 88; quality >= 40; quality -= 8 {
+			out.Reset()
+			if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: quality}); err != nil {
+				return nil, "", imgErr()
+			}
+			if int64(out.Len()) <= maxBytes {
+				return out.Bytes(), ".jpg", nil
+			}
 		}
-		return out.Bytes(), ".jpg", nil
 	default:
-		dst := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
-		draw.Draw(dst, dst.Bounds(), decoded, bounds.Min, draw.Src)
-		if err := png.Encode(&out, dst); err != nil {
-			return nil, "", imgErr()
+		// 保留 PNG 调色板，避免透明素材展开为真彩后体积膨胀。
+		encoder := png.Encoder{CompressionLevel: png.BestCompression}
+		for {
+			out.Reset()
+			if err := encoder.Encode(&out, decoded); err != nil {
+				return nil, "", imgErr()
+			}
+			if int64(out.Len()) <= maxBytes {
+				return out.Bytes(), ".png", nil
+			}
+			minSide := 1
+			if kind == themeAssetIcon {
+				minSide = 48
+			}
+			if kind == themeAssetLauncher {
+				minSide = 432
+			}
+			bounds = decoded.Bounds()
+			side := max(bounds.Dx(), bounds.Dy())
+			if side <= minSide {
+				return nil, "", imgErr()
+			}
+			scale := math.Min(0.9, math.Sqrt(float64(maxBytes)/float64(out.Len()))*0.95)
+			nextSide := max(minSide, int(float64(side)*scale))
+			width := max(1, bounds.Dx()*nextSide/side)
+			height := max(1, bounds.Dy()*nextSide/side)
+			dst := image.NewNRGBA(image.Rect(0, 0, width, height))
+			xdraw.CatmullRom.Scale(dst, dst.Bounds(), decoded, bounds, draw.Src, nil)
+			decoded = dst
 		}
-		return out.Bytes(), ".png", nil
 	}
+	return nil, "", imgErr()
 }
 
 func validateThemeFont(data []byte, assetPath string) (string, string, error) {

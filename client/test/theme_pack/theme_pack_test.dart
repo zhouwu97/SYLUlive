@@ -92,6 +92,24 @@ void main() {
   TypeMatcher<ThemePackError> failsWith(String code) =>
       isA<ThemePackError>().having((error) => error.code, 'code', code);
 
+  test('主题卡片接受 0–100% 不透明度，拒绝越界值', () {
+    for (final opacity in [-.01, 0.0, .42, .75, 1.0, 1.01]) {
+      final json = themeFixture();
+      for (final mode in ['light', 'dark']) {
+        json[mode]['componentOpacity'] = opacity;
+      }
+      if (opacity < 0 || opacity > 1) {
+        expect(() => ThemeManifest.parse(json, appVersion: '9.0.0'),
+            throwsA(failsWith('theme_field_invalid')));
+      } else {
+        final manifest = ThemeManifest.parse(json, appVersion: '9.0.0');
+        for (final mode in ['light', 'dark']) {
+          expect(manifest.data[mode]['componentOpacity'], opacity);
+        }
+      }
+    }
+  });
+
   test('本机来源不可伪装官方；忽略无关条目并完整解码合法图片', () async {
     final manifest = themeFixture()..['source'] = 'official';
     final pack = await ThemePackCodec.decode(
@@ -101,6 +119,45 @@ void main() {
         appVersion: '9.0.0');
     expect(pack.manifest.data.containsKey('source'), isFalse);
     expect(pack.contents.keys, ['preview/cover.png']);
+  });
+
+  test('商城已验签规范包兼容历史转码超限贴纸，本机文件仍执行制作规格', () async {
+    const sticker = 'decorations/v14-ciallo.png';
+    final manifest = themeFixture()..['source'] = 'official';
+    manifest['light']['ornaments'] = {
+      'fab': {'image': sticker, 'width': 48.0, 'dx': 0.0, 'dy': 0.0},
+    };
+    final pixels = image.Image(width: 512, height: 512, numChannels: 4);
+    var value = 1;
+    for (final pixel in pixels) {
+      value = (value * 1664525 + 1013904223) & 0xffffffff;
+      pixel.setRgba(value & 255, (value >> 8) & 255, (value >> 16) & 255, 128);
+    }
+    final png = Uint8List.fromList(image.encodePng(pixels, level: 0));
+    expect(png.length, greaterThan(512 * 1024));
+    final bytes = themeArchive(manifest, files: {sticker: png});
+    final prepared =
+        await ThemePackCodec.decodeStorePackage(bytes, appVersion: '9.0.0');
+    expect(prepared.contents[sticker], png);
+    expect(prepared.manifest.data['source'], 'official');
+    await expectLater(
+        ThemePackCodec.decodeStorePackage(
+            alterThemeZip(bytes, sticker, size: 8 * 1024 * 1024 + 1),
+            appVersion: '9.0.0'),
+        throwsA(failsWith('theme_image_invalid')));
+    await expectLater(ThemePackCodec.decode(bytes, appVersion: '9.0.0'),
+        throwsA(failsWith('theme_image_invalid')));
+    await expectLater(
+        ThemePackCodec.decodeStorePackage(
+            alterThemeZip(bytes, sticker, crc: true),
+            appVersion: '9.0.0'),
+        throwsA(failsWith('theme_zip_invalid')));
+    await expectLater(
+        ThemePackCodec.decodeStorePackage(
+            alterThemeZip(bytes, sticker,
+                size: ThemePackCodec.maxExpandedBytes + 1),
+            appVersion: '9.0.0'),
+        throwsA(failsWith('theme_too_large')));
   });
 
   final invalid = <(String, Uint8List Function())>[
@@ -266,9 +323,10 @@ void main() {
       ..['sectionMark'] = {'style': 'icon', 'image': 'decorations/mark.png'}
       ..['illustrations'] = {'empty': 'decorations/empty.png'}
       ..['ornaments'] = {
-        'postCard': {'image': 'decorations/ear.png', 'width': 56, 'dy': -20}
+        'postCard': {'image': 'decorations/ear.png', 'width': 56, 'dy': -20},
+        'fab': {'image': 'decorations/ear.png', 'width': 64, 'dy': -40},
       }
-      ..['serviceIcons'] = {'edu': 'icons/edu.png'};
+      ..['serviceIcons'] = {'edu': 'icons/edu.png', 'search': 'icons/edu.png'};
     final pack = await ThemePackCodec.decode(
         themeArchive(json, files: {
           'decorations/tile.png': themeImage(64, 64),
@@ -283,6 +341,7 @@ void main() {
     expect(light['cardStyle'], {'fill': 'tint'});
     expect(light['backdrop']['glow'][0]['radius'], .5);
     expect(light['sectionMark'], {'style': 'icon', 'image': 'decorations/mark.png'});
+    expect(light['ornaments']['fab']['dy'], -40);
     expect(light['ornaments']['postCard'], {
       'image': 'decorations/ear.png',
       'corner': 'topRight',
@@ -291,7 +350,7 @@ void main() {
       'dy': -20,
       'opacity': 1,
     });
-    expect(light['serviceIcons'], {'edu': 'icons/edu.png'});
+    expect(light['serviceIcons'], {'edu': 'icons/edu.png', 'search': 'icons/edu.png'});
     expect(pack.manifest.groups,
         containsAll([ThemeGroup.wallpapers, ThemeGroup.decoration]));
     expect(
@@ -447,7 +506,9 @@ void main() {
     }
     final issues =
         ThemeContrast.check(ThemeManifest.parse(manifest, appVersion: '9.0.0'));
-    expect(issues.length, 28);
+    // 9 条规则 × 明暗两套；课程块文字不参与硬性对比度检查。
+    expect(issues.length, 18);
+    expect(issues.any((issue) => issue.foreground == 'courseCardText'), isFalse);
     expect(issues.every((issue) => issue.ratio == 1), isTrue);
   });
   final badFields = <(String, void Function(Map<String, dynamic>))>[

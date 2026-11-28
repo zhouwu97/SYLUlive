@@ -11,6 +11,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -516,6 +517,26 @@ func fullFontRunes(coverageRatio float64) []rune {
 	return runes
 }
 
+func TestThemePackComponentOpacity(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		for _, opacity := range []float64{-0.01, 0, 0.42, 0.75, 1, 1.01} {
+			t.Run(fmt.Sprintf("dark=%t/opacity=%g", dark, opacity), func(t *testing.T) {
+				variant := defaultValidVariant(dark)
+				variant["componentOpacity"] = opacity
+				out, err := parseVariant(variant, "variant", func(ref string, _ themeAssetKind) string {
+					return ref
+				})
+				if opacity < 0 || opacity > 1 {
+					require.Error(t, err)
+					return
+				}
+				require.NoError(t, err)
+				require.Equal(t, opacity, out["componentOpacity"])
+			})
+		}
+	}
+}
+
 func TestThemePackValidatorTable(t *testing.T) {
 	validFont := buildMinimalSFNTFont(fullFontRunes(0.995), "Copyright 2026 SYLU", "OFL-1.1")
 	_, sfntErr := sfnt.Parse(validFont)
@@ -546,6 +567,19 @@ func TestThemePackValidatorTable(t *testing.T) {
 		build    func() ([]byte, ThemeMetadataOverrides)
 		wantCode string
 	}{
+		{
+			name: "页头背景长边 1199 拒绝",
+			build: func() ([]byte, ThemeMetadataOverrides) {
+				m := defaultValidManifest()
+				m["light"].(map[string]any)["decorations"] = map[string]any{
+					"home": map[string]any{"background": map[string]any{"image": "decorations/header.png"}},
+				}
+				assets := defaultValidAssets()
+				assets["decorations/header.png"] = testAssetSpec{Width: 1199, Height: 500}
+				return buildTestThemeZip(t, m, assets), ThemeMetadataOverrides{}
+			},
+			wantCode: ThemeCodeImageInvalid,
+		},
 		{
 			name: "非 ZIP 字节返回 theme_zip_invalid",
 			build: func() ([]byte, ThemeMetadataOverrides) {
@@ -727,12 +761,58 @@ func openSQLiteThemeDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestThemePackNormalizedImageFitsSlot(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		side  int
+		kind  themeAssetKind
+		limit int
+	}{
+		{"sticker", 768, themeAssetSticker, 512 * 1024},
+		{"illustration", 1024, themeAssetIllustration, 1024 * 1024},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			palette := make(color.Palette, 64)
+			for i := range palette {
+				palette[i] = color.NRGBA{R: uint8(i * 37), G: uint8(i * 71), B: uint8(i * 113), A: 128}
+			}
+			source := image.NewPaletted(image.Rect(0, 0, tc.side, tc.side), palette)
+			rng := rand.New(rand.NewSource(1))
+			for i := range source.Pix {
+				source.Pix[i] = uint8(rng.Intn(len(palette)))
+			}
+			var input bytes.Buffer
+			require.NoError(t, png.Encode(&input, source))
+			require.LessOrEqual(t, input.Len(), tc.limit, "合法输入不能被转码体积膨胀变成不可下载包")
+			output, ext, err := validateAndNormalizeThemeImage(input.Bytes(), tc.kind, "decorations/noise.png")
+			require.NoError(t, err)
+			require.Equal(t, ".png", ext)
+			require.LessOrEqual(t, len(output), tc.limit)
+			decoded, err := png.Decode(bytes.NewReader(output))
+			require.NoError(t, err)
+			require.LessOrEqual(t, decoded.Bounds().Dx(), tc.side)
+			require.Equal(t, decoded.Bounds().Dx(), decoded.Bounds().Dy())
+			_, _, _, a := decoded.At(0, 0).RGBA()
+			require.InDelta(t, 128*257, int(a), 257, "贴纸透明度保留")
+		})
+	}
+	t.Run("small image stays unchanged in size", func(t *testing.T) {
+		output, _, err := validateAndNormalizeThemeImage(encodeSolidPNG(t, 96, 48, color.NRGBA{R: 40, A: 128}), themeAssetSticker, "decorations/small.png")
+		require.NoError(t, err)
+		cfg, err := png.DecodeConfig(bytes.NewReader(output))
+		require.NoError(t, err)
+		require.Equal(t, 96, cfg.Width)
+		require.Equal(t, 48, cfg.Height)
+	})
+}
+
 func TestThemePackNormalizationAndFields(t *testing.T) {
 	db := openSQLiteThemeDB(t)
 	require.NoError(t, db.Create(&models.User{ID: 10, Nickname: "普通创作者", Role: models.RoleUser, AccountStatus: "active", PasswordHash: "x"}).Error)
 	svc := NewThemePackService(db, t.TempDir())
 
 	m := defaultValidManifest()
+	m["bottomNav"] = map[string]any{"style": "floating", "iconTint": "original"}
 	m["unknownTopField"] = "should-be-stripped"
 	m["source"] = "official" // 普通用户伪造 official 应被强制改为 community
 	m["layout"] = map[string]any{
@@ -796,7 +876,7 @@ func TestThemePackNormalizationAndFields(t *testing.T) {
 		"preview/light.png":         {Width: 1080, Height: 2340, Format: "jpeg_exif_xmp", Color: color.NRGBA{R: 240, G: 248, B: 255, A: 255}},
 		"preview/dark.png":          {Width: 1080, Height: 2340, Format: "webp", Color: color.NRGBA{R: 18, G: 20, B: 24, A: 255}},
 		"wallpaper/sea_bg.webp":     {Width: 64, Height: 64, Format: "webp", Color: color.NRGBA{R: 40, G: 110, B: 180, A: 255}},
-		"decorations/hdr_bg.jpg":    {Width: 120, Height: 60, Format: "jpeg_exif_xmp", Color: color.NRGBA{R: 80, G: 140, B: 200, A: 255}},
+		"decorations/hdr_bg.jpg":    {Width: 1200, Height: 600, Format: "jpeg_exif_xmp", Color: color.NRGBA{R: 80, G: 140, B: 200, A: 255}},
 		"decorations/st_first.webp": {Width: 48, Height: 48, Format: "webp", Color: color.NRGBA{R: 255, G: 200, B: 80, A: 180}},
 		"decorations/st_alpha.png":  {Width: 48, Height: 48, Format: "png", Color: color.NRGBA{R: 255, G: 100, B: 120, A: 128}},
 	}
@@ -840,6 +920,8 @@ func TestThemePackNormalizationAndFields(t *testing.T) {
 
 	var storedManifest map[string]any
 	require.NoError(t, json.Unmarshal(entryBytes["manifest.json"], &storedManifest))
+	require.Equal(t, "original", storedManifest["bottomNav"].(map[string]any)["iconTint"])
+	require.NotContains(t, storedManifest["bottomNav"], "style")
 	require.NotContains(t, storedManifest, "unknownTopField")
 	require.Equal(t, "community", storedManifest["source"])
 	require.Equal(t, pack.FamilyID, storedManifest["id"])
@@ -1066,19 +1148,14 @@ func TestThemePackLifecycleAndConcurrencySQLite(t *testing.T) {
 }
 
 func TestThemeSubmissionRejectsLowContrast(t *testing.T) {
-	for _, field := range []string{"textPrimary", "coursePalette"} {
+	for _, field := range []string{"textPrimary"} {
 		t.Run(field, func(t *testing.T) {
 			manifest := defaultValidManifest()
 			light := manifest["light"].(map[string]any)
 			tokens := light["tokens"].(map[string]any)
-			if field == "textPrimary" {
-				tokens["textPrimary"] = "#FFFFFF"
-				tokens["background"] = "#FFFFFF"
-				tokens["card"] = "#FFFFFF"
-			} else {
-				tokens["courseCardText"] = "#FFFFFF"
-				light["coursePalette"] = []any{"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"}
-			}
+			tokens["textPrimary"] = "#FFFFFF"
+			tokens["background"] = "#FFFFFF"
+			tokens["card"] = "#FFFFFF"
 			_, err := ValidateAndNormalizeThemePack(buildTestThemeZip(t, manifest, defaultValidAssets()), ThemeMetadataOverrides{})
 			var problem *ThemePackError
 			require.ErrorAs(t, err, &problem)

@@ -3,7 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "./auth";
 import { ApiError, asset, captureAuthSession, upload, useApi, write } from "./api";
-import { Empty, Head, Icon, QueryState } from "./ui";
+import { Empty, Head, Icon, Modal, QueryState } from "./ui";
+import { LegalConfirmation } from "./legal-consent";
 import "./connected-apps.css";
 import { IntegrationPersonalSync } from "./integration-personal-sync";
 import { PasswordReauthentication } from "./reauthenticate";
@@ -717,7 +718,16 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide, purpose }: 
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [success, setSuccess] = useState("");
+  const [legalRequired, setLegalRequired] = useState(false);
   const guard = useGuard();
+  function showProblem(error: unknown) {
+    if (error instanceof ApiError && error.code === "legal_consent_required") {
+      setLegalRequired(true);
+      setMessage("请在弹窗中确认当前版本协议，再重新核对授权请求。连接码已保留。");
+    } else {
+      setMessage(explain(error));
+    }
+  }
   // 记住最近一次写操作，密码验证通过后只继续触发验证的那一项，不误执行另一张表单。
   const lastOperation = useRef<"consent" | "scopes" | "other">("other");
   // 连接已断开或被替换时关闭编辑区，避免沿用旧版本号保存。
@@ -781,7 +791,7 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide, purpose }: 
         );
       }
     } catch (e) {
-      if (current()) setMessage(explain(e));
+      if (current()) showProblem(e);
     } finally {
       if (current()) setBusy(false);
     }
@@ -835,7 +845,7 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide, purpose }: 
         await queryClient.invalidateQueries({ queryKey: ["api", "/api/connected-apps/bot"] });
       }
     } catch (e) {
-      if (current()) setMessage(explain(e));
+      if (current()) showProblem(e);
     } finally {
       if (current()) setBusy(false);
     }
@@ -864,7 +874,7 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide, purpose }: 
       }
     } catch (e) {
       if (current()) {
-        setMessage(explain(e));
+        showProblem(e);
         // 连接已变化时刷新列表，编辑区会随之关闭，不保留旧版本号。
         if (e instanceof ApiError && (e.code === "binding_conflict" || e.code === "binding_unavailable")) await q.refetch();
       }
@@ -1098,6 +1108,18 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide, purpose }: 
         <button className="btn" type="button" disabled={q.isFetching} onClick={() => void q.refetch()}>{q.isFetching ? "正在刷新个人查询状态…" : "刷新个人查询状态"}</button>
         <IntegrationPersonalSync enabled={q.error || q.isFetching ? undefined : q.data?.personal_data_enabled} refreshing={q.isFetching} onRefresh={() => void q.refetch()} />
       </div>}
+      {legalRequired && <Modal title="确认协议后继续授权" close={() => {
+        setLegalRequired(false);
+        setMessage("协议尚未确认，连接码已保留。再次操作时可重新打开确认窗口。");
+      }}>
+        <p>当前账号缺少现行必需协议的完整有效同意记录。协议更新后，旧版本的同意不能代替对新内容的确认，需要由你本人阅读并确认。</p>
+        <p>当前账号：<strong>{nickname}</strong>。确认协议不会重新绑定 QQ，也不会自动批准助手权限。</p>
+        <LegalConfirmation onAccepted={() => {
+          setLegalRequired(false);
+          setMessage("");
+          setSuccess("协议已确认，连接码和权限选择已保留。请重新核对授权请求后继续；连接码过期时回 QQ 发送 /sylu-connect 获取新码。");
+        }} />
+      </Modal>}
     </>
   );
 }

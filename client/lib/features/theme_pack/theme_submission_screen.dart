@@ -12,6 +12,8 @@ import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/idempotency_key.dart';
 import '../../services/publish_session_scope.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_dialog.dart';
 import 'theme_manifest.dart';
@@ -53,6 +55,9 @@ class _ThemeSubmissionScreenState extends State<ThemeSubmissionScreen> {
 
   late String _idempotencyKey;
   bool _submitting = false;
+  CancelToken? _submitToken;
+  int _uploadSent = 0;
+  int _uploadTotal = 0;
   bool _loadingFamilies = false;
   String? _errorMessage;
   List<ThemeSubmissionItem> _updatableFamilies = const [];
@@ -135,6 +140,7 @@ class _ThemeSubmissionScreenState extends State<ThemeSubmissionScreen> {
   @override
   void dispose() {
     _familiesToken?.cancel('页面关闭');
+    _submitToken?.cancel('页面关闭');
     _nameController.dispose();
     _descController.dispose();
     super.dispose();
@@ -342,13 +348,25 @@ class _ThemeSubmissionScreenState extends State<ThemeSubmissionScreen> {
       return;
     }
 
+    final token = CancelToken();
+    _submitToken = token;
     setState(() {
       _submitting = true;
       _errorMessage = null;
+      _uploadSent = 0;
+      _uploadTotal = 0;
     });
 
     try {
       final created = await _repo(auth).submit(
+        cancelToken: token,
+        onSendProgress: (sent, total) {
+          if (!mounted || total <= 0) return;
+          setState(() {
+            _uploadSent = sent;
+            _uploadTotal = total;
+          });
+        },
         packageBytes: _packageBytes!,
         idempotencyKey: _idempotencyKey,
         session: session,
@@ -382,247 +400,524 @@ class _ThemeSubmissionScreenState extends State<ThemeSubmissionScreen> {
     } on PublishSessionChanged {
       if (mounted) setState(() => _errorMessage = '账号会话已变化，本次投稿已取消。');
     } catch (_) {
-      if (mounted) setState(() => _errorMessage = '提交失败，请检查网络后重试（表单内容已保留）。');
+      if (mounted) {
+        setState(
+          () => _errorMessage = token.isCancelled
+              ? '已取消上传，表单内容已保留。'
+              : '提交失败，请检查网络后重试（表单内容已保留）。',
+        );
+      }
     } finally {
+      _submitToken = null;
       if (mounted) setState(() => _submitting = false);
     }
   }
+
+  static const _licenses = <(String, String)>[
+    ('CC0-1.0', 'CC0-1.0（公共领域贡献）'),
+    ('CC-BY-4.0', 'CC-BY-4.0（署名共享）'),
+    ('CC-BY-NC-4.0', 'CC-BY-NC-4.0（署名-非商业）'),
+    ('personal-use', 'personal-use（仅供用户本机使用）'),
+  ];
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final isAdmin = auth.user?.isAdmin == true;
+    final tokens = AppThemeTokens.of(context);
+    final colors = Theme.of(context).colorScheme;
+    final manifest = _manifest;
+    final tagsFull = _selectedTags.length >= 5;
 
     return Scaffold(
       appBar: AppBar(title: const Text('投稿主题')),
       body: !auth.isLoggedIn
           ? const Center(child: Text('请先登录后再投稿主题'))
-          : Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 680),
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    if (_errorMessage != null)
-                      Container(
-                        key: const ValueKey('theme-submit-error-banner'),
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.errorContainer,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _errorMessage!,
-                          style: TextStyle(
-                            color:
-                                Theme.of(context).colorScheme.onErrorContainer,
+          : Column(
+              children: [
+                Expanded(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 680),
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                        children: [
+                          _SubmitSection(
+                            title: '主题包',
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: manifest == null
+                                          ? tokens.surfaceMuted
+                                          : colors.primaryContainer,
+                                      borderRadius:
+                                          BorderRadius.circular(AppRadius.md),
+                                    ),
+                                    child: Icon(
+                                      manifest == null
+                                          ? Icons.upload_file_outlined
+                                          : Icons.palette_outlined,
+                                      color: manifest == null
+                                          ? tokens.textSecondary
+                                          : colors.onPrimaryContainer,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          manifest == null
+                                              ? '尚未选择 .sltheme 主题包'
+                                              : manifest.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          manifest == null
+                                              ? '选择文件，或从本机已安装的主题中挑选'
+                                              : 'v${manifest.version} · ${ThemeReviewReasons.formatBytes(_packageBytes?.length ?? 0)}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: tokens.textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: _submitting
+                                          ? null
+                                          : _pickLocalSltheme,
+                                      icon: const Icon(
+                                        Icons.folder_open_outlined,
+                                        size: 18,
+                                      ),
+                                      label: Text(
+                                        manifest == null ? '选择文件' : '更换文件',
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: _submitting
+                                          ? null
+                                          : _pickFromInstalled,
+                                      icon: const Icon(
+                                        Icons.inventory_2_outlined,
+                                        size: 18,
+                                      ),
+                                      label: const Text('本机已安装'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                        ),
-                      ),
-                    AppCard(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              _manifest == null
-                                  ? '尚未选择 .sltheme 主题包'
-                                  : '当前包：${_manifest!.name} · ${ThemeReviewReasons.formatBytes(_packageBytes?.length ?? 0)}',
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                OutlinedButton.icon(
-                                  onPressed:
-                                      _submitting ? null : _pickLocalSltheme,
-                                  icon: const Icon(Icons.folder_open_outlined),
-                                  label: const Text('选择 .sltheme 文件'),
+                          _SubmitSection(
+                            title: '基本信息',
+                            children: [
+                              TextField(
+                                key: const ValueKey('theme-submit-name'),
+                                controller: _nameController,
+                                enabled: !_submitting,
+                                maxLength: 20,
+                                decoration: const InputDecoration(
+                                  labelText: '主题名称',
+                                  hintText: '1–20 字',
                                 ),
-                                OutlinedButton.icon(
-                                  onPressed:
-                                      _submitting ? null : _pickFromInstalled,
-                                  icon: const Icon(Icons.inventory_2_outlined),
-                                  label: const Text('从本机已安装选择'),
+                              ),
+                              const SizedBox(height: 6),
+                              TextField(
+                                key: const ValueKey('theme-submit-description'),
+                                controller: _descController,
+                                enabled: !_submitting,
+                                maxLength: 200,
+                                minLines: 3,
+                                maxLines: 5,
+                                decoration: const InputDecoration(
+                                  labelText: '主题简介',
+                                  hintText: '说明风格与适用场景，不要填写外链或联系方式',
+                                  alignLabelWithHint: true,
+                                ),
+                              ),
+                            ],
+                          ),
+                          _SubmitSection(
+                            title: '发布设置',
+                            children: [
+                              DropdownButtonFormField<String>(
+                                initialValue: _license,
+                                isExpanded: true,
+                                decoration:
+                                    const InputDecoration(labelText: '素材许可'),
+                                items: [
+                                  for (final (value, label) in _licenses)
+                                    DropdownMenuItem(
+                                      value: value,
+                                      child: Text(
+                                        label,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                ],
+                                onChanged: _submitting
+                                    ? null
+                                    : (val) {
+                                        if (val == null || val == _license) {
+                                          return;
+                                        }
+                                        setState(() {
+                                          _license = val;
+                                          _regenerateIdempotencyKey();
+                                        });
+                                      },
+                              ),
+                              const SizedBox(height: 14),
+                              DropdownButtonFormField<String?>(
+                                key: const ValueKey(
+                                    'theme-submit-family-dropdown'),
+                                initialValue: _selectedFamilyId,
+                                isExpanded: true,
+                                decoration: InputDecoration(
+                                  labelText: _loadingFamilies
+                                      ? '版本归属（加载中…）'
+                                      : '版本归属',
+                                ),
+                                items: [
+                                  const DropdownMenuItem<String?>(
+                                    value: null,
+                                    child: Text('作为全新作品发布（v1）'),
+                                  ),
+                                  for (final fam in _updatableFamilies)
+                                    DropdownMenuItem<String?>(
+                                      value: fam.familyId,
+                                      child: Text(
+                                        '《${fam.name}》的新版本（当前 v${fam.version}）',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                ],
+                                onChanged: _submitting
+                                    ? null
+                                    : (val) {
+                                        if (val == _selectedFamilyId) return;
+                                        setState(() {
+                                          _selectedFamilyId = val;
+                                          _regenerateIdempotencyKey();
+                                        });
+                                      },
+                              ),
+                              if (isAdmin) ...[
+                                const SizedBox(height: 6),
+                                SwitchListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: const Text(
+                                    '作为官方主题发布',
+                                    style: TextStyle(fontSize: 15),
+                                  ),
+                                  subtitle: Text(
+                                    '仅管理员可用，进入商城“官方主题”专区',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: tokens.textSecondary,
+                                    ),
+                                  ),
+                                  value: _officialSource,
+                                  onChanged: _submitting
+                                      ? null
+                                      : (val) => setState(() {
+                                            _officialSource = val;
+                                            _regenerateIdempotencyKey();
+                                          }),
                                 ),
                               ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    AppCard(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                          TextField(
-                            key: const ValueKey('theme-submit-name'),
-                            controller: _nameController,
-                            enabled: !_submitting,
-                            maxLength: 20,
-                            decoration: const InputDecoration(
-                              labelText: '主题名称（1–20 字）',
-                            ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            key: const ValueKey('theme-submit-description'),
-                            controller: _descController,
-                            enabled: !_submitting,
-                            maxLength: 200,
-                            maxLines: 3,
-                            decoration: const InputDecoration(
-                              labelText: '主题简介（说明风格与适用场景，禁填外链/联系方式）',
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          DropdownButtonFormField<String>(
-                            initialValue: _license,
-                            decoration: const InputDecoration(labelText: '素材许可'),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'CC0-1.0',
-                                child: Text('CC0-1.0（公共领域贡献）'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'CC-BY-4.0',
-                                child: Text('CC-BY-4.0（署名共享）'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'CC-BY-NC-4.0',
-                                child: Text('CC-BY-NC-4.0（署名-非商业）'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'personal-use',
-                                child: Text('personal-use（仅供用户本机使用）'),
+                          _SubmitSection(
+                            title: '标签',
+                            trailing: '已选 ${_selectedTags.length}/5',
+                            children: [
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  for (final tag
+                                      in ThemeReviewReasons.allowedTags)
+                                    FilterChip(
+                                      label: Text(tag),
+                                      selected: _selectedTags.contains(tag),
+                                      onSelected: _submitting ||
+                                              (tagsFull &&
+                                                  !_selectedTags.contains(tag))
+                                          ? null
+                                          : (sel) {
+                                              setState(() {
+                                                if (sel) {
+                                                  _selectedTags.add(tag);
+                                                } else {
+                                                  _selectedTags.remove(tag);
+                                                }
+                                                _regenerateIdempotencyKey();
+                                              });
+                                            },
+                                    ),
+                                ],
                               ),
                             ],
-                            onChanged: _submitting
-                                ? null
-                                : (val) {
-                                    if (val == null || val == _license) return;
-                                    setState(() {
-                                      _license = val;
-                                      _regenerateIdempotencyKey();
-                                    });
-                                  },
                           ),
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<String?>(
-                            key: const ValueKey('theme-submit-family-dropdown'),
-                            initialValue: _selectedFamilyId,
-                            decoration: InputDecoration(
-                              labelText: _loadingFamilies
-                                  ? '版本归属（加载中…）'
-                                  : '版本归属',
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: _rightsConfirmed
+                                  ? colors.primaryContainer
+                                      .withValues(alpha: .45)
+                                  : tokens.surfaceMuted,
+                              borderRadius: BorderRadius.circular(AppRadius.md),
                             ),
-                            items: [
-                              const DropdownMenuItem<String?>(
-                                value: null,
-                                child: Text('作为全新作品发布（v1）'),
+                            child: CheckboxListTile(
+                              key: const ValueKey(
+                                  'theme-submit-rights-checkbox'),
+                              controlAffinity: ListTileControlAffinity.leading,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 6),
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(AppRadius.md),
                               ),
-                              for (final fam in _updatableFamilies)
-                                DropdownMenuItem<String?>(
-                                  value: fam.familyId,
-                                  child: Text(
-                                    '作为《${fam.name}》的新版本（当前 v${fam.version}）',
-                                  ),
-                                ),
-                            ],
-                            onChanged: _submitting
-                                ? null
-                                : (val) {
-                                    if (val == _selectedFamilyId) return;
-                                    setState(() {
-                                      _selectedFamilyId = val;
-                                      _regenerateIdempotencyKey();
-                                    });
-                                  },
-                          ),
-                          if (isAdmin) ...[
-                            const SizedBox(height: 8),
-                            SwitchListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: const Text('作为官方主题发布 (official)'),
-                              subtitle: const Text('仅管理员可用，进入商城“官方主题”专区'),
-                              value: _officialSource,
+                              value: _rightsConfirmed,
                               onChanged: _submitting
                                   ? null
-                                  : (val) => setState(() {
-                                        _officialSource = val;
-                                        _regenerateIdempotencyKey();
-                                      }),
-                            ),
-                          ],
-                          const SizedBox(height: 12),
-                          const Text(
-                            '标签（最多选择 5 个）',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: [
-                              for (final tag in ThemeReviewReasons.allowedTags)
-                                FilterChip(
-                                  label: Text(tag),
-                                  selected: _selectedTags.contains(tag),
-                                  onSelected: _submitting
-                                      ? null
-                                      : (sel) {
-                                          setState(() {
-                                            if (sel) {
-                                              if (_selectedTags.length < 5) {
-                                                _selectedTags.add(tag);
-                                                _regenerateIdempotencyKey();
-                                              }
-                                            } else {
-                                              _selectedTags.remove(tag);
-                                              _regenerateIdempotencyKey();
-                                            }
-                                          });
-                                        },
+                                  : (val) => setState(
+                                        () => _rightsConfirmed = val ?? false,
+                                      ),
+                              title: const Text(
+                                '我拥有全部素材的使用权',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
                                 ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          CheckboxListTile(
-                            key: const ValueKey('theme-submit-rights-checkbox'),
-                            contentPadding: EdgeInsets.zero,
-                            controlAffinity: ListTileControlAffinity.leading,
-                            value: _rightsConfirmed,
-                            onChanged: _submitting
-                                ? null
-                                : (val) => setState(
-                                      () => _rightsConfirmed = val ?? false,
-                                    ),
-                            title: const Text('我拥有全部素材的使用权'),
-                            subtitle: const Text(
-                              '确认壁纸、贴纸、图标与字体均符合授权要求，不含未授权商业插画或他人隐私信息',
+                              ),
+                              subtitle: Text(
+                                '壁纸、贴纸、图标与字体均符合授权要求，不含未授权商业插画或他人隐私信息',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.4,
+                                  color: tokens.textSecondary,
+                                ),
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          FilledButton(
-                            key: const ValueKey('theme-submit-button'),
-                            onPressed: _canSubmit ? _submit : null,
-                            child: Text(_submitting ? '正在上传…' : '提交审核'),
-                          ),
-                          ],
-                        ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
+                _buildSubmitBar(tokens),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildSubmitBar(AppThemeTokens tokens) {
+    final colors = Theme.of(context).colorScheme;
+    final total = _uploadTotal;
+    final uploaded = total > 0 && _uploadSent >= total;
+    final progress = total > 0 && !uploaded ? _uploadSent / total : null;
+    final String status;
+    if (uploaded) {
+      status = '上传完成，正在校验主题包…';
+    } else if (progress != null) {
+      status = '正在上传 ${(progress * 100).floor()}%';
+    } else {
+      status = '正在准备上传…';
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border(top: BorderSide(color: tokens.divider)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_errorMessage != null)
+                    Container(
+                      key: const ValueKey('theme-submit-error-banner'),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: colors.errorContainer,
+                        borderRadius:
+                            BorderRadius.circular(AppRadius.md),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 18,
+                            color: colors.onErrorContainer,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _errorMessage!,
+                              style: TextStyle(
+                                fontSize: 13,
+                                height: 1.4,
+                                color: colors.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_submitting) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            status,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (progress != null)
+                          Text(
+                            '${ThemeReviewReasons.formatBytes(_uploadSent)} / ${ThemeReviewReasons.formatBytes(total)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: tokens.textSecondary,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                      child: LinearProgressIndicator(
+                        key: const ValueKey('theme-submit-progress'),
+                        value: progress,
+                        minHeight: 6,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  Row(
+                    children: [
+                      // 服务器已收齐数据后再取消也无法撤回本次投稿，只在上传阶段提供。
+                      if (_submitting && !uploaded) ...[
+                        OutlinedButton(
+                          key: const ValueKey('theme-submit-cancel'),
+                          onPressed: () => _submitToken?.cancel('用户取消上传'),
+                          child: const Text('取消'),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                      Expanded(
+                        child: FilledButton(
+                          key: const ValueKey('theme-submit-button'),
+                          onPressed: _canSubmit ? _submit : null,
+                          child: Text(_submitting ? '上传中…' : '提交审核'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SubmitSection extends StatelessWidget {
+  const _SubmitSection({
+    required this.title,
+    required this.children,
+    this.trailing,
+  });
+
+  final String title;
+  final String? trailing;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AppCard(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: tokens.textSecondary,
+                      ),
+                    ),
+                  ),
+                  if (trailing != null)
+                    Text(
+                      trailing!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: tokens.textTertiary,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...children,
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

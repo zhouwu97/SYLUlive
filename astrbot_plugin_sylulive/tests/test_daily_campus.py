@@ -70,7 +70,7 @@ async def test_checkin_never_inherits_private_binding_in_group_or_other_sender(
     plugin.config["allow_checkin"] = True
     plugin.client = SimpleNamespace(tokens={"scope": "checkin:write"}, call=AsyncMock())
     result = await plugin.checkin_result(event, submit=True)
-    assert ("尚未授权" if sender == "member" else "本人") in result
+    assert ("没有保存你的 SYLUlive 账号连接凭据" if sender == "member" else "本人") in result
     plugin.client.call.assert_not_called()
     assert "sylulive_checkin_status" not in PUBLIC_GROUP_TOOLS
 

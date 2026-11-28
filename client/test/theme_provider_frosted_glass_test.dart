@@ -32,17 +32,18 @@ void main() {
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
   tearDown(() => AppPreferencesStore.setCustomInstance(null));
 
-  test('新刻度线性映射 0% 到 75%、50% 到 87.5%、100% 到实色并跨重启恢复', () async {
+  test('不透明度百分比对应实际底色，支持全透明并跨重启恢复', () async {
     final theme = ThemeProvider(loadOnStart: false);
     addTearDown(theme.dispose);
     await theme.setBackgroundImage('morenbeijing.jpeg');
     final prefs = await AppPreferencesStore.getInstance();
     for (final (level, opacity) in [
-      (-1.0, .75),
-      (0.0, .75),
-      (.25, .8125),
-      (.5, .875),
-      (.75, .9375),
+      (-1.0, 0.0),
+      (0.0, 0.0),
+      (.25, .25),
+      (.42, .42),
+      (.5, .5),
+      (.75, .75),
       (1.0, 1.0),
       (2.0, 1.0),
     ]) {
@@ -65,10 +66,10 @@ void main() {
   });
 
   for (final (stored, level) in [
-    (.1, 0.0),
-    (.75, 0.0),
-    (.875, .5),
-    (.95, .8),
+    (.1, .1),
+    (.75, .75),
+    (.875, .875),
+    (.95, .95),
     (1.0, 1.0),
     (-.1, 0.0),
     (1.2, 1.0),
@@ -88,12 +89,12 @@ void main() {
       addTearDown(syncTheme.dispose);
       for (final theme in [asyncTheme, syncTheme]) {
         expect(theme.componentOpacityLevel, closeTo(level, 1e-12));
-        expect(theme.effectiveComponentOpacity, closeTo(.75 + .25 * level, 1e-12));
+        expect(theme.effectiveComponentOpacity, closeTo(level, 1e-12));
       }
     });
   }
 
-  test('历史低不透明度对应新的最低档，切换背景和重启保留偏好', () async {
+  test('历史实际不透明度不变，切换背景和重启保留偏好', () async {
     AppPreferencesStore.setMockInitialValues({
       'background_mode': 'custom',
       'background_image': 'morenbeijing.jpeg',
@@ -103,21 +104,21 @@ void main() {
     final theme = ThemeProvider();
     addTearDown(theme.dispose);
     expect(theme.componentOpacity, .1);
-    expect(theme.effectiveComponentOpacity, .75);
+    expect(theme.effectiveComponentOpacity, .1);
     for (final glass in [true, false]) {
       await theme.setFrostedGlass(glass);
-      expect(theme.effectiveComponentOpacity, .75);
+      expect(theme.effectiveComponentOpacity, .1);
     }
     await theme.setCleanBackgroundMode();
     expect(theme.effectiveComponentOpacity, 1);
     await theme.trySetCustomBackgroundMode();
-    expect(theme.effectiveComponentOpacity, .75);
+    expect(theme.effectiveComponentOpacity, .1);
     expect(await theme.setComponentOpacity(.2), isTrue);
     final restored = ThemeProvider(loadOnStart: false);
     addTearDown(restored.dispose);
     await restored.loadThemeForTesting();
     expect(restored.componentOpacity, .2);
-    expect(restored.effectiveComponentOpacity, .75);
+    expect(restored.effectiveComponentOpacity, .2);
     final prefs = await AppPreferencesStore.getInstance();
     expect(prefs.getDouble('background_transparency'), .2);
   });
@@ -237,8 +238,8 @@ void main() {
     await theme.setBackgroundImage('morenbeijing.jpeg');
     for (final (mode, level, expected, strength) in [
       (FrostedGlassPerformanceMode.off, 1.0, 1.0, 0.0),
-      (FrostedGlassPerformanceMode.highPerformance, .75, .9375, .35),
-      (FrostedGlassPerformanceMode.highQuality, 0.0, .75, 1.0),
+      (FrostedGlassPerformanceMode.highPerformance, .75, .75, .35),
+      (FrostedGlassPerformanceMode.highQuality, 0.0, 0.0, 1.0),
     ]) {
       await theme.setComponentOpacity(.43);
       store.opacityWrites.clear();
@@ -270,7 +271,7 @@ void main() {
     await freshTheme
         .setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode.custom);
     expect(freshTheme.componentOpacityLevel, closeTo(.65, 1e-6));
-    expect(freshTheme.componentOpacity, closeTo(.9125, 1e-12));
+    expect(freshTheme.componentOpacity, closeTo(.65, 1e-12));
     expect(freshTheme.frostedGlassStrength, .65);
 
     await freshTheme.setComponentOpacityLevel(.5);
@@ -280,7 +281,7 @@ void main() {
     await freshTheme
         .setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode.custom);
     expect(freshTheme.componentOpacityLevel, .5);
-    expect(freshTheme.componentOpacity, .875);
+    expect(freshTheme.componentOpacity, .5);
     expect(freshTheme.frostedGlassStrength, .65);
 
     await theme.setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode.off);
@@ -301,13 +302,13 @@ void main() {
     final preset = theme.setFrostedGlassPerformanceMode(
         FrostedGlassPerformanceMode.highPerformance);
     final manual = theme.setComponentOpacityLevel(.46);
-    expect(theme.componentOpacity, .865);
+    expect(theme.componentOpacity, .46);
     expect(theme.frostedGlassPerformanceMode, FrostedGlassPerformanceMode.custom);
     await Future<void>.delayed(Duration.zero);
     store.writes.single.$2.complete(true);
     expect(await preset, isTrue);
     expect(await manual, isTrue);
-    expect(store.getDouble('background_transparency'), .865);
+    expect(store.getDouble('background_transparency'), .46);
     expect(store.getDouble('frosted_glass_strength'), .35);
     expect(theme.frostedGlassPerformanceMode, FrostedGlassPerformanceMode.custom);
   });
@@ -337,7 +338,7 @@ void main() {
       await restored.loadThemeForTesting();
       expect(restored.frostedGlassPerformanceMode,
           FrostedGlassPerformanceMode.custom);
-      expect(restored.componentOpacity, .865);
+      expect(restored.componentOpacity, .46);
       expect(restored.frostedGlassStrength, strength);
       expect(restored.frostedGlass, enabled);
 
@@ -452,19 +453,19 @@ void main() {
     expect(theme.frostedGlassStrength, 0);
     expect(theme.frostedGlass, isFalse);
     expect(theme.frostedGlassPerformanceMode, FrostedGlassPerformanceMode.custom);
-    expect(theme.componentOpacity, .8575);
+    expect(theme.componentOpacity, .43);
     final restored = ThemeProvider(loadOnStart: false);
     addTearDown(restored.dispose);
     await restored.loadThemeForTesting();
     expect(restored.frostedGlass, isFalse);
     expect(
         restored.frostedGlassPerformanceMode, FrostedGlassPerformanceMode.custom);
-    expect(restored.componentOpacity, .8575);
+    expect(restored.componentOpacity, .43);
     await restored.setFrostedGlassStrength(.35);
     expect(restored.frostedGlassPerformanceMode,
         FrostedGlassPerformanceMode.custom);
     expect(restored.frostedGlass, isTrue);
-    expect(restored.componentOpacity, .8575);
+    expect(restored.componentOpacity, .43);
   });
 
   test('旧零强度自定义记录在同步和异步加载后均匹配关闭', () async {

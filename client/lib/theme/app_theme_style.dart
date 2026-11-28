@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
+import '../features/theme_pack/theme_presentation.dart';
+
 /// 主题视觉 V2 的附加参数：识别色协调、区块记号、状态插画和标题字体。
 ///
 /// 默认值全部为"不生效"，没有应用主题时外观与原来完全一致。
@@ -36,7 +38,7 @@ class AppThemeStyle extends ThemeExtension<AppThemeStyle> {
   final String? errorIllustration;
   final String? titleFontFamily;
 
-  /// 卡片角饰，键为 postCard／campusHeader／campusNotice／campusServices。
+  /// 卡片角饰，键为 postCard／campusHeader／campusNotice／campusServices／fab。
   final Map<String, ThemeOrnamentSpec> ornaments;
 
   /// 校园服务图标的本地图片路径，键为 edu／canteen／ranking／team／map／calendar。
@@ -78,7 +80,10 @@ class AppThemeStyle extends ThemeExtension<AppThemeStyle> {
 
   /// 主题为 [key] 提供的服务／工具图标；没有时返回 null，调用方用原 Icon。
   Widget? serviceIcon(BuildContext context, String? key, {double size = 40}) {
-    final provider = imageFor(serviceIcons[key]);
+    final path = serviceIcons[key];
+    final provider = path == null ? null :
+        ThemePresentationOverride.maybeOf(context)?.assetResolver?.call(path) ??
+            imageFor(path);
     if (provider == null) return null;
     return Image(
       key: ValueKey('theme-service-icon-$key'),
@@ -237,8 +242,10 @@ class ThemeOrnamented extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = AppThemeStyle.of(context);
     final spec = style.ornaments[slot];
-    final provider = style.imageFor(spec?.image);
-    if (spec == null || provider == null) return child;
+    if (spec == null) return child;
+    final provider = ThemePresentationOverride.maybeOf(context)
+            ?.assetResolver?.call(spec.image) ?? style.imageFor(spec.image);
+    if (provider == null) return child;
     final top = spec.corner.startsWith('top');
     final left = spec.corner.endsWith('Left');
     final art = Image(

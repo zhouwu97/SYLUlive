@@ -38,6 +38,10 @@ class FloatingBottomNav extends StatelessWidget {
               direction: axis,
               children: List.generate(5, (i) {
                 final selected = currentIndex == i;
+                final images = themeImages[i];
+                final artworkOnly = originalIcons && images != null;
+                final iconSize =
+                    artworkOnly ? originalThemeNavigationIconSize : 24.0;
                 final color =
                     selected ? tokens.navSelected : tokens.navUnselected;
                 return Expanded(
@@ -77,27 +81,28 @@ class FloatingBottomNav extends StatelessWidget {
                                   children: [
                                 Badge(
                                     isLabelVisible: badges[i] == true,
-                                    child: themeImages[i] == null
+                                    child: images == null
                                         ? Icon(LiquidBottomNav.icons[i],
-                                            color: color, size: 24)
+                                            color: color, size: iconSize)
                                         : Image(
-                                            image: selected
-                                                ? themeImages[i]!.$2
-                                                : themeImages[i]!.$1,
-                                            width: 24,
-                                            height: 24,
+                                            image:
+                                                selected ? images.$2 : images.$1,
+                                            width: iconSize,
+                                            height: iconSize,
                                             fit: BoxFit.contain,
                                             color: originalIcons ? null : color,
                                             colorBlendMode: BlendMode.srcIn,
                                             errorBuilder: (_, __, ___) => Icon(
                                                 Icons.broken_image_outlined,
                                                 color: color,
-                                                size: 24))),
-                                const SizedBox(height: 3),
-                                Text(LiquidBottomNav.labels[i],
-                                    maxLines: 1,
-                                    style:
-                                        TextStyle(fontSize: 11, color: color)),
+                                                size: iconSize))),
+                                if (!artworkOnly) ...[
+                                  const SizedBox(height: 3),
+                                  Text(LiquidBottomNav.labels[i],
+                                      maxLines: 1,
+                                      style: TextStyle(
+                                          fontSize: 11, color: color)),
+                                ],
                               ])),
                         ),
                       ),

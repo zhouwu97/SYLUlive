@@ -66,17 +66,22 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
 /// 二级路由覆盖全局壳时必须自行绘制背景；集中实现可避免不同页面的
 /// 模糊半径、明暗遮罩与横竖屏回退出现漂移。
 class CustomBackgroundLayer extends StatelessWidget {
-  const CustomBackgroundLayer({super.key, this.canvasSize});
+  const CustomBackgroundLayer({
+    super.key,
+    this.canvasSize,
+    this.scheduleLeftInset = 0,
+  });
 
   /// 首页在 Scaffold 调整键盘避让前传入窗口尺寸，壁纸不随内容区收缩重裁切。
   final Size? canvasSize;
+  final double scheduleLeftInset;
 
   @override
   Widget build(BuildContext context) {
     if (SharedPageBackground.of(context)) return const SizedBox.expand();
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final layer = themeProvider.usesThemeWallpapers
+    final wallpaper = themeProvider.usesThemeWallpapers
         ? ThemedWallpaperLayer(
             settings: themeProvider.themeWallpaperFor(
                 secondary: ModalRoute.of(context)?.isFirst == false),
@@ -86,6 +91,15 @@ class CustomBackgroundLayer extends StatelessWidget {
         : themeProvider.hasThemeColors
             ? ColoredBox(color: AppThemeTokens.of(context).background)
             : _buildCleanBackground(isDark);
+    final layer = scheduleLeftInset > 0 && themeProvider.usesThemeWallpapers
+        ? ColoredBox(
+            color: AppThemeTokens.of(context).background,
+            child: Padding(
+              padding: EdgeInsets.only(left: scheduleLeftInset),
+              child: wallpaper,
+            ),
+          )
+        : wallpaper;
     final canvas = canvasSize;
     if (canvas == null) return layer;
     // 主壳一次性预解码各页签壁纸、二级页壁纸和沉浸页头图，切页时首帧即可画出。

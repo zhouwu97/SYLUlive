@@ -27,6 +27,9 @@ void main() {
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
 
   testWidgets('后台标签预取失败可延迟展示并重试，没有未处理异常', (tester) async {
+    const systemNavigationHeight = 40.0;
+    tester.view.padding = const FakeViewPadding(bottom: systemNavigationHeight);
+    addTearDown(tester.view.resetPadding);
     var fail = true;
     var lotteryRequests = 0;
     final dio = Dio();
@@ -61,6 +64,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(lotteryRequests, 2);
     expect(find.text('重新加载'), findsNothing);
+    final publishButton = find.byType(FloatingActionButton);
+    final systemNavigationTop =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio -
+            systemNavigationHeight / tester.view.devicePixelRatio;
+    expect(tester.getRect(publishButton).bottom, lessThan(systemNavigationTop));
     expect(tester.takeException(), isNull);
   });
 

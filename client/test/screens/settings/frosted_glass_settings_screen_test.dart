@@ -79,7 +79,7 @@ void main() {
     await _choose(tester, '高性能');
     expect(theme.frostedGlass, isTrue);
     expect(theme.frostedGlassStrength, .35);
-    expect(theme.componentOpacity, .9375);
+    expect(theme.componentOpacity, .75);
     expect(tester.widget<Slider>(_slider('card-opacity')).value, .75);
     expect(tester.widget<Slider>(_slider('card-opacity')).onChanged, isNotNull);
     await tester.ensureVisible(_slider('card-opacity'));
@@ -88,7 +88,7 @@ void main() {
     await tester.pumpAndSettle();
     final opacity = theme.componentOpacity;
     final opacityLevel = theme.componentOpacityLevel;
-    expect(opacity, greaterThan(.75));
+    expect(opacity, opacityLevel);
     expect(
         theme.frostedGlassPerformanceMode, FrostedGlassPerformanceMode.custom);
     expect(
@@ -103,7 +103,7 @@ void main() {
         theme.frostedGlassPerformanceMode, FrostedGlassPerformanceMode.custom);
     await _choose(tester, '高画质');
     expect(theme.frostedGlassStrength, 1);
-    expect(theme.componentOpacity, .75);
+    expect(theme.componentOpacity, 0);
     expect(tester.widget<Slider>(_slider('card-opacity')).value, 0);
     await _choose(tester, '自定义');
     expect(theme.frostedGlassStrength, .62);
@@ -156,7 +156,7 @@ void main() {
     for (final opacity in [.4, .8]) {
       tester.widget<Slider>(_slider('card-opacity')).onChanged!(opacity);
       await tester.pumpAndSettle();
-      expect(surface().a, closeTo(.75 + .25 * opacity, .01));
+      expect(surface().a, closeTo(opacity, .01));
       expect(
           theme.frostedGlassPerformanceMode, FrostedGlassPerformanceMode.custom);
       for (final strength in [0.0, .35, 1.0]) {
@@ -164,7 +164,7 @@ void main() {
             .widget<Slider>(_slider('card-blur-strength'))
             .onChanged!(strength);
         await tester.pumpAndSettle();
-        expect(surface().a, closeTo(.75 + .25 * opacity, .01));
+        expect(surface().a, closeTo(opacity, .01));
       }
     }
     await _choose(tester, '关');
@@ -176,7 +176,7 @@ void main() {
     expect(theme.componentOpacity, 1);
     tester.widget<Slider>(_slider('card-opacity')).onChanged!(.45);
     await tester.pumpAndSettle();
-    expect(surface().a, closeTo(.8625, .01));
+    expect(surface().a, closeTo(.45, .01));
     expect(theme.frostedGlass, isFalse);
     expect(
         tester
@@ -189,7 +189,7 @@ void main() {
             (widget) => widget is BackdropFilter && widget.enabled),
         findsNothing);
     await _choose(tester, '高性能');
-    expect(surface().a, closeTo(.9375, .01));
+    expect(surface().a, closeTo(.75, .01));
     expect(theme.frostedGlassStrength, .35);
     expect(tester.takeException(), isNull);
   });
@@ -260,7 +260,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('不透明度未保存'), findsOneWidget);
     expect(find.text('毛玻璃设置未保存'), findsOneWidget);
-    expect(theme.componentOpacity, .8875);
+    expect(theme.componentOpacity, .55);
     expect(theme.frostedGlassStrength, .62);
     expect(theme.frostedGlassPerformanceMode, FrostedGlassPerformanceMode.custom);
     store.failedKeys.remove('frosted_glass_strength');
@@ -270,7 +270,7 @@ void main() {
     store.failedKeys.clear();
     await _choose(tester, '不透明度未保存');
     expect(find.text('不透明度未保存'), findsNothing);
-    expect(store.getDouble('background_transparency'), .8875);
+    expect(store.getDouble('background_transparency'), .55);
     expect(store.getDouble('frosted_glass_strength'), .62);
     expect(theme.frostedGlassPerformanceMode, FrostedGlassPerformanceMode.custom);
     expect(tester.takeException(), isNull);
@@ -357,7 +357,7 @@ void main() {
     store.failedKeys.add('background_transparency');
     await _choose(tester, '自定义');
     expect(theme.componentOpacityLevel, closeTo(.65, 1e-6));
-    expect(theme.componentOpacity, closeTo(.9125, 1e-12));
+    expect(theme.componentOpacity, closeTo(.65, 1e-12));
     expect(theme.frostedGlassStrength, .65);
     expect(find.text('毛玻璃设置未保存'), findsOneWidget);
     tester.widget<Slider>(_slider('card-opacity')).onChanged!(.46);
@@ -367,9 +367,9 @@ void main() {
     expect(find.text('不透明度未保存'), findsOneWidget);
     store.failedKeys.clear();
     await _choose(tester, '毛玻璃设置未保存');
-    expect(theme.componentOpacity, .865);
+    expect(theme.componentOpacity, .46);
     expect(theme.frostedGlassStrength, .6);
-    expect(store.getDouble('background_transparency'), .865);
+    expect(store.getDouble('background_transparency'), .46);
     expect(store.getDouble('frosted_glass_strength'), .6);
     expect(find.text('毛玻璃设置未保存'), findsNothing);
     await _choose(tester, '不透明度未保存');

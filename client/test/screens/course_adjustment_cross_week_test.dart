@@ -11,10 +11,12 @@ import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:shenliyuan/models/schedule/course.dart';
 import 'package:shenliyuan/models/schedule/course_source.dart';
 import 'package:shenliyuan/models/schedule/meeting.dart';
+import 'package:shenliyuan/models/schedule/schedule_override.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/course_schedule_provider.dart';
 import 'package:shenliyuan/screens/schedule/reschedule/course_adjustment_sheet.dart';
 import 'package:shenliyuan/screens/schedule/reschedule/select_weeks_sheet.dart';
+import 'package:shenliyuan/screens/schedule/course_cancellation_sheet.dart';
 import '../helpers/golden_test_app.dart';
 import '../helpers/golden_viewport.dart';
 import '../helpers/load_test_fonts.dart';
@@ -61,7 +63,7 @@ Future<void> _capture(WidgetTester tester, String name) async {
 }
 
 Future<CourseScheduleProvider> _open(WidgetTester tester,
-    {ThemeMode mode = ThemeMode.light, double scale = 1}) async {
+    {ThemeMode mode = ThemeMode.light, double scale = 1, bool deleting = false}) async {
   await setGoldenViewport(tester, GoldenViewports.phone360x800);
   final provider = CourseScheduleProvider();
   addTearDown(provider.dispose);
@@ -69,7 +71,7 @@ Future<CourseScheduleProvider> _open(WidgetTester tester,
   addTearDown(appearance.dispose);
   await appearance.setBackgroundImage('morenbeijing.jpeg');
   await appearance.trySetCustomBackgroundMode();
-  await appearance.setComponentOpacityLevel(0);
+  await appearance.setComponentOpacity(.75);
   await appearance.setFrostedGlass(false);
   provider.setBaseScheduleForTesting([
     Course(
@@ -97,13 +99,18 @@ Future<CourseScheduleProvider> _open(WidgetTester tester,
             textScaler: TextScaler.linear(scale),
             home: Scaffold(
                 body: Builder(
-                    builder: (context) => Center(
-                        child: FilledButton(
-                            onPressed: () => CourseAdjustmentSheet.show(context,
+                    builder: (context) => Center(child: Column(
+                        mainAxisSize: MainAxisSize.min, children: [FilledButton(
+                            onPressed: () => deleting ? CourseCancellationSheet.show(context,
+                                course: _course, provider: provider, currentAcademicWeek: 9)
+                                : CourseAdjustmentSheet.show(context,
                                 course: _course,
                                 provider: provider,
                                 currentAcademicWeek: 9),
-                            child: const Text('调整'))))),
+                            child: const Text('调整')),
+                          TextButton(onPressed: () => CancelledCoursesSheet.show(context, provider: provider),
+                              child: const Text('查看已删除课程')),
+                        ])))),
           ))));
   await tester.tap(find.text('调整'));
   await tester.pumpAndSettle();
@@ -114,7 +121,8 @@ Future<CourseScheduleProvider> _open(WidgetTester tester,
 void _expectOpaqueSheet(WidgetTester tester) {
   final surface = find
       .descendant(
-          of: find.byType(CourseAdjustmentSheet),
+          of: find.byWidgetPredicate((w) => w is CourseAdjustmentSheet ||
+              w is CourseCancellationSheet || w is CancelledCoursesSheet),
           matching: find.byType(AppCardSurface))
       .first;
   final paint = tester
@@ -123,7 +131,7 @@ void _expectOpaqueSheet(WidgetTester tester) {
           .first)
       .decoration as BoxDecoration;
   expect(paint.color!.a, closeTo(0.75, 0.005),
-      reason: '调课各步骤的最低档使用统一的 75% 底色');
+      reason: '调课和删除弹窗保留显式设置的 75% 底色');
 }
 
 Future<void> _toConfirmation(WidgetTester tester, {String? captureName}) async {
@@ -285,5 +293,154 @@ void main() {
                 find.widgetWithText(FilledButton, '下一步：选择目标时间'))
             .onPressed,
         isNull);
+  });
+
+  testWidgets('继续调整保留离散周次，返回后不扩大范围', (tester) async {
+    Set<int>? selected;
+    await tester.pumpWidget(GoldenTestApp(
+        home: Scaffold(body: SelectWeeksSheet(
+      course: _course,
+      currentAcademicWeek: 10,
+      totalTeachingWeeks: 20,
+      sourceWeeks: const {8, 9, 10},
+      initialAffectedWeeks: const {8, 10},
+      onNext: (weeks) => selected = weeks,
+    ))));
+    await tester.tap(find.text('下一步：选择目标时间'));
+    expect(selected, {8, 10});
+  });
+
+  testWidgets('结束周可早于当前周，自动收拢开始周而不报错', (tester) async {
+    Set<int>? selected;
+    await tester.pumpWidget(GoldenTestApp(
+        home: Scaffold(body: SelectWeeksSheet(
+      course: _course,
+      currentAcademicWeek: 9,
+      totalTeachingWeeks: 20,
+      onNext: (weeks) => selected = weeks,
+    ))));
+    await tester.tap(find.byType(DropdownButton<int>).last);
+    await tester.pumpAndSettle();
+    expect(find.text('第 8 周').hitTestable(), findsOneWidget);
+    await tester.tap(find.text('第 8 周').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步：选择目标时间'));
+    expect(selected, {8});
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final profile in [
+    ('light', ThemeMode.light, 1.0),
+    ('dark', ThemeMode.dark, 1.0),
+    ('large', ThemeMode.dark, 1.5),
+  ]) {
+    testWidgets('本地删除单周、查看记录并恢复 ${profile.$1}', (tester) async {
+      final provider = await _open(tester, deleting: true, mode: profile.$2, scale: profile.$3);
+      expect(find.text('第 9 周（共 1 周）'), findsOneWidget);
+      await _capture(tester, 'cancel-${profile.$1}');
+      await tester.ensureVisible(find.text('删除所选周次'));
+      await tester.tap(find.text('删除所选周次'));
+      await tester.pumpAndSettle();
+      expect(provider.courses.single.weeks, [8, 10]);
+      await tester.tap(find.text('查看已删除课程'));
+      await tester.pumpAndSettle();
+      _expectOpaqueSheet(tester);
+      await _capture(tester, 'cancelled-list-${profile.$1}');
+      await tester.ensureVisible(find.text('恢复教务原安排'));
+      await tester.tap(find.text('恢复教务原安排'));
+      await tester.pumpAndSettle();
+      expect(find.text('暂无本地删除记录'), findsOneWidget);
+      expect(provider.courses.single.weeks, [8, 9, 10]);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('删除中禁止重复操作，失败保留周次并可重试', (tester) async {
+    final preferences = _ControlledPreferences()..pending = Completer<bool>();
+    AppPreferencesStore.setCustomInstance(preferences);
+    final provider = await _open(tester, deleting: true);
+    await tester.tap(find.text('删除所选周次'));
+    await tester.pump();
+    expect(find.text('正在删除…'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '正在删除…')).onPressed, isNull);
+    expect(preferences.writes, 1);
+    preferences.pending!.complete(false);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('删除失败，请重试'), findsOneWidget);
+    expect(find.text('第 9 周（共 1 周）'), findsOneWidget);
+    await _capture(tester, 'cancel-save-error');
+    preferences.pending = null;
+    await tester.tap(find.text('删除所选周次'));
+    await tester.pumpAndSettle();
+    expect(provider.courses.single.weeks, [8, 10]);
+  });
+
+  testWidgets('删除弹窗打开后切换会话，拒绝旧草稿', (tester) async {
+    final provider = await _open(tester, deleting: true);
+    provider.clearAllUserState();
+    await tester.tap(find.text('删除所选周次'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('账号或学期已切换'), findsOneWidget);
+    expect(provider.overrides, isEmpty);
+  });
+
+  testWidgets('学校安排变化后的删除记录必须重新确认', (tester) async {
+    final provider = await _open(tester, deleting: true);
+    await tester.tap(find.text('删除所选周次'));
+    await tester.pumpAndSettle();
+    await provider.updateExistingOverride(updated: provider.overrides.single.copyWith(
+        status: ScheduleOverrideStatus.needsReview));
+    await tester.tap(find.text('查看已删除课程'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('此删除暂未生效'), findsOneWidget);
+    await tester.tap(find.text('重新确认删除'));
+    await tester.pumpAndSettle();
+    expect(find.text('重新确认删除'), findsNothing);
+    expect(provider.overrides.single.isActive, isTrue);
+  });
+
+  testWidgets('删除跨周调课按屏幕周次选择，恢复失败后记录仍可重试', (tester) async {
+    final preferences = _ControlledPreferences();
+    AppPreferencesStore.setCustomInstance(preferences);
+    final provider = CourseScheduleProvider();
+    addTearDown(provider.dispose);
+    const meeting = Meeting(meetingKey: 'meeting', weekday: 1,
+        startSection: 5, endSection: 6, weeks: {8, 9, 10});
+    provider.setBaseScheduleForTesting([Course(courseKey: 'course',
+        semesterId: provider.currentTerm.id, source: CourseSource.edu,
+        name: _course.name, meetings: const [meeting])]);
+    final original = await provider.createRescheduleOverride(courseKey: 'course',
+        meetingKey: 'meeting', affectedWeeks: {8, 9, 10}, weekOffset: 4,
+        toWeekday: 4, toStartSection: 5, toEndSection: 6,
+        sourceSnapshotHash: meeting.computeSnapshotHash());
+    await tester.pumpWidget(GoldenTestApp(
+      home: Scaffold(body: Builder(builder: (context) => TextButton(
+        onPressed: () => CourseCancellationSheet.show(context,
+            course: provider.courses.single, provider: provider,
+            currentAcademicWeek: 13, existingOverride: original),
+        child: const Text('打开删除'),
+      ))),
+    ));
+    await tester.tap(find.text('打开删除'));
+    await tester.pumpAndSettle();
+    expect(find.text('第 13 周（共 1 周）'), findsOneWidget);
+    await tester.tap(find.text('删除所选周次'));
+    await tester.pumpAndSettle();
+    expect(provider.courses.single.weeks, [12, 14]);
+    await tester.pumpWidget(ChangeNotifierProvider.value(value: provider,
+        child: const GoldenTestApp(home: Scaffold(body: CancelledCoursesSheet()))));
+    await tester.pumpAndSettle();
+    expect(find.text('已删除：第13周'), findsOneWidget);
+    preferences.pending = Completer<bool>();
+    await tester.tap(find.text('恢复教务原安排'));
+    await tester.pump();
+    preferences.pending!.complete(false);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('操作失败，请重试'), findsOneWidget);
+    preferences.pending = null;
+    await tester.tap(find.text('恢复教务原安排'));
+    await tester.pumpAndSettle();
+    expect(provider.courses.where((c) => !c.isOverridden).single.weeks, [9]);
+    expect(provider.courses.where((c) => c.isOverridden).single.weeks, [12, 14]);
   });
 }

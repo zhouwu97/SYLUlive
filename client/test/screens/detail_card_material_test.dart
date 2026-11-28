@@ -74,7 +74,7 @@ void main() {
         addTearDown(theme.dispose);
         await theme.setBackgroundImage('morenbeijing.jpeg');
         if (profile == 'clean') await theme.setCleanBackgroundMode();
-        await theme.setComponentOpacityLevel(0);
+        await theme.setComponentOpacity(.75);
         theme.setSurfacesHidden(true);
         final capture = GlobalKey();
         await tester.pumpWidget(ChangeNotifierProvider<ThemeProvider>.value(
@@ -151,7 +151,7 @@ void main() {
         }
         expect(tester.getRect(surface), rect, reason: '底色变化不能移动评论、改变内容宽度或滚动位置');
 
-        await theme.setComponentOpacityLevel(.6);
+        await theme.setComponentOpacity(.9);
         await tester.pumpAndSettle();
         final translucent = await _frame(tester, capture, null);
         _expectColor(

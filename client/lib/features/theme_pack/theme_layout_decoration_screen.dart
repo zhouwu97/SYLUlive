@@ -246,10 +246,12 @@ class ThemeHeaderLayoutEditor extends StatelessWidget {
     super.key,
     required this.slotLabel,
     required this.rawLayout,
+    required this.decorated,
     required this.onChanged,
   });
 
   final String slotLabel;
+  final bool decorated;
   final Map<String, dynamic>? rawLayout;
   final ValueChanged<Map<String, dynamic>?> onChanged;
 
@@ -277,29 +279,30 @@ class ThemeHeaderLayoutEditor extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final item in const [
-              ('standard', '标准'),
-              ('compact', '紧凑'),
-              ('immersive', '沉浸'),
-            ])
-              ChoiceChip(
-                label: Text(item.$2),
-                selected: rawLayout != null && spec.preset == item.$1,
-                onSelected: (_) => emit(
-                  ThemeHeaderLayoutSpec(
-                    preset: item.$1,
-                    alignment: spec.alignment,
-                    imageHeight: spec.imageHeight,
-                    imageWidth: spec.imageWidth,
+        if (decorated)
+          const Text('沉浸页头')
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final item in const [
+                ('standard', '标准'),
+                ('compact', '紧凑'),
+              ])
+                ChoiceChip(
+                  label: Text(item.$2),
+                  selected: spec.preset == item.$1,
+                  onSelected: (_) => emit(
+                    ThemeHeaderLayoutSpec(
+                      preset: item.$1,
+                      alignment: spec.alignment,
+                      imageHeight: spec.imageHeight,
+                    ),
                   ),
                 ),
-              ),
-          ],
-        ),
+            ],
+          ),
         const SizedBox(height: 10),
         const Text('信息区对齐'),
         const SizedBox(height: 6),
@@ -320,40 +323,25 @@ class ThemeHeaderLayoutEditor extends StatelessWidget {
                     preset: spec.preset,
                     alignment: item.$1,
                     imageHeight: spec.imageHeight,
-                    imageWidth: spec.imageWidth,
                   ),
                 ),
               ),
           ],
         ),
-        _LabeledSlider(
-          label: '装饰区高度 ${spec.imageHeight.round()} dp',
-          value: spec.imageHeight,
-          min: 96,
-          max: 280,
-          onChanged: (v) => emit(
-            ThemeHeaderLayoutSpec(
-              preset: spec.preset,
-              alignment: spec.alignment,
-              imageHeight: v.roundToDouble(),
-              imageWidth: spec.imageWidth,
+        if (decorated)
+          _LabeledSlider(
+            label: '页头高度 ${spec.imageHeight.round()} dp',
+            value: spec.imageHeight,
+            min: 96,
+            max: 280,
+            onChanged: (v) => emit(
+              ThemeHeaderLayoutSpec(
+                preset: spec.preset,
+                alignment: spec.alignment,
+                imageHeight: v.roundToDouble(),
+              ),
             ),
           ),
-        ),
-        _LabeledSlider(
-          label: '装饰区宽度 ${(spec.imageWidth * 100).round()}%',
-          value: spec.imageWidth,
-          min: 0.45,
-          max: 1.0,
-          onChanged: (v) => emit(
-            ThemeHeaderLayoutSpec(
-              preset: spec.preset,
-              alignment: spec.alignment,
-              imageHeight: spec.imageHeight,
-              imageWidth: (v * 100).round() / 100,
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -1049,6 +1037,7 @@ class _ThemeLayoutDecorationScreenState
                     ThemeHeaderLayoutEditor(
                       slotLabel: slotLabel,
                       rawLayout: rawSlotLayout,
+                      decorated: hasHeaderDecoration(rawSlotDeco),
                       onChanged: (next) =>
                           provider.updateHeaderLayout(_selectedSlot, next),
                     ),

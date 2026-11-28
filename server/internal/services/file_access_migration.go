@@ -157,6 +157,7 @@ func (c *publicReferenceChecker) hasPublicPathReference(filePath string) (bool, 
 		columns []string
 	}{
 		{"users", []string{"avatar", "background"}},
+		{"lottery_events", []string{"prize_image"}},
 		{"water_sections", []string{"avatar_url", "cover_url", "cover_portrait_url", "cover_landscape_url", "cover_square_url"}},
 	} {
 		if !c.hasTable(source.table) {

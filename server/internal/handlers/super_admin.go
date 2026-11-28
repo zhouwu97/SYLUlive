@@ -543,39 +543,74 @@ type CreateLotteryEventInput struct {
 	Description string `json:"description"`
 	PrizeName   string `json:"prize_name" binding:"required"`
 	DrawTime    string `json:"draw_time" binding:"required"`
+	// PrizeImage 选填，只接受本站 /upload 返回的 /uploads/ 路径；空串表示不展示奖品图。
+	PrizeImage *string `json:"prize_image"`
+}
+
+type lotteryEventFields struct {
+	title, prizeName, description, prizeImage string
+	drawTime                                  time.Time
 }
 
 const (
 	maxLotteryTitleRunes       = 100
 	maxLotteryPrizeNameRunes   = 100
 	maxLotteryDescriptionRunes = 2000
+	maxLotteryPrizeImageLen    = 500
 )
 
-func validateLotteryEventInput(input CreateLotteryEventInput) (title, prizeName, description string, drawTime time.Time, errMsg string) {
-	title = strings.TrimSpace(input.Title)
-	prizeName = strings.TrimSpace(input.PrizeName)
-	description = strings.TrimSpace(input.Description)
-	if title == "" || prizeName == "" {
-		return "", "", "", time.Time{}, "抽奖标题和奖品不能为空"
+var errLotteryNotOngoing = errors.New("lottery is not ongoing")
+
+func validateLotteryEventInput(input CreateLotteryEventInput) (lotteryEventFields, string) {
+	f := lotteryEventFields{
+		title:       strings.TrimSpace(input.Title),
+		prizeName:   strings.TrimSpace(input.PrizeName),
+		description: strings.TrimSpace(input.Description),
 	}
-	if utf8.RuneCountInString(title) > maxLotteryTitleRunes {
-		return "", "", "", time.Time{}, "抽奖标题不能超过 100 个字符"
+	if input.PrizeImage != nil {
+		f.prizeImage = strings.TrimSpace(*input.PrizeImage)
 	}
-	if utf8.RuneCountInString(prizeName) > maxLotteryPrizeNameRunes {
-		return "", "", "", time.Time{}, "奖品名称不能超过 100 个字符"
+	if f.title == "" || f.prizeName == "" {
+		return f, "抽奖标题和奖品不能为空"
 	}
-	if utf8.RuneCountInString(description) > maxLotteryDescriptionRunes {
-		return "", "", "", time.Time{}, "活动说明不能超过 2000 个字符"
+	if utf8.RuneCountInString(f.title) > maxLotteryTitleRunes {
+		return f, "抽奖标题不能超过 100 个字符"
+	}
+	if utf8.RuneCountInString(f.prizeName) > maxLotteryPrizeNameRunes {
+		return f, "奖品名称不能超过 100 个字符"
+	}
+	if utf8.RuneCountInString(f.description) > maxLotteryDescriptionRunes {
+		return f, "活动说明不能超过 2000 个字符"
+	}
+	if f.prizeImage != "" && (!strings.HasPrefix(f.prizeImage, "/uploads/") ||
+		strings.Contains(f.prizeImage, "..") || len(f.prizeImage) > maxLotteryPrizeImageLen) {
+		return f, "奖品图片无效，请重新上传"
 	}
 
 	parsedTime, err := time.Parse(time.RFC3339, strings.TrimSpace(input.DrawTime))
 	if err != nil {
-		return "", "", "", time.Time{}, "开奖时间格式无效，请使用 RFC3339 格式"
+		return f, "开奖时间格式无效，请使用 RFC3339 格式"
 	}
 	if !parsedTime.After(time.Now()) {
-		return "", "", "", time.Time{}, "开奖时间必须晚于当前时间"
+		return f, "开奖时间必须晚于当前时间"
 	}
-	return title, prizeName, description, parsedTime, ""
+	f.drawTime = parsedTime
+	return f, ""
+}
+
+// claimLotteryPrizeImage 把奖品图升级为公开文件，避免被上传清理任务当作未引用文件回收。
+func claimLotteryPrizeImage(tx *gorm.DB, operatorID uint, prizeImage string) error {
+	if prizeImage == "" {
+		return nil
+	}
+	ids, err := services.FileIDsByPublicPaths(tx, prizeImage)
+	if err != nil {
+		return err
+	}
+	if len(ids) != 1 {
+		return services.ErrInvalidImageFileReference
+	}
+	return services.ClaimPublicImagePathsForUser(tx, operatorID, prizeImage)
 }
 
 // GetLotteryEvents 分页获取全部抽奖活动列表（含进行中、已开奖、已流拍、已取消）。
@@ -629,22 +664,24 @@ func (h *SuperAdminHandler) CreateLotteryEvent(c *gin.Context) {
 		return
 	}
 
-	title, prizeName, description, drawTime, errMsg := validateLotteryEventInput(input)
+	fields, errMsg := validateLotteryEventInput(input)
 	if errMsg != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 		return
 	}
 
+	operatorID := c.GetUint("user_id")
 	var createdBy *uint
-	if operatorID := c.GetUint("user_id"); operatorID != 0 {
+	if operatorID != 0 {
 		createdBy = &operatorID
 	}
 
 	event := models.LotteryEvent{
-		Title:       title,
-		Description: description,
-		PrizeName:   prizeName,
-		DrawTime:    drawTime,
+		Title:       fields.title,
+		Description: fields.description,
+		PrizeName:   fields.prizeName,
+		PrizeImage:  fields.prizeImage,
+		DrawTime:    fields.drawTime,
 		Status:      models.LotteryStatusOngoing,
 		CreatedBy:   createdBy,
 	}
@@ -665,8 +702,15 @@ func (h *SuperAdminHandler) CreateLotteryEvent(c *gin.Context) {
 			}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&event).Error
+		if err := tx.Create(&event).Error; err != nil {
+			return err
+		}
+		return claimLotteryPrizeImage(tx, operatorID, event.PrizeImage)
 	}); err != nil {
+		if errors.Is(err, services.ErrInvalidImageFileReference) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "奖品图片无效，请重新上传"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "发布抽奖失败"})
 		return
 	}
@@ -699,45 +743,68 @@ func (h *SuperAdminHandler) UpdateLotteryEvent(c *gin.Context) {
 		return
 	}
 
-	title, prizeName, description, drawTime, errMsg := validateLotteryEventInput(input)
+	fields, errMsg := validateLotteryEventInput(input)
 	if errMsg != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 		return
 	}
 
 	var event models.LotteryEvent
-	if err := h.db.First(&event, uint(eventID)).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "抽奖活动不存在"})
-			return
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&event, uint(eventID)).Error; err != nil {
+			return err
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询抽奖活动失败"})
-		return
-	}
-	if event.Status != models.LotteryStatusOngoing {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "仅进行中的抽奖活动可以编辑", "code": "lottery_not_ongoing"})
-		return
-	}
+		if event.Status != models.LotteryStatusOngoing {
+			return errLotteryNotOngoing
+		}
 
-	res := h.db.Model(&models.LotteryEvent{}).
-		Where("id = ? AND status = ?", event.ID, models.LotteryStatusOngoing).
-		Updates(map[string]interface{}{
-			"title":       title,
-			"prize_name":  prizeName,
-			"description": description,
-			"draw_time":   drawTime,
-		})
-	if res.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新抽奖活动失败"})
-		return
-	}
-	if res.RowsAffected == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该抽奖活动已结束，无法编辑", "code": "lottery_not_ongoing"})
-		return
-	}
+		updates := map[string]interface{}{
+			"title":       fields.title,
+			"prize_name":  fields.prizeName,
+			"description": fields.description,
+			"draw_time":   fields.drawTime,
+		}
+		var oldImageIDs []uint
+		if input.PrizeImage != nil {
+			updates["prize_image"] = fields.prizeImage
+			if event.PrizeImage != "" && event.PrizeImage != fields.prizeImage {
+				var err error
+				oldImageIDs, err = services.FileIDsByPublicPaths(tx, event.PrizeImage)
+				if err != nil {
+					return err
+				}
+			}
+		}
 
-	if err := h.db.First(&event, event.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取更新后的抽奖活动失败"})
+		res := tx.Model(&models.LotteryEvent{}).
+			Where("id = ? AND status = ?", event.ID, models.LotteryStatusOngoing).
+			Updates(updates)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errLotteryNotOngoing
+		}
+		if input.PrizeImage != nil {
+			if err := claimLotteryPrizeImage(tx, c.GetUint("user_id"), fields.prizeImage); err != nil {
+				return err
+			}
+		}
+		if err := services.ReconcileFilePublicAccess(tx, oldImageIDs...); err != nil {
+			return err
+		}
+		return tx.First(&event, event.ID).Error
+	}); err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "抽奖活动不存在"})
+		case errors.Is(err, errLotteryNotOngoing):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该抽奖活动已结束，无法编辑", "code": "lottery_not_ongoing"})
+		case errors.Is(err, services.ErrInvalidImageFileReference):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "奖品图片无效，请重新上传"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新抽奖活动失败"})
+		}
 		return
 	}
 	var participantCount int64
@@ -772,6 +839,10 @@ func (h *SuperAdminHandler) DeleteLotteryEvent(c *gin.Context) {
 			return err
 		}
 		deletedTitle = event.Title
+		oldImageIDs, err := services.FileIDsByPublicPaths(tx, event.PrizeImage)
+		if err != nil {
+			return err
+		}
 		if err := tx.Where("lottery_id = ?", eventID).Delete(&models.LotteryParticipant{}).Error; err != nil {
 			return err
 		}
@@ -782,7 +853,7 @@ func (h *SuperAdminHandler) DeleteLotteryEvent(c *gin.Context) {
 		if result.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
 		}
-		return nil
+		return services.ReconcileFilePublicAccess(tx, oldImageIDs...)
 	}); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "抽奖活动不存在"})
@@ -834,9 +905,16 @@ func (h *SuperAdminHandler) GetLotteryParticipants(c *gin.Context) {
 	}
 
 	var participants []models.LotteryParticipant
-	if err := h.db.Where("lottery_id = ?", event.ID).
-		Preload("User").
-		Order("created_at DESC, id DESC").
+	query := h.db.Where("lottery_id = ?", event.ID).Preload("User")
+	if event.WinnerID != nil {
+		query = query.Clauses(clause.OrderBy{Expression: clause.Expr{
+			SQL:  "CASE WHEN user_id = ? THEN 0 ELSE 1 END, created_at DESC, id DESC",
+			Vars: []any{*event.WinnerID},
+		}})
+	} else {
+		query = query.Order("created_at DESC, id DESC")
+	}
+	if err := query.
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Find(&participants).Error; err != nil {

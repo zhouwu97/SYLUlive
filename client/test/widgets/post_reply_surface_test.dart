@@ -157,7 +157,7 @@ void main() {
             .map((rect) => Offset(rect.right - 4, rect.center.dy))
             .toList();
         for (final opacity in [.2, .5, .75, .95]) {
-          await appearance.setComponentOpacityLevel(opacity);
+          await appearance.setComponentOpacity(.75 + .25 * opacity);
           await tester.pumpAndSettle();
           final expected =
               Color.alphaBlend(

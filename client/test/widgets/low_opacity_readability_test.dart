@@ -118,7 +118,7 @@ void main() {
           theme.setSurfacesHidden(false);
         }
         for (final level in [0.0, .1, .25, .4, .5, .55, .7, .75, .95, 1.0]) {
-          final opacity = .75 + .25 * level;
+          final opacity = level;
           await theme.setComponentOpacityLevel(level);
           await tester.pumpAndSettle();
           final image = (await tester.runAsync(() async =>
@@ -242,7 +242,7 @@ void main() {
         await tester.pumpAndSettle();
         await gesture.up();
         await tester.pumpAndSettle();
-        expect(theme.componentOpacity, .75);
+        expect(theme.componentOpacity, 0);
         expect(theme.componentOpacityLevel, 0);
         expect(tester.state(slider), same(state));
         expect(tester.takeException(), isNull);

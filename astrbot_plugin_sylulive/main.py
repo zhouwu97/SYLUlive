@@ -1460,7 +1460,8 @@ class SYLUlivePlugin(Star):
     @staticmethod
     def problem(error):
         messages = {
-            "connect_first": "尚未授权 SYLUlive 账号。请先发送 /sylu-connect。",
+            "connect_first": "当前机器人没有保存你的 SYLUlive 账号连接凭据，无法代你操作。若以前绑定过，需重新授权以确认当前 QQ 对应的本人账号；此提示不能判断旧连接丢失的原因。请发送 /sylu-connect，使用原账号核对并确认授权，无需先解绑。",
+            "legal_consent_required": "服务端未找到账号对当前版本必需协议的完整有效同意记录；旧版同意不代表同意更新后的内容，因此需要本人重新确认。请使用原绑定账号在官网「我的主页 → 协议与隐私」阅读并确认页面要求的协议，再重试本次操作，无需重新绑定 QQ。",
             "permission_denied": "当前会话未获此项功能权限，请查看 /sylu-permissions 或联系本机部署者。",
             "multi_user_disabled": "本机未开放普通用户独立绑定，请部署者在 AstrBot 插件后台开启多用户绑定。",
             "invalid_delivery_policy": "结果投递策略配置无效，请部署者在 AstrBot 插件后台检查。",
@@ -1472,7 +1473,7 @@ class SYLUlivePlugin(Star):
             "authorization_changed": "连接状态刚发生变化，请重试本次操作；未借用其他人的授权。",
             "poll_later": "请稍等几秒再查询连接状态。",
             "slow_down": "查询过快，请稍后再试。",
-            "already_connected": "当前请求的权限均已授权，无需重复连接。可用 /sylu-status 核对连接；仍被拒绝时请查看 /sylu-permissions，本机开关和群权限也需允许。",
+            "already_connected": "本机已保存包含所需权限的连接记录，本次未发起新授权，尚未在线核验连接。请发送 /sylu-status 核对；若提示需确认最新协议，请在官网确认后重试，无需重新绑定 QQ。本机开关和群权限可查看 /sylu-permissions。",
             "private_actor_required": "这是个人账号操作，请本人在获准会话使用；群内按后台权限和结果投递设置执行。",
             "local_account_limit": "本机连接数量已达上限，请联系维护者处理；未借用其他人的账号。",
             "local_binding_unavailable": "本机绑定信息暂时无法读取或保存，请联系维护者检查文件权限；未创建替代授权或借用他人连接。",
@@ -1482,7 +1483,7 @@ class SYLUlivePlugin(Star):
             "personal_data_unavailable": "个人数据暂时不可用，请先在 App 或官网检查和重新同步，未使用其他人的数据。",
             "insufficient_scope": "当前连接没有此项权限。请本人在官网当前连接里点「修改权限」勾选后保存，无需重新连接。",
             "network_unavailable": "无法连接 SYLUlive 服务。请检查插件 server_origin、网络及后端是否已启动；本次操作未取得服务端确认。",
-            "reconnect_required": "刷新结果不确定或授权失效，请重新连接；需要时在官网替换旧授权。",
+            "reconnect_required": "连接凭据刷新失败，当前无法继续确认授权有效性；需由本人重新授权，确认当前 QQ 对应的账号及允许的权限。请发送 /sylu-connect，使用原账号核对并确认；官网提示已有连接时按页面确认替换，无需先解绑。",
         }
         return messages.get(
             error.code,

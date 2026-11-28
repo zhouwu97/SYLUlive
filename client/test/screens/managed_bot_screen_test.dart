@@ -683,7 +683,7 @@ void main() {
       });
       await appearance.setBackgroundImage('morenbeijing.jpeg',
           fillScreen: true);
-      await appearance.setComponentOpacityLevel(.72);
+      await appearance.setComponentOpacity(.93);
       await appearance.setFrostedGlass(true);
       dio.interceptors.add(InterceptorsWrapper(
           onRequest: (request, handler) => handler.resolve(Response(
@@ -730,7 +730,7 @@ void main() {
       expect(
           await _appBarContrast(tester, boundary), greaterThanOrEqualTo(4.5));
       await _capture(tester, boundary, 'app-bot-$label-glass-scroll');
-      await appearance.setComponentOpacityLevel(.55);
+      await appearance.setComponentOpacity(.8875);
       await tester.pumpAndSettle();
       expect(_surfaceAlpha(tester, 'bot-management-surface'),
           closeTo(.8875, .001));

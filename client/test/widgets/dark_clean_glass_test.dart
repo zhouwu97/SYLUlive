@@ -47,7 +47,7 @@ void main() {
       addTearDown(settings.dispose);
       await settings.setBackgroundImage('morenbeijing.jpeg');
       await settings.setFrostedGlass(true);
-      await settings.setComponentOpacityLevel(.7);
+      await settings.setComponentOpacity(.925);
       const colors = [Color(0x146366F1), Color(0x0A8B5CF6)];
       const gradients = <Gradient>[
         LinearGradient(
@@ -115,7 +115,7 @@ void main() {
       }
 
       await check(.925);
-      await settings.setComponentOpacityLevel(.35);
+      await settings.setComponentOpacity(.8375);
       await check(.8375);
       await settings.setCleanBackgroundMode();
       await check(1);

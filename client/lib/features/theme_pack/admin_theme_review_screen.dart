@@ -10,6 +10,8 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/publish_session_scope.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/security_session_guard.dart';
@@ -272,54 +274,83 @@ class _AdminThemeReviewScreenState extends State<AdminThemeReviewScreen>
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final item = _pending[index];
+        final tokens = AppThemeTokens.of(context);
+        final colors = Theme.of(context).colorScheme;
         return AppCard(
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
             onTap: () => _openDetail(item),
             child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              padding: const EdgeInsets.fromLTRB(14, 14, 8, 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
+                  _ReviewAvatar(name: item.name),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
                           '${item.name} · v${item.version}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ),
-                      if (item.source == 'official')
-                        const Chip(
-                          visualDensity: VisualDensity.compact,
-                          label: Text('官方'),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            if (item.source == 'official')
+                              _ReviewTag(
+                                label: '官方',
+                                icon: Icons.verified_rounded,
+                                color: colors.primary,
+                              ),
+                            _ReviewTag(
+                              label: item.currentApproved == null
+                                  ? '新作品'
+                                  : '更新自 v${item.currentApproved!.version}',
+                              icon: item.currentApproved == null
+                                  ? Icons.auto_awesome_outlined
+                                  : Icons.history_rounded,
+                              color: tokens.textSecondary,
+                            ),
+                          ],
                         ),
-                      if (item.currentApproved != null) ...[
-                        const SizedBox(width: 6),
-                        Chip(
-                          visualDensity: VisualDensity.compact,
-                          label: Text('更新自 v${item.currentApproved!.version}'),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${item.author?.nickname ?? 'UID ${item.authorUserId}'} · ${ThemeReviewReasons.formatBytes(item.packageSize)} · ${item.license}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: tokens.textSecondary,
+                          ),
                         ),
+                        if (item.description.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            item.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13, height: 1.45),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '作者：${item.author?.nickname ?? 'UID ${item.authorUserId}'} · ${ThemeReviewReasons.formatBytes(item.packageSize)} · 许可 ${item.license}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  if (item.description.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      item.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13),
                     ),
-                  ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      Icons.chevron_right_rounded,
+                      color: tokens.textTertiary,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -346,17 +377,23 @@ class _AdminThemeReviewScreenState extends State<AdminThemeReviewScreen>
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final item = _approved[index];
+        final tokens = AppThemeTokens.of(context);
+        final colors = Theme.of(context).colorScheme;
         return AppCard(
           child: Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
             child: Row(
               children: [
+                _ReviewAvatar(name: item.name),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         '${item.name} · v${item.version}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -364,13 +401,19 @@ class _AdminThemeReviewScreenState extends State<AdminThemeReviewScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '作者：${item.author?.nickname ?? 'UID ${item.authorUserId}'} · ${item.source == 'official' ? '官方' : '社区'}',
-                        style: const TextStyle(fontSize: 12),
+                        '${item.author?.nickname ?? 'UID ${item.authorUserId}'} · ${item.source == 'official' ? '官方' : '社区'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: tokens.textSecondary,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                OutlinedButton(
+                TextButton(
+                  style: TextButton.styleFrom(foregroundColor: colors.error),
                   onPressed: _busy ? null : () => _removePublished(item),
                   child: const Text('下架'),
                 ),
@@ -379,6 +422,73 @@ class _AdminThemeReviewScreenState extends State<AdminThemeReviewScreen>
           ),
         );
       },
+    );
+  }
+}
+
+class _ReviewAvatar extends StatelessWidget {
+  const _ReviewAvatar({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final initial = name.trim().isEmpty ? '?' : name.trim().characters.first;
+    return Container(
+      width: 44,
+      height: 44,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: colors.primaryContainer,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Text(
+        initial,
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: colors.onPrimaryContainer,
+        ),
+      ),
+    );
+  }
+}
+
+class _ReviewTag extends StatelessWidget {
+  const _ReviewTag({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(6, 2, 8, 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

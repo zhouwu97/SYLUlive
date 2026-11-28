@@ -14,6 +14,13 @@ import 'admin/managed_ai_admin_tab.dart';
 import '../widgets/app_card.dart';
 import '../widgets/state_placeholder.dart';
 import '../utils/app_feedback.dart';
+import '../models/lottery.dart';
+import '../theme/app_theme_style.dart';
+import '../theme/app_theme_tokens.dart';
+import '../widgets/cached_avatar.dart';
+import '../widgets/lottery/lottery_widgets.dart';
+import 'lottery_publish_screen.dart';
+import 'lottery_screen.dart';
 
 class SuperAdminScreen extends StatefulWidget {
   const SuperAdminScreen({super.key});
@@ -34,6 +41,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   List<Map<String, dynamic>> _lotteryEvents = [];
   int? _selectedLotteryEventId;
   bool _lotteryActionBusy = false;
+  bool _lotteryDescExpanded = false;
 
   @override
   void initState() {
@@ -686,25 +694,15 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
-  String _lotteryStatusLabel(dynamic status) {
-    switch ((status as num?)?.toInt()) {
-      case 0:
-        return '进行中';
-      case 1:
-        return '已开奖';
-      case 2:
-        return '已流拍';
-      case 3:
-        return '已取消';
-      default:
-        return '已结束';
-    }
-  }
+  String _lotteryStatusLabel(dynamic status) =>
+      LotteryEvent.fromJson(<String, dynamic>{'status': status}).statusLabel;
 
-  bool _isLotteryDue(dynamic drawTimeRaw) {
-    final dt = DateTime.tryParse('${drawTimeRaw ?? ''}');
-    if (dt == null) return false;
-    return !dt.isAfter(DateTime.now());
+  String _lotteryRemainingLabel(DateTime drawTime) {
+    final diff = drawTime.difference(DateTime.now());
+    if (diff <= Duration.zero) return '已到开奖时间';
+    if (diff.inDays > 0) return '${diff.inDays} 天 ${diff.inHours % 24} 时';
+    if (diff.inHours > 0) return '${diff.inHours} 时 ${diff.inMinutes % 60} 分';
+    return '${diff.inMinutes % 60} 分钟';
   }
 
   Widget _buildLotteryTab() {
@@ -737,184 +735,67 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
         final rawEvent = data['event'];
         if (rawEvent is! Map) return _buildLotteryEmptyState('暂无抽奖活动');
-        final event = Map<String, dynamic>.from(rawEvent);
-        final eventID = (event['id'] as num?)?.toInt();
-        final status = (event['status'] as num?)?.toInt() ?? 0;
-        final isOngoing = status == 0;
-        final isDue = _isLotteryDue(event['draw_time']);
-        final hasAnyOngoing = isOngoing ||
-            _lotteryEvents.any((e) => (e['status'] as num?)?.toInt() == 0);
+        final eventMap = Map<String, dynamic>.from(rawEvent);
+        final event = LotteryEvent.fromJson(eventMap);
+        final hasOngoingElsewhere = _lotteryEvents.any((e) =>
+            (e['status'] as num?)?.toInt() == LotteryEvent.statusOngoing);
         final participants = ((data['participants'] as List?) ?? const [])
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
             .toList();
+        // 中奖者置顶，其余保持接口顺序（报名时间倒序）。
+        final winnerId = event.winnerId;
+        if (winnerId != null) {
+          participants.sort((a, b) {
+            int rank(Map<String, dynamic> p) =>
+                (p['user_id'] as num?)?.toInt() == winnerId ? 0 : 1;
+            return rank(a).compareTo(rank(b));
+          });
+        }
         final totalParticipants =
             (data['total'] as num?)?.toInt() ?? participants.length;
-        final winner = event['winner'] is Map
-            ? Map<String, dynamic>.from(event['winner'] as Map)
-            : null;
+        final ongoingTitle = event.isOngoing
+            ? event.title
+            : _lotteryEvents
+                .where((e) =>
+                    (e['status'] as num?)?.toInt() ==
+                    LotteryEvent.statusOngoing)
+                .map((e) => '${e['title'] ?? ''}')
+                .firstOrNull;
 
-        return Column(
+        final bottomInset = MediaQuery.paddingOf(context).bottom;
+        return Stack(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_lotteryEvents.length > 1) ...[
-                    DropdownButtonFormField<int>(
-                      key: ValueKey<int?>(eventID),
-                      initialValue: _lotteryEvents.any(
-                              (e) => (e['id'] as num?)?.toInt() == eventID)
-                          ? eventID
-                          : null,
-                      decoration: const InputDecoration(
-                        labelText: '切换查看抽奖期次',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _lotteryEvents.map((item) {
-                        final id = (item['id'] as num?)?.toInt() ?? 0;
-                        final label =
-                            '#${item['id']} ${item['title'] ?? ''}（${_lotteryStatusLabel(item['status'])}）';
-                        return DropdownMenuItem<int>(
-                          value: id,
-                          child: Text(label, overflow: TextOverflow.ellipsis),
-                        );
-                      }).toList(),
-                      onChanged: (nextId) {
-                        if (nextId != null) {
-                          _refreshLotteryTab(eventId: nextId);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '当前查看: ${event['title'] ?? ''}（${_lotteryStatusLabel(status)}）',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: '刷新',
-                        onPressed:
-                            _lotteryActionBusy ? null : () => _refreshLotteryTab(),
-                        icon: const Icon(Icons.refresh),
-                      ),
-                      FilledButton.icon(
-                        onPressed: _lotteryActionBusy
-                            ? null
-                            : () => _showLotteryEventDialog(
-                                  hasOngoingEvent: hasAnyOngoing,
-                                ),
-                        icon: const Icon(Icons.add),
-                        label: const Text('发布抽奖'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text('奖品: ${event['prize_name'] ?? ''}'),
-                  if ('${event['description'] ?? ''}'.trim().isNotEmpty)
-                    Text('说明: ${event['description']}'),
-                  Text('开奖时间: ${_formatLotteryDateTime(event['draw_time'])}'),
-                  Text('参与人数: $totalParticipants'),
-                  if (winner != null)
-                    Text('中奖者: ${winner['nickname'] ?? '未知用户'}'),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      if (isOngoing && eventID != null)
-                        OutlinedButton.icon(
-                          onPressed: _lotteryActionBusy
-                              ? null
-                              : () => _showLotteryEventDialog(
-                                    editingEvent: event,
-                                  ),
-                          icon: const Icon(Icons.edit_outlined, size: 18),
-                          label: const Text('编辑活动'),
-                        ),
-                      if (isOngoing && isDue && eventID != null)
-                        FilledButton.tonalIcon(
-                          onPressed: _lotteryActionBusy
-                              ? null
-                              : () => _manualDrawLotteryEvent(eventID),
-                          icon: const Icon(Icons.flash_on, size: 18),
-                          label: const Text('兜底手动补开'),
-                        ),
-                      if (eventID != null)
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
-                          ),
-                          onPressed: _lotteryActionBusy
-                              ? null
-                              : () => _deleteLotteryEvent(eventID),
-                          icon: const Icon(Icons.delete_outline, size: 18),
-                          label: const Text('删除活动'),
-                        ),
-                    ],
-                  ),
+            ListView(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 104 + bottomInset),
+              children: [
+                if (_lotteryEvents.isNotEmpty) ...[
+                  _buildLotteryPeriodChips(event.id),
+                  const SizedBox(height: 12),
                 ],
-              ),
+                _buildLotteryEventCard(event, eventMap, totalParticipants),
+                const SizedBox(height: 20),
+                _buildLotteryParticipants(
+                    event, participants, totalParticipants),
+              ],
             ),
-            Expanded(
-              child: participants.isEmpty
-                  ? const Center(
-                      child: AppContentSurface.reading(child: Text('暂无参与者')),
-                    )
-                  : ListView.builder(
-                      itemCount: participants.length,
-                      itemBuilder: (context, index) {
-                        final p = participants[index];
-                        final user = p['user'] is Map
-                            ? Map<String, dynamic>.from(p['user'] as Map)
-                            : const <String, dynamic>{};
-                        final nickname = '${user['nickname'] ?? '未知用户'}';
-                        final avatar = '${user['avatar'] ?? ''}';
-                        final displayWeight =
-                            p['current_weight'] ?? p['weight'] ?? 1;
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundImage: avatar.isNotEmpty
-                                ? NetworkImage(
-                                    ApiConstants.fullUrl(avatar),
-                                  )
-                                : null,
-                            child: avatar.isEmpty
-                                ? Text(nickname.isNotEmpty ? nickname[0] : '?')
-                                : null,
-                          ),
-                          title: Text(nickname),
-                          subtitle: Text(
-                            '用户 ID：${p['user_id'] ?? user['id']} | 实时权重: $displayWeight',
-                          ),
-                          trailing: isOngoing
-                              ? IconButton(
-                                  icon: const Icon(
-                                    Icons.remove_circle,
-                                    color: Colors.red,
-                                  ),
-                                  tooltip: '踢出（可重新参与）',
-                                  onPressed: _lotteryActionBusy
-                                      ? null
-                                      : () => _kickLotteryParticipant(
-                                            eventId: p['lottery_id'] ?? eventID,
-                                            userId: p['user_id'] ?? user['id'],
-                                            userLabel: nickname,
-                                          ),
-                                )
+            Positioned(
+              right: 16,
+              bottom: 16 + bottomInset,
+              child: FloatingActionButton.extended(
+                heroTag: 'lottery-publish',
+                backgroundColor: AppThemeTokens.of(context).primary,
+                foregroundColor: AppThemeTokens.of(context).onPrimary,
+                onPressed: _lotteryActionBusy
+                    ? null
+                    : () => _openLotteryPublish(
+                          ongoingTitle: event.isOngoing || hasOngoingElsewhere
+                              ? ongoingTitle
                               : null,
-                        );
-                      },
-                    ),
+                        ),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('发布抽奖'),
+              ),
             ),
           ],
         );
@@ -922,17 +803,446 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     );
   }
 
+  Widget _buildLotteryPeriodChips(int currentId) {
+    final tokens = AppThemeTokens.of(context);
+    return SizedBox(
+      height: 36,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _lotteryEvents.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final item = _lotteryEvents[index];
+          final id = (item['id'] as num?)?.toInt() ?? 0;
+          final selected = id == currentId;
+          return ChoiceChip(
+            label: Text(
+                '#$id ${item['title'] ?? ''} · ${_lotteryStatusLabel(item['status'])}'),
+            selected: selected,
+            showCheckmark: false,
+            // 选中项保持可用样式，点击当前期次不重复请求。
+            onSelected: _lotteryActionBusy
+                ? null
+                : (_) {
+                    if (!selected) _refreshLotteryTab(eventId: id);
+                  },
+            selectedColor: tokens.primary,
+            backgroundColor: tokens.card,
+            side: BorderSide(
+                color: selected ? tokens.primary : tokens.cardBorder),
+            labelStyle: TextStyle(
+              fontSize: 12.5,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              color: selected ? tokens.onPrimary : tokens.textSecondary,
+            ),
+            shape: const StadiumBorder(),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLotteryEventCard(
+      LotteryEvent event, Map<String, dynamic> eventMap, int totalParticipants) {
+    final tokens = AppThemeTokens.of(context);
+    final due = event.isOngoing && !event.drawTime.isAfter(DateTime.now());
+    final (dangerFg, _) = lotteryToneColors(context, LotteryTone.danger);
+    final winner = event.winner;
+
+    Widget meta(String label, Widget value) => Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: TextStyle(fontSize: 12, color: tokens.textSecondary)),
+              const SizedBox(height: 4),
+              value,
+            ],
+          ),
+        );
+    Text metaText(String text) => Text(text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+            fontSize: 15, fontWeight: FontWeight.w700, color: tokens.textPrimary));
+
+    final Widget fourth;
+    if (event.isOngoing) {
+      fourth = meta('距开奖', metaText(_lotteryRemainingLabel(event.drawTime)));
+    } else if (winner != null) {
+      fourth = meta(
+        '中奖者',
+        Row(
+          children: [
+            CachedAvatar(
+              radius: 10,
+              imageUrl: winner.avatar.isNotEmpty
+                  ? ApiConstants.fullUrl(winner.avatar)
+                  : null,
+              fallbackText: winner.nickname,
+            ),
+            const SizedBox(width: 6),
+            Flexible(child: metaText(winner.nickname)),
+          ],
+        ),
+      );
+    } else {
+      fourth = meta('结果', metaText(event.isDrawn ? '中奖用户已注销' : event.statusLabel));
+    }
+
+    return LotteryCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 96,
+                height: 72,
+                child: LotteryPrizeArt(
+                    imagePath: event.prizeImage, radius: 12, iconSize: 44),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        LotteryStatusChip(
+                          label: event.statusLabel,
+                          tone: lotteryStatusTone(event.status),
+                        ),
+                        const Spacer(),
+                        Text('#${event.id}',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: tokens.textTertiary)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(event.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: tokens.textPrimary)),
+                    const SizedBox(height: 2),
+                    Text(event.prizeName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: tokens.primary)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Divider(height: 1, color: tokens.divider),
+          const SizedBox(height: 14),
+          Row(children: [
+            meta('开奖时间', metaText(formatLotteryBeijing(event.drawTime))),
+            meta('参与人数', metaText('$totalParticipants 人')),
+          ]),
+          const SizedBox(height: 14),
+          Row(children: [
+            meta(
+                '开奖方式',
+                metaText(event.isOngoing
+                    ? '到点自动'
+                    : event.drawMode == LotteryDrawMode.manual
+                        ? '手动补开'
+                        : '自动开奖')),
+            fourth,
+          ]),
+          if (event.description.trim().isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Material(
+              color: tokens.surfaceMuted,
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => setState(
+                    () => _lotteryDescExpanded = !_lotteryDescExpanded),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _lotteryDescExpanded
+                              ? '说明：${event.description.trim()}'
+                              : '说明：${event.description.trim().replaceAll(RegExp(r'\s+'), ' ')}',
+                          maxLines: _lotteryDescExpanded ? null : 1,
+                          overflow: _lotteryDescExpanded
+                              ? null
+                              : TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              height: 1.5,
+                              color: tokens.textSecondary),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(_lotteryDescExpanded ? '收起' : '展开',
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: tokens.primary)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (event.isOngoing) ...[
+                      OutlinedButton.icon(
+                        onPressed: _lotteryActionBusy
+                            ? null
+                            : () => _openLotteryPublish(editingEvent: eventMap),
+                        icon: const Icon(Icons.edit_outlined, size: 16),
+                        label: const Text('编辑'),
+                        style: _lotteryPillButtonStyle(),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                                builder: (_) => const LotteryScreen())),
+                        icon: const Icon(Icons.visibility_outlined, size: 16),
+                        label: const Text('用户端预览'),
+                        style: _lotteryPillButtonStyle(),
+                      ),
+                    ] else
+                      Text('已结束活动不可编辑',
+                          style: TextStyle(
+                              fontSize: 12, color: tokens.textTertiary)),
+                    if (due)
+                      FilledButton.tonalIcon(
+                        onPressed: _lotteryActionBusy
+                            ? null
+                            : () => _manualDrawLotteryEvent(event.id),
+                        icon: const Icon(Icons.flash_on, size: 16),
+                        label: const Text('兜底手动补开'),
+                        style: _lotteryPillButtonStyle(),
+                      ),
+                  ],
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _lotteryActionBusy
+                    ? null
+                    : () => _deleteLotteryEvent(event.id),
+                icon: Icon(Icons.delete_outline, size: 17, color: dangerFg),
+                label: Text('删除活动', style: TextStyle(color: dangerFg)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  ButtonStyle _lotteryPillButtonStyle() => const ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 14)),
+        shape: WidgetStatePropertyAll(StadiumBorder()),
+      );
+
+  Widget _buildLotteryParticipants(LotteryEvent event,
+      List<Map<String, dynamic>> participants, int totalParticipants) {
+    final tokens = AppThemeTokens.of(context);
+    int weightOf(Map<String, dynamic> p) =>
+        ((p['current_weight'] ?? p['weight'] ?? 1) as num).toInt();
+    final maxWeight = participants.fold<int>(
+        1, (m, p) => weightOf(p) > m ? weightOf(p) : m);
+    final (dangerFg, _) = lotteryToneColors(context, LotteryTone.danger);
+    final (warnFg, warnBg) = lotteryToneColors(context, LotteryTone.warning);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              const LotterySectionTitle('参与者'),
+              const SizedBox(width: 8),
+              Text('$totalParticipants 人',
+                  style: TextStyle(fontSize: 12.5, color: tokens.textSecondary)),
+              const Spacer(),
+              Text(event.isOngoing ? '实时权重' : '开奖时权重',
+                  style: TextStyle(fontSize: 12.5, color: tokens.textTertiary)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        LotteryCard(
+          padding: EdgeInsets.zero,
+          child: participants.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: Text('暂无参与者',
+                        style: TextStyle(color: tokens.textSecondary)),
+                  ),
+                )
+              : Column(
+                  children: [
+                    for (var i = 0; i < participants.length; i++) ...[
+                      if (i > 0)
+                        Divider(
+                            height: 1, indent: 68, color: tokens.divider),
+                      Builder(builder: (context) {
+                        final p = participants[i];
+                        final user = p['user'] is Map
+                            ? Map<String, dynamic>.from(p['user'] as Map)
+                            : const <String, dynamic>{};
+                        final userId = p['user_id'] ?? user['id'];
+                        final nickname = '${user['nickname'] ?? '未知用户'}';
+                        final avatar = '${user['avatar'] ?? ''}';
+                        final weight = weightOf(p);
+                        final isWinner = event.winnerId != null &&
+                            (userId as num?)?.toInt() == event.winnerId;
+                        return Container(
+                          color: isWinner ? warnBg : null,
+                          padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+                          child: Row(
+                            children: [
+                              CachedAvatar(
+                                radius: 19,
+                                imageUrl: avatar.isNotEmpty
+                                    ? ApiConstants.fullUrl(avatar)
+                                    : null,
+                                fallbackText: nickname,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(nickname,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: tokens.textPrimary)),
+                                        ),
+                                        if (isWinner) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 7, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: tokens.card,
+                                              borderRadius:
+                                                  BorderRadius.circular(99),
+                                            ),
+                                            child: Text('中奖',
+                                                style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: warnFg)),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'ID $userId${user['level'] != null ? ' · Lv.${user['level']}' : ''}',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: tokens.textTertiary),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              SizedBox(
+                                width: 56,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(3),
+                                  child: LinearProgressIndicator(
+                                    value: weight / maxWeight,
+                                    minHeight: 6,
+                                    color: tokens.primary,
+                                    backgroundColor: tokens.surfaceMuted,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 40,
+                                child: Text('×$weight',
+                                    textAlign: TextAlign.end,
+                                    semanticsLabel: '权重 $weight',
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: tokens.textPrimary)),
+                              ),
+                              if (event.isOngoing)
+                                IconButton(
+                                  icon: Icon(Icons.remove_circle_outline,
+                                      color: dangerFg),
+                                  tooltip: '踢出（可重新参与）',
+                                  onPressed: _lotteryActionBusy
+                                      ? null
+                                      : () => _kickLotteryParticipant(
+                                            eventId:
+                                                p['lottery_id'] ?? event.id,
+                                            userId: userId,
+                                            userLabel: nickname,
+                                          ),
+                                )
+                              else
+                                const SizedBox(width: 10),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildLotteryEmptyState(String message) {
+    final tokens = AppThemeTokens.of(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(message),
+          ThemeStateArt(
+            fallback: Icon(Icons.card_giftcard_rounded,
+                size: 64, color: tokens.textTertiary),
+          ),
+          const SizedBox(height: 12),
+          Text(message, style: TextStyle(color: tokens.textSecondary)),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: _lotteryActionBusy
-                ? null
-                : () => _showLotteryEventDialog(),
+            onPressed:
+                _lotteryActionBusy ? null : () => _openLotteryPublish(),
             icon: const Icon(Icons.add),
             label: const Text('发布抽奖'),
           ),
@@ -941,45 +1251,25 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     );
   }
 
-  String _formatLotteryDateTime(dynamic value) {
-    final text = '${value ?? ''}';
-    final dt = DateTime.tryParse(text);
-    if (dt == null) return text;
-    final beijing = dt.toUtc().add(const Duration(hours: 8));
-    return _formatBeijingWallTime(beijing);
-  }
-
-  String _formatBeijingWallTime(DateTime value) {
-    return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} '
-        '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
-  }
-
-  DateTime _nowBeijingWallTime() {
-    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
-    return DateTime(now.year, now.month, now.day, now.hour, now.minute);
-  }
-
-  bool _isFutureBeijingWallTime(DateTime value) {
-    return _beijingWallTimeToUtc(value).isAfter(DateTime.now().toUtc());
-  }
-
-  String _beijingWallTimeToRfc3339(DateTime value) {
-    final y = value.year.toString().padLeft(4, '0');
-    final m = value.month.toString().padLeft(2, '0');
-    final d = value.day.toString().padLeft(2, '0');
-    final h = value.hour.toString().padLeft(2, '0');
-    final min = value.minute.toString().padLeft(2, '0');
-    return '$y-$m-${d}T$h:$min:00+08:00';
-  }
-
-  DateTime _beijingWallTimeToUtc(DateTime value) {
-    return DateTime.utc(
-      value.year,
-      value.month,
-      value.day,
-      value.hour,
-      value.minute,
-    ).subtract(const Duration(hours: 8));
+  Future<void> _openLotteryPublish({
+    Map<String, dynamic>? editingEvent,
+    String? ongoingTitle,
+  }) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => LotteryPublishScreen(
+          editingEvent: editingEvent,
+          ongoingTitle: ongoingTitle,
+        ),
+      ),
+    );
+    if (saved != true || !mounted) return;
+    final isEdit = editingEvent != null;
+    if (!isEdit) _selectedLotteryEventId = null;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(isEdit ? '抽奖活动已更新' : '抽奖已发布')),
+    );
+    _refreshLotteryTab();
   }
 
   Future<void> _manualDrawLotteryEvent(int eventId) async {
@@ -1113,205 +1403,6 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       }
     } finally {
       if (mounted) setState(() => _lotteryActionBusy = false);
-    }
-  }
-
-  Future<void> _showLotteryEventDialog({
-    Map<String, dynamic>? editingEvent,
-    bool hasOngoingEvent = false,
-  }) async {
-    final isEdit = editingEvent != null;
-    final titleCtrl =
-        TextEditingController(text: '${editingEvent?['title'] ?? ''}');
-    final prizeCtrl =
-        TextEditingController(text: '${editingEvent?['prize_name'] ?? ''}');
-    final descCtrl =
-        TextEditingController(text: '${editingEvent?['description'] ?? ''}');
-    final messenger = ScaffoldMessenger.of(context);
-    DateTime drawTime = _nowBeijingWallTime().add(const Duration(hours: 1));
-    if (isEdit) {
-      final parsed = DateTime.tryParse('${editingEvent['draw_time'] ?? ''}');
-      if (parsed != null) {
-        final bj = parsed.toUtc().add(const Duration(hours: 8));
-        drawTime = DateTime(bj.year, bj.month, bj.day, bj.hour, bj.minute);
-      }
-    }
-    var submitting = false;
-
-    final saved = await showAppDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AppAlertDialog(
-          title: Text(isEdit ? '编辑抽奖活动' : '发布抽奖'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (!isEdit && hasOngoingEvent) ...[
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      '提示：发布新抽奖将自动取消当前进行中的抽奖活动。',
-                      style: TextStyle(fontSize: 12, color: Colors.orange),
-                    ),
-                  ),
-                ],
-                TextField(
-                  controller: titleCtrl,
-                  maxLength: 100,
-                  decoration: const InputDecoration(labelText: '抽奖标题'),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: prizeCtrl,
-                  maxLength: 100,
-                  decoration: const InputDecoration(labelText: '奖品名称'),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: descCtrl,
-                  maxLines: 3,
-                  maxLength: 2000,
-                  decoration: const InputDecoration(labelText: '活动说明'),
-                ),
-                const SizedBox(height: 8),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.event),
-                  title: Text(_formatBeijingWallTime(drawTime)),
-                  subtitle: const Text('开奖时间（北京时间）'),
-                  onTap: submitting
-                      ? null
-                      : () async {
-                          FocusManager.instance.primaryFocus?.unfocus();
-                          final nowBj = _nowBeijingWallTime();
-                          final date = await showDatePicker(
-                            context: ctx,
-                            initialDate: drawTime.isBefore(nowBj)
-                                ? nowBj
-                                : drawTime,
-                            firstDate: nowBj,
-                            lastDate: nowBj.add(
-                              const Duration(days: 365),
-                            ),
-                          );
-                          if (date == null) return;
-                          if (!ctx.mounted) return;
-                          final time = await showTimePicker(
-                            context: ctx,
-                            initialTime: TimeOfDay.fromDateTime(drawTime),
-                          );
-                          if (time == null) return;
-                          if (!ctx.mounted) return;
-                          setDialogState(() {
-                            drawTime = DateTime(
-                              date.year,
-                              date.month,
-                              date.day,
-                              time.hour,
-                              time.minute,
-                            );
-                          });
-                        },
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: submitting
-                  ? null
-                  : () {
-                      FocusManager.instance.primaryFocus?.unfocus();
-                      Navigator.pop(ctx, false);
-                    },
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: submitting
-                  ? null
-                  : () async {
-                      final navigator = Navigator.of(ctx);
-                      final title = titleCtrl.text.trim();
-                      final prize = prizeCtrl.text.trim();
-                      if (title.isEmpty || prize.isEmpty) {
-                        messenger.showSnackBar(
-                          const SnackBar(content: Text('请填写标题和奖品')),
-                        );
-                        return;
-                      }
-                      if (!_isFutureBeijingWallTime(drawTime)) {
-                        messenger.showSnackBar(
-                          const SnackBar(content: Text('开奖时间必须晚于当前时间')),
-                        );
-                        return;
-                      }
-                      setDialogState(() => submitting = true);
-                      try {
-                        final payload = {
-                          'title': title,
-                          'prize_name': prize,
-                          'description': descCtrl.text.trim(),
-                          'draw_time': _beijingWallTimeToRfc3339(drawTime),
-                        };
-                        if (isEdit) {
-                          await _dio.put(
-                            '/super/lottery/${editingEvent['id']}',
-                            data: payload,
-                          );
-                        } else {
-                          await _dio.post('/super/lottery', data: payload);
-                        }
-                        FocusManager.instance.primaryFocus?.unfocus();
-                        if (navigator.mounted) navigator.pop(true);
-                      } on DioException catch (e) {
-                        final data = e.response?.data;
-                        final msg = data is Map
-                            ? ((data['message'] ?? data['error'])?.toString() ??
-                                (isEdit ? '更新失败' : '发布失败'))
-                            : (isEdit ? '更新失败' : '发布失败');
-                        messenger.showSnackBar(
-                          SnackBar(
-                              content: Text(msg), backgroundColor: Colors.red),
-                        );
-                        if (ctx.mounted) {
-                          setDialogState(() => submitting = false);
-                        }
-                      }
-                    },
-              child: submitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(isEdit ? '保存' : '发布'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    titleCtrl.dispose();
-    prizeCtrl.dispose();
-    descCtrl.dispose();
-
-    if (saved == true && mounted) {
-      if (!isEdit) {
-        _selectedLotteryEventId = null;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
-        SnackBar(content: Text(isEdit ? '抽奖活动已更新' : '抽奖已发布')),
-      );
-      _refreshLotteryTab();
     }
   }
 }

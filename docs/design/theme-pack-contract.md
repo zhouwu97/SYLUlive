@@ -10,7 +10,7 @@
 ## 0. 设计要点
 
 - **manifest 写完整的颜色值。** 主题工坊导出时，把明暗两套的全部 Token 都写进 manifest。这样服务端和 Web 端直接读取颜色值即可，不需要移植配色推导逻辑；推导只在 Dart 的工坊里做（见第 4 节）。
-- **默认完整应用。** App 默认选择除桌面启动图标外的所有外观分组。选中但未提供的分组恢复该组默认值，未选分组保留当前值。底栏未声明样式时使用液态玻璃；应用液态样式时同时启用高画质、100% 强度和主题着色材质，覆盖旧手动效果设置。应用配色后课表颜色选项同步为跟随主题。系统明暗与字号独立，桌面启动图标仍需主动勾选和系统确认。
+- **默认完整应用。** App 默认选择除桌面启动图标外的所有外观分组。选中但未提供的分组恢复该组默认值，未选分组保留当前值。导航分组只应用图标与着色。试用、应用及重启保留设备的底栏样式、画质、强度和材质。经典主题和内置主题的「恢复默认外观」恢复默认液态玻璃。应用配色后课表颜色选项同步为跟随主题。系统明暗与字号独立，桌面启动图标仍需主动勾选和系统确认。
 - **完整性校验。**
   - 商城目录记录规范包的 SHA-256，客户端下载完成后核对一次。
   - 包内条目逐个校验 ZIP 自带的 CRC32。`archive` 4.2.0 的 `ZipDecoder` 中对应的校验代码被注释掉了，`verify: true` 不起作用，因此要对每个读取的条目显式调用 `ZipFile.verifyCrc32()`。
@@ -75,7 +75,7 @@ UTF-8 编码，大小不超过 64KB。
 | `tokens` | object | 是 | 第 3 节的全部 Token 都要给出。值为 `#RRGGBB`；标注了"可透明"的 Token 也可以用 `#AARRGGBB` |
 | `coursePalette` | string[] | 是 | 5–12 个 `#RRGGBB` |
 | `wallpapers` | object | 否 | 键为 `global`、`home`、`schedule`、`me`、`secondary`，值为壁纸对象或 null |
-| `componentOpacity` | number | 否 | 0.75–1.0，默认 1.0。明暗两套分别生效，系统切换明暗时随之切换 |
+| `componentOpacity` | number | 否 | 0–1.0，默认 1.0。百分比直接对应卡片底色不透明度；明暗两套分别生效，系统切换明暗时随之切换。低于 0.75 的主题包需将 `minAppVersion` 设为支持该范围的客户端版本 |
 | `frostedGlass` | object | 否 | `{ "enabled": bool, "strength": 0–1 }` |
 | `cardStyle` | object | 否 | 共享卡片样式，见 2.7 节；省略时保留当前组件默认样式 |
 | `decorations` | object | 否 | 三个页头的背景图与贴纸，见 2.8 节；明暗分别生效 |
@@ -108,9 +108,11 @@ UTF-8 编码，大小不超过 64KB。
 
 | 字段 | 约束 |
 | --- | --- |
-| `style` | `normal`、`floating`、`liquid_glass` 之一，与 `BottomNavStyle.storageValue` 一致 |
+| `style` | `normal`、`floating`、`liquid_glass` 之一。兼容旧包，客户端忽略其值，工坊导出和服务端新规范包省略此字段。旧客户端按自己的缺省规则应用液态玻璃 |
 | `iconTint` | `template`（默认）或 `original`。`template` 模式只取图标的 alpha 通道，再按 `navSelected` 或 `navUnselected` 着色 |
 | `icons` | 键为 `home`、`market`、`schedule`、`campus`、`me`，值为 `{ "normal": path, "selected": path }` 或 null。每个槽位的两态必须同时给出 |
+
+手机底栏和平板竖向侧栏对配置了 `original` 原画图标的入口居中绘制 44 dp 图标，不显示可见文字标签；读屏标签保留。`template` 和未配置图标的入口维持原有图标与可见标签。此规则不改变导航栏高度、尺寸或材质。
 
 ### 2.5 `font`
 
@@ -155,14 +157,14 @@ UTF-8 编码，大小不超过 64KB。
 
 | 字段 | 约束 |
 | --- | --- |
-| `preset` | `standard`（默认）、`compact`、`immersive`。standard 保留现有资料／标题组织，装饰区在信息区之后；compact 在同一行组织标识与摘要，装饰区在其后；immersive 为沉浸页头，见下方说明 |
+| `preset` | `standard`（默认）、`compact`、`immersive`。当前明暗模式有背景或贴纸时使用沉浸页头；无装饰时 compact 使用紧凑信息区，其余使用标准信息区 |
 | `alignment` | `start`（默认）、`center`、`end`，只控制页头标识与摘要的水平对齐 |
-| `imageHeight` | 96–280，默认 160，单位 dp，只控制独立图片区；immersive 时表示内容区为 hero 留出的可见高度 |
-| `imageWidth` | 0.45–1.0，默认 1.0，占页头可用宽度的比例，按 alignment 对齐 |
+| `imageHeight` | 96–280，默认 150，单位 dp，表示沉浸页头的预留高度。已规范化的旧包沿用其中记录的高度 |
+| `imageWidth` | 0.45–1.0，默认 1.0，旧字段，仅供兼容读取。手机 hero 整宽，平板 hero 填满所属内容栏 |
 
-**immersive（沉浸页头）**：在主壳的首页、校园、我三个页签里，页头背景图作为 hero 画在页面背景层中，从屏幕顶部（状态栏下方）铺到内容区锚点下方 28dp，顶栏、搜索框、页头信息和第一张内容卡都叠在 hero 上。hero 顶部用 `background` 色从 62% 透明度渐变到 0，保证顶栏文字清楚；底部最后 18% 渐隐到 `background`。首页不再显示单独的信息卡，标题直接叠在 hero 上；校园、我的信息卡上压 hero 底边。滚动时 hero 以内容一半的速度上移，滚过 hero 高度 70% 时完全淡出。贴纸坐标按 hero 区域换算。导入预览、主题工坊、设置编辑和二级页面没有背景层，immersive 在这些地方仍按"装饰区在信息区之前"显示。`imageWidth` 对 immersive 不生效，hero 始终整宽。
+**immersive（沉浸页头）**：在主壳的首页、校园、我三个页签里，页头背景图作为 hero 画在页面背景层中，从屏幕顶部（状态栏下方）铺到内容区锚点下方 28dp，顶栏、搜索框、页头信息和第一张内容卡都叠在 hero 上。hero 顶部用 `background` 色从 62% 透明度渐变到 0，保证顶栏文字清楚；底部最后 18% 渐隐到 `background`。首页不再显示单独的信息卡，标题直接叠在 hero 上；校园、我的信息卡上压 hero 底边。滚动时 hero 以内容一半的速度上移，校园和我滚过 hero 高度 70% 时完全淡出，首页在吸顶控件背后保留一段 hero。贴纸坐标按 hero 区域换算。主题设置实时预览、全屏样例、导入应用效果、工坊及 1080×2340 明暗导出共用沉浸绘制。预览顶栏与搜索框叠在 hero 上，校园和我的信息卡压住底边，同时显示主题底栏图标、首页顶栏图标和发帖按钮角饰。二级页面及页头素材编辑器沿用内嵌装饰区。`imageWidth` 对 immersive 不生效，hero 始终整宽。
 
-三个模板都支持可选的独立装饰区；未添加背景或贴纸时，忽略 imageHeight、imageWidth，不保留图片空位。信息区依内容和系统文字缩放自然增长，图片区尺寸不能限制资料、通知、按钮的高度。宽屏按页面所在内容栏计算尺寸，不能跨过分栏边界。
+明暗共用布局，装饰分别判断。无装饰时信息区自然排版。有装饰的槽位导出为 immersive；若只有一个明暗变体有装饰且作者显式选择 compact，导出保留 compact 供另一模式使用。信息区依内容和系统文字缩放自然增长，图片区尺寸不能限制资料、通知、按钮的高度。平板侧栏下，hero 从所属内容栏顶部铺到锚点下方，沿用手机渐隐规则，在内容栏边界裁切。
 
 明暗变体的 `cardStyle`（圆角统一由顶层 `shape` 档位控制，不在 `cardStyle` 中重复声明）：
 
@@ -172,6 +174,8 @@ UTF-8 编码，大小不超过 64KB。
 | `shadow` | `none`、`soft`、`medium`；省略时沿用组件默认阴影。soft 为黑色 8%／12%（亮／暗），offset (0,2)、blur 8；medium 为黑色 12%／18%，offset (0,4)、blur 16；spread 均为 0 |
 
 作用对象是首批范围中的共享内容卡片、帖子卡片、商品卡片和 AI 内容卡片。课程色块、输入控件、弹层、系统控件及用户图片不套用这组卡片几何参数；它们仍读取各自的 Token 和 AppShape。componentOpacity 只影响容器底面，不给文字、商品照片、头像和操作按钮整体加透明度。
+
+平板分栏课表在课表区域绘制 `schedule` 壁纸，横屏优先使用 `landscape`。今日概览和周网格之间与外缘留出壁纸区域。今日概览与周网格容器使用 `componentOpacity`、`frostedGlass`、`cardStyle` 和 `cardArt`。概览内的课程色块使用 `coursePalette` 和 `courseCardText`。
 
 ### 2.8 页头装饰
 
@@ -187,15 +191,15 @@ UTF-8 编码，大小不超过 64KB。
 | 字段 | 约束 |
 | --- | --- |
 | `image` | decorations/ 下的 PNG 或 WebP，允许透明 |
-| `x`、`y` | 0–1，贴纸中心相对页头独立装饰区的坐标 |
+| `x`、`y` | 0–1，贴纸中心相对 hero 或内嵌装饰区的坐标 |
 | `width` | 0.08–0.40，占装饰区宽度的比例；保持图片比例 |
 | `rotation` | -180–180，单位度，默认 0，顺时针为正 |
 
 image、x、y、width 必填；rotation 可省略。数值字段只接受有限数，不能使用 NaN 或无穷值。
 
-独立装饰区由该页头的图片区承载；添加背景或贴纸时创建该区，未添加时不占位。背景、贴纸均裁切到该区，贴纸按数组顺序从后向前绘制。它们不进入语义树、不响应点击，不能覆盖页头的信息区、真实个人资料、功能入口、系统状态栏或全局试用横条。页头信息区使用不透明的 card 底面与 textPrimary／textSecondary，图片不参与文字背景合成。
+手机和平板主壳、页面样例、导入应用效果、工坊和导出共用沉浸页头绘制。页头素材编辑器和二级页面仍使用内嵌装饰区。平板校园按栏宽增加 hero 高度，背景维持原焦点。无装饰时不预留图片区。背景、贴纸均裁切到所在区域，贴纸按数组顺序从后向前绘制。它们不进入语义树、不响应点击，绘制在页头信息、真实个人资料、功能入口、系统状态栏和全局试用横条下方。校园和我的页头信息区使用不透明的 card 底面与 textPrimary／textSecondary。
 
-装饰仅属于当前设备外观，不上传为个人资料，不改写用户主页已有封面，也不覆盖其他作者的头像、封面和内容图片。九个页面共用配色与组件风格；装饰槽位仅出现在上述三个页头。
+装饰仅属于当前设备外观，不上传为个人资料，不改写用户主页已有封面，也不覆盖其他作者的头像、封面和内容图片。八个页面共用配色与组件风格；装饰槽位仅出现在上述三个页头。
 
 ### 2.9 静态图片效果
 
@@ -227,9 +231,9 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 | `cardStyle.fill` | `solid`、`tint`、`glass` | `tint`／`glass` 把默认卡片底色向 `primaryContainer` 混合 32%；显式指定底色的卡片不变 |
 | `sectionMark` | `{style: none／dot／bar／icon, image}`；icon 必须带 `decorations/` 下的透明图 | 区块标题前的主题记号，按 `primary` 着色 |
 | `illustrations` | `{empty, error}`，`decorations/` 下透明 PNG／WebP，长边 ≤ 1024，≤ 1MB | 共享空状态、错误状态在图标位置显示插画；加载态不替换 |
-| `ornaments` | 键为 `postCard`、`campusHeader`、`campusNotice`、`campusServices`，值见下表 | 卡片角饰：首页信息流帖子卡片、校园页头信息卡、校园通知卡、校园服务宫格 |
+| `ornaments` | 键为 `postCard`、`campusHeader`、`campusNotice`、`campusServices`、`fab`，值见下表 | 角饰：首页信息流帖子卡片、校园页头信息卡、校园通知卡、校园服务宫格、首页发帖按钮。`fab` 的坐标以 52×52 的圆形按钮为基准，通常用负 `dy` 让角色趴在按钮上沿；只在手机底栏布局的首页出现，旧版 App 会忽略这个键 |
 | `cardArt` | `{image, alignment, width, opacity}`：image 为 `decorations/` 下透明插画（插画限制）；alignment 取 `bottomRight`（默认）、`bottomLeft`、`topRight`、`topLeft`；width 0.2–0.7，占卡片宽度的比例，默认 0.42，最宽 200 逻辑像素；opacity 0.04–0.4，默认 0.14 | 内容卡片（帖子、评论区、说明卡、表单卡等）里的淡底图，画在内容后面并按卡片圆角裁切；胶囊、圆形、弹窗面板和过小的卡片不画 |
-| `serviceIcons` | 键为 `edu`、`canteen`、`ranking`、`team`、`map`、`calendar`（校园服务）和 `erke`、`fitness`、`exam`、`papers`、`sites`、`cloudGame`、`lottery`（工具箱），值为 `icons/` 下透明方图（图标限制） | 替换入口图标，按 40×40 显示，不再叠加识别色底板；没给的键保持原图标 |
+| `serviceIcons` | 键为 `edu`、`canteen`、`ranking`、`team`、`map`、`calendar`（校园服务）和 `erke`、`fitness`、`exam`、`papers`、`sites`、`cloudGame`、`lottery`（工具箱），以及 `menu`、`messages`、`search`（首页顶栏的菜单、消息按钮和搜索框图标），值为 `icons/` 下透明方图（图标限制） | 替换入口图标：服务与工具按 40×40 显示，不再叠加识别色底板；顶栏菜单 26、消息 25、搜索 22 逻辑像素，按原图颜色显示，未读红点仍由 App 绘制。没给的键保持原图标，旧版 App 忽略新增的键 |
 
 角饰对象：
 
@@ -302,7 +306,7 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 **默认值与对比度规则的关系**：默认的 `textSecondary` 亮色值 `#747B82`，在 `card`（`#FFFFFF`）上的对比度为 4.29，在 `background`（`#FFFAF4`）上为 4.13；默认的 `tagText` 亮色值 `#147C72` 在 `tagBackground`（`#EEF2F0`）上的对比度为 4.47，均达不到第 5 节要求的 4.5。
 
 - 内置默认外观保留既有显示效果。本周课程卡片沿用白字，默认外观不经过商城的对比度检查。
-- 官方主题"沈理青"把亮色 `textSecondary` 改为 `#6E757C`（在 `card` 上为 4.67，在 `background` 上为 4.5），亮色 `tagText` 改为 `#107A70`（原值对比度 4.47），亮色 `courseCardText` 保留 `#1F2328`。
+- 官方主题"沈理青"把亮色 `textSecondary` 改为 `#6E757C`（在 `card` 上为 4.67，在 `background` 上为 4.5），亮色 `tagText` 改为 `#107A70`（原值对比度 4.47）。
 
 **默认课程色板**：`#448AFF`、`#00C853`、`#9C27B0`、`#FF5252`、`#FF9800`，即 `courseColors` 的现值。课程卡片的颜色等于 `色板[hash % 长度]` 以 0.45 的不透明度显示，这个规则保持不变。
 
@@ -357,7 +361,8 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 | `card` | 亮色用 `surfaceContainerLowest`，暗色用 `surfaceContainer` |
 | `cardBorder`、`divider`、`timetableGrid` | `outlineVariant` |
 | `outline` | `outline` |
-| `textPrimary`、`bubbleIncomingText`、`appBarForeground`、`courseCardText` | `onSurface` |
+| `textPrimary`、`bubbleIncomingText`、`appBarForeground` | `onSurface` |
+| `courseCardText` | 固定 `#FFFFFF`，与内置默认外观一致 |
 | `textSecondary`、`navUnselected` | `onSurfaceVariant` |
 | `textTertiary` | `onSurfaceVariant` 以 75% 不透明度合成 |
 | `textDisabled` | `onSurface` 以 38% 不透明度合成 |
@@ -371,11 +376,7 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 | `feedFeaturedText` | `onTertiaryContainer` |
 | `timetableToday` | `primary` 以 12% 不透明度合成 |
 
-**课程色板生成**：
-
-1. 用 `Hct` 读取种子色的色相 H。`material_color_utilities` 已经由 Flutter SDK 引入，在 `pubspec.yaml` 中声明为直接依赖，版本写 `any`。
-2. 生成 8 个颜色，第 i 个的色相为 `H + i × 45`。色度：亮色 48，暗色 40。色调：亮色 60，暗色 70。
-3. 每个颜色和课程文字的对比度达不到 4.5 时，用下面的"自动修正"调整。
+**课程色板生成**：「从种子色生成」从种子色相起每 60° 取一色，共 6 色，色度 52，色调亮色 56、暗色 60，配白色课程文字；「恢复原版课程色」给出原版 UI 的五色 `#448AFF`、`#00C853`、`#9C27B0`、`#FF5252`、`#FF9800`。作者可以逐个改色，主题包应提供与插画配色协调的色板。
 
 **对比度计算**：按 WCAG 2.1 计算对比度。带透明度的颜色，先合成到它实际所在的背景上再计算。
 
@@ -393,8 +394,9 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 | `tagText` | `tagBackground` | 4.5 |
 | `appBarForeground` | `appBarBackground` | 4.5 |
 | `bubbleOutgoingText` | `bubbleOutgoing` | 4.5 |
-| `courseCardText` | 色板中每个颜色以 0.45 不透明度合成到 `background` 后的颜色 | 4.5 |
 | `navSelected`、`navUnselected` | `navBackground` | 3.0 |
+
+课程块文字与色板不参与硬性对比度检查：课程块按用户设置的不透明度叠在课表背景上，白字配原版五色与内置默认外观一致。
 
 不达标时，各处的处理：
 
@@ -412,7 +414,7 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 | 图标 | WebP、PNG | 正方形，边长 48–256 | 256KB |
 | 预览图 | WebP、JPEG、PNG | 1080×2340 | 2MB |
 | 自定义桌面图标 | WebP、PNG | 正方形，边长 432–1024，不能有透明像素 | 1MB |
-| 页头背景 | WebP、JPEG、PNG | 长边不超过 2048 | 2MB |
+| 页头背景 | WebP、JPEG、PNG | 投稿长边 1200–2048，本机导入保留 2048 上限 | 2MB |
 | 装饰贴纸 | WebP、PNG | 长边不超过 1024 | 512KB |
 
 **字体文件**：
@@ -427,9 +429,10 @@ image、x、y、width 必填；rotation 可省略。数值字段只接受有限�
 
 **服务端规范化**：
 
-- 重新编码全部图片，同时去掉元数据：壁纸、页头背景和预览图编码为 JPEG（质量 88），图标和贴纸编码为 PNG，保留贴纸透明度；
+- 重新编码全部图片，同时去掉元数据：壁纸、页头背景和预览图编码为 JPEG，质量从 88 按 8 递减至 40，取首个不超过用途上限的结果，仍超限则拒绝；图标、贴纸和插画编码为 PNG，保留透明度和已有调色板；PNG 输出超限时等比缩小后重新编码，图标和桌面图标分别保留 48、432 的最小边长；
 - 同步改写 manifest 中的路径；
-- 规范包内不含 WebP。
+- 规范包内不含 WebP。最终编码结果必须满足上表的用途体积和尺寸限制，不能只检查转码前输入。
+- 商城下载与私有待审包先由下载器核对规范包的 SHA-256，再执行客户端包体 48MiB、解压总量 96MiB、单图 8MiB、ZIP CRC32 与字体安全检查，不重复执行制作阶段的图标／贴纸单图体积限制，兼容历史规范化转码膨胀的已上架图片。本机导入和直接选择主题素材仍执行上表用途规格；普通本机背景裁剪流程独立。
 
 ## 7. 标签
 

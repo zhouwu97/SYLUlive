@@ -75,6 +75,7 @@ PreparedThemePack _pack(
     String color = '#A02080',
     bool wallpaper = false,
     bool material = false,
+    String? fill,
     bool navigation = false,
     String navigationStyle = 'normal'}) {
   final json = themeFixture(
@@ -102,6 +103,9 @@ PreparedThemePack _pack(
         'enabled': true,
         'strength': mode == 'light' ? .3 : .7
       };
+      if (fill != null) {
+        json[mode]['cardStyle'] = {'fill': fill, 'shadow': 'none'};
+      }
     }
   }
   if (navigation) {
@@ -157,26 +161,26 @@ void main() {
     await temp.delete(recursive: true);
   });
 
-  test('完整应用主题同步全部外观设置，覆盖旧液态关闭状态并在重启后保持', () async {
-    await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
+  test('完整应用主题同步全部外观设置，保留设备液态强度与材质并在重启后保持', () async {
+    await provider.setBottomNavAnimationIntensity(.6);
     await provider.setBottomNavClearMaterial(true);
     final theme = await provider.installTheme(_pack(
       wallpaper: true,
       material: true,
       navigation: true,
-      navigationStyle: 'liquid_glass',
+      navigationStyle: 'floating',
     ));
     await provider.applyInstalledTheme(theme, ThemeGroup.applicable);
     expect(provider.bottomNavStyle, BottomNavStyle.liquidGlass);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
-    expect(provider.bottomNavAnimationIntensity, 1);
-    expect(provider.bottomNavClearMaterial, isFalse);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.custom);
+    expect(provider.bottomNavAnimationIntensity, .6);
+    expect(provider.bottomNavClearMaterial, isTrue);
     expect(provider.bottomNavShaderEnabled, isTrue);
     expect(provider.backgroundMode, AppBackgroundMode.custom);
     expect(provider.componentOpacity, .8);
     expect(provider.frostedGlassStrength, .3);
     expect(provider.frostedGlassCustomStrength, .3);
-    expect(provider.customComponentOpacityLevel, closeTo(.2, .0001));
+    expect(provider.customComponentOpacityLevel, closeTo(.8, .0001));
     await provider.setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode.custom);
     expect(provider.componentOpacity, .8);
     expect(provider.frostedGlassStrength, .3);
@@ -186,9 +190,9 @@ void main() {
     final restarted = ThemeProvider(loadOnStart: false, themePackStore: store);
     addTearDown(restarted.dispose);
     await restarted.loadThemeForTesting();
-    expect(restarted.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
-    expect(restarted.bottomNavAnimationIntensity, 1);
-    expect(restarted.bottomNavClearMaterial, isFalse);
+    expect(restarted.bottomNavPerformanceMode, BottomNavPerformanceMode.custom);
+    expect(restarted.bottomNavAnimationIntensity, .6);
+    expect(restarted.bottomNavClearMaterial, isTrue);
     expect(restarted.backgroundMode, AppBackgroundMode.custom);
     expect(restarted.componentOpacity, .95);
   });
@@ -213,7 +217,7 @@ void main() {
     await provider.restorePreviousAppearance();
     expect(provider.backgroundImage, contains(detailed.directory));
     expect(provider.componentOpacity, .8);
-    expect(provider.bottomNavStyle, BottomNavStyle.normal);
+    expect(provider.bottomNavStyle, BottomNavStyle.liquidGlass);
   });
 
   test('工坊修改导航样式同步效果，同样式的图标编辑保留当前强度', () async {
@@ -334,7 +338,7 @@ void main() {
     expect(adopted, isNot(photo.path));
     expect(provider.isThemeVersionActive(installed.manifest.id, 1), isTrue);
     expect(provider.componentOpacity, .8);
-    expect(provider.bottomNavStyle, BottomNavStyle.normal);
+    expect(provider.bottomNavStyle, BottomNavStyle.liquidGlass);
     expect((await provider.installedThemes()).length, 1);
     await photo.delete();
     final restarted = ThemeProvider(loadOnStart: false, themePackStore: store);
@@ -442,7 +446,7 @@ void main() {
     expect(provider.frostedGlass, isTrue);
     expect(provider.canCustomizeCardMaterial, isTrue);
     await provider.setComponentOpacity(.86);
-    expect(provider.customComponentOpacityLevel, .44);
+    expect(provider.customComponentOpacityLevel, .86);
     await provider.setThemeMode(ThemeMode.dark);
     expect(provider.effectiveComponentOpacity, .95);
     expect(provider.frostedGlassStrength, .7);
@@ -466,7 +470,7 @@ void main() {
         throwsA(isA<FileSystemException>()));
     expect(provider.isInTrial, isTrue);
     expect(provider.persistedAppearance.group(ThemeGroup.colors), isNull);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
     await provider.endTrial();
     expect(provider.hasThemeColors, isFalse);
     expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
@@ -475,7 +479,7 @@ void main() {
     preferences.fail = false;
     await provider.applyInstalledTheme(theme, ThemeGroup.defaultApply);
     expect(provider.hasThemeColors, isTrue);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
     expect(provider.componentOpacity, .8);
     expect(provider.frostedGlassStrength, .3);
     expect(
@@ -553,6 +557,91 @@ void main() {
                 child: child!),
             home: screen,
           ));
+
+  for (final brightness in Brightness.values) {
+    for (final trial in [false, true]) {
+      testWidgets('主题染色底面按实际不透明度绘制 ${brightness.name} trial=$trial',
+          (tester) async {
+        await tester.runAsync(() async {
+          final theme =
+              await provider.installTheme(_pack(material: true, fill: 'tint'));
+          await provider.setThemeMode(
+              brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light);
+          if (trial) {
+            await provider
+                .startTrial(installed: theme, groups: {ThemeGroup.material});
+          } else {
+            await provider.applyInstalledTheme(theme, {ThemeGroup.material});
+          }
+        });
+        final boundary = GlobalKey();
+        var taps = 0;
+        await tester.pumpWidget(host(
+            Scaffold(
+                body: RepaintBoundary(
+              key: boundary,
+              child: ColoredBox(
+                  color: Colors.red,
+                  child: SizedBox(
+                    width: 260,
+                    height: 160,
+                    child: Center(
+                        child: AppCardSurface(
+                      width: 180,
+                      height: 90,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => taps++,
+                        child: const Align(
+                            alignment: Alignment.topLeft,
+                            child: SizedBox(
+                                width: 10,
+                                height: 10,
+                                child: ColoredBox(color: Colors.black))),
+                      ),
+                    )),
+                  )),
+            )),
+            brightness: brightness));
+        final palette =
+            provider.buildAppTheme(brightness).extension<AppPalette>()!;
+        final tint = Color.lerp(palette.card, palette.primaryContainer, .32)!;
+        for (final glass in [false, true]) {
+          await tester.runAsync(() => provider.setFrostedGlass(glass));
+          for (final opacity in [0.0, .42, 1.0]) {
+            await tester
+                .runAsync(() => provider.setComponentOpacityLevel(opacity));
+            await tester.pumpAndSettle();
+            final image = (await tester.runAsync(() => (boundary.currentContext!
+                    .findRenderObject()! as RenderRepaintBoundary)
+                .toImage()))!;
+            try {
+              final data = (await tester.runAsync(() => image.toByteData()))!;
+              final offset = (80 * image.width + 130) * 4;
+              final expected =
+                  Color.alphaBlend(tint.withValues(alpha: opacity), Colors.red);
+              for (final (channel, value) in [
+                (0, expected.r),
+                (1, expected.g),
+                (2, expected.b),
+              ]) {
+                expect(data.getUint8(offset + channel), closeTo(value * 255, 2),
+                    reason: 'glass=$glass opacity=$opacity');
+                expect(data.getUint8((40 * image.width + 45) * 4 + channel), 0,
+                    reason: '底色调整不能改变前景图像');
+              }
+            } finally {
+              image.dispose();
+            }
+            await tester.tap(find.byType(GestureDetector).last);
+          }
+        }
+        expect(taps, 6);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      });
+    }
+  }
 
   testWidgets('本机列表加载、失败、重试、空态', (tester) async {
     final failing = _LoadingStore(Directory(path.join(temp.path, 'other')));
@@ -635,6 +724,74 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('原画在横竖导航居中放大，只保留读屏标签', (tester) async {
+    final position = ValueNotifier(0.0);
+    addTearDown(position.dispose);
+    final boundary = GlobalKey();
+    final image = MemoryImage(img.encodePng(img.fill(
+        img.Image(width: 44, height: 44), color: img.ColorRgb8(255, 0, 0))));
+    final images = {0: (image, image)};
+    Widget navigation(Widget child) => host(Scaffold(
+          body: Center(
+            child: RepaintBoundary(
+              key: boundary,
+              child: SizedBox(width: 360, height: 460, child: child),
+            ),
+          ),
+        ));
+
+    for (final axis in Axis.values) {
+      await tester.pumpWidget(navigation(LiquidBottomNav(
+        currentIndex: 0,
+        visualIndexListenable: position,
+        onTap: (_) {},
+        axis: axis,
+        shaderEnabled: false,
+        themeImages: images,
+        originalIcons: true,
+      )));
+      await settleEmojiQAImages(tester, boundary.currentContext!, [image]);
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('首页'), findsOneWidget);
+      final item = find.byKey(const ValueKey('bottom-nav-item-0'));
+      final center =
+          tester.getCenter(item) - tester.getTopLeft(find.byKey(boundary));
+      final colors = await tester.runAsync(() async {
+        final render =
+            boundary.currentContext!.findRenderObject() as RenderRepaintBoundary;
+        final screenshot = await render.toImage();
+        try {
+          final pixels = (await screenshot.toByteData())!;
+          return [
+            for (var delta = -21; delta <= 21; delta++)
+              pixels.getUint32(((center.dy + delta).floor() * screenshot.width +
+                      center.dx.floor()) *
+                  4),
+          ];
+        } finally {
+          screenshot.dispose();
+        }
+      });
+      expect(colors, everyElement(0xff0000ff));
+
+      for (final original in [true, false]) {
+        await tester.pumpWidget(navigation(FloatingBottomNav(
+          currentIndex: 0,
+          onTap: (_) {},
+          axis: axis,
+          originalIcons: original,
+          themeImages: images,
+        )));
+        await tester.pumpAndSettle();
+        final iconSize = original ? 44.0 : 24.0;
+        expect(tester.getSize(find.byType(Image)), Size.square(iconSize));
+        expect(find.text('首页'), original ? findsNothing : findsOneWidget);
+        expect(find.text('集市'), findsOneWidget);
+        expect(find.bySemanticsLabel('首页'), findsOneWidget);
+      }
+    }
+  }, semanticsEnabled: true);
+
   testWidgets('导入取消、错误文件、权限失败后可重新选择；离开页面后旧读取不回填', (tester) async {
     final completer = Completer<String?>();
     var calls = 0;
@@ -710,6 +867,22 @@ void main() {
   });
 
   testWidgets('完整文件导入预览、按组应用与重复点击门禁', (tester) async {
+    final preferences = _FailingPreferences();
+    AppPreferencesStore.setCustomInstance(preferences);
+    Future<void> waitUntil(bool Function() ready, {required String reason}) async {
+      for (var i = 0; i < 200 && !ready(); i++) {
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(ready(), isTrue, reason: reason);
+    }
+
+    Future<void> waitFor(Finder finder) async {
+      await waitUntil(() => finder.evaluate().isNotEmpty, reason: '$finder');
+      expect(finder, findsOneWidget);
+    }
+
     await tester.runAsync(() async {
       await provider.setBackgroundImage('morenbeijing.jpeg');
       await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
@@ -729,32 +902,39 @@ void main() {
                 )))));
     await tester.tap(find.text('打开导入'));
     await tester.pumpAndSettle();
-    await tester.runAsync(() async {
-      await tester.tap(find.text('选择主题文件'));
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-    });
-    await tester.pumpAndSettle();
-    expect(find.text('应用效果预览'), findsOneWidget);
+    await tester.runAsync(() => tester.tap(find.text('选择主题文件')));
+    await waitFor(find.text('应用效果预览'));
     expect(find.textContaining('本机主题'), findsOneWidget);
-    await tester.runAsync(() async {
-      await tester.tap(find.text('保存并应用'));
-      await tester.pump();
-      await tester.tap(find.text('正在保存…'));
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    });
-    await tester.pumpAndSettle();
+
+    final hold = (await tester.runAsync(() async => Completer<void>()))!;
+    preferences.hold = hold;
+    try {
+      await tester.runAsync(() => tester.tap(find.text('保存并应用')));
+      final saving = find.widgetWithText(FilledButton, '正在保存…');
+      await waitFor(saving);
+      expect(tester.widget<FilledButton>(saving).onPressed, isNull);
+      await tester.tap(saving);
+    } finally {
+      preferences.hold = null;
+      await tester.runAsync(() async => hold.complete());
+    }
+    await waitUntil(
+      () => find.byType(ThemeImportScreen, skipOffstage: false)
+          .evaluate().isEmpty,
+      reason: '应用后退出导入页',
+    );
+    expect(find.text('主题已应用'), findsOneWidget);
     expect(provider.hasThemeColors, isTrue);
     expect(provider.backgroundImage, isNull);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
     expect(find.text('打开导入'), findsOneWidget);
     expect((await tester.runAsync(provider.installedThemes))!.length, 1);
     final confirmation = tester.widget<SnackBar>(find.byType(SnackBar));
     expect(confirmation.persist, isFalse);
     expect(confirmation.duration, const Duration(seconds: 5));
-    await tester.tap(find.text('撤销'));
-    await tester
-        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 80)));
-    await tester.pumpAndSettle();
+    // 撤销包含平台小组件同步，在真实异步区启动并等待，避免遗留到下一用例。
+    await tester.runAsync(() => tester.tap(find.text('撤销')));
+    await waitUntil(() => !provider.hasThemeColors, reason: '等待撤销已应用的主题');
     expect(provider.hasThemeColors, isFalse);
     expect(provider.backgroundImage, 'morenbeijing.jpeg');
     expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
@@ -877,8 +1057,8 @@ void main() {
       const Color(0xffd84315),
     );
     expect(provider.usesThemeWallpapers, isTrue);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
-    expect(provider.bottomNavShaderEnabled, isTrue);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
+    expect(provider.bottomNavShaderEnabled, isFalse);
     expect(prefs.getString(ThemeProvider.appearanceKey), isNull);
     expect(prefs.getString(ThemeProvider.previousAppearanceKey), isNull);
 
@@ -913,7 +1093,7 @@ void main() {
     await provider.applyTrial();
     expect(provider.isInTrial, isFalse);
     expect(provider.hasThemeColors, isTrue);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
     expect(prefs.getString(ThemeProvider.appearanceKey), isNotNull);
     await provider.restorePreviousAppearance();
     expect(provider.hasThemeColors, isFalse);
@@ -937,7 +1117,7 @@ void main() {
       {ThemeGroup.wallpapers, ThemeGroup.navigation},
     );
     await provider.setThemeMode(ThemeMode.light);
-    await provider.setComponentOpacity(.86);
+    await provider.setComponentOpacity(.42);
     await provider.setScheduleColorPreference(text: true, value: ScheduleColorOption.purple);
     await provider.setScheduleColorPreference(text: false, value: ScheduleColorOption.green);
     expect(provider.currentAppearanceSummary, contains('混搭外观'));
@@ -975,7 +1155,7 @@ void main() {
           .preset,
       AppShapePreset.rounded,
     );
-    expect(cleanProvider.effectiveComponentOpacity, .86);
+    expect(cleanProvider.effectiveComponentOpacity, .42);
     final palette = cleanProvider.buildAppTheme(Brightness.light).extension<AppPalette>()!;
     expect(palette.courseCardText, ScheduleColorOption.purple.color);
     expect(palette.coursePalette, everyElement(ScheduleColorOption.green.color));
@@ -1371,7 +1551,7 @@ void main() {
       appVersion: '1.0.0',
     );
     final decoded = await ThemePackCodec.decode(exported, appVersion: '9.0.0');
-    expect(decoded.manifest.data['layout']['home']['preset'], 'compact');
+    expect(decoded.manifest.data['layout']['home']['preset'], 'immersive');
     expect(decoded.manifest.data['light']['cardStyle']['shadow'], 'soft');
     expect(
       (decoded.manifest.data['light']['decorations']['home']['stickers']
@@ -1510,42 +1690,14 @@ void main() {
       expect(tester.takeException(), isNull);
 
       // 沉浸模板在正式页面里只留锚点和叠在 hero 上的标题，hero 图由主壳背景层绘制。
-      if (preset == 'immersive') {
-        expect(find.byKey(const ValueKey('theme-hero-anchor-home')),
-            findsOneWidget);
-        expect(find.byKey(const ValueKey('home-themed-header-immersive')),
-            findsOneWidget);
-        expect(find.byKey(const ValueKey('home-themed-header-info')),
-            findsNothing);
-        expect(find.byKey(const ValueKey('theme-header-decoration-home')),
-            findsNothing);
-        await tester.ensureVisible(find.text('卡片按钮'));
-        await tester.tap(find.text('卡片按钮'));
-        await tester.pump();
-        continue;
-      }
-
-      // 正式页面装饰区必须包裹 IgnorePointer 与 ExcludeSemantics
-      final decoFinder = find.byKey(
-        const ValueKey('theme-header-decoration-home'),
-      );
-      expect(decoFinder, findsOneWidget);
-      expect(
-        find.ancestor(of: decoFinder, matching: find.byType(IgnorePointer)),
-        findsWidgets,
-      );
-      expect(
-        find.ancestor(of: decoFinder, matching: find.byType(ExcludeSemantics)),
-        findsWidgets,
-      );
-
-      // standard / compact 预设的装饰区在信息区下方
-      final infoRect = tester.getRect(
-        find.byKey(const ValueKey('home-themed-header-info')),
-      );
-      final decoRect = tester.getRect(decoFinder);
-      expect(infoRect.top, lessThan(decoRect.top));
-
+      expect(find.byKey(const ValueKey('theme-hero-anchor-home')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('home-themed-header-immersive')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('home-themed-header-info')),
+          findsNothing);
+      expect(find.byKey(const ValueKey('theme-header-decoration-home')),
+          findsNothing);
       // 卡片按钮可正常点击，不被装饰层劫持
       await tester.ensureVisible(find.text('卡片按钮'));
       await tester.tap(find.text('卡片按钮'));
@@ -1626,7 +1778,7 @@ void main() {
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 60)));
   });
 
-  testWidgets('主题页头横竖屏和分栏切换保留完整插画与交互，收窄恢复手机沉浸布局',
+  testWidgets('沉浸页头随分栏缩放并保留信息区交互',
       (tester) async {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -1659,17 +1811,21 @@ void main() {
           tester.view.physicalSize = size;
           await tester.binding.setSurfaceSize(size);
           final tablet = size.width >= 600;
+          final header = ThemeHeaderFrame(
+            slot: slot,
+            defaultBuilder: (_) => const SizedBox(),
+            standardInfoBuilder: (_, __) => FilledButton(
+                onPressed: () => taps++, child: const Text('打开页面')),
+            compactInfoBuilder: (_, __) => const SizedBox(),
+          );
           await tester.pumpWidget(host(Scaffold(body: Stack(children: [
             const ThemeHeroLayer(),
             Align(alignment: Alignment.topRight, child: SizedBox(
               width: columnWidth,
-              child: SingleChildScrollView(child: ThemeHeaderFrame(
+              child: ThemeHeroPane(
                 slot: slot,
-                defaultBuilder: (_) => const SizedBox(),
-                standardInfoBuilder: (_, __) => FilledButton(
-                  onPressed: () => taps++, child: const Text('打开页面')),
-                compactInfoBuilder: (_, __) => const SizedBox(),
-              )),
+                child: SingleChildScrollView(child: header),
+              ),
             )),
           ])), brightness: brightness, scale: 1.5));
           // 先完成明暗主题过渡，再等待新主题选中的图片解码。
@@ -1679,27 +1835,15 @@ void main() {
               tester.widgetList<Image>(find.byType(Image)).map((image) => image.image));
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
+          final anchor = find.byType(ThemeHeroAnchor);
+          expect(anchor, findsOneWidget);
+          expect(find.byKey(ValueKey('theme-header-decoration-$slot')), findsNothing);
           if (tablet) {
-            expect(find.byType(ThemeHeroAnchor), findsNothing);
-            final decoration = find.byKey(ValueKey('theme-header-decoration-$slot'));
-            final rect = tester.getRect(decoration);
-            expect(rect.left, greaterThanOrEqualTo(size.width - columnWidth));
-            expect(rect.right, lessThanOrEqualTo(size.width));
-            expect(rect.width / rect.height,
-                closeTo(brightness == Brightness.light ? 1.5 : 500 / 185, 0.01),
-                reason: '插画容器沿用原图比例，不留下横屏色带');
-            expect(rect.height, lessThanOrEqualTo(300));
-            final artwork = tester.widget<Image>(find.descendant(of: decoration, matching: find.byType(Image)).first);
-            expect(artwork.fit, BoxFit.contain, reason: '横竖屏均完整呈现角色图');
-            final info = tester.getRect(find.byType(FilledButton));
-            if (columnWidth >= 600) {
-              expect(info.right, lessThan(rect.left));
-            } else {
-              expect(info.top, greaterThanOrEqualTo(rect.bottom));
-            }
-          } else {
-            expect(find.byType(ThemeHeroAnchor), findsOneWidget);
-            expect(find.byKey(ValueKey('theme-header-decoration-$slot')), findsNothing);
+            final hero = tester.getRect(find.byKey(ValueKey('theme-hero-$slot')));
+            expect(hero.left, size.width - columnWidth);
+            expect(hero.right, size.width);
+            expect(hero.top, 0);
+            expect(hero.bottom, tester.getRect(anchor).bottom + ThemeHeroLayer.overlap);
           }
           await tester.tap(find.text('打开页面'));
           await tester.pump();

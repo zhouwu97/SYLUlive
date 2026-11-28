@@ -153,16 +153,37 @@ func ValidateAIUserPermissionSchema(db *gorm.DB) error {
 	return nil
 }
 
-func validateAIUserPermissionScopeConstraint(definition string) error {
-	definition = strings.ToLower(definition)
-	for _, scope := range []string{
+// 与 sql/20260725_ai_user_permissions.sql、20260726_ai_external_model_permission.sql 的 CHECK 保持一致。
+var (
+	aiUserPermissionScopes = []string{
 		"ai_personal_data_access",
 		"ai_device_cache_access",
 		"ai_remote_edu_refresh",
 		"erke_snapshot_upload",
 		"academic_cloud_storage",
 		"ai_external_model_analysis",
-	} {
+	}
+	aiUserPermissionPolicies = []string{"ask", "always", "never"}
+)
+
+// CreateAIUserPermissionChecks 只用于本次启动刚由 AutoMigrate 新建的空表，按版本化 SQL 补齐命名 CHECK。
+// 已有表的约束仍由 SQL 迁移维护，启动时只校验不改写。
+func CreateAIUserPermissionChecks(db *gorm.DB) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	quoted := func(values []string) string {
+		return "'" + strings.Join(values, "', '") + "'"
+	}
+	return db.Exec(fmt.Sprintf(`ALTER TABLE ai_user_permissions
+		ADD CONSTRAINT chk_ai_user_permissions_scope CHECK (scope IN (%s)),
+		ADD CONSTRAINT chk_ai_user_permissions_policy CHECK (policy IN (%s))`,
+		quoted(aiUserPermissionScopes), quoted(aiUserPermissionPolicies))).Error
+}
+
+func validateAIUserPermissionScopeConstraint(definition string) error {
+	definition = strings.ToLower(definition)
+	for _, scope := range aiUserPermissionScopes {
 		if !strings.Contains(definition, "'"+scope+"'") {
 			return fmt.Errorf("scope CHECK constraint is missing %s", scope)
 		}
@@ -172,7 +193,7 @@ func validateAIUserPermissionScopeConstraint(definition string) error {
 
 func validateAIUserPermissionPolicyConstraint(definition string) error {
 	definition = strings.ToLower(definition)
-	for _, policy := range []string{"ask", "always", "never"} {
+	for _, policy := range aiUserPermissionPolicies {
 		if !strings.Contains(definition, "'"+policy+"'") {
 			return fmt.Errorf("policy CHECK constraint is missing %s", policy)
 		}

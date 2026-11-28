@@ -11,10 +11,14 @@ import '../../utils/share_position.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../screens/user_home_screen.dart';
+import '../../theme/app_radius.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/report_sheet.dart';
+import '../../services/publish_session_scope.dart';
+import '../../widgets/security_session_guard.dart';
+import 'admin_theme_review_screen.dart' show showThemeReasonDialog;
 import 'theme_appearance.dart';
 import 'theme_manifest.dart';
 import 'theme_pack_store.dart';
@@ -80,6 +84,7 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
   bool _storeDisabled = false;
   String? _error;
   bool _applyingOriginal = false;
+  bool _removingTheme = false;
 
   bool get _showOriginalDefault =>
       (_selectedTag == null ||
@@ -216,6 +221,55 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
     }
   }
 
+  Future<void> _removeTheme(ThemeCatalogItem item) async {
+    if (_removingTheme) return;
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || auth.user?.isAdmin != true) return;
+    final session = PublishSessionScope(
+      accountId: auth.user!.id,
+      accountSessionEpoch: auth.accountSessionEpoch,
+    );
+    setState(() => _removingTheme = true);
+    try {
+      final decision = await showThemeReasonDialog(
+        context,
+        title: '下架《${item.name}》',
+        confirmLabel: '确认下架',
+      );
+      if (decision == null ||
+          !mounted ||
+          !SecuritySessionGuard.owns(auth, session, requireAdmin: true)) {
+        return;
+      }
+      await _repo().adminRemove(
+        item.familyId,
+        reasonCode: decision.$1,
+        note: decision.$2,
+        session: session,
+      );
+      if (!mounted ||
+          !SecuritySessionGuard.owns(auth, session, requireAdmin: true)) {
+        return;
+      }
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已下架《${item.name}》，本机已安装副本保留')),
+      );
+      await _refreshAll();
+    } catch (error) {
+      if (!mounted ||
+          !SecuritySessionGuard.owns(auth, session, requireAdmin: true)) {
+        return;
+      }
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('下架失败：$error，请重试')),
+      );
+    } finally {
+      if (mounted) setState(() => _removingTheme = false);
+    }
+  }
+
   Future<void> _openDetail(ThemeCatalogItem item) async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -282,6 +336,8 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final auth = context.watch<AuthProvider?>();
+    final canRemove = auth?.isLoggedIn == true && auth?.user?.isAdmin == true;
     final repo = _repo();
 
     return Scaffold(
@@ -308,6 +364,10 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: FilledButton.tonalIcon(
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+              ),
               onPressed: _storeDisabled
                   ? null
                   : () async {
@@ -378,58 +438,60 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              ChoiceChip(
-                                label: const Text('最新'),
-                                selected: _sort == 'latest',
-                                onSelected: (_) {
-                                  if (_sort == 'latest') return;
-                                  setState(() => _sort = 'latest');
-                                  unawaited(_refreshAll());
-                                },
-                              ),
-                              const SizedBox(width: 8),
-                              ChoiceChip(
-                                label: const Text('热门'),
-                                selected: _sort == 'popular',
-                                onSelected: (_) {
-                                  if (_sort == 'popular') return;
-                                  setState(() => _sort = 'popular');
-                                  unawaited(_refreshAll());
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                FilterChip(
-                                  label: const Text('全部'),
-                                  selected: _selectedTag == null,
-                                  onSelected: (_) {
-                                    if (_selectedTag == null) return;
-                                    setState(() => _selectedTag = null);
-                                    unawaited(_refreshAll());
-                                  },
-                                ),
-                                for (final tag
-                                    in ThemeReviewReasons.allowedTags) ...[
-                                  const SizedBox(width: 6),
-                                  FilterChip(
-                                    label: Text(tag),
-                                    selected: _selectedTag == tag,
-                                    onSelected: (sel) {
-                                      setState(
-                                        () => _selectedTag = sel ? tag : null,
-                                      );
+                          // 排序与标签合成一行横向滚动，右缘渐隐提示还有更多标签。
+                          ShaderMask(
+                            blendMode: BlendMode.dstIn,
+                            shaderCallback: (rect) => const LinearGradient(
+                              colors: [Colors.black, Colors.black, Colors.transparent],
+                              stops: [0, .9, 1],
+                            ).createShader(rect),
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              padding: const EdgeInsets.only(right: 24),
+                              child: Row(
+                                children: [
+                                  _SortToggle(
+                                    value: _sort,
+                                    onChanged: (val) {
+                                      if (_sort == val) return;
+                                      setState(() => _sort = val);
                                       unawaited(_refreshAll());
                                     },
                                   ),
+                                  Container(
+                                    width: 1,
+                                    height: 20,
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                    ),
+                                    color: tokens.divider,
+                                  ),
+                                  _TagPill(
+                                    label: '全部',
+                                    selected: _selectedTag == null,
+                                    onTap: () {
+                                      if (_selectedTag == null) return;
+                                      setState(() => _selectedTag = null);
+                                      unawaited(_refreshAll());
+                                    },
+                                  ),
+                                  for (final tag
+                                      in ThemeReviewReasons.allowedTags) ...[
+                                    const SizedBox(width: 6),
+                                    _TagPill(
+                                      label: tag,
+                                      selected: _selectedTag == tag,
+                                      onTap: () {
+                                        setState(
+                                          () => _selectedTag =
+                                              _selectedTag == tag ? null : tag,
+                                        );
+                                        unawaited(_refreshAll());
+                                      },
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
                           ),
                         ],
@@ -513,11 +575,29 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
                                   ? item.previewDark
                                   : item.previewLight),
                               alignment: Alignment.topCenter,
-                              installed: installed?.manifest.version == item.version
-                                  ? installed
-                                  : null,
+                              installed:
+                                  installed?.manifest.version == item.version
+                                      ? installed
+                                      : null,
                             ),
                             badge: _badgeFor(item),
+                            removalAction: canRemove
+                                ? TextButton(
+                                    key: ValueKey(
+                                        'theme-store-remove-${item.familyId}'),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor:
+                                          Theme.of(context).colorScheme.error,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8),
+                                      minimumSize: const Size(48, 48),
+                                    ),
+                                    onPressed: _removingTheme
+                                        ? null
+                                        : () => _removeTheme(item),
+                                    child: const Text('下架'),
+                                  )
+                                : null,
                             onTap: () => _openDetail(item),
                           );
                         },
@@ -545,7 +625,8 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
                     (context, index) => Container(
                       decoration: BoxDecoration(
                         color: tokens.surfaceMuted,
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: tokens.cardBorder),
                       ),
                     ),
                     childCount: 4,
@@ -596,6 +677,118 @@ class _ThemeStoreScreenState extends State<ThemeStoreScreen> {
   }
 }
 
+class _SortToggle extends StatelessWidget {
+  const _SortToggle({required this.value, required this.onChanged});
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    final colors = Theme.of(context).colorScheme;
+    Widget option(String key, String label, IconData icon) {
+      final selected = value == key;
+      return Semantics(
+        button: true,
+        selected: selected,
+        child: Material(
+          color: selected ? tokens.card : Colors.transparent,
+          elevation: selected ? 1 : 0,
+          shadowColor: Colors.black26,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            onTap: () => onChanged(key),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    size: 15,
+                    color: selected ? colors.primary : tokens.textSecondary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: selected ? tokens.textPrimary : tokens.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: tokens.searchFill,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          option('latest', '最新', Icons.schedule_rounded),
+          option('popular', '热门', Icons.local_fire_department_outlined),
+        ],
+      ),
+    );
+  }
+}
+
+class _TagPill extends StatelessWidget {
+  const _TagPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: selected ? colors.primary : Colors.transparent,
+        shape: StadiumBorder(
+          side: BorderSide(
+            color: selected ? colors.primary : tokens.cardBorder,
+          ),
+        ),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                color: selected ? colors.onPrimary : tokens.textSecondary,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ThemeCatalogCard extends StatelessWidget {
   const _ThemeCatalogCard({
     super.key,
@@ -604,8 +797,10 @@ class _ThemeCatalogCard extends StatelessWidget {
     required this.preview,
     required this.badge,
     required this.onTap,
+    this.removalAction,
   });
 
+  final Widget? removalAction;
   final String name;
   final String subtitle;
   final Widget preview;
@@ -627,94 +822,226 @@ class _ThemeCatalogCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: AlignmentDirectional.topStart,
-                      end: AlignmentDirectional.bottomEnd,
-                      colors: [tokens.surfaceMuted, colors.secondaryContainer],
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(19, 13, 19, 0),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                        border: Border.all(color: tokens.cardBorder),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: .12),
-                            blurRadius: 9,
-                            offset: const Offset(0, 3),
-                          ),
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          colors.secondaryContainer.withValues(alpha: .55),
+                          tokens.surfaceMuted,
                         ],
                       ),
-                      child: ClipRRect(
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                        child: preview,
-                      ),
                     ),
-                  ),
-                ),
-                if (badge != null)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: badge == '可更新' ? colors.primary : tokens.card,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        badge!,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: badge == '可更新' ? colors.onPrimary : tokens.textPrimary,
-                          fontWeight: FontWeight.w600,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(14),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: .10),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(14),
+                          ),
+                          child: preview,
                         ),
                       ),
                     ),
                   ),
-              ],
+                  if (badge != null)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: _CatalogBadge(label: badge!),
+                    ),
+                ],
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(11, 9, 11, 11),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: tokens.divider)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: tokens.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: tokens.textSecondary,
-                  ),
-                ),
-              ],
+                  if (removalAction != null) removalAction!,
+                ],
+              ),
             ),
-          ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _CatalogBadge extends StatelessWidget {
+  const _CatalogBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    final colors = Theme.of(context).colorScheme;
+    final (Color bg, Color fg, IconData? icon) = switch (label) {
+      '可更新' => (colors.primary, colors.onPrimary, Icons.arrow_upward_rounded),
+      '已安装' => (tokens.card, tokens.success, Icons.check_rounded),
+      '官方' => (tokens.card, colors.primary, Icons.verified_rounded),
+      _ => (tokens.card, tokens.textPrimary, null),
+    };
+    return Container(
+      padding: const EdgeInsets.fromLTRB(7, 3, 8, 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .10),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: fg),
+            const SizedBox(width: 3),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: fg,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 预览图未就绪或加载失败时，画一张抽象的手机界面骨架，避免卡片中间只剩一个图标。
+class _PreviewSkeleton extends StatelessWidget {
+  const _PreviewSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    final bar = tokens.textTertiary.withValues(alpha: .16);
+    Widget line(double widthFactor, double height) => FractionallySizedBox(
+          widthFactor: widthFactor,
+          alignment: Alignment.centerLeft,
+          child: Container(
+            height: height,
+            decoration: BoxDecoration(
+              color: bar,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+          ),
+        );
+    return ColoredBox(
+      color: tokens.surface,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRect(
+            child: OverflowBox(
+              alignment: Alignment.topCenter,
+              maxHeight: double.infinity,
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    line(.42, 7),
+                    const SizedBox(height: 10),
+                    Container(
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: bar,
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                      ),
+                    ),
+                    for (var i = 0; i < 2; i++) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: tokens.surfaceMuted,
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            line(.55, 6),
+                            const SizedBox(height: 6),
+                            line(.9, 5),
+                            const SizedBox(height: 4),
+                            line(.7, 5),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 16,
+            child: Icon(
+              Icons.palette_outlined,
+              size: 18,
+              color: tokens.textTertiary,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -733,13 +1060,7 @@ class _ThemeCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = AppThemeTokens.of(context);
-    final placeholder = ColoredBox(
-      color: tokens.surfaceMuted,
-      child: Center(
-        child: Icon(Icons.palette_outlined, color: tokens.textSecondary),
-      ),
-    );
+    const placeholder = _PreviewSkeleton();
     Widget remotePreview() => url.isEmpty
         ? placeholder
         : Image.network(

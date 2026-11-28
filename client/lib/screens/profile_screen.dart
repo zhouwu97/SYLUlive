@@ -1,5 +1,6 @@
 import '../widgets/app_page_background.dart';
 import '../features/theme_pack/theme_presentation.dart';
+import '../features/theme_pack/theme_hero_layer.dart';
 import '../features/theme_pack/theme_workshop_screen.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_theme_tokens.dart';
@@ -302,7 +303,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             authProvider.isLoggedIn,
             authProvider.user?.role,
           ),
-          master: ResponsiveContent(
+          master: ThemeHeroPane(
+            slot: 'me',
+            child: ResponsiveContent(
               child: Stack(
             children: [
               // 内容
@@ -373,7 +376,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
               ),
             ],
-          )),
+          ))),
         ),
       ),
     );

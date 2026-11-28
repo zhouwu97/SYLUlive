@@ -9,7 +9,26 @@ import OhosSharePlugin from '../plugins/OhosSharePlugin';
 import OhosCalendarPlugin from '../plugins/OhosCalendarPlugin';
 import OhosNotificationsPlugin from '../plugins/OhosNotificationsPlugin';
 import OhosMockPlugins from '../plugins/OhosMockPlugins';
+import OhosRemindersPlugin from '../plugins/OhosRemindersPlugin';
+import OhosWidgetPlugin from '../plugins/OhosWidgetPlugin';
+
+import { AbilityConstant, Want } from '@kit.AbilityKit';
+
 export default class EntryAbility extends FlutterAbility {
+  private notifications: OhosNotificationsPlugin | null = null;
+  private widgets: OhosWidgetPlugin | null = null;
+
+  onCreate(want: Want, params: AbilityConstant.LaunchParam): void {
+    this.notifications = new OhosNotificationsPlugin(this.context);
+    this.widgets = new OhosWidgetPlugin(this.context);
+    if (!this.widgets.receiveWant(want)) this.notifications.receiveWant(want);
+    super.onCreate(want, params);
+  }
+
+  onNewWant(want: Want, params: AbilityConstant.LaunchParam): void {
+    super.onNewWant(want, params);
+    if (!this.widgets?.receiveWant(want)) this.notifications?.receiveWant(want);
+  }
   configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
     GeneratedPluginRegistrant.registerWith(flutterEngine)
@@ -23,7 +42,9 @@ export default class EntryAbility extends FlutterAbility {
     // 自定义业务层插件及外部库桥接平替
     flutterEngine.getPlugins()?.add(new OhosSharePlugin(this.context))
     flutterEngine.getPlugins()?.add(new OhosCalendarPlugin(this.context))
-    flutterEngine.getPlugins()?.add(new OhosNotificationsPlugin(this.context))
+    if (this.notifications) flutterEngine.getPlugins()?.add(this.notifications)
     flutterEngine.getPlugins()?.add(new OhosMockPlugins())
+    flutterEngine.getPlugins()?.add(new OhosRemindersPlugin(this.context))
+    if (this.widgets) flutterEngine.getPlugins()?.add(this.widgets)
   }
 }

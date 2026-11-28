@@ -36,8 +36,7 @@ export default class OhosExternalNavigatorPlugin implements FlutterPlugin, Metho
 
   onMethodCall(call: MethodCall, result: MethodResult): void {
     if (call.method === 'openUrl') {
-      const args = call.args as Record<string, Object>;
-      const url = args['url'] as string;
+      const url = call.argument('url') as string;
       if (!url) {
         result.error('INVALID_URL', 'URL cannot be empty', null);
         return;

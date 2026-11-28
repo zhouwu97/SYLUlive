@@ -6,7 +6,7 @@ import android.graphics.Color
 import org.json.JSONObject
 
 enum class NativeHomeWidgetKind(val storageName: String, val defaultTitle: String) {
-    COURSE("course", "沈理院课表"),
+    COURSE("course", "沈理校园"),
     EXAM("exam", "考试日程"),
 }
 

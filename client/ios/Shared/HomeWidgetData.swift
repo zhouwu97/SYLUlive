@@ -67,7 +67,7 @@ enum HomeWidgetCourseData {
 
     static func read(defaults: UserDefaults?, now: Date = Date(),
                      calendar: Calendar = .current) -> CourseEntry {
-        let title = defaults?.string(forKey: "widget_course_title") ?? "沈理院课表"
+        let title = defaults?.string(forKey: "widget_course_title") ?? "沈理校园"
         guard let defaults else {
             return CourseEntry(date: now, title: title, dateInfo: "共享存储不可用",
                 courses: [], emptyMessage: "请检查主 App 与小组件的 App Group 签名")

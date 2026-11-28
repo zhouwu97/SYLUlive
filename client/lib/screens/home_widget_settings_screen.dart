@@ -161,7 +161,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
     if (!mounted) return;
     final message = switch (result.status) {
       HomeWidgetPinStatus.requested => '已向桌面发送添加请求，请在系统确认后查看桌面。',
-      HomeWidgetPinStatus.unsupported => '当前桌面不支持应用内添加，请长按桌面进入“小组件”添加。',
+      HomeWidgetPinStatus.unsupported => result.message ?? '当前桌面不支持应用内添加，请长按桌面进入“小组件”添加。',
       HomeWidgetPinStatus.rejected => '桌面未接受添加请求，请长按桌面手动添加。',
       HomeWidgetPinStatus.failed =>
         result.message == null ? '添加请求失败，请稍后重试。' : '添加请求失败：${result.message}',

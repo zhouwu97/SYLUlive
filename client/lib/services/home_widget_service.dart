@@ -167,12 +167,13 @@ class HomeWidgetService {
       if (!prefs.containsKey(themeKey)) {
         await prefs.setString(themeKey, legacyTheme.storageName);
       }
-      if (!prefs.containsKey(titleKey)) {
-        final title = legacyTitle?.trim();
-        await prefs.setString(
-          titleKey,
-          title == null || title.isEmpty ? kind.defaultTitle : title,
-        );
+      final savedTitle = prefs.getString(titleKey);
+      final title = (savedTitle ?? legacyTitle)?.trim();
+      // 旧默认标题会写入偏好，升级时保留用户自定义的其他标题。
+      const oldDefaults = {'沈理院课表', '沈理院', 'shenliyuan'};
+      if (savedTitle == null || oldDefaults.contains(title)) {
+        await prefs.setString(titleKey,
+            title == null || title.isEmpty || oldDefaults.contains(title) ? kind.defaultTitle : title);
       }
       if (!prefs.containsKey(fontSizeKey)) {
         await prefs.setString(
@@ -307,7 +308,7 @@ class HomeWidgetService {
       final payload = {
         'schema_version': courseWidgetSchemaVersion,
         'updated_at': now.toIso8601String(),
-        'title': '沈理院课表',
+        'title': HomeWidgetKind.course.defaultTitle,
         'semester_start': semesterStartStr,
         'academic_year': provider.selectedYear,
         'semester': provider.selectedSemester,
@@ -784,6 +785,7 @@ class HomeWidgetService {
 
   static Future<void> _refreshNative() async {
     try {
+      await migrateLegacyAppearance();
       final prefs = await AppPreferencesStore.getInstance();
       await _channel.invokeMethod<void>('updateWidget', {
         'course_data': prefs.getString(_courseDataKey),

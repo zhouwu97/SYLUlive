@@ -37,11 +37,11 @@ export default class OhosSharePlugin implements FlutterPlugin, MethodCallHandler
   }
 
   onMethodCall(call: MethodCall, result: MethodResult): void {
-    const args = call.args as Record<string, Object>;
+
     if (call.method === 'share' || call.method === 'shareUri') {
-      const text = args['text'] as string;
-      const uri = args['uri'] as string;
-      const subject = args['subject'] as string;
+      const text = call.argument('text') as string;
+      const uri = call.argument('uri') as string;
+      const subject = call.argument('subject') as string;
 
       let want: Want = {
         action: 'ohos.want.action.sendData',
@@ -54,8 +54,8 @@ export default class OhosSharePlugin implements FlutterPlugin, MethodCallHandler
       
       this.showSharePanel(want, result);
     } else if (call.method === 'shareFiles') {
-      const paths = args['paths'] as string[];
-      const mimeTypes = args['mimeTypes'] as string[];
+      const paths = call.argument('paths') as string[];
+      const mimeTypes = call.argument('mimeTypes') as string[];
       
       if (!paths || paths.length === 0) {
         result.error('INVALID_ARGUMENTS', 'paths cannot be empty', null);

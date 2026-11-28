@@ -10,7 +10,7 @@ enum HomeWidgetKind {
   String get storageName => name;
 
   String get defaultTitle => switch (this) {
-        HomeWidgetKind.course => '沈理院课表',
+        HomeWidgetKind.course => '沈理校园',
         HomeWidgetKind.exam => '考试日程',
       };
 }

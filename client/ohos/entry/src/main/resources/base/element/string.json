@@ -1,6 +1,14 @@
 {
   "string": [
     {
+      "name": "course_form_name",
+      "value": "今日课表"
+    },
+    {
+      "name": "exam_form_name",
+      "value": "考试日程"
+    },
+    {
       "name": "module_desc",
       "value": "module description"
     },
@@ -10,7 +18,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "shenliyuan"
+      "value": "沈理校园"
     },
     {
       "name": "calendar_permission_reason",

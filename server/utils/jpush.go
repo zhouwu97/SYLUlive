@@ -19,7 +19,7 @@ type JPushClient struct {
 
 // PushPayload 极光 V3 接口 JSON 结构体。
 type PushPayload struct {
-	Platform     string       `json:"platform"`
+	Platform     interface{}  `json:"platform"`
 	Audience     Audience     `json:"audience"`
 	Notification Notification `json:"notification"`
 }
@@ -34,6 +34,15 @@ type Notification struct {
 	Alert   string               `json:"alert"`
 	Android *AndroidNotification `json:"android,omitempty"`
 	IOS     *IOSNotification     `json:"ios,omitempty"`
+	HMOS    *HarmonyNotification `json:"hmos,omitempty"`
+}
+
+// HarmonyNotification 保留点击跳转所需的业务载荷。
+type HarmonyNotification struct {
+	Alert    string                 `json:"alert"`
+	Title    string                 `json:"title"`
+	Extras   map[string]interface{} `json:"extras,omitempty"`
+	Category string                 `json:"category,omitempty"`
 }
 
 // AndroidNotification Android 平台通知。
@@ -80,6 +89,18 @@ func (c *JPushClient) SendRegistrationNotification(rid, platform, title, alert s
 		android.ChannelID = "reply_notifications_v1"
 	}
 	ios := &IOSNotification{Alert: alert, Sound: "default", Badge: 1, Extras: extras}
+
+	if platform == "ohos" {
+		notice := &HarmonyNotification{Alert: alert, Title: title, Extras: extras}
+		if extras["type"] == "private_message" {
+			notice.Category = "IM"
+		}
+		return c.send(PushPayload{
+			Platform:     []string{"hmos"},
+			Audience:     Audience{RegistrationID: []string{rid}},
+			Notification: Notification{Alert: alert, HMOS: notice},
+		})
+	}
 
 	switch platform {
 	case "ios":

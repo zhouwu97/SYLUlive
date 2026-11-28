@@ -23,6 +23,7 @@ func TestReplyPushUsesHighImportanceChannelOnlyOnAndroid(t *testing.T) {
 		{"android", "reply", "reply_notifications_v1"},
 		{"android", "private_message", ""},
 		{"ios", "reply", ""},
+		{"ohos", "private_message", ""},
 	} {
 		t.Run(tc.platform+"_"+tc.kind, func(t *testing.T) {
 			http.DefaultTransport = replyPushTestTransport(func(r *http.Request) (*http.Response, error) {
@@ -30,7 +31,15 @@ func TestReplyPushUsesHighImportanceChannelOnlyOnAndroid(t *testing.T) {
 				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 					t.Fatal(err)
 				}
-				if tc.platform == "ios" {
+				if tc.platform == "ohos" {
+					platforms, ok := payload.Platform.([]interface{})
+					hmos := payload.Notification.HMOS
+					if !ok || len(platforms) != 1 || platforms[0] != "hmos" ||
+						hmos == nil || hmos.Category != "IM" || hmos.Extras["type"] != tc.kind ||
+						payload.Notification.Android != nil || payload.Notification.IOS != nil {
+						t.Fatalf("鸿蒙通知载荷错误: %+v", payload)
+					}
+				} else if tc.platform == "ios" {
 					if payload.Notification.Android != nil || payload.Notification.IOS.Sound != "default" {
 						t.Fatal("iOS payload changed")
 					}

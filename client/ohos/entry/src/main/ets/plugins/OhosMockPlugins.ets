@@ -14,8 +14,7 @@ export default class OhosMockPlugins implements FlutterPlugin, MethodCallHandler
       'shenliyuan/keep_alive',
       'shenliyuan/app_update',
       'shenliyuan/foreground',
-      'shenliyuan/deeplink',
-      'shenliyuan/widget',
+
       'shenliyuan/course_reminder',
       'shenliyuan/grade_reminder'
     ];

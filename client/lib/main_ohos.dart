@@ -5,11 +5,13 @@ import 'platform/contracts/system_notification_client.dart';
 import 'platform/contracts/external_navigator.dart';
 import 'platform/ohos/ohos_reminder_notification_client.dart';
 import 'platform/ohos/ohos_external_navigator.dart';
+import 'platform/ohos/ohos_push_client.dart';
 
 void main() {
   ReminderNotificationClient.register(OhosReminderNotificationClient());
-  PushClient.register(UnsupportedPushClient());
-  SystemNotificationClient.register(UnsupportedSystemNotificationClient());
+  final notifications = OhosPushClient();
+  PushClient.register(notifications);
+  SystemNotificationClient.register(notifications);
   ExternalNavigator.register(const OhosExternalNavigator());
   appBootstrap();
 }

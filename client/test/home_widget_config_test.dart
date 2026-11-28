@@ -38,6 +38,20 @@ class _FailingWidgetPaletteStore extends MemoryPreferencesStore {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('升级时替换旧品牌标题并保留自定义卡片名', () async {
+    for (final previous in ['沈理院课表', 'shenliyuan', '我的课程']) {
+      AppPreferencesStore.setMockInitialValues({
+        HomeWidgetPreferenceKeys.courseTitle: previous,
+        HomeWidgetPreferenceKeys.examTitle: '期末安排',
+      });
+      await HomeWidgetService.migrateLegacyAppearance();
+      final prefs = await AppPreferencesStore.getInstance();
+      expect(prefs.getString(HomeWidgetPreferenceKeys.courseTitle),
+          previous == '我的课程' ? previous : '沈理校园');
+      expect(prefs.getString(HomeWidgetPreferenceKeys.examTitle), '期末安排');
+    }
+  });
+
   group('桌面小组件字号', () {
     test('未知存储值和空值默认标准', () {
       expect(HomeWidgetFontSize.fromStorage(null), HomeWidgetFontSize.standard);

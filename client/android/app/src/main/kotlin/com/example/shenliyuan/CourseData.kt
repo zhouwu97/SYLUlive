@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
  * {
  *   "schema_version": 2,
  *   "updated_at": "2026-08-28T09:12:00.000Z",
- *   "title": "沈理院课表",
+ *   "title": "沈理校园",
  *   "semester_start": "2026-08-24",
  *   "academic_year": "2026-2027",
  *   "semester": 1,
@@ -36,7 +36,7 @@ import java.util.concurrent.TimeUnit
  * ```
  */
 data class WidgetCourseData(
-    val title: String = "沈理院课表",
+    val title: String = "沈理校园",
     val date: String = "",
     val courses: List<Course> = emptyList(),
 ) {
@@ -98,7 +98,7 @@ object CourseDataReader {
     }
 
     private fun parseV2(obj: JSONObject, calendar: Calendar): WidgetCourseData {
-        val title = obj.optString("title", "沈理院课表")
+        val title = obj.optString("title", "沈理校园")
         val semesterStartStr = obj.optString("semester_start", "")
 
         val dayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
@@ -190,7 +190,7 @@ object CourseDataReader {
     }
 
     private fun parseV1(obj: JSONObject, calendar: Calendar): WidgetCourseData {
-        val title = obj.optString("title", "沈理院课表")
+        val title = obj.optString("title", "沈理校园")
         val date = obj.optString("date", "")
         val dateKey = obj.optString("date_key", "")
         val arr = obj.optJSONArray("courses") ?: JSONArray()

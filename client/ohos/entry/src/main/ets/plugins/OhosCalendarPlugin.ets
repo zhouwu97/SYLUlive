@@ -38,15 +38,16 @@ export default class OhosCalendarPlugin implements FlutterPlugin, MethodCallHand
 
   async onMethodCall(call: MethodCall, result: MethodResult): Promise<void> {
     if (call.method === 'add2Cal') {
-      const args = call.args as Record<string, Object>;
-      const title = typeof args['title'] === 'string' ? args['title'] : '';
-      const descValue = args['desc'];
+
+      const titleValue = call.argument('title') as Object;
+      const title = typeof titleValue === 'string' ? titleValue : '';
+      const descValue = call.argument('desc') as Object;
       const description = typeof descValue === 'string' ? descValue : '';
-      const locationValue = args['location'];
+      const locationValue = call.argument('location') as Object;
       const location = typeof locationValue === 'string' ? locationValue : '';
-      const startDate = args['startDate'] as number;
-      const endDate = args['endDate'] as number;
-      const allDay = args['allDay'] === true;
+      const startDate = call.argument('startDate') as number;
+      const endDate = call.argument('endDate') as number;
+      const allDay = call.argument('allDay') === true;
 
       // Note: add_2_calendar supports recurrence, invites, timeZone, etc.
       // HarmonyOS calendarManager has support for recurrenceRule, but they have complex mapping.

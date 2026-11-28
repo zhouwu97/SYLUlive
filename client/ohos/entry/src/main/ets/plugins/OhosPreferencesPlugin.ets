@@ -41,32 +41,32 @@ export default class OhosPreferencesPlugin implements FlutterPlugin, MethodCallH
   async onMethodCall(call: MethodCall, result: MethodResult): Promise<void> {
     try {
       const prefs = await this.getPreferences();
-      const args = call.args as Record<string, Object>;
-      const key = args ? args['key'] as string : '';
+
+      const key = call.argument('key') as string;
 
       switch (call.method) {
         case 'setString':
-          await prefs.put(key, args['value'] as string);
+          await prefs.put(key, call.argument('value') as string);
           await prefs.flush();
           result.success(null);
           break;
         case 'setBool':
-          await prefs.put(key, args['value'] as boolean);
+          await prefs.put(key, call.argument('value') as boolean);
           await prefs.flush();
           result.success(null);
           break;
         case 'setInt':
-          await prefs.put(key, args['value'] as number);
+          await prefs.put(key, call.argument('value') as number);
           await prefs.flush();
           result.success(null);
           break;
         case 'setDouble':
-          await prefs.put(key, args['value'] as number);
+          await prefs.put(key, call.argument('value') as number);
           await prefs.flush();
           result.success(null);
           break;
         case 'setStringList':
-          await prefs.put(key, args['value'] as Array<string>);
+          await prefs.put(key, call.argument('value') as Array<string>);
           await prefs.flush();
           result.success(null);
           break;

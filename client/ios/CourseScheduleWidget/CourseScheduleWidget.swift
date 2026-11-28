@@ -98,7 +98,7 @@ struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> CourseEntry {
         CourseEntry(
             date: Date(),
-            title: "沈理院课表",
+            title: "沈理校园",
             dateInfo: "5.19 第12周 周二",
             courses: [
                 CourseItem(name: "高等数学", time: "08:00-09:40", location: "综合楼A201", color: "#448AFF"),
@@ -275,7 +275,7 @@ struct ExamScheduleWidgetEntryView: View {
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(palette.primaryText)
                 Spacer()
-                Text("沈理院")
+                Text("沈理校园")
                     .font(.system(size: 11))
                     .foregroundColor(palette.accent)
             }

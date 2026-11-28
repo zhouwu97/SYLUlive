@@ -12,6 +12,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$appManifest = Join-Path $projectRoot 'ohos\AppScope\app.json5'
+$bundleName = (Get-Content -LiteralPath $appManifest -Raw | ConvertFrom-Json).app.bundleName
 
 if ([string]::IsNullOrWhiteSpace($DevecoHome)) {
     $DevecoHome = 'E:\devecostudio'
@@ -45,7 +47,7 @@ if (-not (Test-Path -LiteralPath $hdc)) {
 
 $remoteDir = "data/local/tmp/shenliyuan-$([guid]::NewGuid().ToString('N'))"
 try {
-    & $hdc -t $DeviceId shell aa force-stop com.example.shenliyuan
+    & $hdc -t $DeviceId shell aa force-stop $bundleName
     & $hdc -t $DeviceId shell mkdir $remoteDir
     & $hdc -t $DeviceId file send $hap $remoteDir
     & $hdc -t $DeviceId shell bm install -p $remoteDir
@@ -56,7 +58,7 @@ try {
     & $hdc -t $DeviceId shell rm -rf $remoteDir
 }
 
-& $hdc -t $DeviceId shell aa start -a EntryAbility -b com.example.shenliyuan
+& $hdc -t $DeviceId shell aa start -a EntryAbility -b $bundleName
 if ($LASTEXITCODE -ne 0) {
     throw 'HAP 已安装，但启动鸿蒙应用失败。'
 }

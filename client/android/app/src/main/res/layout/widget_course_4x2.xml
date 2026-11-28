@@ -34,7 +34,7 @@
                 android:layout_toStartOf="@id/tv_widget_date"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:text="沈理院课表"
+                android:text="沈理校园"
                 android:textColor="#111827"
                 android:textSize="14sp"
                 android:textStyle="bold" />

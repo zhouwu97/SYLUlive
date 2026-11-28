@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import '../providers/course_schedule_provider.dart';
 import '../utils/deterministic_course_id.dart';
+import '../platform/app_platform.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/platform/contracts/reminder_notification_client.dart';
 
@@ -254,10 +255,7 @@ class CourseReminderService {
         true,
       );
       if (scheduled ||
-          await _scheduleReminder(
-            reminder,
-            false,
-          )) {
+          (!AppPlatforms.current.isOhos && await _scheduleReminder(reminder, false))) {
         ids.add(reminder.id.toString());
       }
     }
@@ -269,7 +267,9 @@ class CourseReminderService {
       enabled: true,
       permissionGranted: true,
       scheduledCount: ids.length,
-      message: ids.isEmpty ? '没有未来课程可提醒' : '已安排 ${ids.length} 个课程提醒',
+      message: AppPlatforms.current.isOhos && ids.length < pendingReminders.length
+          ? '已安排 ${ids.length}/${pendingReminders.length} 个课程提醒，请检查系统通知权限和代理提醒额度'
+          : ids.isEmpty ? '没有未来课程可提醒' : '已安排 ${ids.length} 个课程提醒',
     );
   }
 

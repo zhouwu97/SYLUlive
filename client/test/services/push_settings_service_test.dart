@@ -3,11 +3,45 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/services/push_settings_service.dart';
+import 'package:shenliyuan/platform/ohos/ohos_push_client.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('鸿蒙私信点击只在开启推送后投递，关闭后丢弃迟到事件', () async {
+    const sdk = MethodChannel('jpush');
+    const native = MethodChannel('shenliyuan/private_message_notifications');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final calls = <String>[];
+    messenger.setMockMethodCallHandler(sdk, (call) async {
+      calls.add(call.method);
+      return call.method == 'getRegistrationId' ? 'test-rid' : true;
+    });
+    messenger.setMockMethodCallHandler(native, (call) async => null);
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(sdk, null);
+      messenger.setMockMethodCallHandler(native, null);
+      sdk.setMethodCallHandler(null);
+    });
+    final client = OhosPushClient();
+    final clicks = <Map<String, dynamic>>[];
+    client.setHandlers(onOpenNotification: (event) async => clicks.add(event));
+    Future<void> click() => messenger.handlePlatformMessage(sdk.name,
+      sdk.codec.encodeMethodCall(const MethodCall('onClickMessage',
+        {'extras': '{"type":"private_message","conversation_id":17}'})), (_) {});
+    await click();
+    expect(await client.getRegistrationId(), isNull);
+    expect(calls, isEmpty);
+    client.setup(appKey: 'test', channel: 'test', production: false, debug: false);
+    expect(await client.getRegistrationId(), 'test-rid');
+    await click();
+    await client.setPushOptIn(false);
+    await click();
+    expect(clicks.single['extras']['conversation_id'], 17);
+    expect(calls, contains('stopPush'));
+  });
 
   test('用户开启推送时立即调用设备注册回调', () async {
     AppPreferencesStore.setMockInitialValues({});
